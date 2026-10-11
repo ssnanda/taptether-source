@@ -1,0 +1,29 @@
+# Generated builds and local tooling
+.dart_tool/
+.flutter-plugins*
+.packages
+**/build/
+**/.gradle/
+**/DerivedData/
+**/Pods/
+**/.symlinks/
+**/Flutter/ephemeral/
+**/Generated.xcconfig
+**/flutter_export_environment.sh
+.idea/
+.vscode/
+*.iml
+.DS_Store
+# Never commit local agent identity or credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.mobileprovision
+*.keystore
+*.jks
+config.local.json
+dist/
+coverage/
