@@ -43,9 +43,9 @@ archive="$tmp/mac-agent.tar.gz"
 curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 12 --max-time 180 --retry 2 "$url" -o "$archive"
 actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
 [[ "$actual" == "$digest" ]] || { echo 'SHA-256 mismatch; aborting' >&2; exit 1; }
-# Permit only the two installer members. Never extract arbitrary paths from downloads.
+# Permit only the three expected installer members. Never extract arbitrary paths from downloads.
 members="$(tar -tzf "$archive" | sort)"
-[[ "$members" == $'taptether-agent\ntaptetherctl-mac' ]] || { echo 'Unexpected archive files; aborting' >&2; exit 1; }
+[[ "$members" == $'taptether-agent\ntaptether-agent-update-mac\ntaptetherctl-mac' ]] || { echo 'Unexpected archive files; aborting' >&2; exit 1; }
 tar -xzf "$archive" -C "$tmp"
 chmod 700 "$tmp/taptetherctl-mac"
 chmod 755 "$tmp/taptether-agent"
