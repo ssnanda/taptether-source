@@ -195,7 +195,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
             style: TextStyle(color: Color(0xFF57E6C2))),
         const SizedBox(height: 12),
         if (!connected) ...[
-          const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))
+          const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           const Text('Run the agent on Ubuntu and copy its LAN IP, token and certificate SHA-256 fingerprint. These credentials are kept in memory only.'),
           const SizedBox(height: 12),
