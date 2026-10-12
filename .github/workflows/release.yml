@@ -71,6 +71,14 @@ jobs:
           test -s app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           test -s tv/lg-webos/icon.png
 
+      - name: Commit new master logo PNGs to GitHub
+        run: |
+          git add assets/branding/TapTether-app.png assets/branding/TapTether-agent.png
+          if ! git diff --cached --quiet -- assets/branding; then
+            git -c user.name='TapTether Release Bot' -c user.email='actions@users.noreply.github.com' commit -m 'branding: publish actual PNG master icons'
+            git push origin HEAD:main
+          fi
+
       - name: Validate Bash installer scripts
         run: |
           for script in bin/*.sh; do bash -n "$script"; done
