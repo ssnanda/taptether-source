@@ -54,6 +54,11 @@ jobs:
           flutter create --platforms=ios,android --org com.taptether --project-name taptether .
           flutter pub get
 
+      - name: Validate Bash installer scripts
+        run: |
+          for script in bin/*.sh; do bash -n "$script"; done
+          python3 -m py_compile bin/6-tt-generate-altstore.py
+
       - name: Validate Go agent and Dart
         run: |
           cd agent
