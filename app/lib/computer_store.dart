@@ -13,6 +13,7 @@ class SavedComputer {
     required this.token,
     required this.fingerprint,
     this.platform = 'computer',
+    this.deviceId = '',
   });
 
   final String id;
@@ -21,10 +22,12 @@ class SavedComputer {
   final String token;
   final String fingerprint;
   final String platform;
+  final String deviceId;
 
   Map<String, String> toJson() => {
     'id': id, 'name': name, 'host': host, 'token': token,
     'fingerprint': fingerprint, 'platform': platform,
+    'deviceId': deviceId,
   };
 
   static SavedComputer fromJson(Map<String, dynamic> data) {
@@ -32,10 +35,11 @@ class SavedComputer {
     final computer = SavedComputer(
       id: value('id'), name: value('name'), host: value('host'),
       token: value('token'), fingerprint: value('fingerprint'),
-      platform: value('platform'),
+      platform: value('platform'), deviceId: value('deviceId'),
     );
     if (computer.id.isEmpty || computer.host.isEmpty ||
-        computer.token.length < 20 || computer.fingerprint.length != 64) {
+        (computer.token.length < 20 && computer.deviceId.length != 32) ||
+        computer.fingerprint.length != 64) {
       throw const FormatException('Invalid saved computer');
     }
     return computer;
