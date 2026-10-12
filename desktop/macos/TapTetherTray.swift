@@ -53,7 +53,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             self?.refreshStatus()
         }
         DistributedNotificationCenter.default().addObserver(
-            self, selector: #selector(showSplash),
+            self, selector: #selector(receiveSplash(_:)),
             name: splashNotice, object: nil,
             suspensionBehavior: .deliverImmediately)
         if CommandLine.arguments.contains("--splash") {
@@ -114,7 +114,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self.refreshStatus()
                 self.showNotice("TapTether " + verb,
-                    result.isEmpty ? "Request completed. Review Agent status in the menu."
+                    result.isEmpty ? "Could not confirm the operation. Check the service status or use the terminal."
                                    : String(result.prefix(1000)))
             }
         }
@@ -129,6 +129,10 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         showNotice("Pairing with TapTether",
             "On a trusted Mac Terminal, run:\n\n~/.local/bin/taptetherctl-mac pairing-qr\n\n"
             + "The menu does not expose pairing tokens or fingerprints.")
+    }
+
+    @objc private func receiveSplash(_ notification: Notification) {
+        showSplash()
     }
 
     @objc private func showSplash() {
