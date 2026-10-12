@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
+import 'computer_store.dart';
+import 'discovery.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -131,6 +133,11 @@ class RemoteScreen extends StatefulWidget {
 
 class _RemoteScreenState extends State<RemoteScreen> {
   final agent = LocalAgent();
+  final deviceStore = ComputerStore();
+  List<SavedComputer> savedComputers = [];
+  List<DiscoveredDevice> nearbyComputers = [];
+  bool searching = false;
+  String? discoveredName;
   final host = TextEditingController();
   final token = TextEditingController();
   final pin = TextEditingController();
@@ -145,7 +152,126 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void initState() {
     super.initState();
     unawaited(checkForUpdates());
+    unawaited(loadComputers());
   }
+
+  Future<void> loadComputers() async {
+    try {
+      final devices = await deviceStore.read();
+      if (mounted) setState(() => savedComputers = devices);
+    } catch (_) {
+      if (mounted) setState(() =>
+          status = 'Saved devices could not be loaded. Check secure storage permissions.');
+    }
+  }
+
+  Future<void> searchNearby() async {
+    if (searching) return;
+    setState(() {
+      searching = true;
+      nearbyComputers = [];
+      status = 'Looking for TapTether agents on the local network…';
+    });
+    try {
+      final result = await findNearbyDevices();
+      if (!mounted) return;
+      setState(() {
+        nearbyComputers = result;
+        status = result.isEmpty
+            ? 'No agents found. Check Wi-Fi, firewall UDP 48322, or enter the address manually.'
+            : 'Found ${result.length} local computer(s). Select one to pair.';
+      });
+    } catch (error) {
+      if (mounted) setState(() =>
+          status = 'Discovery unavailable: $error. Enter the IP manually.');
+    } finally {
+      if (mounted) setState(() => searching = false);
+    }
+  }
+
+  void selectDiscovered(DiscoveredDevice device) {
+    setState(() {
+      discoveredName = device.name;
+      host.text = device.host;
+      token.clear();
+      pin.clear();
+      status = 'Discovered ${device.name}. Enter its token and certificate fingerprint to verify ownership.';
+    });
+  }
+
+  Future<void> connectSaved(SavedComputer device) async {
+    host.text = device.host;
+    token.text = device.token;
+    pin.text = device.fingerprint;
+    discoveredName = device.name;
+    await connect(existingId: device.id);
+  }
+
+  Future<void> forgetComputer(SavedComputer device) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text('Forget ${device.name}?'),
+        content: const Text('Its saved token and certificate fingerprint will be erased from this phone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Forget')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final updated = await deviceStore.remove(device.id);
+      if (mounted) setState(() => savedComputers = updated);
+    } catch (_) {
+      if (mounted) setState(() => status = 'Cannot erase saved pairing from secure storage.');
+    }
+  }
+
+  Widget deviceDashboard() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text('My Devices',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 6),
+      for (final device in savedComputers)
+        Card(child: ListTile(
+          leading: Icon(device.platform == 'darwin'
+              ? Icons.laptop_mac : Icons.desktop_windows),
+          title: Text(device.name),
+          subtitle: Text(device.host),
+          onTap: () => connectSaved(device),
+          trailing: IconButton(
+            tooltip: 'Forget ${device.name}',
+            onPressed: () => forgetComputer(device),
+            icon: const Icon(Icons.delete_outline),
+          ),
+        )),
+      if (savedComputers.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Text('No paired computers yet. Pair once to save a device securely.')),
+      OutlinedButton.icon(
+        onPressed: searching ? null : searchNearby,
+        icon: searching
+            ? const SizedBox(width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.radar),
+        label: Text(searching ? 'Searching LAN…' : 'Find nearby computers'),
+      ),
+      for (final nearby in nearbyComputers)
+        ListTile(
+          leading: const Icon(Icons.computer),
+          title: Text(nearby.name),
+          subtitle: Text('${nearby.host} · ${nearby.platform} · ${nearby.version}'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => selectDiscovered(nearby),
+        ),
+      const SizedBox(height: 18),
+    ],
+  );
 
   bool newerThan(String latest, String installed) {
     final pattern = RegExp(r'^([0-9]+)[.]([0-9]+)[.]([0-9]+)(?:[+]([0-9]+))?');
