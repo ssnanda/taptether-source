@@ -1,0 +1,2 @@
+Agent installers are generated here by bin/2e-tt-stage-mobile-agents.sh.
+Do not commit compiled binaries or credentials.
