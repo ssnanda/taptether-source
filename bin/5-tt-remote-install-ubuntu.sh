@@ -20,6 +20,6 @@ stage="$(ssh "$HOST" 'mktemp -d /tmp/taptether-install.XXXXXXXX')"
   echo "Invalid remote temp directory: $stage" >&2; exit 1;
 }
 trap 'ssh "$HOST" "rm -rf '\''$stage'\''" >/dev/null 2>&1 || true' EXIT
-scp "$package" "$ROOT/bin/4-ubuntu-desktop-setup.sh" "$ROOT/bin/7-tt-update-ubuntu.sh" "$HOST:$stage/"
+scp "$package" "$ROOT/bin/4-ubuntu-desktop-setup.sh" "$ROOT/bin/7-tt-update-ubuntu.sh" "$ROOT/dist/branding/TapTether-icon.png" "$HOST:$stage/"
 ssh -tt "$HOST" "set -e; dpkg-deb --info '$stage/$(basename "$package")' >/dev/null; sudo apt install -y '$stage/$(basename "$package")'; bash '$stage/4-ubuntu-desktop-setup.sh' install"
 echo "TapTether $version deployed and enabled on $HOST. The installer above displayed PRIVATE pairing values."
