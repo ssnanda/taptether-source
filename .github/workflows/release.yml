@@ -4,6 +4,11 @@ name: Publish current TapTether release
 # GitHub > Actions > Publish current TapTether release > Run workflow.
 on:
   workflow_dispatch:
+  # One-time explicit release request. Normal source pushes remain build-free.
+  push:
+    branches: [main]
+    paths:
+      - '.github/release-v0.5.3-request'
 
 permissions:
   contents: write
