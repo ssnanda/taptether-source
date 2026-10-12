@@ -3,3 +3,5 @@ Reason: approved manual publication after v0.5.4 feature merge.
 Build once; only this explicit marker triggers the publish workflow.
 
 Retry 2: fix four Flutter analysis lints identified in run 38289341575.
+
+Retry 3: update old widget test to open collapsible Add computer pairing form. Previous run 38289824604 passed Flutter analysis, failed only this UI expectation.
