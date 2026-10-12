@@ -7,6 +7,7 @@ import 'discovery.dart';
 import 'phone_identity.dart';
 import 'qr_pairing.dart';
 import 'ssh_provisioner.dart';
+import 'ssh_key_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -263,9 +264,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final sshPassword = TextEditingController();
     final sudoPassword = TextEditingController();
     final sshFingerprint = TextEditingController();
+    var loginMethod = SshLoginMethod.password;
+    var authorizeKey = false;
+    final hasKey = await PhoneSshKeyStore().exists;
+    if (!mounted) return;
     final approved = await showDialog<bool>(
       context: context,
-      builder: (dialog) => AlertDialog(
+      builder: (dialog) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
         title: const Text('Install Ubuntu agent over SSH'),
         content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -280,8 +286,36 @@ class _RemoteScreenState extends State<RemoteScreen> {
             TextField(controller: sshFingerprint, autocorrect: false,
               decoration: const InputDecoration(
                 labelText: 'Verified SSH host SHA256: fingerprint')),
-            TextField(controller: sshPassword, obscureText: true,
-              decoration: const InputDecoration(labelText: 'SSH password')),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<SshLoginMethod>(
+              initialValue: loginMethod,
+              decoration: const InputDecoration(labelText: 'SSH login method'),
+              items: [
+                const DropdownMenuItem(
+                    value: SshLoginMethod.password, child: Text('SSH password')),
+                DropdownMenuItem(
+                    value: SshLoginMethod.phoneKey,
+                    enabled: hasKey, child: const Text('TapTether SSH key')),
+              ],
+              onChanged: (value) {
+                if (value != null) setDialogState(() => loginMethod = value);
+              },
+            ),
+            if (loginMethod == SshLoginMethod.password)
+              TextField(controller: sshPassword, obscureText: true,
+                decoration: const InputDecoration(labelText: 'SSH password')),
+            if (loginMethod == SshLoginMethod.password && hasKey)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: authorizeKey,
+                onChanged: (v) => setDialogState(() => authorizeKey = v ?? false),
+                title: const Text('Authorize this phone SSH key'),
+                subtitle: const Text('Add only the public key to Ubuntu authorized_keys '
+                    'after a verified password login. No private key is uploaded.'),
+              ),
+            if (!hasKey)
+              const Text('Generate or import an SSH key under My SSH Key '
+                  'to enable password-free SSH installation.'),
             TextField(controller: sudoPassword, obscureText: true,
               decoration: const InputDecoration(
                 labelText: 'Ubuntu sudo password (leave blank if passwordless)')),
@@ -298,6 +332,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
             child: const Text('Install & pair')),
         ],
       ),
+      ),
     );
     final request = approved == true
         ? SshInstallRequest(
@@ -306,6 +341,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
           sshPassword: sshPassword.text,
           sudoPassword: sudoPassword.text,
           hostKeyFingerprint: sshFingerprint.text.trim(),
+          loginMethod: loginMethod,
+          authorizePhoneKey: authorizeKey,
         )
         : null;
     sshHost.dispose();
@@ -436,6 +473,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
           padding: EdgeInsets.symmetric(vertical: 8),
           child: Text('No paired computers yet. Pair once to save a device securely.')),
       Wrap(spacing: 8, runSpacing: 8, children: [
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SshKeyScreen()),
+          ),
+          icon: const Icon(Icons.vpn_key),
+          label: const Text('My SSH Key'),
+        ),
         OutlinedButton.icon(
           onPressed: scanQrPairing,
           icon: const Icon(Icons.qr_code_scanner),
