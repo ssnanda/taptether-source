@@ -216,6 +216,10 @@ func (d *virtualDevice) emitAndSync(typ, code uint16, val int32) error {
 var namedKeys = map[string]int{
 	"escape": 1, "esc": 1, "tab": 15, "return": 28, "enter": 28, "backspace": 14,
 	"up": 103, "down": 108, "left": 105, "right": 106, "space": 57, "delete": 111,
+	"home": 102, "end": 107, "pageup": 104, "pagedown": 109, "insert": 110,
+	"equal": 13, "minus": 12,
+	"f1": 59, "f2": 60, "f3": 61, "f4": 62, "f5": 63, "f6": 64,
+	"f7": 65, "f8": 66, "f9": 67, "f10": 68, "f11": 87, "f12": 88,
 	"ctrl": keyLeftCtrl, "control": keyLeftCtrl, "alt": keyLeftAlt, "shift": keyLeftShift, "super": keyLeftMeta, "meta": keyLeftMeta,
 	"xf86audioraisevolume": keyVolumeUp, "xf86audiolowervolume": keyVolumeDown, "xf86audiomute": keyMute,
 }
