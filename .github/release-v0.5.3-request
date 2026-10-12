@@ -1,3 +1,5 @@
 Release request: 0.5.3+15
 Source commit: fed793838c80456c2fa01cabacae3e86dda7b007
 Build/publish once. This marker has no recurring trigger.
+
+Retry after macOS DistributedNotificationCenter API compile fix and pre-build Swift typechecking.
