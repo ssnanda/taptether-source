@@ -76,7 +76,7 @@ jobs:
       - name: Validate Bash installer scripts
         run: |
           for script in bin/*.sh; do bash -n "$script"; done
-          python3 -m py_compile bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py
+          python3 -m py_compile bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py desktop/ubuntu/taptether_tray.py
 
       - name: Validate Go agent and Dart
         run: |
@@ -86,6 +86,14 @@ jobs:
           cd ../app
           flutter analyze
           flutter test
+
+      - name: Validate desktop UI package sources
+        run: |
+          test -s desktop/ubuntu/taptether_tray.py
+          test -s desktop/macos/TapTetherTray.swift
+          xcrun swiftc -frontend -parse desktop/macos/TapTetherTray.swift
+          grep -q 'TapTetherTray' bin/2b-tt-macos.sh
+          grep -q 'taptether_tray.py' bin/5-tt-remote-install-ubuntu.sh
 
       - name: Build bundled Ubuntu and macOS agents plus unsigned IPA
         run: bash bin/2a-tt-ipa.sh --no-publish
