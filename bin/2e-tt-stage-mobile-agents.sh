@@ -55,6 +55,17 @@ for platform, suffix, folder, prefix in (
             "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
             "bytes": destination.stat().st_size,
         })
+# Bundle the exact installation helpers with the matching agents so the phone
+# can deploy to an SSH-authenticated Ubuntu desktop without another computer.
+for name, source in (
+    ("4-ubuntu-desktop-setup.sh", root / "bin" / "4-ubuntu-desktop-setup.sh"),
+    ("7-tt-update-ubuntu.sh", root / "bin" / "7-tt-update-ubuntu.sh"),
+    ("TapTether-icon.png", root / "dist" / "branding" / "TapTether-icon.png"),
+):
+    if not source.is_file() or source.stat().st_size < 100:
+        raise SystemExit(f"Required phone SSH provisioning asset missing: {source}")
+    shutil.copyfile(source, outdir / name)
+
 manifest = {"version": version, "installers": installers}
 (outdir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("Staged Flutter agent assets:")
