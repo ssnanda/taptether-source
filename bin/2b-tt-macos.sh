@@ -12,9 +12,17 @@ for arch in amd64 arm64; do
   cp "$ROOT/bin/4-macos-agent-setup.sh" "$temp/taptetherctl-mac"
   cp "$ROOT/bin/8-tt-update-macos.sh" "$temp/taptether-agent-update-mac"
   cp "$ROOT/dist/branding/TapTether.icns" "$temp/TapTether.icns"
-  chmod +x "$temp/taptether-agent" "$temp/taptetherctl-mac" "$temp/taptether-agent-update-mac"
+  case "$arch" in
+    amd64) swift_target="x86_64-apple-macos12.0" ;;
+    arm64) swift_target="arm64-apple-macos12.0" ;;
+  esac
+  # The menu-bar UI is separate from the Go service and uses only AppKit.
+  xcrun swiftc -O -target "$swift_target" \
+    "$ROOT/desktop/macos/TapTetherTray.swift" -framework AppKit \
+    -o "$temp/TapTetherTray"
+  chmod +x "$temp/taptether-agent" "$temp/taptetherctl-mac" "$temp/taptether-agent-update-mac" "$temp/TapTetherTray"
   out="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.tar.gz"
-  COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" taptether-agent taptetherctl-mac taptether-agent-update-mac TapTether.icns
+  COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" taptether-agent taptetherctl-mac taptether-agent-update-mac TapTether.icns TapTetherTray
   rm -rf "$temp"
   echo "macOS installer archive: $out"
 done
