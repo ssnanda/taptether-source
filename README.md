@@ -4,7 +4,7 @@ Your devices. Your control. Your network.
 
 LAN-first remote control from a Flutter iPhone/Android client to authenticated Linux and macOS input agents.
 
-## 0.4.0+10
+## 0.4.1+11
 
 - Responsive trackpad: adjustable 1x–8x sensitivity (default 3.8x instead of 1.7x), with queued movement rather than dropped pointer updates.
 - Ubuntu amd64/arm64: Wayland and X11 native /dev/uinput mouse, keyboard and media keys.
@@ -123,3 +123,16 @@ The enabled state is persisted as a restricted systemd Environment override. A n
 For macOS, use the corresponding taptetherctl-mac enable-shutdown / disable-shutdown commands, and approve macOS System Events Automation if prompted. Actual shutdown authorization is controlled by macOS and may fail when no graphical login session is available.
 
 Neither remote shutdown nor updates have been tested end to end on your machines. Restrict port 48321 to trusted LAN devices and treat pairing secrets as authority to control the computer.
+
+## Unified product icons (0.4.1)
+
+TapTether app and agent icon artwork is stored under assets/branding in compact base64-encoded files. This preserves the generated artwork as repository source without Git LFS. The script bin/9-tt-brand-icons.py decodes it and uses Pillow to generate:
+- Real iOS AppIcon asset catalog PNGs at every declared scale, for the installed IPA icon;
+- Android standard launcher mipmap icons, for the installed APK;
+- Flutter's assets/branding/taptether.png for the in-app header;
+- A macOS TapTether.icns included in the agent tarball; the installation creates the branded clickable ~/Applications/TapTether Agent.app launcher;
+- A 512-pixel Ubuntu GNOME dock icon supplied and installed by the SSH setup;
+- LG webOS icon.png and largeIcon.png for the companion TV app;
+- The published TapTether-icon.png used by the public AltStore feed.
+
+Run python3 -m pip install Pillow once on a Mac if it is not installed. Both mobile build scripts run the icon generator automatically. GitHub Actions installs Pillow and validates all expected platform outputs before building or publishing. Generated image sizes are not committed; only their approved artwork sources are versioned.
