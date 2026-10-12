@@ -166,3 +166,23 @@ QR pairing: Install qrencode with sudo apt install qrencode (Ubuntu) or brew ins
 SSH provisioning from the phone: In My Devices choose Install Ubuntu via SSH. Provide the private LAN IP, Ubuntu username, SSH password, sudo password when required, and the separately verified SSH host-key fingerprint. Verify that fingerprint directly on Ubuntu with: sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256. The phone rejects any SSH host whose key does not match, uploads the exact bundled matching Debian package and helper scripts via SFTP, runs the installer with sudo, retrieves the agent token and TLS pin, and enrolls the phone key. Password authentication and standard sudo configuration are required. SSH key-only hosts and unusual sudo flows are not yet supported. This new phone-side install path requires real-machine testing.
 
 Security: The private key never goes to the computer. Discovery is never accepted as proof of identity. Passwords are not persisted on the phone. The original bearer token remains a legacy administrative credential and can still be used to pair other clients until a future dedicated owner-token migration.
+
+## v0.5.2 — SSH identities managed on the phone
+
+- **My SSH Key:** Generate an Ed25519 SSH private/public keypair inside TapTether. It is separate from the Ed25519 key used for the TapTether remote-control protocol and is stored in the iOS Keychain/Android secure storage. It is not a hardware non-exportable Secure Enclave identity.
+- **Import SSH Key from Files:** Import an existing OpenSSH Ed25519 private key, including a passphrase-protected key. The passphrase is requested during import and is not saved; the imported key is saved unencrypted inside OS secure storage. The original file is not deleted by TapTether. If importing a different key, previously authorized computers will need their authorized_keys updated.
+- **Copy Public Key:** Copies only the ssh-ed25519 public line into the clipboard. You can paste it into the selected Ubuntu user's ~/.ssh/authorized_keys using an already trusted SSH session.
+- **Install Ubuntu via SSH:** Choose either SSH password or TapTether SSH key. On a first verified password-based login, the **Authorize this phone SSH key** checkbox can append the public key to ~/.ssh/authorized_keys using the authenticated, fingerprint-pinned SSH connection. Subsequent connections can use key authentication. The SSH host key SHA256 fingerprint must always be verified out-of-band, even for key-based authentication.
+- **sudo remains separate:** SSH key login authenticates the Ubuntu user, not root. A sudo password or preconfigured passwordless sudo may still be needed for package installation. Neither SSH nor sudo credentials are stored by this wizard.
+
+To verify the Ubuntu SSH host fingerprint ON the computer:
+
+    ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
+
+To add the copied phone SSH public key once through an existing Ubuntu session:
+
+    mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+    # Paste the public key as one complete line into ~/.ssh/authorized_keys.
+
+Never paste your PRIVATE key into authorized_keys. Do not trust an SSH host key merely because a device appeared in LAN discovery. Key import and installer interactions need testing on your iPhone and Ubuntu; CI validates syntax/unit builds, not the physical SSH login.
