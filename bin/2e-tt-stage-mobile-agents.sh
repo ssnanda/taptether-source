@@ -60,6 +60,7 @@ for platform, suffix, folder, prefix in (
 for name, source in (
     ("4-ubuntu-desktop-setup.sh", root / "bin" / "4-ubuntu-desktop-setup.sh"),
     ("7-tt-update-ubuntu.sh", root / "bin" / "7-tt-update-ubuntu.sh"),
+    ("taptether_tray.py", root / "desktop" / "ubuntu" / "taptether_tray.py"),
     ("TapTether-icon.png", root / "dist" / "branding" / "TapTether-icon.png"),
 ):
     if not source.is_file() or source.stat().st_size < 100:
