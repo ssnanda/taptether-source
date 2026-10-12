@@ -57,7 +57,7 @@ func main() {
 	for _, a := range privateAddresses() {
 		fmt.Printf("iPhone host: %s\n", a)
 	}
-	fmt.Println("Linux Wayland/X11 native uinput is supported; X11 can fall back to xdotool. Windows/macOS input is not implemented.")
+	fmt.Println("Linux Wayland/X11 native uinput and macOS CoreGraphics are supported; macOS requires Accessibility permission. Windows input remains unimplemented.")
 	fmt.Println("No telemetry or outgoing network connections are implemented. Restrict inbound port 48321 to trusted LAN devices.")
 	mux := http.NewServeMux()
 	var mu sync.Mutex
