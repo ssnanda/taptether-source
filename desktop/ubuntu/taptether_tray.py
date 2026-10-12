@@ -5,6 +5,8 @@ Starts at graphical login without splash; launching it from the dock displays a
 brief splash. Never reads or displays pairing secrets.
 """
 import argparse
+import fcntl
+import signal
 import os
 from pathlib import Path
 import subprocess
@@ -157,6 +159,26 @@ def main():
     parser.add_argument("--splash", action="store_true")
     args = parser.parse_args()
     version = agent_version()
+    # The autostart tray is a singleton. Opening from the dock sends it a
+    # splash request rather than creating another status indicator.
+    lockpath = Path.home() / ".cache" / "taptether" / "tray.lock"
+    lockpath.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lockfile = lockpath.open("a+", encoding="ascii")
+    try:
+        fcntl.flock(lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        if args.splash:
+            try:
+                lockfile.seek(0)
+                os.kill(int(lockfile.read().strip()), signal.SIGUSR1)
+            except (ValueError, OSError, ProcessLookupError):
+                pass
+        return
+    lockfile.seek(0)
+    lockfile.truncate()
+    lockfile.write(str(os.getpid()))
+    lockfile.flush()
+    signal.signal(signal.SIGUSR1, lambda *_: GLib.idle_add(show_splash, version))
 
     if Indicator is not None:
         indicator = Indicator.Indicator.new(
