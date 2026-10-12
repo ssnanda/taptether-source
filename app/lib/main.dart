@@ -536,7 +536,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
           installedVersion = '${info.version}+${info.buildNumber}');
       }
     } catch (_) {
-      if (mounted) setState(() => installedVersion = 'unavailable');
+      if (mounted) {
+        setState(() => installedVersion = 'unavailable');
+      }
     }
   }
 
