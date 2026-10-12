@@ -135,7 +135,7 @@ update_agent() {
   [[ -f "$UPDATER" ]] || { notice 'Update helper missing; install the newest macOS agent archive.' >&2; exit 1; }
   bash "$UPDATER" update
 }
-case "$@" in
+case "$1" in
   install) install_agent ;;
   start) launchctl bootstrap "$TARGET" "$PLIST" 2>/dev/null || true; launchctl kickstart -k "$TARGET/$LABEL" ;;
   stop) launchctl bootout "$TARGET/$LABEL" ;;
