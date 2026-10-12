@@ -33,7 +33,12 @@ var version = "dev"
 
 func main() {
 	addr := flag.String("listen", ":48321", "TLS listen address; use a LAN firewall for additional restriction")
+	showVersion := flag.Bool("version", false, "Print the agent version")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 	dir, err := os.UserConfigDir()
 	fatalIf(err)
 	dir = filepath.Join(dir, "taptether")
