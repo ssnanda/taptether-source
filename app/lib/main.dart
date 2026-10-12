@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
+import 'qr_pairing.dart';
+import 'ssh_provisioner.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -223,6 +225,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   List<SavedComputer> savedComputers = [];
   List<DiscoveredDevice> nearbyComputers = [];
   bool searching = false;
+  bool installingAgent = false;
   String? discoveredName;
   final host = TextEditingController();
   final token = TextEditingController();
@@ -239,6 +242,95 @@ class _RemoteScreenState extends State<RemoteScreen> {
     super.initState();
     unawaited(checkForUpdates());
     unawaited(loadComputers());
+  }
+
+  Future<void> scanQrPairing() async {
+    final scanned = await Navigator.of(context).push<PairingQR>(
+      MaterialPageRoute(builder: (_) => const PairingScanner()),
+    );
+    if (scanned == null || !mounted) return;
+    host.text = scanned.host;
+    token.text = scanned.token;
+    pin.text = scanned.fingerprint;
+    discoveredName = scanned.host;
+    await connect();
+  }
+
+  Future<void> installUbuntuViaSsh() async {
+    if (installingAgent) return;
+    final sshHost = TextEditingController(text: host.text);
+    final user = TextEditingController();
+    final sshPassword = TextEditingController();
+    final sudoPassword = TextEditingController();
+    final sshFingerprint = TextEditingController();
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Install Ubuntu agent over SSH'),
+        content: SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Verify the SSH host fingerprint independently on '
+                'your Ubuntu computer before proceeding. SSH must be enabled '
+                'and the user must have sudo privileges.'),
+            TextField(controller: sshHost,
+              decoration: const InputDecoration(labelText: 'Ubuntu LAN IP')),
+            TextField(controller: user,
+              decoration: const InputDecoration(labelText: 'SSH username')),
+            TextField(controller: sshFingerprint, autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Verified SSH host SHA256: fingerprint')),
+            TextField(controller: sshPassword, obscureText: true,
+              decoration: const InputDecoration(labelText: 'SSH password')),
+            TextField(controller: sudoPassword, obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Ubuntu sudo password (leave blank if passwordless)')),
+            const SizedBox(height: 10),
+            const Text('Verify on the computer: '
+              'sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256. '
+              'The SSH connection will be rejected if its host key does not match.'),
+          ],
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Install & pair')),
+        ],
+      ),
+    );
+    final request = approved == true
+        ? SshInstallRequest(
+          host: sshHost.text.trim(),
+          username: user.text.trim(),
+          sshPassword: sshPassword.text,
+          sudoPassword: sudoPassword.text,
+          hostKeyFingerprint: sshFingerprint.text.trim(),
+        )
+        : null;
+    sshHost.dispose();
+    user.dispose();
+    sshPassword.dispose();
+    sudoPassword.dispose();
+    sshFingerprint.dispose();
+    if (request == null || !mounted) return;
+    setState(() {
+      installingAgent = true;
+      status = 'Installing Ubuntu agent over authenticated SSH…';
+    });
+    try {
+      final installed = await UbuntuSshProvisioner.install(request);
+      if (!mounted) return;
+      host.text = installed.host;
+      token.text = installed.token;
+      pin.text = installed.fingerprint;
+      discoveredName = installed.host;
+      await connect(); // Enroll phone key and save trusted device.
+    } catch (e) {
+      if (mounted) setState(() => status = 'SSH installation: $e');
+    } finally {
+      if (mounted) setState(() => installingAgent = false);
+    }
   }
 
   Future<void> loadComputers() async {
@@ -343,6 +435,19 @@ class _RemoteScreenState extends State<RemoteScreen> {
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
           child: Text('No paired computers yet. Pair once to save a device securely.')),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        OutlinedButton.icon(
+          onPressed: scanQrPairing,
+          icon: const Icon(Icons.qr_code_scanner),
+          label: const Text('Scan QR pairing'),
+        ),
+        OutlinedButton.icon(
+          onPressed: installingAgent ? null : installUbuntuViaSsh,
+          icon: const Icon(Icons.install_desktop),
+          label: const Text('Install Ubuntu via SSH'),
+        ),
+      ]),
+      const SizedBox(height: 6),
       OutlinedButton.icon(
         onPressed: searching ? null : searchNearby,
         icon: searching
