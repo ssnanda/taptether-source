@@ -75,3 +75,6 @@ See [WAYLAND.md](WAYLAND.md) for permissions, SSH commands and limitations.
 ## GitHub safety
 
 The bootstrap creates the SSH remote `git@github.com:ssnanda/taptether.com.git` unless an allowed matching origin is already present. It does **not** push automatically. `1-bump-version.sh` commits **only the version files** and pushes to `main`; run `3-push-project.sh` for other source changes. It refuses to push to a different repository. On the **first** commit only, `1-bump-version.sh` stages the initial scaffold so the new private repository is usable.
+## Ubuntu install, background service and pairing (v0.3.1+7)
+
+Use `./bin/5-tt-remote-install-ubuntu.sh user@host` from the macOS project. It builds and validates the correct .deb, installs the native Wayland/X11 Go agent, configures `/dev/uinput` permissions for a dedicated systemd supplementary group, enables a **non-root** system service to start at boot, starts the service immediately, and prints the private pairing token and TLS SHA-256 fingerprint during installation. A user logout is **not** required for this system-service setup. Use `~/.local/bin/taptetherctl pairing` over SSH to retrieve values again; start/stop/restart require sudo. The service can inject input at the login screen, so firewall port 48321 to trusted LAN clients and keep the pairing token secret. Details: [WAYLAND.md](WAYLAND.md).
