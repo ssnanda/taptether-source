@@ -13,7 +13,7 @@ type Event struct {
 
 func (e Event) Validate() error {
 	switch e.Type {
-	case "ping":
+	case "ping", "shutdown":
 		return nil
 	case "move":
 		if e.DX < -300 || e.DX > 300 || e.DY < -300 || e.DY > 300 {
