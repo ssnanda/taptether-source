@@ -1,14 +1,8 @@
 name: Publish current TapTether release
 
+# Full IPA/APK/agent builds are expensive. Release only when explicitly requested.
+# GitHub > Actions > Publish current TapTether release > Run workflow.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'VERSION'
-      - 'app/**'
-      - 'agent/**'
-      - 'bin/**'
-      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
@@ -103,13 +97,3 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash bin/6-tt-publish-latest.sh
-
-      - name: Upload current build outputs for CI debugging
-        uses: actions/upload-artifact@v4
-        with:
-          name: TapTether-current-build
-          path: |
-            dist/release/TapTether*
-            altstore.json
-          retention-days: 1
-          if-no-files-found: error
