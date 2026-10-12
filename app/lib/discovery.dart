@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -69,11 +68,38 @@ Future<List<DiscoveredDevice>> findNearbyDevices({
     }
   });
   try {
-    socket.send(
-      utf8.encode('TAPTETHER_DISCOVER_V1'),
-      InternetAddress('255.255.255.255'),
-      48322,
+    final probe = utf8.encode('TAPTETHER_DISCOVER_V1');
+    // Try LAN broadcast plus limited on-link unicast. Some iOS networks
+    // disallow broadcast without special entitlements, but permit unicast.
+    try {
+      socket.send(probe, InternetAddress('255.255.255.255'), 48322);
+    } on SocketException {
+      // Try on-link unicast next.
+    }
+    final interfaces = await NetworkInterface.list(
+      type: InternetAddressType.IPv4, includeLoopback: false,
     );
+    final prefixes = <String>{};
+    for (final interface in interfaces) {
+      for (final address in interface.addresses) {
+        final ip = address.address;
+        if (!isPrivateIPv4(ip)) continue;
+        final octets = ip.split('.');
+        prefixes.add('${octets[0]}.${octets[1]}.${octets[2]}');
+        // At most two /24 networks (512 UDP probes) during a user-initiated scan.
+        if (prefixes.length >= 2) break;
+      }
+      if (prefixes.length >= 2) break;
+    }
+    for (final prefix in prefixes) {
+      for (var last = 1; last <= 254; last++) {
+        try {
+          socket.send(probe, InternetAddress('$prefix.$last'), 48322);
+        } on SocketException {
+          // Continue probing other on-link hosts.
+        }
+      }
+    }
     await Future<void>.delayed(duration);
   } finally {
     await subscription.cancel();
