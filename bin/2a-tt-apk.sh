@@ -21,4 +21,4 @@ OUTPUT="$ROOT/dist/android/TapTether-$VERSION.apk"
 cp build/app/outputs/flutter-apk/app-release.apk "$OUTPUT"
 find "$ROOT/dist/android" -maxdepth 1 -type f -name 'TapTether-*.apk' ! -name "$(basename "$OUTPUT")" -delete
 echo "APK: $OUTPUT"
-if [[ "$PUBLISH" -eq 1 ]]; then "$ROOT/bin/6-tt-publish-latest.sh"; fi
+if [[ "$PUBLISH" -eq 1 ]]; then bash "$ROOT/bin/6-tt-publish-latest.sh"; fi
