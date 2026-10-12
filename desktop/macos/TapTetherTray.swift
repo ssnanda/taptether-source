@@ -61,6 +61,14 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         }
     }
 
+    // macOS may reactivate the already-running Login Item rather than start a
+    // second process when the user opens TapTether Agent.app from Finder.
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows flag: Bool) -> Bool {
+        showSplash()
+        return true
+    }
+
     private func add(_ menu: NSMenu, _ name: String, _ action: Selector) {
         let item = NSMenuItem(title: name, action: action, keyEquivalent: "")
         item.target = self
