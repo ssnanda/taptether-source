@@ -174,26 +174,23 @@ class UbuntuSshProvisioner {
     }
   }
 
-  /// Only a verified SSH connection with existing login authorization can
-  /// append the phone's public key. Never transfers private material.
+  /// Only an SSH connection to a separately verified host can add the public
+  /// key after successful existing user authentication. No private key leaves
+  /// the phone.
   static Future<void> _authorizePhoneKey(SSHClient client) async {
     final publicKey = await PhoneSshKeyStore().publicKeyLine();
-    if (publicKey == null ||
-        !RegExp(r'^ssh-ed25519 [A-Za-z0-9+/=]+ taptether-mobile
-    final data = await rootBundle.load(asset);
-    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-  }
-}
-)
-            .hasMatch(publicKey)) {
+    final valid = publicKey != null &&
+        RegExp(r'^ssh-ed25519 [A-Za-z0-9+/=]+ taptether-mobile')
+            .firstMatch(publicKey)?.group(0) == publicKey;
+    if (!valid) {
       throw StateError('Generate or import a valid phone SSH key first.');
     }
+    final quotedKey = "'${publicKey!}'";
     final command = 'umask 077; mkdir -p "$HOME/.ssh" && '
         'chmod 700 "$HOME/.ssh" && touch "$HOME/.ssh/authorized_keys" && '
         'chmod 600 "$HOME/.ssh/authorized_keys" && '
-        '(grep -Fqx -- ' + "'$publicKey'" +
-        ' "$HOME/.ssh/authorized_keys" || printf "%s\\n" ' + "'$publicKey'" +
-        ' >> "$HOME/.ssh/authorized_keys")';
+        '(grep -Fqx -- $quotedKey "$HOME/.ssh/authorized_keys" || '
+        'printf "%s\\n" $quotedKey >> "$HOME/.ssh/authorized_keys")';
     final result = await client.runWithResult(command);
     if (result.exitCode != 0) {
       throw StateError('Could not authorize phone SSH public key on Ubuntu.');
