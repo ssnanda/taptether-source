@@ -7,6 +7,9 @@ UNIT='taptether-agent.service'
 SYS_SERVICE="/etc/systemd/system/$UNIT"
 OLD_USER_SERVICE="$HOME/.config/systemd/user/$UNIT"
 CTL="$HOME/.local/bin/taptetherctl"
+UPDATER="$HOME/.local/bin/taptether-agent-update"
+POWER_RULE="/etc/polkit-1/rules.d/80-taptether-shutdown.rules"
+POWER_DROPIN="/etc/systemd/system/taptether-agent.service.d/40-shutdown.conf"
 APP="$HOME/.local/share/applications/taptether.desktop"
 OLD_AUTOSTART="$HOME/.config/autostart/taptether-agent.desktop"
 CONFIG="$HOME/.config/taptether"
@@ -109,6 +112,9 @@ install() {
     cp "${BASH_SOURCE[0]}" "$CTL"
   fi
   chmod 700 "$CTL"
+  if [[ -f "$(dirname "$0")/7-tt-update-ubuntu.sh" ]]; then
+    install -m 0700 "$(dirname "$0")/7-tt-update-ubuntu.sh" "$UPDATER"
+  fi
   cat > "$APP" <<DESKTOP
 [Desktop Entry]
 Version=1.0
@@ -165,7 +171,7 @@ SYSTEMD
   printf '\n====== TapTether pairing details ======\n'
   pairing
   printf '=======================================\n'
-  note 'SSH controls: ~/.local/bin/taptetherctl {start|stop|restart|status|pairing|logs|permissions|pin}'
+  note 'SSH controls: ~/.local/bin/taptetherctl {start|stop|restart|status|pairing|check-update|update|enable-shutdown|disable-shutdown}'
   note 'Security: uinput grants control even at the lock/login screen. Restrict TCP 48321 to trusted LAN devices.'
 }
 start() {
@@ -189,6 +195,44 @@ permissions() {
     note 'TapTether service is not running.'
   fi
 }
+enable_shutdown() {
+  # Polkit grants only system shutdown, not generic sudo or root privileges.
+  local username temp
+  username="$(id -un)"
+  [[ "$username" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || fail 'Invalid username'
+  sudo install -d -m 0755 "$(dirname "$POWER_RULE")" "$(dirname "$POWER_DROPIN")"
+  temp="$(mktemp)"
+  cat >"$temp" <<EOF
+polkit.addRule(function(action, subject) {
+  if ((action.id === "org.freedesktop.login1.power-off" ||
+       action.id === "org.freedesktop.login1.power-off-multiple-sessions") &&
+      subject.user === "$username" && subject.isInGroup("taptether")) {
+    return polkit.Result.YES;
+  }
+});
+EOF
+  sudo install -m 0644 "$temp" "$POWER_RULE"
+  printf '[Service]\nEnvironment=TAPTETHER_ENABLE_SHUTDOWN=1\n' > "$temp"
+  sudo install -m 0644 "$temp" "$POWER_DROPIN"
+  rm -f "$temp"
+  sudo systemctl daemon-reload
+  sudo systemctl restart "$UNIT"
+  note 'Remote shutdown enabled. Any phone with the correct pairing token can shut down this computer.'
+}
+disable_shutdown() {
+  sudo rm -f "$POWER_RULE" "$POWER_DROPIN"
+  sudo systemctl daemon-reload
+  sudo systemctl restart "$UNIT"
+  note 'Remote shutdown disabled.'
+}
+check_update() {
+  [[ -f "$UPDATER" ]] || fail 'Updater missing. Re-run current Ubuntu installer from your Mac.'
+  bash "$UPDATER" check
+}
+update_agent() {
+  [[ -f "$UPDATER" ]] || fail 'Updater missing. Re-run current Ubuntu installer from your Mac.'
+  bash "$UPDATER" update
+}
 case "${1:-}" in
   install) install ;;
   start) start ;;
@@ -199,6 +243,10 @@ case "${1:-}" in
   logs) journalctl --no-pager -u "$UNIT" -n 60 ;;
   permissions) permissions ;;
   pin) pin ;;
+  check-update) check_update ;;
+  update) update_agent ;;
+  enable-shutdown) enable_shutdown ;;
+  disable-shutdown) disable_shutdown ;;
   session-start) : ;;  # Compatibility with old GNOME autostart references.
-  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|logs|permissions|pin}\n' >&2; exit 2 ;;
+  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|logs|permissions|pin|check-update|update|enable-shutdown|disable-shutdown}\n' >&2; exit 2 ;;
 esac
