@@ -66,7 +66,7 @@ func main() {
 		fmt.Printf("iPhone host: %s\n", a)
 	}
 	fmt.Println("Linux Wayland/X11 native uinput and macOS CoreGraphics are supported; macOS requires Accessibility permission. Windows input remains unimplemented.")
-	fmt.Println("No telemetry or outgoing network connections are implemented. Restrict inbound port 48321 to trusted LAN devices.")
+	fmt.Println("No telemetry or cloud connections are implemented. UDP 48322 answers local discovery probes. Restrict control port 48321 to trusted LAN devices.")
 	mux := http.NewServeMux()
     mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Cache-Control", "no-store")
