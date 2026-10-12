@@ -4,6 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(uname -s)" == Darwin ]] || { echo 'IPA builds require macOS with Xcode.' >&2;exit 1; }
 command -v flutter >/dev/null 2>&1 || { echo 'Flutter SDK not found.' >&2;exit 1; }
 command -v xcodebuild >/dev/null 2>&1 || { echo 'Xcode not found.' >&2;exit 1; }
+"$ROOT/bin/2e-tt-stage-mobile-agents.sh"
 cd "$ROOT/app"
 flutter pub get
 version="$(cat "$ROOT/VERSION")"
