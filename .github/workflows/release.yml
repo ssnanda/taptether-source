@@ -96,7 +96,7 @@ jobs:
         run: |
           test -s desktop/ubuntu/taptether_tray.py
           test -s desktop/macos/TapTetherTray.swift
-          xcrun swiftc -frontend -parse desktop/macos/TapTetherTray.swift
+          xcrun swiftc -typecheck desktop/macos/TapTetherTray.swift
           grep -q 'TapTetherTray' bin/2b-tt-macos.sh
           grep -q 'taptether_tray.py' bin/5-tt-remote-install-ubuntu.sh
 
