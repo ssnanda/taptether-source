@@ -190,8 +190,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
 let lockPath = NSTemporaryDirectory() + "taptether-tray-" + String(getuid()) + ".lock"
 let lockFD = Darwin.open(lockPath, O_RDWR | O_CREAT, mode_t(0o600))
 if lockFD >= 0 && flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
-    DistributedNotificationCenter.default().post(
-        name: splashNotice, object: nil, userInfo: nil, deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(
+        splashNotice, object: nil, userInfo: nil, deliverImmediately: true)
     exit(0)
 }
 
