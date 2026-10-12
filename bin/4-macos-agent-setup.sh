@@ -5,6 +5,7 @@ SELF="$(cd "$(dirname "$0")" && pwd)"
 BIN="$HOME/.local/bin"
 APP="$BIN/taptether-agent"
 CTL="$BIN/taptetherctl-mac"
+UPDATER="$BIN/taptether-agent-update-mac"
 PLIST="$HOME/Library/LaunchAgents/com.taptether.agent.plist"
 LOGDIR="$HOME/Library/Logs/TapTether"
 CONF="$HOME/Library/Application Support/taptether"
@@ -25,6 +26,10 @@ pairing() {
 }
 install_agent() {
   [[ "$(id -u)" -ne 0 ]] || { notice 'Run as normal macOS user, never with sudo' >&2; exit 1; }
+  local shutdown_enabled=0
+  if [[ -f "$PLIST" ]] && /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN" "$PLIST" 2>/dev/null | grep -qx 1; then
+    shutdown_enabled=1
+  fi
   mkdir -p "$BIN" "$(dirname "$PLIST")" "$LOGDIR"
   chmod 700 "$LOGDIR"
   if [[ "$SELF/taptether-agent" != "$APP" ]]; then
@@ -32,6 +37,10 @@ install_agent() {
     cp "$SELF/taptether-agent" "$APP"
   fi
   if [[ "$0" != "$CTL" ]]; then cp "$0" "$CTL"; fi
+  if [[ -f "$SELF/taptether-agent-update-mac" && "$SELF/taptether-agent-update-mac" != "$UPDATER" ]]; then
+    cp "$SELF/taptether-agent-update-mac" "$UPDATER"
+    chmod 700 "$UPDATER"
+  fi
   chmod 755 "$APP" "$CTL"
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -45,6 +54,10 @@ install_agent() {
 <key>StandardErrorPath</key><string>$LOGDIR/agent.stderr.log</string>
 </dict></plist>
 EOF
+  if [[ "$shutdown_enabled" -eq 1 ]]; then
+    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN string 1" "$PLIST"
+  fi
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
   launchctl kickstart -k "$TARGET/$LABEL"
@@ -52,6 +65,29 @@ EOF
   notice 'Background agent installed, started and enabled at login.'
   notice 'Allow TapTether in macOS System Settings > Privacy & Security > Accessibility to enable mouse/keyboard.'
   pairing
+}
+enable_shutdown() {
+  [[ -f "$PLIST" ]] || { notice 'Install the macOS agent first.' >&2; exit 1; }
+  /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Delete :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN" "$PLIST" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN string 1" "$PLIST"
+  launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
+  launchctl bootstrap "$TARGET" "$PLIST"
+  notice 'Remote shutdown enabled; macOS may still request System Events automation approval.'
+}
+disable_shutdown() {
+  /usr/libexec/PlistBuddy -c "Delete :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN" "$PLIST" >/dev/null 2>&1 || true
+  launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
+  launchctl bootstrap "$TARGET" "$PLIST"
+  notice 'Remote shutdown disabled.'
+}
+check_update() {
+  [[ -f "$UPDATER" ]] || { notice 'Update helper missing; install the newest macOS agent archive.' >&2; exit 1; }
+  bash "$UPDATER" check
+}
+update_agent() {
+  [[ -f "$UPDATER" ]] || { notice 'Update helper missing; install the newest macOS agent archive.' >&2; exit 1; }
+  bash "$UPDATER" update
 }
 case "$@" in
   install) install_agent ;;
@@ -61,5 +97,9 @@ case "$@" in
   status) launchctl print "$TARGET/$LABEL" ;;
   pairing) pairing ;;
   logs) tail -n 50 "$LOGDIR/agent.stderr.log" ;;
-  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|pairing|logs}' >&2; exit 2 ;;
+  check-update) check_update ;;
+  update) update_agent ;;
+  enable-shutdown) enable_shutdown ;;
+  disable-shutdown) disable_shutdown ;;
+  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|pairing|logs|check-update|update|enable-shutdown|disable-shutdown}' >&2; exit 2 ;;
 esac
