@@ -8,6 +8,7 @@ HOST="${1:-sandip@192.168.68.87}"
 }
 version="$(cat "$ROOT/VERSION")"
 "$ROOT/bin/2b-tt-ubuntu.sh"
+python3 "$ROOT/bin/9-tt-brand-icons.py"
 arch="$(ssh "$HOST" 'dpkg --print-architecture')"
 [[ "$arch" == amd64 || "$arch" == arm64 ]] || {
   echo "Unsupported remote Ubuntu architecture: $arch" >&2; exit 1;
