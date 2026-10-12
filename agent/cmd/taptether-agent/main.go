@@ -6,7 +6,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/ssnanda/taptether.com/agent/internal/discovery"
 	"github.com/ssnanda/taptether.com/agent/internal/input"
+	"github.com/ssnanda/taptether.com/agent/internal/identity"
 	"github.com/ssnanda/taptether.com/agent/internal/power"
 )
 
@@ -36,6 +36,8 @@ var version = "dev"
 func main() {
 	addr := flag.String("listen", ":48321", "TLS listen address; use a LAN firewall for additional restriction")
 	showVersion := flag.Bool("version", false, "Print the agent version")
+	listDevices := flag.Bool("list-devices", false, "List authorized phone IDs and names")
+	revokeDevice := flag.String("revoke-device", "", "Revoke an authorized phone ID")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
@@ -45,6 +47,13 @@ func main() {
 	fatalIf(err)
 	dir = filepath.Join(dir, "taptether")
 	fatalIf(os.MkdirAll(dir, 0700))
+	registry := identity.New(filepath.Join(dir, "authorized_devices.json"))
+	if *listDevices {
+		devices,err:=registry.List();fatalIf(err)
+		for _,d:=range devices { fmt.Printf("%s  %s\n",d.ID,d.Name) }
+		return
+	}
+	if *revokeDevice!="" {fatalIf(registry.Revoke(*revokeDevice));fmt.Println("Device revoked:",*revokeDevice);return}
 	certFile, keyFile, tokenFile := filepath.Join(dir, "server.crt"), filepath.Join(dir, "server.key"), filepath.Join(dir, "pairing.token")
 	if err := ensureCertificate(certFile, keyFile); err != nil {
 		log.Fatal(err)
@@ -68,6 +77,8 @@ func main() {
 	fmt.Println("Linux Wayland/X11 native uinput and macOS CoreGraphics are supported; macOS requires Accessibility permission. Windows input remains unimplemented.")
 	fmt.Println("No telemetry or cloud connections are implemented. UDP 48322 answers local discovery probes. Restrict control port 48321 to trusted LAN devices.")
 	mux := http.NewServeMux()
+	access := &identityAPI{devices: registry, legacyToken: token}
+	access.Register(mux)
     mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Cache-Control", "no-store")
         if r.Method != http.MethodGet {
@@ -78,8 +89,7 @@ func main() {
             http.Error(w, "LAN TLS required", http.StatusForbidden)
             return
         }
-        got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-        if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+        if !access.authorized(r) {
             http.Error(w, "not paired", http.StatusUnauthorized)
             return
         }
@@ -99,8 +109,7 @@ func main() {
 			http.Error(w, "LAN TLS required", http.StatusForbidden)
 			return
 		}
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+		if !access.authorized(r) {
 			http.Error(w, "not paired", http.StatusUnauthorized)
 			return
 		}
