@@ -42,6 +42,35 @@ install_agent() {
     chmod 700 "$UPDATER"
   fi
   chmod 755 "$APP" "$CTL"
+  # Create a clickable branded Mac app launcher; the actual agent still runs under launchd.
+  if [[ -s "$SELF/TapTether.icns" ]]; then
+    local bundle="$HOME/Applications/TapTether Agent.app"
+    mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+    cp "$SELF/TapTether.icns" "$bundle/Contents/Resources/TapTether.icns"
+    cat > "$bundle/Contents/MacOS/TapTetherLauncher" <<'LAUNCHER'
+#!/bin/bash
+exec "$HOME/.local/bin/taptetherctl-mac" start
+LAUNCHER
+    chmod 755 "$bundle/Contents/MacOS/TapTetherLauncher"
+    cat > "$bundle/Contents/Info.plist" <<'MACPLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.taptether.agent.launcher</string>
+<key>CFBundleExecutable</key><string>TapTetherLauncher</string>
+<key>CFBundleIconFile</key><string>TapTether.icns</string>
+<key>CFBundleName</key><string>TapTether Agent</string>
+<key>CFBundleDisplayName</key><string>TapTether Agent</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSUIElement</key><true/>
+</dict></plist>
+MACPLIST
+    if command -v codesign >/dev/null 2>&1; then
+      codesign --force --deep --sign - --timestamp=none "$bundle" >/dev/null 2>&1 || true
+    fi
+    notice "Created branded app launcher: $bundle"
+  fi
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
