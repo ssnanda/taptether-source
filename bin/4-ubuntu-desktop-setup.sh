@@ -130,11 +130,11 @@ install() {
   fi
   chmod 700 "$CTL"
   if [[ -f "$(dirname "$0")/7-tt-update-ubuntu.sh" ]]; then
-    install -m 0700 "$(dirname "$0")/7-tt-update-ubuntu.sh" "$UPDATER"
+    command install -m 0700 "$(dirname "$0")/7-tt-update-ubuntu.sh" "$UPDATER"
   fi
   if [[ -s "$(dirname "$0")/TapTether-icon.png" ]]; then
-    install -d -m 0755 "$HOME/.local/share/icons/hicolor/512x512/apps"
-    install -m 0644 "$(dirname "$0")/TapTether-icon.png" "$HOME/.local/share/icons/hicolor/512x512/apps/taptether.png"
+    command install -d -m 0755 "$HOME/.local/share/icons/hicolor/512x512/apps"
+    command install -m 0644 "$(dirname "$0")/TapTether-icon.png" "$HOME/.local/share/icons/hicolor/512x512/apps/taptether.png"
   else
     note 'TapTether icon was not supplied; reinstall using the current SSH installer for branding.'
   fi
