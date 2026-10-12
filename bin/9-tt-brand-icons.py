@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import plistlib
+import xml.etree.ElementTree as ET
 import base64
 from io import BytesIO
 import json
@@ -61,6 +63,38 @@ def android_icons(image: Image.Image) -> None:
         png(image, res / f"mipmap-{density}/ic_launcher.png", size)
     print("Android: generated five mipmap launcher sizes")
 
+def platform_network_permissions() -> None:
+    # Flutter creates these native runner files during CI. Keep permissions
+    # deterministic on Mac dev machines and clean GitHub runners.
+    ios = APP / "ios/Runner/Info.plist"
+    if ios.is_file():
+        with ios.open("rb") as fh:
+            info = plistlib.load(fh)
+        info["NSLocalNetworkUsageDescription"] = (
+            "TapTether searches your local Wi-Fi network for computers "
+            "you choose to control."
+        )
+        info["CFBundleDisplayName"] = "TapTether"
+        with ios.open("wb") as fh:
+            plistlib.dump(info, fh)
+        print("iOS: configured local network discovery permission")
+    android = APP / "android/app/src/main/AndroidManifest.xml"
+    if android.is_file():
+        ET.register_namespace("android", "http://schemas.android.com/apk/res/android")
+        tree = ET.parse(android)
+        root = tree.getroot()
+        android_name = "{http://schemas.android.com/apk/res/android}name"
+        if not any(item.get(android_name) == "android.permission.INTERNET"
+                   for item in root.findall("uses-permission")):
+            perm = ET.Element("uses-permission")
+            perm.set(android_name, "android.permission.INTERNET")
+            root.insert(0, perm)
+        application = root.find("application")
+        if application is not None:
+            application.set("{http://schemas.android.com/apk/res/android}label", "TapTether")
+        tree.write(android, encoding="utf-8", xml_declaration=True)
+        print("Android: configured LAN network permission")
+
 def macos_icns(image: Image.Image) -> None:
     if sys.platform != "darwin" or not shutil.which("iconutil"):
         return
@@ -95,6 +129,7 @@ def main() -> None:
     png(app_art, ROOT / "tv/lg-webos/largeIcon.png", 130)
     ios_icons(app_art)
     android_icons(app_art)
+    platform_network_permissions()
     macos_icns(app_art)
     print("Updated iOS, Android, LG webOS, AltStore, macOS and Ubuntu branding assets")
 
