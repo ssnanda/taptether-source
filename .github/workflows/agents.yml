@@ -1,17 +1,8 @@
 name: Build TapTether agents
+# Build agents only on explicit request; normal source commits do not run CI.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'agent/**'
-      - 'bin/2b-tt-agent.sh'
-      - 'bin/2b-tt-ubuntu.sh'
-      - 'bin/2b-tt-deb.sh'
-      - 'bin/2b-tt-macos.sh'
-      - 'bin/4-macos-agent-setup.sh'
-      - 'VERSION'
-      - '.github/workflows/agents.yml'
   workflow_dispatch:
+
 concurrency:
   group: agents-${{ github.ref }}
   cancel-in-progress: true
