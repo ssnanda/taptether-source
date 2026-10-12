@@ -41,7 +41,7 @@ Install, start at boot and show pairing token and TLS fingerprint. Retrieve deta
 
 ### Ubuntu from a downloaded .deb
 
-The current amd64/arm64 \`.deb\` is self-contained: it installs the background Go
+The current amd64/arm64 `.deb` is self-contained: it installs the background Go
 agent plus the matching tray, splash launcher, update helper and icon. On the
 Ubuntu computer, first install the downloaded package, then finish the
 **per-user** desktop/service setup as the actual desktop user (not root):
@@ -55,7 +55,7 @@ It also enables tray autostart at desktop login; the Go agent is independent
 of that menu process. Installing only the .deb deliberately does not choose
 a desktop user or start a privileged service.
 
-Manual \`taptetherctl update\` refreshes the installed user-facing tray and
+Manual `taptetherctl update` refreshes the installed user-facing tray and
 controllers from the verified package; exit and log in again to load the
 updated tray. Existing private pairing identity remains unchanged.
 
