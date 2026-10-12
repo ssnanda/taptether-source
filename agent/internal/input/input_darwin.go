@@ -99,7 +99,10 @@ var macCodes = map[string]int{
     "6":22, "5":23, "9":25, "7":26, "8":28, "0":29, "o":31, "u":32, "i":34, "p":35,
     "l":37, "j":38, "k":40, "n":45, "m":46, "space":49, "tab":48, "escape":53, "esc":53,
     "return":36, "enter":36, "backspace":51, "delete":117, "left":123, "right":124,
-    "down":125, "up":126,
+    "down":125, "up":126, "home":115, "end":119, "pageup":116, "pagedown":121,
+    "equal":24, "minus":27,
+    "f1":122, "f2":120, "f3":99, "f4":118, "f5":96, "f6":97,
+    "f7":98, "f8":100, "f9":101, "f10":109, "f11":103, "f12":111,
 }
 var macModifiers = map[string]uint64{
     "ctrl":macControl, "control":macControl, "shift":macShift,
