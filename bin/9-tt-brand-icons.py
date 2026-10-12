@@ -75,6 +75,9 @@ def platform_network_permissions() -> None:
             "you choose to control."
         )
         info["CFBundleDisplayName"] = "TapTether"
+        info["NSCameraUsageDescription"] = (
+            "TapTether scans a pairing QR displayed on your computer."
+        )
         with ios.open("wb") as fh:
             plistlib.dump(info, fh)
         print("iOS: configured local network discovery permission")
