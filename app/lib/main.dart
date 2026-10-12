@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'discovery.dart';
+import 'phone_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,18 +33,24 @@ class LocalAgent {
   HttpClient? _client;
   Uri? _base;
   String? _token;
+  PhoneIdentity? _identity;
+  String? _deviceId;
+  String? _session;
+  DateTime? _sessionExpires;
   bool _shutdownEnabled = false;
   bool get shutdownEnabled => _shutdownEnabled;
 
   bool get configured => _base != null && _client != null;
 
-  void configure(String host, String token, String fingerprint) {
+  void configure(String host, String token, String fingerprint, {
+    PhoneIdentity? identity, String? deviceId,
+  }) {
     host = host.trim();
     final expected = fingerprint.replaceAll(RegExp(r'[^a-fA-F0-9]'), '').toUpperCase();
     if (expected.length != 64) {
       throw const FormatException('Enter the complete 64-character TLS SHA-256 fingerprint.');
     }
-    if (token.trim().length < 20) {
+    if (token.trim().length < 20 && (identity == null || deviceId == null)) {
       throw const FormatException('Enter the pairing token printed by the agent.');
     }
     if (!_isLocalHost(host)) {
@@ -68,6 +75,10 @@ class LocalAgent {
     _client = client;
     _base = Uri(scheme: 'https', host: host, port: 48321);
     _token = token.trim();
+    _identity = identity;
+    _deviceId = deviceId;
+    _session = null;
+    _sessionExpires = null;
   }
 
   static bool _isLocalHost(String host) {
@@ -81,10 +92,81 @@ class LocalAgent {
         (a == 192 && b == 168) || a == 127;
   }
 
+  Future<Map<String, dynamic>> _postJson(
+      String endpoint, Map<String, Object> body, String bearer) async {
+    if (!configured) throw StateError('Agent is not configured.');
+    final request = await _client!.postUrl(_base!.resolve(endpoint));
+    request.headers.contentType = ContentType.json;
+    if (bearer.isNotEmpty) {
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
+    }
+    request.write(jsonEncode(body));
+    final response = await request.close().timeout(const Duration(seconds: 6));
+    final text = await utf8.decoder.bind(response).join();
+    if (response.statusCode != 200) {
+      throw StateError('Agent $endpoint: HTTP ${response.statusCode}');
+    }
+    final result = jsonDecode(text);
+    if (result is! Map<String, dynamic>) {
+      throw const FormatException('Unexpected agent authentication response.');
+    }
+    return result;
+  }
+
+  Future<String> enrollPhone(PhoneIdentity phone, String name) async {
+    if ((_token ?? '').length < 20) {
+      throw StateError('Owner pairing token is required for enrollment.');
+    }
+    final result = await _postJson('/api/pair', {
+      'name': name,
+      'publicKey': phone.encodedPublicKey,
+    }, _token!);
+    final id = result['id'];
+    if (id is! String || id != phone.id) {
+      throw StateError('Agent device identity does not match this phone.');
+    }
+    return id;
+  }
+
+  Future<String> _bearer() async {
+    final identity = _identity;
+    final id = _deviceId;
+    if (identity == null || id == null) return _token ?? '';
+    final cached = _session;
+    if (cached != null && _sessionExpires != null &&
+        _sessionExpires!.isAfter(DateTime.now().add(const Duration(seconds: 30)))) {
+      return cached;
+    }
+    final challenge = await _postJson('/api/auth/challenge', {'id': id}, '');
+    final nonce = challenge['nonce'];
+    if (nonce is! String || nonce.length < 32) {
+      throw const FormatException('Agent challenge is invalid.');
+    }
+    final signature = await identity.signChallenge(nonce);
+    final response = await _postJson('/api/auth/session', {
+      'id': id, 'nonce': nonce, 'signature': signature,
+    }, '');
+    final token = response['token'];
+    if (token is! String || token.length < 32) {
+      throw const FormatException('Agent session invalid.');
+    }
+    _session = token;
+    _sessionExpires = DateTime.now().add(const Duration(minutes: 14));
+    return token;
+  }
+
+  void usePhoneKey(PhoneIdentity identity, String id) {
+    _identity = identity;
+    _deviceId = id;
+    _token = null;
+    _session = null;
+    _sessionExpires = null;
+  }
+
   Future<void> send(String type, [Map<String, Object> details = const {}]) async {
     if (!configured) throw StateError('Connect to your local agent first.');
     final req = await _client!.postUrl(_base!.resolve('/api/control'));
-    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
     req.headers.contentType = ContentType.json;
     req.write(jsonEncode({'type': type, ...details}));
     final res = await req.close().timeout(const Duration(seconds: 5));
@@ -99,7 +181,7 @@ class LocalAgent {
     if (!configured) return null;
     try {
       final request = await _client!.getUrl(_base!.resolve('/api/info'));
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
       final response = await request.close().timeout(const Duration(seconds: 4));
       if (response.statusCode != 200) {
         await response.drain<void>();
@@ -121,6 +203,10 @@ class LocalAgent {
     _client = null;
     _base = null;
     _token = null;
+    _identity = null;
+    _deviceId = null;
+    _session = null;
+    _sessionExpires = null;
     _shutdownEnabled = false;
   }
 }
@@ -208,7 +294,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     token.text = device.token;
     pin.text = device.fingerprint;
     discoveredName = device.name;
-    await connect(existingId: device.id);
+    await connect(existingId: device.id, deviceId: device.deviceId);
   }
 
   Future<void> forgetComputer(SavedComputer device) async {
@@ -421,10 +507,27 @@ class _RemoteScreenState extends State<RemoteScreen> {
     }
   }
 
-  Future<void> connect({String? existingId}) async {
+  Future<void> connect({String? existingId, String? deviceId}) async {
     try {
-      agent.configure(host.text, token.text, pin.text);
+      final phone = await PhoneIdentity.loadOrCreate();
+      agent.configure(host.text, token.text, pin.text,
+        identity: deviceId != null && deviceId.isNotEmpty ? phone : null,
+        deviceId: deviceId != null && deviceId.isNotEmpty ? deviceId : null);
       await agent.send('ping');
+      // Upgrade legacy token pairing to a device-specific signed identity.
+      var enrolledId = deviceId ?? '';
+      if (enrolledId.isEmpty) {
+        try {
+          enrolledId = await agent.enrollPhone(phone, 'Phone');
+          agent.usePhoneKey(phone, enrolledId);
+          await agent.send('ping');
+        } catch (_) {
+          // Older agents still accept legacy token pairing until upgraded.
+          agent.configure(host.text, token.text, pin.text);
+          await agent.send('ping');
+          enrolledId = '';
+        }
+      }
       final currentAgent = await agent.agentVersion();
       if (mounted) {
         setState(() {
@@ -445,7 +548,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
           id: existingId ?? existing?.id ?? SavedComputer.newId(),
           name: discoveredName ?? existing?.name ?? host.text.trim(),
           host: host.text.trim(),
-          token: token.text.trim(),
+          token: enrolledId.isEmpty ? token.text.trim() : '',
+          deviceId: enrolledId,
           fingerprint: pin.text.replaceAll(RegExp(r'[^a-fA-F0-9]'), '').toUpperCase(),
           platform: discovered.isEmpty
               ? (existing?.platform ?? 'computer') : discovered.first.platform,
