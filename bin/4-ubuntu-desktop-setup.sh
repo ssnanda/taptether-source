@@ -151,13 +151,21 @@ install() {
   else
     note 'Desktop tray script not staged; installer will still run the background agent.'
   fi
+  local launcher_exec launcher_comment
+  if [[ -s "$TRAY" ]]; then
+    launcher_exec="/usr/bin/python3 $TRAY --splash"
+    launcher_comment='Open TapTether desktop splash and tray'
+  else
+    launcher_exec="$CTL start"
+    launcher_comment='Start TapTether background agent'
+  fi
   cat > "$APP" <<DESKTOP
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=TapTether Agent
-Comment=Open the TapTether splash screen and desktop tray
-Exec=/usr/bin/python3 $TRAY --splash
+Comment=$launcher_comment
+Exec=$launcher_exec
 Icon=taptether
 Terminal=false
 StartupNotify=true
