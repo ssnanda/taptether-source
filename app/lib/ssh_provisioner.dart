@@ -185,12 +185,12 @@ class UbuntuSshProvisioner {
     if (!valid) {
       throw StateError('Generate or import a valid phone SSH key first.');
     }
-    final quotedKey = "'${publicKey!}'";
-    final command = 'umask 077; mkdir -p "$HOME/.ssh" && '
-        'chmod 700 "$HOME/.ssh" && touch "$HOME/.ssh/authorized_keys" && '
-        'chmod 600 "$HOME/.ssh/authorized_keys" && '
-        '(grep -Fqx -- $quotedKey "$HOME/.ssh/authorized_keys" || '
-        'printf "%s\\n" $quotedKey >> "$HOME/.ssh/authorized_keys")';
+    final quotedKey = "'${publicKey}'";
+    final command = 'umask 077; mkdir -p "\$HOME/.ssh" && '
+        'chmod 700 "\$HOME/.ssh" && touch "\$HOME/.ssh/authorized_keys" && '
+        'chmod 600 "\$HOME/.ssh/authorized_keys" && '
+        '(grep -Fqx -- $quotedKey "\$HOME/.ssh/authorized_keys" || '
+        'printf "%s\\n" $quotedKey >> "\$HOME/.ssh/authorized_keys")';
     final result = await client.runWithResult(command);
     if (result.exitCode != 0) {
       throw StateError('Could not authorize phone SSH public key on Ubuntu.');
