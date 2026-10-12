@@ -4,7 +4,7 @@ Your devices. Your control. Your network.
 
 LAN-first remote control from a Flutter iPhone/Android client to authenticated Linux and macOS input agents.
 
-## 0.4.1+11
+## 0.5.0+12
 
 - Responsive trackpad: adjustable 1x–8x sensitivity (default 3.8x instead of 1.7x), with queued movement rather than dropped pointer updates.
 - Ubuntu amd64/arm64: Wayland and X11 native /dev/uinput mouse, keyboard and media keys.
@@ -136,3 +136,21 @@ TapTether app and agent icon artwork is stored under assets/branding in compact 
 - The published TapTether-icon.png used by the public AltStore feed.
 
 Run python3 -m pip install Pillow once on a Mac if it is not installed. Both mobile build scripts run the icon generator automatically. GitHub Actions installs Pillow and validates all expected platform outputs before building or publishing. Generated image sizes are not committed; only their approved artwork sources are versioned.
+
+## v0.5 phase one — discover and remember trusted computers
+
+TapTether now supports:
+- A "My Devices" dashboard with one-tap reconnection and explicit device removal.
+- On-demand LAN discovery via a small UDP probe on port 48322, requiring no hosted server. The agent responds with its hostname, platform, version and service port **but never shares tokens, keys or certificate fingerprints**.
+- The phone tries LAN broadcast and limited /24 on-link unicast probing, to accommodate networks that block broadcasts. Discovery is best effort; manual IP entry remains available.
+- Secure saved pairing profiles after **both** the pinned TLS certificate and the agent's existing bearer token have been verified by a successful ping. iOS Keychain and Android secure storage protect saved tokens and pins.
+- Platform network permissions generated into the iOS and Android runners as part of the icon/build preparation.
+
+**On Ubuntu:** Install the latest agent using
+\`./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87\` from the Mac. Allow trusted LAN UDP/48322 inbound if your host firewall blocks discovery; do not open it to the public Internet.
+
+**Compatibility:** Old agents still accept manual IP+token+fingerprint pairing, but will not appear in discovery until upgraded. The pairing tokens and certificate identities remain unchanged when upgrading.
+
+**Remaining v0.5 features (not yet shipped):** Native public/private per-device key credentials, first-time pairing approval/QR enrollment, and SSH installation directly from the mobile app. For those capabilities, follow a separate protocol update with replay protection, device revocation, host-key verification, and user-authorized sudo operations. Do not interpret broadcast discovery as proof of device identity or silently install software on discovered hosts.
+
+**Privacy:** App launch version checking is the only intentional public GitHub request; discovery and remote control stay on the local network. No discovery data is used for telemetry.
