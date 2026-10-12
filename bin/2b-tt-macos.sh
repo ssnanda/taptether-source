@@ -9,9 +9,10 @@ for arch in amd64 arm64; do
   temp="$(mktemp -d)"
   cp "$ROOT/dist/agents/TapTetherAgent-darwin-$arch-$version" "$temp/taptether-agent"
   cp "$ROOT/bin/4-macos-agent-setup.sh" "$temp/taptetherctl-mac"
-  chmod +x "$temp/taptether-agent" "$temp/taptetherctl-mac"
+  cp "$ROOT/bin/8-tt-update-macos.sh" "$temp/taptether-agent-update-mac"
+  chmod +x "$temp/taptether-agent" "$temp/taptetherctl-mac" "$temp/taptether-agent-update-mac"
   out="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.tar.gz"
-  COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" taptether-agent taptetherctl-mac
+  COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" taptether-agent taptetherctl-mac taptether-agent-update-mac
   rm -rf "$temp"
   echo "macOS installer archive: $out"
 done
