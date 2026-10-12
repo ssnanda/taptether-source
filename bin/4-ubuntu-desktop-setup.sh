@@ -87,13 +87,8 @@ pairing_qr() {
   host="$(hostname -I | awk '{print $1}')"
   token="$(tr -d '\n' < "$CONFIG/pairing.token")"
   fingerprint="$(openssl x509 -in "$CONFIG/server.crt" -outform DER | sha256sum | awk '{print toupper($1)}')"
-  uri="$(python3 - "$host" "$token" "$fingerprint" <<'PY'
-import sys,urllib.parse
-host,token,fingerprint=sys.argv[1:]
-print('taptether://pair?'+urllib.parse.urlencode({'v':'1','host':host,
-  'token':token,'fingerprint':fingerprint}))
-PY
-)"
+  uri="$(printf '%s\n%s\n%s\n' "$host" "$token" "$fingerprint" |
+    python3 -c 'import sys,urllib.parse; h,t,f=sys.stdin.read().splitlines(); print("taptether://pair?"+urllib.parse.urlencode({"v":"1","host":h,"token":t,"fingerprint":f}))')"
   note 'PRIVATE pairing QR — show only on a trusted terminal.'
   printf '%s' "$uri" | qrencode -t ANSIUTF8 -o -
 }
