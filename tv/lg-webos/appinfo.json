@@ -1,0 +1,9 @@
+{
+  "id": "com.taptether.companion",
+  "version": "0.1.0",
+  "vendor": "TapTether",
+  "type": "web",
+  "main": "index.html",
+  "title": "TapTether Companion",
+  "resolution": "1920x1080"
+}
