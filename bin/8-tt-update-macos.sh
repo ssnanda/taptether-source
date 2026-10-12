@@ -45,7 +45,13 @@ actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
 [[ "$actual" == "$digest" ]] || { echo 'SHA-256 mismatch; aborting' >&2; exit 1; }
 # Permit only the three expected installer members. Never extract arbitrary paths from downloads.
 members="$(tar -tzf "$archive" | sort)"
-[[ "$members" == $'taptether-agent\ntaptether-agent-update-mac\ntaptetherctl-mac' ]] || { echo 'Unexpected archive files; aborting' >&2; exit 1; }
+[[ "$members" ==  ]] || { echo 'Unexpected archive files; aborting' >&2; exit 1; }
+tar -xzf "$archive" -C "$tmp"
+chmod 700 "$tmp/taptetherctl-mac"
+chmod 755 "$tmp/taptether-agent"
+echo "Verified macOS archive SHA-256. Installing $latest..."
+"$tmp/taptetherctl-mac" install
+TapTether.icns\ntaptether-agent\ntaptether-agent-update-mac\ntaptetherctl-mac' ]] || { echo 'Unexpected archive files; aborting' >&2; exit 1; }
 tar -xzf "$archive" -C "$tmp"
 chmod 700 "$tmp/taptetherctl-mac"
 chmod 755 "$tmp/taptether-agent"
