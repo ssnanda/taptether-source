@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
+import 'clipboard_chunks.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
 import 'qr_pairing.dart';
@@ -723,23 +724,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
         if (mounted) setState(() => status = 'Phone clipboard has no text.');
         return;
       }
-      if (utf8.encode(value).length > 4096) {
-        throw const FormatException('Clipboard exceeds the 4 KB safety limit.');
+      for (final chunk in clipboardChunks(value)) {
+        await agent.send('text', {'text': chunk});
       }
-      var chunk = '';
-      var size = 0;
-      for (final rune in value.runes) {
-        final character = String.fromCharCode(rune);
-        final bytes = utf8.encode(character).length;
-        if (size + bytes > 256) {
-          await agent.send('text', {'text': chunk});
-          chunk = '';
-          size = 0;
-        }
-        chunk += character;
-        size += bytes;
-      }
-      if (chunk.isNotEmpty) await agent.send('text', {'text': chunk});
       if (mounted) setState(() =>
           status = 'Typed phone clipboard into the active computer window.');
     } catch (error) {
