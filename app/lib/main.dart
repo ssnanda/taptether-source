@@ -417,7 +417,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     }
   }
 
-  Future<void> connect() async {
+  Future<void> connect({String? existingId}) async {
     try {
       agent.configure(host.text, token.text, pin.text);
       await agent.send('ping');
@@ -431,6 +431,26 @@ class _RemoteScreenState extends State<RemoteScreen> {
                 newerThan(_latestReleaseVersion!, currentAgent)
             ? _latestReleaseVersion : null;
         });
+      }
+      // Persist only after certificate pin verification and authenticated ping.
+      try {
+        final matches = savedComputers.where((d) => d.host == host.text.trim());
+        final existing = matches.isEmpty ? null : matches.first;
+        final discovered = nearbyComputers.where((d) => d.host == host.text.trim());
+        final device = SavedComputer(
+          id: existingId ?? existing?.id ?? SavedComputer.newId(),
+          name: discoveredName ?? existing?.name ?? host.text.trim(),
+          host: host.text.trim(),
+          token: token.text.trim(),
+          fingerprint: pin.text.replaceAll(RegExp(r'[^a-fA-F0-9]'), '').toUpperCase(),
+          platform: discovered.isEmpty
+              ? (existing?.platform ?? 'computer') : discovered.first.platform,
+        );
+        final updated = await deviceStore.upsert(device);
+        if (mounted) setState(() => savedComputers = updated);
+      } catch (_) {
+        if (mounted) setState(() =>
+            status = 'Connected, but secure storage could not save this pairing.');
       }
     } catch (e) {
       agent.disconnect();
@@ -467,9 +487,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
         const SizedBox(height: 12),
         updateNotices(),
         if (!connected) ...[
+          deviceDashboard(),
           const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          const Text('Run the agent on Ubuntu and copy its LAN IP, token and certificate SHA-256 fingerprint. These credentials are kept in memory only.'),
+          const Text('For first-time pairing, enter the token and TLS SHA-256 fingerprint from your computer. Verified devices are saved securely on this phone.'),
           const SizedBox(height: 12),
           TextField(controller: host, autocorrect: false,
               decoration: const InputDecoration(labelText: 'Computer LAN IP (e.g. 192.168.1.10)', border: OutlineInputBorder())),
@@ -482,6 +503,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
           const SizedBox(height: 10),
           FilledButton.icon(onPressed: connect, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
         ] else ...[
+          OutlinedButton.icon(
+            onPressed: () {
+              agent.disconnect();
+              setState(() => status = 'Select a device to connect.');
+            },
+            icon: const Icon(Icons.swap_horiz),
+            label: const Text('Switch computer'),
+          ),
           const Text('Trackpad', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           const Text('Move: one finger  ·  Scroll: two fingers  ·  Tap: click  ·  Long press: right click'),
           Row(children: [
