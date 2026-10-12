@@ -88,7 +88,7 @@ coverage/
 TT_GITIGNORE
 
 write_new VERSION <<'TT_VERSION'
-0.3.0+6
+0.3.1+7
 TT_VERSION
 
 # Flutter tooling creates native iOS and Android runner projects; do not hand-code those.
@@ -108,7 +108,7 @@ if [[ ! -e .taptether-bootstrapped ]]; then
 name: taptether
 description: Local-first universal remote for trusted personal devices.
 publish_to: none
-version: 0.3.0+6
+version: 0.3.1+7
 environment:
   sdk: '>=3.4.0 <4.0.0'
 dependencies:
@@ -1084,195 +1084,208 @@ TT_PUSH
 
 write_new bin/4-ubuntu-desktop-setup.sh <<'TT_DESKTOP_SH'
 #!/usr/bin/env bash
-# TapTether GNOME Wayland/X11 desktop setup and SSH control.
-# Run as your ordinary Ubuntu desktop user. setup uses sudo only for /dev/uinput access.
+# TapTether Ubuntu installer: restricted uinput access, boot service, dock launcher, SSH management.
+# Installs a systemd SYSTEM service running as this ordinary desktop user (never root).
 set -euo pipefail
 
-CTL="$HOME/.local/bin/taptetherctl"
 UNIT='taptether-agent.service'
-SERVICE="$HOME/.config/systemd/user/$UNIT"
+SYS_SERVICE="/etc/systemd/system/$UNIT"
+OLD_USER_SERVICE="$HOME/.config/systemd/user/$UNIT"
+CTL="$HOME/.local/bin/taptetherctl"
 APP="$HOME/.local/share/applications/taptether.desktop"
-AUTOSTART="$HOME/.config/autostart/taptether-agent.desktop"
-STATUS_DIR="$HOME/.local/state/taptether"
+OLD_AUTOSTART="$HOME/.config/autostart/taptether-agent.desktop"
+CONFIG="$HOME/.config/taptether"
+AGENT='/usr/local/bin/taptether-agent'
 
-fail() { echo "ERROR: $*" >&2; exit 1; }
-note() { echo "TapTether: $*"; }
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+note() { printf 'TapTether: %s\n' "$*"; }
 user_bus() {
   export XDG_RUNTIME_DIR="/run/user/$(id -u)"
   if [[ -S "$XDG_RUNTIME_DIR/bus" ]]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
   fi
 }
-manager_value() { systemctl --user show-environment 2>/dev/null | sed -n "s/^$1=//p" | head -n1; }
-active_gui() {
-  local display_id typ
-  display_id="$(loginctl show-user "$(id -un)" -p Display --value 2>/dev/null || true)"
-  if [[ -n "$display_id" ]]; then
-    typ="$(loginctl show-session "$display_id" -p Type --value 2>/dev/null || true)"
-    if [[ "$typ" == 'wayland' || "$typ" == 'x11' ]]; then printf '%s\n' "$typ"; return 0; fi
+pin() {
+  if ! command -v gsettings >/dev/null 2>&1; then
+    note 'GNOME dock not available here. The launcher remains in Show Applications.'
+    return 0
   fi
-  # GNOME's session data can be absent from loginctl in some remote-management cases.
-  if [[ -S "$XDG_RUNTIME_DIR/wayland-0" ]]; then echo 'wayland'; return 0; fi
-  if [[ -n "$(manager_value DISPLAY)" ]]; then echo 'x11'; return 0; fi
-  return 1
-}
-check_access() {
-  if [[ -w /dev/uinput ]]; then return 0; fi
-  if [[ ! -e /dev/uinput ]]; then
-    fail '/dev/uinput missing. Install setup first, or run sudo modprobe uinput.'
+  user_bus
+  if ! python3 - <<'PY'
+import ast
+import subprocess
+import sys
+try:
+    value = subprocess.check_output(
+        ['gsettings', 'get', 'org.gnome.shell', 'favorite-apps'],
+        text=True, stderr=subprocess.DEVNULL).strip()
+    if value.startswith('@as '):
+        value = value[4:]
+    entries = ast.literal_eval(value)
+    if not isinstance(entries, list):
+        raise ValueError('unexpected favorites setting')
+    if 'taptether.desktop' not in entries:
+        entries.append('taptether.desktop')
+        subprocess.run(['gsettings', 'set', 'org.gnome.shell', 'favorite-apps', str(entries)],
+                       check=True, stderr=subprocess.DEVNULL)
+    print('TapTether added to the GNOME dock.')
+except (OSError, ValueError, SyntaxError, subprocess.CalledProcessError) as exc:
+    print('Dock pinning was not possible over SSH:', exc, file=sys.stderr)
+    sys.exit(1)
+PY
+  then
+    note 'Pin it manually: Show Applications → TapTether → Add to Favorites.'
   fi
-  fail '/dev/uinput not writable by current session. Log out of Ubuntu completely and log back in (or reboot) to activate the taptether group.'
 }
 setup_permissions() {
-  # Do not grant uinput access to everyone. Its keyboard privileges are powerful.
-  note 'Configuring restricted /dev/uinput access (sudo required).'
+  # Only the daemon receives the privileged input group through systemd.
+  # The interactive user is NOT added to this group.
   sudo groupadd --system --force taptether
-  sudo usermod -aG taptether "$(id -un)"
   printf 'uinput\n' | sudo tee /etc/modules-load.d/taptether-uinput.conf >/dev/null
   printf 'KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="taptether", MODE="0660"\n' \
     | sudo tee /etc/udev/rules.d/80-taptether-uinput.rules >/dev/null
   sudo modprobe uinput
   sudo udevadm control --reload-rules
   sudo udevadm trigger --subsystem-match=misc --sysname-match=uinput || true
+  [[ -e /dev/uinput ]] || fail '/dev/uinput not available on this Ubuntu kernel.'
   sudo chgrp taptether /dev/uinput
   sudo chmod 0660 /dev/uinput
-  if ! id -nG | tr ' ' '\n' | grep -qx 'taptether'; then
-    note 'Your account was added to the taptether group. Log out and log back in (or reboot) before using remote input.'
-  fi
 }
-pin() {
-  if ! command -v gsettings >/dev/null; then note 'GNOME gsettings unavailable; use Show Applications to pin TapTether.'; return 0; fi
-  user_bus
-  if ! python3 - <<'PY'
-import ast, subprocess, sys
-try:
-    raw = subprocess.check_output(['gsettings','get','org.gnome.shell','favorite-apps'], text=True, stderr=subprocess.DEVNULL).strip()
-    if raw.startswith('@as '): raw = raw[4:]
-    favorites = ast.literal_eval(raw)
-    if not isinstance(favorites, list): raise ValueError('bad GNOME favorites')
-    if 'taptether.desktop' not in favorites:
-        favorites.append('taptether.desktop')
-        subprocess.run(['gsettings','set','org.gnome.shell','favorite-apps',str(favorites)], check=True)
-    print('TapTether is pinned to the GNOME dock.')
-except Exception as exc:
-    print('Dock pinning unavailable over SSH:', exc, file=sys.stderr)
-    sys.exit(1)
-PY
-  then note 'Pin manually from GNOME Show Applications → TapTether → Add to Favorites.'; fi
+pairing() {
+  [[ -r "$CONFIG/pairing.token" && -r "$CONFIG/server.crt" ]] || \
+    fail 'No pairing credentials yet. Start the service, then run taptetherctl pairing.'
+  note 'PRIVATE credentials below; do not share them or publish installation logs.'
+  printf 'LAN IP(s): '
+  hostname -I 2>/dev/null || true
+  printf 'Port: 48321\nPairing token: '
+  cat "$CONFIG/pairing.token"
+  printf 'TLS certificate SHA-256 fingerprint: '
+  openssl x509 -in "$CONFIG/server.crt" -outform DER | sha256sum | awk '{print toupper($1)}'
+}
+ensure_running() {
+  local attempt
+  for attempt in $(seq 1 20); do
+    if systemctl is-active --quiet "$UNIT" &&
+       [[ -s "$CONFIG/pairing.token" && -s "$CONFIG/server.crt" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  systemctl --no-pager --full status "$UNIT" >&2 || true
+  fail 'Service did not initialize in 20 seconds. Check: sudo journalctl -u taptether-agent -n 60'
 }
 install() {
-  [[ "$(id -u)" != 0 ]] || fail 'Do not run this script with sudo.'
-  [[ -x /usr/local/bin/taptether-agent ]] || fail 'Install the new TapTether .deb first.'
-  command -v sudo >/dev/null || fail 'sudo is required for first-time uinput permissions'
+  [[ "$(id -u)" != 0 ]] || fail 'Run installer as the Ubuntu desktop user, not root.'
+  [[ -x "$AGENT" ]] || fail 'Install the TapTether .deb first.'
+  command -v sudo >/dev/null 2>&1 || fail 'sudo required for a secure systemd service.'
+  command -v systemctl >/dev/null 2>&1 || fail 'systemd required.'
+  command -v openssl >/dev/null 2>&1 || fail 'openssl required for pairing fingerprint.'
+  command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum required for pairing fingerprint.'
+  local username homedir tmp
+  username="$(id -un)"
+  homedir="$HOME"
+  [[ "$username" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || fail 'Unsafe username for unit file.'
+  [[ "$homedir" == /* && "$homedir" != *$'\n'* ]] || fail 'Invalid home directory.'
+  note 'Configuring /dev/uinput permissions for the service only.'
   setup_permissions
-  mkdir -p "${CTL%/*}" "${SERVICE%/*}" "${APP%/*}" "${AUTOSTART%/*}" "$STATUS_DIR"
-  if [[ "$(realpath "${BASH_SOURCE[0]}")" != "$(realpath -m "$CTL")" ]]; then cp "${BASH_SOURCE[0]}" "$CTL"; fi
+  mkdir -p "${CTL%/*}" "${APP%/*}" "$CONFIG"
+  chmod 700 "$CONFIG"
+  if [[ "$(realpath "${BASH_SOURCE[0]}")" != "$(realpath -m "$CTL")" ]]; then
+    cp "${BASH_SOURCE[0]}" "$CTL"
+  fi
   chmod 700 "$CTL"
-  cat > "$SERVICE" <<'SERVICE_END'
-[Unit]
-Description=TapTether local authenticated remote input (Wayland/X11)
-After=graphical-session.target
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/taptether-agent
-Restart=on-failure
-RestartSec=5
-UMask=0077
-# Agent stdout includes the pairing token: keep it out of the journal.
-StandardOutput=null
-StandardError=journal
-NoNewPrivileges=true
-[Install]
-WantedBy=default.target
-SERVICE_END
-  cat > "$APP" <<DESKTOP_END
+  cat > "$APP" <<DESKTOP
 [Desktop Entry]
+Version=1.0
 Type=Application
 Name=TapTether Agent
-Comment=Control Ubuntu securely from your phone over the local network
+Comment=Start TapTether local keyboard, trackpad and volume agent
 Exec=$CTL start
 Icon=input-keyboard
 Terminal=false
 StartupNotify=false
 Categories=Network;Utility;
-DESKTOP_END
-  cat > "$AUTOSTART" <<DESKTOP_END
-[Desktop Entry]
-Type=Application
-Name=TapTether Desktop Autostart
-Comment=Start TapTether when you sign in to GNOME
-Exec=$CTL session-start
-Icon=input-keyboard
-Terminal=false
-NoDisplay=true
-X-GNOME-Autostart-enabled=true
-DESKTOP_END
+DESKTOP
+  # Migrate from legacy desktop-login systemd user service. Avoid port 48321 collisions.
   user_bus
-  systemctl --user daemon-reload
-  # Stop an older manual/background agent before starting the upgraded user service.
-  # This avoids "address already in use" on HTTPS port 48321.
-  systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
+  systemctl --user disable --now "$UNIT" >/dev/null 2>&1 || true
+  rm -f "$OLD_AUTOSTART" "$OLD_USER_SERVICE"
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
   pkill -u "$(id -u)" -x taptether-agent >/dev/null 2>&1 || true
-  # Autostart at GUI login, not system boot; avoids root daemon and greeter access.
-  systemctl --user disable "$UNIT" >/dev/null 2>&1 || true
+  tmp="$(mktemp)"
+  cat > "$tmp" <<SYSTEMD
+[Unit]
+Description=TapTether private LAN keyboard, trackpad and volume agent
+After=systemd-modules-load.service network.target
+
+[Service]
+Type=simple
+User=$username
+SupplementaryGroups=taptether
+Environment="HOME=$homedir"
+ExecStart=$AGENT
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=full
+PrivateTmp=true
+# The agent prints its secret token on stdout: never put stdout in the system journal.
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SYSTEMD
+  sudo install -m 0644 "$tmp" "$SYS_SERVICE"
+  rm -f "$tmp"
+  sudo systemctl daemon-reload
+  sudo systemctl enable "$UNIT"
+  sudo systemctl restart "$UNIT"
+  ensure_running
   pin
-  if [[ -w /dev/uinput ]]; then
-    if active_gui >/dev/null; then start; else note 'Service installed; it starts on next graphical login.'; fi
-  else
-    note 'Installation complete. Log out/in before starting the agent from SSH.'
-  fi
-  note 'Commands over SSH: ~/.local/bin/taptetherctl {start|stop|restart|status|pairing|logs|permissions|pin}'
+  note 'Agent running now in the background and enabled at system boot (even before desktop login).'
+  note 'You can retrieve credentials later with: ~/.local/bin/taptetherctl pairing'
+  printf '\n====== TapTether pairing details ======\n'
+  pairing
+  printf '=======================================\n'
+  note 'SSH controls: ~/.local/bin/taptetherctl {start|stop|restart|status|pairing|logs|permissions|pin}'
+  note 'Security: uinput grants control even at the lock/login screen. Restrict TCP 48321 to trusted LAN devices.'
 }
 start() {
-  user_bus
-  [[ -f "$SERVICE" ]] || fail 'Run: bash 4-ubuntu-desktop-setup.sh install'
-  check_access
-  if ! active_gui >/dev/null; then
-    fail 'No active graphical desktop for this user. Log in to GNOME first; SSH alone does not create a desktop.'
-  fi
-  systemctl --user start "$UNIT"
-  sleep 1
-  systemctl --user is-active --quiet "$UNIT" || fail 'Agent failed; run taptetherctl logs'
-  note "Agent active; desktop: $(active_gui)."
+  sudo systemctl start "$UNIT"
+  ensure_running
+  note 'Agent running in background.'
 }
+stop() { sudo systemctl stop "$UNIT"; note 'Agent stopped.'; }
+restart() { sudo systemctl restart "$UNIT"; ensure_running; note 'Agent restarted.'; }
 status() {
-  user_bus
-  printf 'Desktop: %s\n' "$(active_gui || echo 'not logged in')"
-  printf '/dev/uinput: '; if [[ -w /dev/uinput ]]; then echo 'accessible'; else echo 'not accessible'; fi
-  systemctl --user --no-pager status "$UNIT" || true
+  systemctl --no-pager --full status "$UNIT" || true
+  printf '\nAuto-start at reboot: '
+  systemctl is-enabled "$UNIT" || true
 }
 permissions() {
   ls -l /dev/uinput 2>&1 || true
-  printf 'Current groups: '; id -nG
-  if [[ -w /dev/uinput ]]; then note 'Input device accessible.'; else note 'Requires graphical re-login/reboot after group setup.'; fi
-}
-pairing() {
-  local conf="$HOME/.config/taptether"
-  [[ -r "$conf/pairing.token" && -r "$conf/server.crt" ]] || fail 'Agent identity not initialized yet; start the agent.'
-  note 'Private credentials. Do not publish or paste the pairing token into chat.'
-  printf 'LAN IP: '; hostname -I 2>/dev/null || true
-  printf 'Port: 48321\nToken: '; cat "$conf/pairing.token"
-  printf 'Certificate SHA-256 fingerprint: '
-  openssl x509 -in "$conf/server.crt" -outform DER | sha256sum | awk '{print toupper($1)}'
-}
-session_start() {
-  user_bus
-  mkdir -p "$STATUS_DIR"
-  if ! check_access > "$STATUS_DIR/session-start.log" 2>&1; then exit 0; fi
-  systemctl --user restart "$UNIT" 2>> "$STATUS_DIR/session-start.log" || true
+  printf 'Expected input group: taptether (assigned to systemd service, not your SSH shell)\n'
+  if systemctl is-active --quiet "$UNIT"; then
+    note 'TapTether system service is active.'
+  else
+    note 'TapTether service is not running.'
+  fi
 }
 case "${1:-}" in
   install) install ;;
   start) start ;;
-  session-start) session_start ;;
-  stop) user_bus; systemctl --user stop "$UNIT"; note 'Stopped.' ;;
-  restart) user_bus; systemctl --user stop "$UNIT"; start ;;
+  stop) stop ;;
+  restart) restart ;;
   status) status ;;
-  permissions) permissions ;;
   pairing) pairing ;;
-  logs) user_bus; journalctl --user -u "$UNIT" -n 60 --no-pager; [[ ! -f "$STATUS_DIR/session-start.log" ]] || cat "$STATUS_DIR/session-start.log" ;;
+  logs) journalctl --no-pager -u "$UNIT" -n 60 ;;
+  permissions) permissions ;;
   pin) pin ;;
-  *) echo 'Usage: taptetherctl {install|start|stop|restart|status|pairing|logs|permissions|pin}' >&2; exit 2 ;;
+  session-start) : ;;  # Compatibility with old GNOME autostart references.
+  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|logs|permissions|pin}\n' >&2; exit 2 ;;
 esac
 TT_DESKTOP_SH
 
@@ -1360,7 +1373,7 @@ Use SSH to manage the agent: `ssh sandip@192.168.68.87 '~/.local/bin/taptetherct
 2. **Log out and log in to Ubuntu** or reboot once to activate `taptether` group membership.
 3. From macOS use `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl start'` or just let TapTether start at graphical login.
 4. Retrieve LAN IP/token/TLS fingerprint via `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl pairing'`. Keep the token private.
-5. Build/install the matching TapTether iOS/Android 0.3.0+6 app to see trackpad, keyboard and volume buttons.
+5. Build/install the matching TapTether iOS/Android 0.3.1+7 app to see trackpad, keyboard and volume buttons.
 
 See [WAYLAND.md](WAYLAND.md) for permissions, SSH commands and limitations.
 
@@ -1728,22 +1741,29 @@ TT_UINPUT_TEST
 
 write_new bin/5-tt-remote-install-ubuntu.sh <<'TT_UBUNTU_REMOTE'
 #!/usr/bin/env bash
-# Build current TapTether agent, copy, validate, install and configure over SSH.
+# Build and install current TapTether agent over SSH; service starts and prints pairing values.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOST="${1:-sandip@192.168.68.87}"
-[[ "$HOST" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$ ]] || { echo 'Usage: ./bin/5-tt-remote-install-ubuntu.sh user@host' >&2; exit 2; }
+[[ "$HOST" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$ ]] || {
+  echo 'Usage: ./bin/5-tt-remote-install-ubuntu.sh user@host' >&2; exit 2;
+}
 version="$(cat "$ROOT/VERSION")"
 "$ROOT/bin/2b-tt-ubuntu.sh"
 arch="$(ssh "$HOST" 'dpkg --print-architecture')"
-[[ "$arch" == amd64 || "$arch" == arm64 ]] || { echo "Unsupported remote Ubuntu architecture: $arch" >&2; exit 1; }
+[[ "$arch" == amd64 || "$arch" == arm64 ]] || {
+  echo "Unsupported remote Ubuntu architecture: $arch" >&2; exit 1;
+}
 package="$ROOT/dist/ubuntu/taptether-agent_${version}_${arch}.deb"
 [[ -s "$package" ]] || { echo "Missing installer: $package" >&2; exit 1; }
 stage="$(ssh "$HOST" 'mktemp -d /tmp/taptether-install.XXXXXXXX')"
-[[ "$stage" =~ ^/tmp/taptether-install\.[a-zA-Z0-9]+$ ]] || { echo "Invalid remote temp directory: $stage" >&2; exit 1; }
+[[ "$stage" =~ ^/tmp/taptether-install\.[a-zA-Z0-9]+$ ]] || {
+  echo "Invalid remote temp directory: $stage" >&2; exit 1;
+}
+trap 'ssh "$HOST" "rm -rf '\''$stage'\''" >/dev/null 2>&1 || true' EXIT
 scp "$package" "$ROOT/bin/4-ubuntu-desktop-setup.sh" "$HOST:$stage/"
-ssh -tt "$HOST" "set -e; dpkg-deb --info '$stage/$(basename "$package")' >/dev/null; sudo apt install -y '$stage/$(basename "$package")'; bash '$stage/4-ubuntu-desktop-setup.sh' install; rm -rf '$stage'; ~/.local/bin/taptetherctl status"
-echo "TapTether $version deployed to $HOST. If /dev/uinput group was added, log out of the Ubuntu desktop and log back in (or reboot)."
+ssh -tt "$HOST" "set -e; dpkg-deb --info '$stage/$(basename "$package")' >/dev/null; sudo apt install -y '$stage/$(basename "$package")'; bash '$stage/4-ubuntu-desktop-setup.sh' install"
+echo "TapTether $version deployed and enabled on $HOST. The installer above displayed PRIVATE pairing values."
 TT_UBUNTU_REMOTE
 
 write_new WAYLAND.md <<'TT_WAYLAND_DOC'
