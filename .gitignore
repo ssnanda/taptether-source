@@ -27,3 +27,7 @@
 config.local.json
 dist/
 coverage/
+
+# Agent packages are built locally before mobile builds
+app/assets/agents/*
+!app/assets/agents/.gitkeep
