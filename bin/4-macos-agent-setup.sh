@@ -10,6 +10,9 @@ PLIST="$HOME/Library/LaunchAgents/com.taptether.agent.plist"
 LOGDIR="$HOME/Library/Logs/TapTether"
 CONF="$HOME/Library/Application Support/taptether"
 LABEL=com.taptether.agent
+TRAY_LABEL=com.taptether.tray
+TRAY_PLIST="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
+TRAY_BUNDLE="$HOME/Applications/TapTether Agent.app"
 TARGET="gui/$(id -u)"
 notice() { printf 'TapTether: %s\n' "$*"; }
 pairing() {
@@ -42,22 +45,20 @@ install_agent() {
     chmod 700 "$UPDATER"
   fi
   chmod 755 "$APP" "$CTL"
-  # Create a clickable branded Mac app launcher; the actual agent still runs under launchd.
-  if [[ -s "$SELF/TapTether.icns" ]]; then
-    local bundle="$HOME/Applications/TapTether Agent.app"
+  # A separate AppKit menu-bar process accompanies the real launchd Go agent.
+  if [[ -s "$SELF/TapTether.icns" && -x "$SELF/TapTetherTray" ]]; then
+    local bundle="$TRAY_BUNDLE"
     mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
     cp "$SELF/TapTether.icns" "$bundle/Contents/Resources/TapTether.icns"
-    cat > "$bundle/Contents/MacOS/TapTetherLauncher" <<'LAUNCHER'
-#!/bin/bash
-exec "$HOME/.local/bin/taptetherctl-mac" start
-LAUNCHER
-    chmod 755 "$bundle/Contents/MacOS/TapTetherLauncher"
+    cp "$SELF/TapTetherTray" "$bundle/Contents/MacOS/TapTetherTray"
+    chmod 0755 "$bundle/Contents/MacOS/TapTetherTray"
+    rm -f "$bundle/Contents/MacOS/TapTetherLauncher"
     cat > "$bundle/Contents/Info.plist" <<'MACPLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>com.taptether.agent.launcher</string>
-<key>CFBundleExecutable</key><string>TapTetherLauncher</string>
+<key>CFBundleExecutable</key><string>TapTetherTray</string>
 <key>CFBundleIconFile</key><string>TapTether.icns</string>
 <key>CFBundleName</key><string>TapTether Agent</string>
 <key>CFBundleDisplayName</key><string>TapTether Agent</string>
@@ -67,9 +68,24 @@ LAUNCHER
 </dict></plist>
 MACPLIST
     if command -v codesign >/dev/null 2>&1; then
-      codesign --force --deep --sign - --timestamp=none "$bundle" >/dev/null 2>&1 || true
+      codesign --force --deep --sign - --timestamp=none "$bundle" >/dev/null 2>&1 ||
+        notice 'Ad-hoc signing of menu-bar app was not possible; macOS may request approval.'
     fi
-    notice "Created branded app launcher: $bundle"
+    cat > "$TRAY_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>$TRAY_LABEL</string>
+<key>ProgramArguments</key><array><string>$bundle/Contents/MacOS/TapTetherTray</string><string>--quiet</string></array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><false/>
+<key>StandardOutPath</key><string>/dev/null</string>
+<key>StandardErrorPath</key><string>$LOGDIR/tray.stderr.log</string>
+</dict></plist>
+EOF
+    notice "Created TapTether native menu-bar app at $bundle"
+  else
+    notice 'Native menu-bar executable was not bundled; background agent will still work.'
   fi
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -90,8 +106,14 @@ EOF
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
   launchctl kickstart -k "$TARGET/$LABEL"
+  if [[ -s "$TRAY_PLIST" ]]; then
+    launchctl bootout "$TARGET/$TRAY_LABEL" >/dev/null 2>&1 || true
+    launchctl bootstrap "$TARGET" "$TRAY_PLIST" ||
+      notice 'Tray will start at next graphical login.'
+  fi
   sleep 2
   notice 'Background agent installed, started and enabled at login.'
+  notice 'TapTether Agent.app displays the splash on demand; the menu bar tray starts silently at login.'
   notice 'Allow TapTether in macOS System Settings > Privacy & Security > Accessibility to enable mouse/keyboard.'
   pairing
 }
