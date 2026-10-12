@@ -1,0 +1,3 @@
+Release request: TapTether 0.5.4+16
+Reason: approved manual publication after v0.5.4 feature merge.
+Build once; only this explicit marker triggers the publish workflow.
