@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
+import 'device_manager_screen.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
 import 'qr_pairing.dart';
@@ -228,6 +229,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   List<DiscoveredDevice> nearbyComputers = [];
   bool searching = false;
   bool installingAgent = false;
+  bool _showPairForm = false;
   String? discoveredName;
   final host = TextEditingController();
   final token = TextEditingController();
@@ -269,7 +271,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final sshFingerprint = TextEditingController();
     var loginMethod = SshLoginMethod.password;
     var authorizeKey = false;
-    final hasKey = await PhoneSshKeyStore().exists;
+    final sshKeys = await PhoneSshKeyStore().listKeys();
+    var sshKeyId = await PhoneSshKeyStore().selectedId();
+    final hasKey = sshKeys.isNotEmpty;
     if (!mounted) return;
     final approved = await showDialog<bool>(
       context: context,
@@ -304,6 +308,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
                 if (value != null) setDialogState(() => loginMethod = value);
               },
             ),
+            if (sshKeys.isNotEmpty)
+              DropdownButtonFormField<String>(
+                initialValue: sshKeyId,
+                decoration: const InputDecoration(labelText: 'SSH key for this computer'),
+                items: [for (final key in sshKeys)
+                  DropdownMenuItem(value: key.id, child: Text(key.name))],
+                onChanged: (id) => setDialogState(() => sshKeyId = id),
+              ),
             if (loginMethod == SshLoginMethod.password)
               TextField(controller: sshPassword, obscureText: true,
                 decoration: const InputDecoration(labelText: 'SSH password')),
@@ -346,6 +358,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
           hostKeyFingerprint: sshFingerprint.text.trim(),
           loginMethod: loginMethod,
           authorizePhoneKey: authorizeKey,
+          sshKeyId: sshKeyId,
         )
         : null;
     sshHost.dispose();
@@ -414,6 +427,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void selectDiscovered(DiscoveredDevice device) {
     setState(() {
       discoveredName = device.name;
+      _showPairForm = true;
       host.text = device.host;
       token.clear();
       pin.clear();
@@ -452,66 +466,90 @@ class _RemoteScreenState extends State<RemoteScreen> {
     }
   }
 
+  Future<void> openDeviceManager() async {
+    final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => DeviceManagerScreen(
+        store: deviceStore,
+        onConnect: connectSaved,
+      ),
+    ));
+    if (!mounted) return;
+    await loadComputers();
+    if (addNew == true && mounted) setState(() => _showPairForm = true);
+  }
+
   Widget deviceDashboard() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text('My Devices',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 6),
-      for (final device in savedComputers)
-        Card(child: ListTile(
-          leading: Icon(device.platform == 'darwin'
-              ? Icons.laptop_mac : Icons.desktop_windows),
-          title: Text(device.name),
-          subtitle: Text(device.host),
-          onTap: () => connectSaved(device),
-          trailing: IconButton(
-            tooltip: 'Forget ${device.name}',
-            onPressed: () => forgetComputer(device),
-            icon: const Icon(Icons.delete_outline),
-          ),
-        )),
+      Row(children: [
+        const Expanded(child: Text('My Devices',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
+        TextButton.icon(onPressed: openDeviceManager,
+          icon: const Icon(Icons.settings_outlined),
+          label: const Text('Manage')),
+      ]),
       if (savedComputers.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: Text('No paired computers yet. Pair once to save a device securely.')),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        OutlinedButton.icon(
+        const Card(child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('No saved computers. Add a verified computer '
+              'to connect later in one tap.'),
+        ))
+      else
+        for (final device in savedComputers.take(3))
+          Card(child: ListTile(
+            leading: Icon(device.platform == 'darwin'
+                ? Icons.laptop_mac : Icons.computer),
+            title: Text(device.name, maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            subtitle: Text(device.host, maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => connectSaved(device),
+          )),
+      const SizedBox(height: 8),
+      SizedBox(width: double.infinity, child: FilledButton.icon(
+        onPressed: () => setState(() => _showPairForm = !_showPairForm),
+        icon: Icon(_showPairForm ? Icons.close : Icons.add),
+        label: Text(_showPairForm ? 'Hide manual pairing' : 'Add computer'),
+      )),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: OutlinedButton.icon(
           onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const SshKeyScreen()),
-          ),
-          icon: const Icon(Icons.vpn_key),
-          label: const Text('My SSH Key'),
-        ),
-        OutlinedButton.icon(
+            MaterialPageRoute(builder: (_) => const SshKeyScreen())),
+          icon: const Icon(Icons.key_outlined),
+          label: const Text('SSH Keys'),
+        )),
+        const SizedBox(width: 8),
+        Expanded(child: OutlinedButton.icon(
           onPressed: scanQrPairing,
           icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Scan QR pairing'),
-        ),
-        OutlinedButton.icon(
-          onPressed: installingAgent ? null : installUbuntuViaSsh,
-          icon: const Icon(Icons.install_desktop),
-          label: const Text('Install Ubuntu via SSH'),
-        ),
+          label: const Text('Scan QR'),
+        )),
       ]),
-      const SizedBox(height: 6),
-      OutlinedButton.icon(
+      SizedBox(width: double.infinity, child: OutlinedButton.icon(
+        onPressed: installingAgent ? null : installUbuntuViaSsh,
+        icon: const Icon(Icons.install_desktop),
+        label: const Text('Install Ubuntu agent via SSH'),
+      )),
+      SizedBox(width: double.infinity, child: OutlinedButton.icon(
         onPressed: searching ? null : searchNearby,
         icon: searching
             ? const SizedBox(width: 16, height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2))
             : const Icon(Icons.radar),
-        label: Text(searching ? 'Searching LAN…' : 'Find nearby computers'),
-      ),
+        label: Text(searching ? 'Searching local network…'
+            : 'Find nearby computers'),
+      )),
       for (final nearby in nearbyComputers)
         ListTile(
           leading: const Icon(Icons.computer),
           title: Text(nearby.name),
-          subtitle: Text('${nearby.host} · ${nearby.platform} · ${nearby.version}'),
+          subtitle: Text('${nearby.host} · ${nearby.platform}'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => selectDiscovered(nearby),
         ),
-      const SizedBox(height: 18),
+      const SizedBox(height: 14),
     ],
   );
 
@@ -764,6 +802,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
         updateNotices(),
         if (!connected) ...[
           deviceDashboard(),
+          if (_showPairForm) ...[
           const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           const Text('For first-time pairing, enter the token and TLS SHA-256 fingerprint from your computer. Verified devices are saved securely on this phone.'),
@@ -778,6 +817,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
               decoration: const InputDecoration(labelText: 'Certificate SHA-256 fingerprint', border: OutlineInputBorder())),
           const SizedBox(height: 10),
           FilledButton.icon(onPressed: connect, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
+          ],
         ] else ...[
           OutlinedButton.icon(
             onPressed: () {

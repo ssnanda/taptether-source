@@ -14,7 +14,7 @@ class SshInstallRequest {
     required this.host, required this.username, required this.sshPassword,
     required this.sudoPassword, required this.hostKeyFingerprint,
     this.loginMethod = SshLoginMethod.password,
-    this.authorizePhoneKey = false,
+    this.authorizePhoneKey = false, this.sshKeyId,
   });
   final String host;
   final String username;
@@ -23,6 +23,7 @@ class SshInstallRequest {
   final String hostKeyFingerprint;
   final SshLoginMethod loginMethod;
   final bool authorizePhoneKey;
+  final String? sshKeyId;
 }
 
 class InstalledAgent {
@@ -59,7 +60,7 @@ class UbuntuSshProvisioner {
     final client = SSHClient(
       socket, username: input.username,
       identities: input.loginMethod == SshLoginMethod.phoneKey
-          ? await PhoneSshKeyStore().authenticationIdentities()
+          ? await PhoneSshKeyStore().authenticationIdentities(id: input.sshKeyId)
           : null,
       onPasswordRequest: input.loginMethod == SshLoginMethod.password
           ? () => input.sshPassword
@@ -74,7 +75,7 @@ class UbuntuSshProvisioner {
       await client.authenticated.timeout(const Duration(seconds: 20));
       if (input.loginMethod == SshLoginMethod.password &&
           input.authorizePhoneKey) {
-        await _authorizePhoneKey(client);
+        await _authorizePhoneKey(client, input.sshKeyId);
       }
       final architectureResult = await client.runWithResult('dpkg --print-architecture');
       if (architectureResult.exitCode != 0) {
@@ -178,8 +179,8 @@ class UbuntuSshProvisioner {
   /// Only an SSH connection to a separately verified host can add the public
   /// key after successful existing user authentication. No private key leaves
   /// the phone.
-  static Future<void> _authorizePhoneKey(SSHClient client) async {
-    final publicKey = await PhoneSshKeyStore().publicKeyLine();
+  static Future<void> _authorizePhoneKey(SSHClient client, String? keyId) async {
+    final publicKey = await PhoneSshKeyStore().publicKeyLine(id: keyId);
     final valid = publicKey != null &&
         RegExp(r'^ssh-ed25519 [A-Za-z0-9+/=]+ taptether-mobile')
             .firstMatch(publicKey)?.group(0) == publicKey;
