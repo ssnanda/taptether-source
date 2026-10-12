@@ -92,6 +92,11 @@ def platform_network_permissions() -> None:
             perm = ET.Element("uses-permission")
             perm.set(android_name, "android.permission.INTERNET")
             root.insert(0, perm)
+        if not any(item.get(android_name) == "android.permission.CAMERA"
+                   for item in root.findall("uses-permission")):
+            camera = ET.Element("uses-permission")
+            camera.set(android_name, "android.permission.CAMERA")
+            root.insert(0, camera)
         application = root.find("application")
         if application is not None:
             application.set("{http://schemas.android.com/apk/res/android}label", "TapTether")
