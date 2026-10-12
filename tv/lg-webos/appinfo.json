@@ -5,5 +5,7 @@
   "type": "web",
   "main": "index.html",
   "title": "TapTether Companion",
-  "resolution": "1920x1080"
+  "resolution": "1920x1080",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png"
 }
