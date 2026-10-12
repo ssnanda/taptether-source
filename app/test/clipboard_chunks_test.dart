@@ -4,7 +4,7 @@ import 'package:taptether/clipboard_chunks.dart';
 
 void main() {
   test('clipboard split preserves UTF-8 text without exceeding command limit', () {
-    final value = 'A' * 255 + '😀' + '世界' * 200;
+    final value = List.filled(255, 'A').join() + '😀' + List.filled(200, '世界').join();
     final chunks = clipboardChunks(value);
     expect(chunks.join(), value);
     expect(chunks.length, greaterThan(1));
@@ -15,7 +15,7 @@ void main() {
 
   test('rejects oversized clipboard and allows empty clipboard', () {
     expect(clipboardChunks(''), isEmpty);
-    expect(() => clipboardChunks('x' * 4097), throwsFormatException);
+    expect(() => clipboardChunks(List.filled(4097, 'x').join()), throwsFormatException);
     expect(() => clipboardChunks('hello', chunkBytes: 1), throwsArgumentError);
   });
 }
