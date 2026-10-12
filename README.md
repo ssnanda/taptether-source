@@ -154,3 +154,15 @@ TapTether now supports:
 **Remaining v0.5 features (not yet shipped):** Native public/private per-device key credentials, first-time pairing approval/QR enrollment, and SSH installation directly from the mobile app. For those capabilities, follow a separate protocol update with replay protection, device revocation, host-key verification, and user-authorized sudo operations. Do not interpret broadcast discovery as proof of device identity or silently install software on discovered hosts.
 
 **Privacy:** App launch version checking is the only intentional public GitHub request; discovery and remote control stay on the local network. No discovery data is used for telemetry.
+
+## v0.5.1 — Phone keys, QR pairing and SSH provisioning
+
+Per-phone authentication: The phone creates an Ed25519 keypair and saves the private seed in iOS Keychain/Android secure storage. This is not a Secure Enclave non-exportable key. After verifying the existing bearer pairing token and pinned TLS certificate, the agent approves only the phone public key. Reconnects use one-time 30-second challenges and 15-minute sessions over pinned HTTPS without retaining the original bearer token on the phone.
+
+Authorized devices: On Ubuntu, run ~/.local/bin/taptetherctl devices and ~/.local/bin/taptetherctl revoke-device DEVICE_ID over SSH. On macOS use the same subcommands with taptetherctl-mac. Revocation immediately blocks device sessions. The original owner pairing token remains available for legacy apps until separately retired.
+
+QR pairing: Install qrencode with sudo apt install qrencode (Ubuntu) or brew install qrencode (macOS), then use taptetherctl pairing-qr from a trusted terminal. Scan from the phone's QR pairing screen. QR codes and screenshots contain PRIVATE pairing secrets; do not publish them.
+
+SSH provisioning from the phone: In My Devices choose Install Ubuntu via SSH. Provide the private LAN IP, Ubuntu username, SSH password, sudo password when required, and the separately verified SSH host-key fingerprint. Verify that fingerprint directly on Ubuntu with: sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256. The phone rejects any SSH host whose key does not match, uploads the exact bundled matching Debian package and helper scripts via SFTP, runs the installer with sudo, retrieves the agent token and TLS pin, and enrolls the phone key. Password authentication and standard sudo configuration are required. SSH key-only hosts and unusual sudo flows are not yet supported. This new phone-side install path requires real-machine testing.
+
+Security: The private key never goes to the computer. Discovery is never accepted as proof of identity. Passwords are not persisted on the phone. The original bearer token remains a legacy administrative credential and can still be used to pair other clients until a future dedicated owner-token migration.
