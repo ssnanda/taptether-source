@@ -126,8 +126,8 @@ func macVolume(key string) error {
     // macOS system volume is controlled through the built-in AppleScript sound interface.
     var expression string
     switch strings.ToLower(key) {
-    case "xf86audioraisevolume": expression = "set volume output volume (min of {100, (output volume of (get volume settings)) + 6})"
-    case "xf86audiolowervolume": expression = "set volume output volume (max of {0, (output volume of (get volume settings)) - 6})"
+    case "xf86audioraisevolume": expression = "set v to output volume of (get volume settings)\nif v > 94 then\nset v to 94\nend if\nset volume output volume (v + 6)"
+    case "xf86audiolowervolume": expression = "set v to output volume of (get volume settings)\nif v < 6 then\nset v to 6\nend if\nset volume output volume (v - 6)"
     case "xf86audiomute": expression = "set volume output muted (not (output muted of (get volume settings)))"
     default: return errors.New("unknown macOS media key")
     }
