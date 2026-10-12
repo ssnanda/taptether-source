@@ -176,9 +176,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
       if (apps.isEmpty || apps.first is! Map) return;
       final app = apps.first as Map;
       if (app['version'] is! String) return;
-      final latest = (app['version'] as String) + '+' + (app['buildVersion']?.toString() ?? '0');
+      final latest = "${app['version']}+${app['buildVersion']}";
       final local = await PackageInfo.fromPlatform();
-      final current = local.version + '+' + local.buildNumber;
+      final current = '${local.version}+${local.buildNumber}';
       if (!mounted) return;
       setState(() {
         _latestReleaseVersion = latest;
@@ -197,7 +197,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   Widget updateNotices() => Column(children: [
     if (availableAppVersion != null) Card(child: ListTile(
       leading: const Icon(Icons.system_update),
-      title: Text('TapTether ' + availableAppVersion! + ' available'),
+      title: Text('TapTether ${availableAppVersion!} available'),
       subtitle: const Text('View the new IPA in AltStore / GitHub Releases.'),
       trailing: const Icon(Icons.open_in_new),
       onTap: () => launchUrl(
@@ -206,7 +206,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     )),
     if (availableAgentVersion != null) Card(child: ListTile(
       leading: const Icon(Icons.computer),
-      title: Text('Computer agent update: ' + availableAgentVersion!),
+      title: Text('Computer agent update: ${availableAgentVersion!}'),
       subtitle: const Text('On the computer, run taptetherctl check-update and update.'),
     )),
   ]);
@@ -296,14 +296,16 @@ class _RemoteScreenState extends State<RemoteScreen> {
       agent.configure(host.text, token.text, pin.text);
       await agent.send('ping');
       final currentAgent = await agent.agentVersion();
-      if (mounted) setState(() {
-        status = 'Connected to ' + host.text.trim();
+      if (mounted) {
+        setState(() {
+        status = 'Connected to ${host.text.trim()}';
         connectedAgentVersion = currentAgent;
         availableAgentVersion = currentAgent != null &&
                 _latestReleaseVersion != null &&
                 newerThan(_latestReleaseVersion!, currentAgent)
             ? _latestReleaseVersion : null;
-      });
+        });
+      }
     } catch (e) {
       agent.disconnect();
       if (mounted) setState(() => status = '$e');
