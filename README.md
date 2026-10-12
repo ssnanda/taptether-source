@@ -13,7 +13,7 @@ Private LAN-only remote-control prototype. Single repository containing a Flutte
 5. `./bin/4-test.sh`.
 6. `./bin/3-push-project.sh` to commit and push initial source files.
 
-Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IPA. On Ubuntu, install `xdotool` and use an **X11/Xorg desktop session**, not Wayland, for input injection in this first version.
+Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IPA. On Ubuntu 26.04, native `/dev/uinput` input supports GNOME Wayland and X11. Restricted permissions are configured by `bin/4-ubuntu-desktop-setup.sh`; see [WAYLAND.md](WAYLAND.md).
 
 ## Scripts
 
@@ -36,6 +36,8 @@ Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IP
 | `./bin/4-test.sh` | Go tests + Flutter analyze/tests (when Flutter installed) |
 | `./bin/4-ubuntu-desktop-setup.sh` | SSH-installable Ubuntu X11 desktop launcher, graphical-login autostart, user service, pairing details |
 | `./bin/2d-tt-all.sh` | Build all available Go targets, Ubuntu installers and available mobile targets |
+| `./bin/4-ubuntu-desktop-setup.sh` | Configure native uinput permissions, GNOME dock and desktop autostart |
+| `./bin/5-tt-remote-install-ubuntu.sh` | Build, install and configure the Ubuntu agent over SSH |
 
 
 ## Ubuntu desktop launcher and SSH setup
@@ -51,21 +53,21 @@ Use SSH to manage the agent: `ssh sandip@192.168.68.87 '~/.local/bin/taptetherct
 
 **Important:** Auto-start means **at graphical user login after reboot**, not remote control of the login screen. A logged-in **X11/Xorg** desktop session is required. Wayland, headless SSH, and controlling the screen before login are not supported in this prototype. The dock entry is a *launcher*, not a live tray-status indicator. The agent intentionally suppresses stdout in its user service so the secret pairing token isn't saved in systemd logs.
 
-## Try Ubuntu remote control
+## Try Ubuntu remote control (Wayland / X11)
 
-1. Copy repository/build agent to an Ubuntu computer running a graphical X11 desktop, and `sudo apt install xdotool`.
-2. On Ubuntu, run `./bin/3-run-agent.sh` or the built `TapTetherAgent-linux-amd64-*` binary.
-3. The agent prints its *private LAN IP*, secret pairing token, and TLS certificate fingerprint.
-4. Install/run TapTether on your iPhone or Android phone, enter these three values, and connect using local Wi-Fi.
-5. Keep the token secret. Firewall TCP port 48321 to trusted devices on the LAN.
+1. On macOS run `./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87`. It builds both Linux agents, securely copies the matching .deb over SSH and sets up restricted uinput permissions, desktop autostart and a GNOME dock launcher.
+2. **Log out and log in to Ubuntu** or reboot once to activate `taptether` group membership.
+3. From macOS use `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl start'` or just let TapTether start at graphical login.
+4. Retrieve LAN IP/token/TLS fingerprint via `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl pairing'`. Keep the token private.
+5. Build/install the matching TapTether iOS/Android 0.3.0+6 app to see trackpad, keyboard and volume buttons.
 
-The agent stores its identity and token in the current OS user's configuration directory (`~/.config/taptether` on most Linux desktops), **not the git repository**. There are no analytics, cloud endpoints, update pings, or arbitrary remote shell commands. TLS encryption and manual certificate fingerprint pinning are mandatory. Pairing values are kept only in memory by this prototype; reenter after relaunch.
+See [WAYLAND.md](WAYLAND.md) for permissions, SSH commands and limitations.
 
 ## Important scope notes
 
-- **Working MVP path:** iOS/Android UI ⇄ authenticated HTTPS local agent ⇄ Ubuntu **X11 + xdotool** keyboard/mouse.
-- **Wayland**, Windows/macOS native input, device auto-discovery, clipboard sync, TV remote adapters, and polished TV-specific app builds are future work. Windows/macOS binaries compile but do **not** provide remote input yet.
-- The input backend has not been tested on physical hardware. Review/verify on a private LAN before relying on it.
+- **Linux path:** iOS/Android UI ⇄ authenticated HTTPS local agent ⇄ Ubuntu Wayland/X11 native uinput keyboard/mouse/media keys. X11-only xdotool fallback remains.
+- Windows/macOS native input, device auto-discovery, clipboard sync, TV remote adapters, and polished TV-specific app builds are future work. Windows/macOS binaries compile but do **not** provide remote input yet.
+- Native Linux uinput unit tests and cross-compilation pass; test on your actual Ubuntu desktop to verify hardware event handling. Review/verify on a private LAN before relying on it.
 - An unsigned IPA is *not* independently installable; use AltStore or valid code signing. A signed IPA requires configured Xcode signing.
 - TV operating systems can have compatibility or background-service restrictions; see `tv/README.md`.
 - Build-time dependency downloads (Flutter/Go toolchains) are distinct from runtime communications. This app intentionally has no runtime cloud integration.

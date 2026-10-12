@@ -88,7 +88,7 @@ coverage/
 TT_GITIGNORE
 
 write_new VERSION <<'TT_VERSION'
-0.1.0+1
+0.3.0+6
 TT_VERSION
 
 # Flutter tooling creates native iOS and Android runner projects; do not hand-code those.
@@ -108,7 +108,7 @@ if [[ ! -e .taptether-bootstrapped ]]; then
 name: taptether
 description: Local-first universal remote for trusted personal devices.
 publish_to: none
-version: 0.1.0+1
+version: 0.3.0+6
 environment:
   sdk: '>=3.4.0 <4.0.0'
 dependencies:
@@ -360,6 +360,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
             keyButton('Ctrl+C','ctrl+c'), keyButton('Ctrl+V','ctrl+v'),
             keyButton('Ctrl+L','ctrl+l'), keyButton('Alt+Tab','alt+Tab'),
           ]),
+          const SizedBox(height: 8),
+          const Text('System volume', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          Wrap(spacing: 8, runSpacing: 4, children: [
+            keyButton('Volume −', 'XF86AudioLowerVolume'),
+            keyButton('Mute', 'XF86AudioMute'),
+            keyButton('Volume +', 'XF86AudioRaiseVolume'),
+          ]),
         ],
         const SizedBox(height: 16),
         Text(status, style: const TextStyle(fontSize: 12, color: Colors.white70)),
@@ -417,53 +424,93 @@ TT_INPUT_TYPES
 
 write_new agent/internal/input/input_linux.go <<'TT_INPUT_LINUX'
 //go:build linux
+
 package input
 
 import (
- "context"
- "fmt"
- "os"
- "os/exec"
- "strconv"
- "strings"
- "time"
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
 )
 
-// MVP backend: xdotool on an X11 desktop session. Wayland needs a separate backend.
+// uinput works on Wayland and X11 without RemoteDesktop portal popups.
+// On X11 only, xdotool is a compatibility fallback if uinput is unavailable.
 func Send(e Event) error {
- if e.Type == "ping" { return nil }
- if os.Getenv("DISPLAY") == "" { return fmt.Errorf("DISPLAY not set: start the agent inside an X11 desktop session") }
- if _, err := exec.LookPath("xdotool"); err != nil { return fmt.Errorf("install xdotool: sudo apt install xdotool") }
- var args []string
- switch e.Type {
- case "move": args = []string{"mousemove_relative", "--", strconv.Itoa(e.DX), strconv.Itoa(e.DY)}
- case "scroll":
-  if e.DY == 0 {return nil}
-  button := "4"; if e.DY > 0 {button = "5"}
-  ticks := e.DY; if ticks < 0 {ticks = -ticks}; if ticks > 8 {ticks = 8}
-  args = []string{"click", "--repeat", strconv.Itoa(ticks), "--delay", "20", button}
- case "click":
-  switch e.Button {
-  case "left": args = []string{"click", "1"}
-  case "right": args = []string{"click", "3"}
-  case "double": args = []string{"click", "--repeat", "2", "--delay", "100", "1"}
-  }
- case "key":
-  key := strings.TrimSpace(e.Key)
-  for _, ch := range key {
-   if !(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '+' || ch == '_' || ch == '-') {
-    return fmt.Errorf("unsupported key combination")
-   }
-  }
-  args = []string{"key", "--clearmodifiers", key}
- case "text": args = []string{"type", "--clearmodifiers", "--delay", "0", "--", e.Text}
- default: return fmt.Errorf("unsupported command type")
- }
- ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
- defer cancel()
- output, err := exec.CommandContext(ctx, "xdotool", args...).CombinedOutput()
- if err != nil {return fmt.Errorf("xdotool failed: %v (%s)", err, strings.TrimSpace(string(output)))}
- return nil
+	if e.Type == "ping" {
+		return nil
+	}
+	if activeDevice == nil {
+		device, err := newVirtualDevice()
+		if err == nil {
+			activeDevice = device
+		} else {
+			if os.Getenv("XDG_SESSION_TYPE") == "wayland" || os.Getenv("DISPLAY") == "" {
+				return fmt.Errorf("native Wayland input unavailable: %w", err)
+			}
+			return sendX11(e)
+		}
+	}
+	return activeDevice.send(e)
+}
+func sendX11(e Event) error {
+	if os.Getenv("DISPLAY") == "" {
+		return fmt.Errorf("DISPLAY not set, X11 fallback unavailable")
+	}
+	if _, err := exec.LookPath("xdotool"); err != nil {
+		return fmt.Errorf("X11 fallback requires xdotool: %w", err)
+	}
+	var args []string
+	switch e.Type {
+	case "move":
+		args = []string{"mousemove_relative", "--", strconv.Itoa(e.DX), strconv.Itoa(e.DY)}
+	case "scroll":
+		if e.DY == 0 {
+			return nil
+		}
+		button := "4"
+		if e.DY > 0 {
+			button = "5"
+		}
+		ticks := e.DY
+		if ticks < 0 {
+			ticks = -ticks
+		}
+		if ticks > 8 {
+			ticks = 8
+		}
+		args = []string{"click", "--repeat", strconv.Itoa(ticks), "--delay", "20", button}
+	case "click":
+		switch e.Button {
+		case "right":
+			args = []string{"click", "3"}
+		case "double":
+			args = []string{"click", "--repeat", "2", "--delay", "100", "1"}
+		default:
+			args = []string{"click", "1"}
+		}
+	case "key":
+		for _, ch := range strings.TrimSpace(e.Key) {
+			if !(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '+' || ch == '_' || ch == '-') {
+				return fmt.Errorf("unsupported key combination")
+			}
+		}
+		args = []string{"key", "--clearmodifiers", e.Key}
+	case "text":
+		args = []string{"type", "--clearmodifiers", "--delay", "0", "--", e.Text}
+	default:
+		return fmt.Errorf("unsupported input event")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "xdotool", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("xdotool failed: %w (%s)", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 TT_INPUT_LINUX
 
@@ -484,117 +531,201 @@ write_new agent/cmd/taptether-agent/main.go <<'TT_GO_MAIN'
 package main
 
 import (
- "crypto/ecdsa"
- "crypto/elliptic"
- "crypto/rand"
- "crypto/sha256"
- "crypto/subtle"
- "crypto/x509"
- "encoding/hex"
- "encoding/json"
- "encoding/pem"
- "errors"
- "flag"
- "fmt"
- "io"
- "log"
- "math/big"
- "net"
- "net/http"
- "os"
- "path/filepath"
- "strings"
- "sync"
- "time"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"math/big"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
- "github.com/ssnanda/taptether.com/agent/internal/input"
+	"github.com/ssnanda/taptether.com/agent/internal/input"
 )
 
 var version = "dev"
 
 func main() {
- addr := flag.String("listen", ":48321", "TLS listen address; use a LAN firewall for additional restriction")
- flag.Parse()
- dir, err := os.UserConfigDir(); fatalIf(err)
- dir = filepath.Join(dir,"taptether")
- fatalIf(os.MkdirAll(dir,0700))
- certFile, keyFile, tokenFile := filepath.Join(dir,"server.crt"), filepath.Join(dir,"server.key"),filepath.Join(dir,"pairing.token")
- if err := ensureCertificate(certFile,keyFile); err != nil {log.Fatal(err)}
- token,err := ensureToken(tokenFile);fatalIf(err)
- certPEM,err := os.ReadFile(certFile);fatalIf(err)
- block,_ := pem.Decode(certPEM);if block==nil {log.Fatal("invalid local certificate")}
- digest := sha256.Sum256(block.Bytes)
- fmt.Printf("\nTapTether Agent %s — LAN-only remote input\n",version)
- fmt.Println("Pairing token (keep private):",token)
- fmt.Println("TLS SHA-256 fingerprint:",strings.ToUpper(hex.EncodeToString(digest[:])))
- fmt.Println("Port: 48321 (HTTPS)")
- for _,a := range privateAddresses() {fmt.Printf("iPhone host: %s\n",a)}
- fmt.Println("Controls available on Linux X11 with xdotool. Wayland and Windows/macOS input are not yet implemented.")
- fmt.Println("No telemetry or outgoing network connections are implemented. Restrict inbound port 48321 to trusted LAN devices.")
- mux:=http.NewServeMux()
- var mu sync.Mutex
- mux.HandleFunc("/api/control",func(w http.ResponseWriter,r *http.Request){
-  w.Header().Set("Cache-Control","no-store")
-  if r.Method != http.MethodPost {http.Error(w,"POST required",http.StatusMethodNotAllowed);return}
-  if r.TLS==nil || !privateRemote(r.RemoteAddr) {http.Error(w,"LAN TLS required",http.StatusForbidden);return}
-  got:=strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer ")
-  if subtle.ConstantTimeCompare([]byte(got),[]byte(token))!=1 {http.Error(w,"not paired",http.StatusUnauthorized);return}
-  body:=http.MaxBytesReader(w,r.Body,4096)
-  defer body.Close()
-  decoder:=json.NewDecoder(body);decoder.DisallowUnknownFields()
-  var cmd input.Event
-  if err:=decoder.Decode(&cmd);err!=nil {http.Error(w,"invalid JSON command",http.StatusBadRequest);return}
-  var extra any
-  if err:=decoder.Decode(&extra);err!=io.EOF {http.Error(w,"unexpected trailing JSON",http.StatusBadRequest);return}
-  if err:=cmd.Validate();err!=nil {http.Error(w,err.Error(),http.StatusBadRequest);return}
-  mu.Lock()
-  err:=input.Send(cmd)
-  mu.Unlock()
-  if err!=nil {http.Error(w,err.Error(),http.StatusUnprocessableEntity);return}
-  w.WriteHeader(http.StatusNoContent)
- })
- server:=&http.Server{Addr:*addr,Handler:mux,ReadHeaderTimeout:5*time.Second,ReadTimeout:8*time.Second,WriteTimeout:8*time.Second,IdleTimeout:30*time.Second,MaxHeaderBytes:4096}
- log.Fatal(server.ListenAndServeTLS(certFile,keyFile))
+	addr := flag.String("listen", ":48321", "TLS listen address; use a LAN firewall for additional restriction")
+	flag.Parse()
+	dir, err := os.UserConfigDir()
+	fatalIf(err)
+	dir = filepath.Join(dir, "taptether")
+	fatalIf(os.MkdirAll(dir, 0700))
+	certFile, keyFile, tokenFile := filepath.Join(dir, "server.crt"), filepath.Join(dir, "server.key"), filepath.Join(dir, "pairing.token")
+	if err := ensureCertificate(certFile, keyFile); err != nil {
+		log.Fatal(err)
+	}
+	token, err := ensureToken(tokenFile)
+	fatalIf(err)
+	certPEM, err := os.ReadFile(certFile)
+	fatalIf(err)
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		log.Fatal("invalid local certificate")
+	}
+	digest := sha256.Sum256(block.Bytes)
+	fmt.Printf("\nTapTether Agent %s — LAN-only remote input\n", version)
+	fmt.Println("Pairing token (keep private):", token)
+	fmt.Println("TLS SHA-256 fingerprint:", strings.ToUpper(hex.EncodeToString(digest[:])))
+	fmt.Println("Port: 48321 (HTTPS)")
+	for _, a := range privateAddresses() {
+		fmt.Printf("iPhone host: %s\n", a)
+	}
+	fmt.Println("Linux Wayland/X11 native uinput is supported; X11 can fall back to xdotool. Windows/macOS input is not implemented.")
+	fmt.Println("No telemetry or outgoing network connections are implemented. Restrict inbound port 48321 to trusted LAN devices.")
+	mux := http.NewServeMux()
+	var mu sync.Mutex
+	mux.HandleFunc("/api/control", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.TLS == nil || !privateRemote(r.RemoteAddr) {
+			http.Error(w, "LAN TLS required", http.StatusForbidden)
+			return
+		}
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+			http.Error(w, "not paired", http.StatusUnauthorized)
+			return
+		}
+		body := http.MaxBytesReader(w, r.Body, 4096)
+		defer body.Close()
+		decoder := json.NewDecoder(body)
+		decoder.DisallowUnknownFields()
+		var cmd input.Event
+		if err := decoder.Decode(&cmd); err != nil {
+			http.Error(w, "invalid JSON command", http.StatusBadRequest)
+			return
+		}
+		var extra any
+		if err := decoder.Decode(&extra); err != io.EOF {
+			http.Error(w, "unexpected trailing JSON", http.StatusBadRequest)
+			return
+		}
+		if err := cmd.Validate(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		err := input.Send(cmd)
+		mu.Unlock()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	server := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 8 * time.Second, WriteTimeout: 8 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 4096}
+	log.Fatal(server.ListenAndServeTLS(certFile, keyFile))
 }
 
-func fatalIf(err error){if err!=nil {log.Fatal(err)}}
-func privateRemote(remote string)bool{
- host,_,err:=net.SplitHostPort(remote);if err!=nil{return false}
- ip:=net.ParseIP(host);return ip!=nil && (ip.IsPrivate()||ip.IsLoopback()||ip.IsLinkLocalUnicast())
+func fatalIf(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
 }
-func privateAddresses()[]string{
- ifaces,err:=net.InterfaceAddrs();if err!=nil{return nil}
- var result []string
- for _,a:=range ifaces{
-  network,ok:=a.(*net.IPNet);if !ok {continue}
-  ip:=network.IP.To4();if ip!=nil && ip.IsPrivate(){result=append(result,ip.String())}
- }
- return result
+func privateRemote(remote string) bool {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast())
 }
-func ensureToken(path string)(string,error){
- data,err:=os.ReadFile(path)
- if err==nil {if len(strings.TrimSpace(string(data)))>=32 {return strings.TrimSpace(string(data)),nil};return "",errors.New("existing pairing token invalid")}
- if !os.IsNotExist(err){return "",err}
- b:=make([]byte,24);if _,err=rand.Read(b);err!=nil{return "",err}
- val:=hex.EncodeToString(b)
- if err=os.WriteFile(path,[]byte(val+"\n"),0600);err!=nil{return "",err}
- return val,nil
+func privateAddresses() []string {
+	ifaces, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var result []string
+	for _, a := range ifaces {
+		network, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip := network.IP.To4()
+		if ip != nil && ip.IsPrivate() {
+			result = append(result, ip.String())
+		}
+	}
+	return result
 }
-func ensureCertificate(crt,key string)error{
- _,ec:=os.Stat(crt);_,ek:=os.Stat(key)
- if ec==nil && ek==nil{return nil}
- if !os.IsNotExist(ec)||!os.IsNotExist(ek){return errors.New("certificate/key incomplete or unreadable; repair manually, never silently replace identity")}
- priv,err:=ecdsa.GenerateKey(elliptic.P256(),rand.Reader);if err!=nil{return err}
- serial,err:=rand.Int(rand.Reader,new(big.Int).Lsh(big.NewInt(1),128));if err!=nil{return err}
- tmpl:=x509.Certificate{SerialNumber:serial,Subject:pkixName(),NotBefore:time.Now().Add(-time.Hour),NotAfter:time.Now().AddDate(5,0,0),KeyUsage:x509.KeyUsageDigitalSignature,ExtKeyUsage:[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},BasicConstraintsValid:true,DNSNames:[]string{"localhost"}}
- der,err:=x509.CreateCertificate(rand.Reader,&tmpl,&tmpl,&priv.PublicKey,priv);if err!=nil{return err}
- pemKey,err:=x509.MarshalPKCS8PrivateKey(priv);if err!=nil{return err}
- if err=os.WriteFile(key,pem.EncodeToMemory(&pem.Block{Type:"PRIVATE KEY",Bytes:pemKey}),0600);err!=nil{return err}
- if err=os.WriteFile(crt,pem.EncodeToMemory(&pem.Block{Type:"CERTIFICATE",Bytes:der}),0600);err!=nil{return err}
- return nil
+func ensureToken(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if len(strings.TrimSpace(string(data))) >= 32 {
+			return strings.TrimSpace(string(data)), nil
+		}
+		return "", errors.New("existing pairing token invalid")
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	b := make([]byte, 24)
+	if _, err = rand.Read(b); err != nil {
+		return "", err
+	}
+	val := hex.EncodeToString(b)
+	if err = os.WriteFile(path, []byte(val+"\n"), 0600); err != nil {
+		return "", err
+	}
+	return val, nil
 }
+func ensureCertificate(crt, key string) error {
+	_, ec := os.Stat(crt)
+	_, ek := os.Stat(key)
+	if ec == nil && ek == nil {
+		return nil
+	}
+	if !os.IsNotExist(ec) || !os.IsNotExist(ek) {
+		return errors.New("certificate/key incomplete or unreadable; repair manually, never silently replace identity")
+	}
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return err
+	}
+	tmpl := x509.Certificate{SerialNumber: serial, Subject: pkixName(), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(5, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true, DNSNames: []string{"localhost"}}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		return err
+	}
+	pemKey, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(key, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pemKey}), 0600); err != nil {
+		return err
+	}
+	if err = os.WriteFile(crt, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); err != nil {
+		return err
+	}
+	return nil
+}
+
 // A CN is not required for cert pinning; the certificate is never publicly trusted.
-func pkixName() (name struct{CommonName string}) {name.CommonName="TapTether Local Agent";return name}
+func pkixName() pkix.Name { return pkix.Name{CommonName: "TapTether Local Agent"} }
 TT_GO_MAIN
 
 # Fix the type of the pkix.Name helper with a direct stdlib import.
@@ -812,7 +943,8 @@ def write_ar_member(fh, name, data):
         f'{0:<6}'
         f'{"100644":<8}'
         f'{len(data):<10}'
-    ).encode('ascii') + bytes((96, 10))
+        '`\n'
+    ).encode('ascii')
     if len(header) != 60:
         raise AssertionError('Invalid ar header length')
     fh.write(header)
@@ -836,8 +968,8 @@ for arch in ('amd64', 'arm64'):
         f'Architecture: {arch}\n'
         'Maintainer: TapTether <support@taptether.com>\n'
         'Depends: xdotool\n'
-        'Description: TapTether local-first keyboard and trackpad agent\n'
-        ' A local HTTPS remote input agent for an X11 Ubuntu desktop.\n'
+        'Description: TapTether Wayland/X11 virtual keyboard, mouse and volume agent\n'
+        ' A local HTTPS remote input agent with native Linux uinput support.\n'
         ' No cloud account or telemetry.\n'
     ).encode('utf-8')
     members = (
@@ -952,199 +1084,191 @@ TT_PUSH
 
 write_new bin/4-ubuntu-desktop-setup.sh <<'TT_DESKTOP_SH'
 #!/usr/bin/env bash
-# TapTether X11 desktop integration; run as the desktop user, not with sudo.
+# TapTether GNOME Wayland/X11 desktop setup and SSH control.
+# Run as your ordinary Ubuntu desktop user. setup uses sudo only for /dev/uinput access.
 set -euo pipefail
 
-BIN="$HOME/.local/bin/taptetherctl"
-SERVICE="$HOME/.config/systemd/user/taptether-agent.service"
+CTL="$HOME/.local/bin/taptetherctl"
+UNIT='taptether-agent.service'
+SERVICE="$HOME/.config/systemd/user/$UNIT"
 APP="$HOME/.local/share/applications/taptether.desktop"
 AUTOSTART="$HOME/.config/autostart/taptether-agent.desktop"
-STATE="$HOME/.local/state/taptether"
-UNIT=taptether-agent.service
+STATUS_DIR="$HOME/.local/state/taptether"
 
-fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-note() { printf 'TapTether: %s\n' "$*"; }
+fail() { echo "ERROR: $*" >&2; exit 1; }
+note() { echo "TapTether: $*"; }
 user_bus() {
-  local rt="/run/user/$(id -u)"
-  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$rt}"
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
   if [[ -S "$XDG_RUNTIME_DIR/bus" ]]; then
-    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
   fi
 }
-manager_value() {
-  systemctl --user show-environment 2>/dev/null | sed -n "s/^$1=//p" | head -n 1
-}
-gui_session_type() {
-  local sid typ
-  if command -v loginctl >/dev/null 2>&1; then
-    sid="$(loginctl show-user "$(id -un)" -p Display --value 2>/dev/null || true)"
-    if [[ -n "$sid" ]]; then
-      typ="$(loginctl show-session "$sid" -p Type --value 2>/dev/null || true)"
-      if [[ "$typ" == x11 || "$typ" == wayland ]]; then printf '%s' "$typ"; return; fi
-    fi
+manager_value() { systemctl --user show-environment 2>/dev/null | sed -n "s/^$1=//p" | head -n1; }
+active_gui() {
+  local display_id typ
+  display_id="$(loginctl show-user "$(id -un)" -p Display --value 2>/dev/null || true)"
+  if [[ -n "$display_id" ]]; then
+    typ="$(loginctl show-session "$display_id" -p Type --value 2>/dev/null || true)"
+    if [[ "$typ" == 'wayland' || "$typ" == 'x11' ]]; then printf '%s\n' "$typ"; return 0; fi
   fi
-  typ="$(manager_value XDG_SESSION_TYPE)"
-  if [[ "$typ" == x11 || "$typ" == wayland ]]; then printf '%s' "$typ"; return; fi
-  if [[ "${XDG_SESSION_TYPE:-}" == x11 || "${XDG_SESSION_TYPE:-}" == wayland ]]; then
-    printf '%s' "$XDG_SESSION_TYPE"
-  fi
+  # GNOME's session data can be absent from loginctl in some remote-management cases.
+  if [[ -S "$XDG_RUNTIME_DIR/wayland-0" ]]; then echo 'wayland'; return 0; fi
+  if [[ -n "$(manager_value DISPLAY)" ]]; then echo 'x11'; return 0; fi
+  return 1
 }
-ensure_x11() {
-  command -v xdotool >/dev/null 2>&1 || fail 'xdotool missing; sudo apt install xdotool'
-  local typ manager_disp manager_auth disp auth_candidate
-  typ="$(gui_session_type)"
-  if [[ "$typ" == wayland ]]; then
-    fail 'An active Wayland desktop was detected. TapTether 0.2.x needs Ubuntu on Xorg (X11).'
+check_access() {
+  if [[ -w /dev/uinput ]]; then return 0; fi
+  if [[ ! -e /dev/uinput ]]; then
+    fail '/dev/uinput missing. Install setup first, or run sudo modprobe uinput.'
   fi
-  manager_disp="$(manager_value DISPLAY)"
-  manager_auth="$(manager_value XAUTHORITY)"
-  local -a displays=() auths=()
-  [[ -n "$manager_disp" ]] && displays+=("$manager_disp")
-  if [[ -n "${DISPLAY:-}" && "$DISPLAY" != localhost:* && "$DISPLAY" != 127.0.0.1:* ]]; then displays+=("$DISPLAY"); fi
-  displays+=(':0' ':1' ':2')
-  [[ -n "$manager_auth" ]] && auths+=("$manager_auth")
-  [[ -n "${XAUTHORITY:-}" ]] && auths+=("$XAUTHORITY")
-  auths+=("/run/user/$(id -u)/gdm/Xauthority" "$HOME/.Xauthority")
-  for disp in "${displays[@]}"; do
-    for auth_candidate in "${auths[@]}"; do
-      if [[ -f "$auth_candidate" ]] && env DISPLAY="$disp" XAUTHORITY="$auth_candidate" xdotool getmouselocation >/dev/null 2>&1; then
-        export DISPLAY="$disp" XAUTHORITY="$auth_candidate" XDG_SESSION_TYPE=x11
-        systemctl --user import-environment DISPLAY XAUTHORITY XDG_SESSION_TYPE >/dev/null
-        return 0
-      fi
-    done
-    if env -u XAUTHORITY DISPLAY="$disp" xdotool getmouselocation >/dev/null 2>&1; then
-      export DISPLAY="$disp" XDG_SESSION_TYPE=x11
-      unset XAUTHORITY || true
-      systemctl --user import-environment DISPLAY XDG_SESSION_TYPE >/dev/null
-      return 0
-    fi
-  done
-  fail 'No accessible X11 desktop found. Log into Ubuntu using "Ubuntu on Xorg", then try again. (SSH by itself has no graphical display.)'
+  fail '/dev/uinput not writable by current session. Log out of Ubuntu completely and log back in (or reboot) to activate the taptether group.'
 }
-pairing() {
-  local config="$HOME/.config/taptether" token cert
-  token="$config/pairing.token"
-  cert="$config/server.crt"
-  [[ -r "$token" && -r "$cert" ]] || fail 'Agent has not initialized pairing identity. Start the service first.'
-  command -v openssl >/dev/null 2>&1 || fail 'openssl is required to print certificate fingerprint'
-  command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum is required'
-  note 'PRIVATE pairing details. Do not paste your token into chats or tickets.'
-  printf 'Host IP: '
-  if command -v hostname >/dev/null 2>&1; then hostname -I 2>/dev/null || printf '(check ip addr)\n'; fi
-  printf 'Port: 48321\nToken: '
-  cat "$token"
-  printf 'TLS SHA-256 fingerprint: '
-  openssl x509 -in "$cert" -outform DER | sha256sum | awk '{print toupper($1)}'
+setup_permissions() {
+  # Do not grant uinput access to everyone. Its keyboard privileges are powerful.
+  note 'Configuring restricted /dev/uinput access (sudo required).'
+  sudo groupadd --system --force taptether
+  sudo usermod -aG taptether "$(id -un)"
+  printf 'uinput\n' | sudo tee /etc/modules-load.d/taptether-uinput.conf >/dev/null
+  printf 'KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="taptether", MODE="0660"\n' \
+    | sudo tee /etc/udev/rules.d/80-taptether-uinput.rules >/dev/null
+  sudo modprobe uinput
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger --subsystem-match=misc --sysname-match=uinput || true
+  sudo chgrp taptether /dev/uinput
+  sudo chmod 0660 /dev/uinput
+  if ! id -nG | tr ' ' '\n' | grep -qx 'taptether'; then
+    note 'Your account was added to the taptether group. Log out and log back in (or reboot) before using remote input.'
+  fi
 }
 pin() {
-  command -v gsettings >/dev/null 2>&1 || { note 'gsettings not found; launcher will still appear in Applications.'; return 1; }
-  command -v python3 >/dev/null 2>&1 || { note 'python3 is required to pin to the GNOME dock.'; return 1; }
+  if ! command -v gsettings >/dev/null; then note 'GNOME gsettings unavailable; use Show Applications to pin TapTether.'; return 0; fi
   user_bus
-  python3 - <<'PY'
+  if ! python3 - <<'PY'
 import ast, subprocess, sys
-base=['gsettings','get','org.gnome.shell','favorite-apps']
 try:
-    raw=subprocess.check_output(base,text=True,stderr=subprocess.PIPE).strip()
-    if raw.startswith('@as '): raw=raw[4:]
-    apps=ast.literal_eval(raw)
-    if not isinstance(apps,list): raise ValueError('GNOME favorites are not a list')
-    if 'taptether.desktop' not in apps:
-        apps.append('taptether.desktop')
-        subprocess.run(['gsettings','set','org.gnome.shell','favorite-apps',str(apps)],check=True,stderr=subprocess.PIPE)
-        print('TapTether pinned to GNOME dock.')
-    else: print('TapTether is already pinned to GNOME dock.')
-except (OSError, subprocess.CalledProcessError, SyntaxError, ValueError) as ex:
-    print(f'Could not pin remotely ({ex}). Open Show Applications and right-click TapTether → Add to Favorites.',file=sys.stderr)
+    raw = subprocess.check_output(['gsettings','get','org.gnome.shell','favorite-apps'], text=True, stderr=subprocess.DEVNULL).strip()
+    if raw.startswith('@as '): raw = raw[4:]
+    favorites = ast.literal_eval(raw)
+    if not isinstance(favorites, list): raise ValueError('bad GNOME favorites')
+    if 'taptether.desktop' not in favorites:
+        favorites.append('taptether.desktop')
+        subprocess.run(['gsettings','set','org.gnome.shell','favorite-apps',str(favorites)], check=True)
+    print('TapTether is pinned to the GNOME dock.')
+except Exception as exc:
+    print('Dock pinning unavailable over SSH:', exc, file=sys.stderr)
     sys.exit(1)
 PY
+  then note 'Pin manually from GNOME Show Applications → TapTether → Add to Favorites.'; fi
 }
 install() {
-  [[ "$(id -u)" != 0 ]] || fail 'Run as the normal Ubuntu desktop user, not root or sudo.'
-  [[ -x /usr/local/bin/taptether-agent ]] || fail 'Install the TapTether .deb first (taptether-agent not found).'
-  mkdir -p "${BIN%/*}" "${SERVICE%/*}" "${APP%/*}" "${AUTOSTART%/*}" "$STATE"
-  if [[ "${BASH_SOURCE[0]}" != "$BIN" ]]; then cp "${BASH_SOURCE[0]}" "$BIN"; fi
-  chmod 700 "$BIN"
-  cat > "$SERVICE" <<'SERVICE_EOF'
+  [[ "$(id -u)" != 0 ]] || fail 'Do not run this script with sudo.'
+  [[ -x /usr/local/bin/taptether-agent ]] || fail 'Install the new TapTether .deb first.'
+  command -v sudo >/dev/null || fail 'sudo is required for first-time uinput permissions'
+  setup_permissions
+  mkdir -p "${CTL%/*}" "${SERVICE%/*}" "${APP%/*}" "${AUTOSTART%/*}" "$STATUS_DIR"
+  if [[ "$(realpath "${BASH_SOURCE[0]}")" != "$(realpath -m "$CTL")" ]]; then cp "${BASH_SOURCE[0]}" "$CTL"; fi
+  chmod 700 "$CTL"
+  cat > "$SERVICE" <<'SERVICE_END'
 [Unit]
-Description=TapTether local-only remote input (X11 desktop)
+Description=TapTether local authenticated remote input (Wayland/X11)
 After=graphical-session.target
-
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/taptether-agent
 Restart=on-failure
-RestartSec=4
+RestartSec=5
 UMask=0077
-# stdout contains a private pairing token; avoid putting it into the journal.
+# Agent stdout includes the pairing token: keep it out of the journal.
 StandardOutput=null
 StandardError=journal
 NoNewPrivileges=true
-SERVICE_EOF
-  cat > "$APP" <<DESKTOP_EOF
+[Install]
+WantedBy=default.target
+SERVICE_END
+  cat > "$APP" <<DESKTOP_END
 [Desktop Entry]
-Version=1.0
 Type=Application
 Name=TapTether Agent
-Comment=Start the private TapTether keyboard and trackpad agent
-Exec=$BIN start
+Comment=Control Ubuntu securely from your phone over the local network
+Exec=$CTL start
 Icon=input-keyboard
 Terminal=false
 StartupNotify=false
-Categories=Utility;Network;
-DESKTOP_EOF
-  cat > "$AUTOSTART" <<DESKTOP_EOF
+Categories=Network;Utility;
+DESKTOP_END
+  cat > "$AUTOSTART" <<DESKTOP_END
 [Desktop Entry]
 Type=Application
-Name=TapTether (auto-start)
-Exec=$BIN session-start
+Name=TapTether Desktop Autostart
+Comment=Start TapTether when you sign in to GNOME
+Exec=$CTL session-start
 Icon=input-keyboard
 Terminal=false
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
-DESKTOP_EOF
-  systemctl --user daemon-reload || fail 'Cannot reach user systemd. Verify login and SSH user session.'
-  note 'Installed desktop launcher, per-user service, and automatic startup at graphical login.'
-  if ! pin; then note 'Optional: pin TapTether from Ubuntu Show Applications when logged in.'; fi
-  if ! "$BIN" start; then note 'Agent not started yet; it will start automatically when you log into an X11 desktop.'; fi
-  note 'SSH: taptetherctl status | start | stop | restart | pairing | logs | pin'
+DESKTOP_END
+  user_bus
+  systemctl --user daemon-reload
+  # Autostart at GUI login, not system boot; avoids root daemon and greeter access.
+  systemctl --user disable "$UNIT" >/dev/null 2>&1 || true
+  pin
+  if [[ -w /dev/uinput ]]; then
+    if active_gui >/dev/null; then start; else note 'Service installed; it starts on next graphical login.'; fi
+  else
+    note 'Installation complete. Log out/in before starting the agent from SSH.'
+  fi
+  note 'Commands over SSH: ~/.local/bin/taptetherctl {start|stop|restart|status|pairing|logs|permissions|pin}'
 }
 start() {
-  [[ -f "$SERVICE" ]] || fail "Service missing. Run: bash $(basename "$0") install"
   user_bus
-  ensure_x11
+  [[ -f "$SERVICE" ]] || fail 'Run: bash 4-ubuntu-desktop-setup.sh install'
+  check_access
+  if ! active_gui >/dev/null; then
+    fail 'No active graphical desktop for this user. Log in to GNOME first; SSH alone does not create a desktop.'
+  fi
   systemctl --user start "$UNIT"
   sleep 1
-  systemctl --user is-active --quiet "$UNIT" || fail 'Service failed. Run: taptetherctl logs'
-  note "Agent active on X11 DISPLAY=$DISPLAY."
+  systemctl --user is-active --quiet "$UNIT" || fail 'Agent failed; run taptetherctl logs'
+  note "Agent active; desktop: $(active_gui)."
 }
 status() {
   user_bus
-  printf 'Desktop session: %s\n' "$(gui_session_type || true)"
-  printf 'X11 display in service manager: %s\n' "$(manager_value DISPLAY)"
+  printf 'Desktop: %s\n' "$(active_gui || echo 'not logged in')"
+  printf '/dev/uinput: '; if [[ -w /dev/uinput ]]; then echo 'accessible'; else echo 'not accessible'; fi
   systemctl --user --no-pager status "$UNIT" || true
+}
+permissions() {
+  ls -l /dev/uinput 2>&1 || true
+  printf 'Current groups: '; id -nG
+  if [[ -w /dev/uinput ]]; then note 'Input device accessible.'; else note 'Requires graphical re-login/reboot after group setup.'; fi
+}
+pairing() {
+  local conf="$HOME/.config/taptether"
+  [[ -r "$conf/pairing.token" && -r "$conf/server.crt" ]] || fail 'Agent identity not initialized yet; start the agent.'
+  note 'Private credentials. Do not publish or paste the pairing token into chat.'
+  printf 'LAN IP: '; hostname -I 2>/dev/null || true
+  printf 'Port: 48321\nToken: '; cat "$conf/pairing.token"
+  printf 'Certificate SHA-256 fingerprint: '
+  openssl x509 -in "$conf/server.crt" -outform DER | sha256sum | awk '{print toupper($1)}'
 }
 session_start() {
   user_bus
-  mkdir -p "$STATE"
-  if [[ "${XDG_SESSION_TYPE:-}" == wayland ]]; then
-    printf 'TapTether requires Ubuntu on Xorg, not Wayland.\n' > "$STATE/desktop-status"
-    exit 0
-  fi
-  if ! ensure_x11 > "$STATE/desktop-status" 2>&1; then exit 0; fi
-  systemctl --user restart "$UNIT" 2>> "$STATE/desktop-status" || true
+  mkdir -p "$STATUS_DIR"
+  if ! check_access > "$STATUS_DIR/session-start.log" 2>&1; then exit 0; fi
+  systemctl --user restart "$UNIT" 2>> "$STATUS_DIR/session-start.log" || true
 }
 case "${1:-}" in
   install) install ;;
-  session-start) session_start ;;
   start) start ;;
+  session-start) session_start ;;
   stop) user_bus; systemctl --user stop "$UNIT"; note 'Stopped.' ;;
   restart) user_bus; systemctl --user stop "$UNIT"; start ;;
   status) status ;;
+  permissions) permissions ;;
   pairing) pairing ;;
+  logs) user_bus; journalctl --user -u "$UNIT" -n 60 --no-pager; [[ ! -f "$STATUS_DIR/session-start.log" ]] || cat "$STATUS_DIR/session-start.log" ;;
   pin) pin ;;
-  logs) user_bus; journalctl --user -u "$UNIT" -n 40 --no-pager; [[ -f "$STATE/desktop-status" ]] && cat "$STATE/desktop-status" ;;
-  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|pin|logs}\n' >&2; exit 2 ;;
+  *) echo 'Usage: taptetherctl {install|start|stop|restart|status|pairing|logs|permissions|pin}' >&2; exit 2 ;;
 esac
 TT_DESKTOP_SH
 
@@ -1186,7 +1310,7 @@ Private LAN-only remote-control prototype. Single repository containing a Flutte
 5. `./bin/4-test.sh`.
 6. `./bin/3-push-project.sh` to commit and push initial source files.
 
-Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IPA. On Ubuntu, install `xdotool` and use an **X11/Xorg desktop session**, not Wayland, for input injection in this first version.
+Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IPA. On Ubuntu 26.04, native `/dev/uinput` input supports GNOME Wayland and X11. Restricted permissions are configured by `bin/4-ubuntu-desktop-setup.sh`; see [WAYLAND.md](WAYLAND.md).
 
 ## Scripts
 
@@ -1207,23 +1331,40 @@ Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IP
 | `./bin/3-run-agent.sh` | Start Go agent on current computer |
 | `./bin/3-push-project.sh` | Review and commit all nonignored project files to main |
 | `./bin/4-test.sh` | Go tests + Flutter analyze/tests (when Flutter installed) |
+| `./bin/4-ubuntu-desktop-setup.sh` | SSH-installable Ubuntu X11 desktop launcher, graphical-login autostart, user service, pairing details |
 | `./bin/2d-tt-all.sh` | Build all available Go targets, Ubuntu installers and available mobile targets |
+| `./bin/4-ubuntu-desktop-setup.sh` | Configure native uinput permissions, GNOME dock and desktop autostart |
+| `./bin/5-tt-remote-install-ubuntu.sh` | Build, install and configure the Ubuntu agent over SSH |
 
-## Try Ubuntu remote control
 
-1. Copy repository/build agent to an Ubuntu computer running a graphical X11 desktop, and `sudo apt install xdotool`.
-2. On Ubuntu, run `./bin/3-run-agent.sh` or the built `TapTetherAgent-linux-amd64-*` binary.
-3. The agent prints its *private LAN IP*, secret pairing token, and TLS certificate fingerprint.
-4. Install/run TapTether on your iPhone or Android phone, enter these three values, and connect using local Wi-Fi.
-5. Keep the token secret. Firewall TCP port 48321 to trusted devices on the LAN.
+## Ubuntu desktop launcher and SSH setup
 
-The agent stores its identity and token in the current OS user's configuration directory (`~/.config/taptether` on most Linux desktops), **not the git repository**. There are no analytics, cloud endpoints, update pings, or arbitrary remote shell commands. TLS encryption and manual certificate fingerprint pinning are mandatory. Pairing values are kept only in memory by this prototype; reenter after relaunch.
+After installing the Ubuntu .deb, use the TapTether desktop setup helper from your Mac:
+
+1. `scp bin/4-ubuntu-desktop-setup.sh sandip@192.168.68.87:/tmp/taptether-setup.sh`
+2. `ssh -t sandip@192.168.68.87 'bash /tmp/taptether-setup.sh install'`
+
+This installs `~/.local/bin/taptetherctl` for the **normal desktop user**, a user-level systemd service, a dock-launchable application entry, and an XDG graphical-session autostart file. The installer attempts to pin the launcher to the Ubuntu GNOME dock over the desktop D-Bus connection; if the session is not available, pin it later from Show Applications.
+
+Use SSH to manage the agent: `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl start'`, or replace `start` with `stop`, `restart`, `status`, `logs`, or `pairing`. The `pairing` command prints the LAN IP, certificate fingerprint, **and private pairing token**; do not post the token or commit it to GitHub.
+
+**Important:** Auto-start means **at graphical user login after reboot**, not remote control of the login screen. A logged-in **X11/Xorg** desktop session is required. Wayland, headless SSH, and controlling the screen before login are not supported in this prototype. The dock entry is a *launcher*, not a live tray-status indicator. The agent intentionally suppresses stdout in its user service so the secret pairing token isn't saved in systemd logs.
+
+## Try Ubuntu remote control (Wayland / X11)
+
+1. On macOS run `./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87`. It builds both Linux agents, securely copies the matching .deb over SSH and sets up restricted uinput permissions, desktop autostart and a GNOME dock launcher.
+2. **Log out and log in to Ubuntu** or reboot once to activate `taptether` group membership.
+3. From macOS use `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl start'` or just let TapTether start at graphical login.
+4. Retrieve LAN IP/token/TLS fingerprint via `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl pairing'`. Keep the token private.
+5. Build/install the matching TapTether iOS/Android 0.3.0+6 app to see trackpad, keyboard and volume buttons.
+
+See [WAYLAND.md](WAYLAND.md) for permissions, SSH commands and limitations.
 
 ## Important scope notes
 
-- **Working MVP path:** iOS/Android UI ⇄ authenticated HTTPS local agent ⇄ Ubuntu **X11 + xdotool** keyboard/mouse.
-- **Wayland**, Windows/macOS native input, device auto-discovery, clipboard sync, TV remote adapters, and polished TV-specific app builds are future work. Windows/macOS binaries compile but do **not** provide remote input yet.
-- The input backend has not been tested on physical hardware. Review/verify on a private LAN before relying on it.
+- **Linux path:** iOS/Android UI ⇄ authenticated HTTPS local agent ⇄ Ubuntu Wayland/X11 native uinput keyboard/mouse/media keys. X11-only xdotool fallback remains.
+- Windows/macOS native input, device auto-discovery, clipboard sync, TV remote adapters, and polished TV-specific app builds are future work. Windows/macOS binaries compile but do **not** provide remote input yet.
+- Native Linux uinput unit tests and cross-compilation pass; test on your actual Ubuntu desktop to verify hardware event handling. Review/verify on a private LAN before relying on it.
 - An unsigned IPA is *not* independently installable; use AltStore or valid code signing. A signed IPA requires configured Xcode signing.
 - TV operating systems can have compatibility or background-service restrictions; see `tv/README.md`.
 - Build-time dependency downloads (Flutter/Go toolchains) are distinct from runtime communications. This app intentionally has no runtime cloud integration.
@@ -1232,6 +1373,406 @@ The agent stores its identity and token in the current OS user's configuration d
 
 The bootstrap creates the SSH remote `git@github.com:ssnanda/taptether.com.git` unless an allowed matching origin is already present. It does **not** push automatically. `1-bump-version.sh` commits **only the version files** and pushes to `main`; run `3-push-project.sh` for other source changes. It refuses to push to a different repository. On the **first** commit only, `1-bump-version.sh` stages the initial scaffold so the new private repository is usable.
 TT_README
+
+write_new agent/internal/input/uinput_linux.go <<'TT_UINPUT_NATIVE'
+//go:build linux
+
+package input
+
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"syscall"
+	"time"
+	"unicode/utf8"
+	"unsafe"
+)
+
+// TapTether uses the Linux virtual HID interface, rather than Wayland's
+// RemoteDesktop portal. Access to /dev/uinput is restricted by a dedicated
+// local group; this agent must NEVER run as root or expose an internet listener.
+const (
+	evSyn         = 0
+	evKey         = 1
+	evRel         = 2
+	synReport     = 0
+	relX          = 0
+	relY          = 1
+	relWheel      = 8
+	btnLeft       = 0x110
+	btnRight      = 0x111
+	keyLeftShift  = 42
+	keyLeftCtrl   = 29
+	keyLeftAlt    = 56
+	keyLeftMeta   = 125
+	keyVolumeDown = 114
+	keyVolumeUp   = 115
+	keyMute       = 113
+	uiDevCreate   = 0x5501
+	uiDevDestroy  = 0x5502
+	uiDevSetup    = 0x405c5503 // _IOW('U',3,struct uinput_setup), 92 bytes
+	uiSetEvBit    = 0x40045564
+	uiSetKeyBit   = 0x40045565
+	uiSetRelBit   = 0x40045566
+)
+
+type uinputSetup struct {
+	Bustype, Vendor, Product, Version uint16
+	Name                              [80]byte
+	MaxEffects                        uint32
+}
+
+type virtualDevice struct{ f *os.File }
+
+var activeDevice *virtualDevice
+
+func ioctl(fd uintptr, request, value uintptr) error {
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, request, value)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+func newVirtualDevice() (*virtualDevice, error) {
+	f, err := os.OpenFile("/dev/uinput", os.O_WRONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil, fmt.Errorf("/dev/uinput permission denied: run Ubuntu desktop setup and log out/in to activate the taptether group: %w", err)
+		}
+		return nil, fmt.Errorf("cannot open /dev/uinput (run sudo modprobe uinput and desktop setup): %w", err)
+	}
+	device := &virtualDevice{f: f}
+	success := false
+	defer func() {
+		if !success {
+			_ = f.Close()
+		}
+	}()
+	if err := ioctl(f.Fd(), uiSetEvBit, evKey); err != nil {
+		return nil, err
+	}
+	if err := ioctl(f.Fd(), uiSetEvBit, evRel); err != nil {
+		return nil, err
+	}
+	for _, key := range allEnabledKeys() {
+		if err := ioctl(f.Fd(), uiSetKeyBit, uintptr(key)); err != nil {
+			return nil, fmt.Errorf("enable key %d: %w", key, err)
+		}
+	}
+	for _, axis := range []int{relX, relY, relWheel} {
+		if err := ioctl(f.Fd(), uiSetRelBit, uintptr(axis)); err != nil {
+			return nil, err
+		}
+	}
+	setup := uinputSetup{Bustype: 3, Vendor: 0xF07A, Product: 0x0001, Version: 1}
+	copy(setup.Name[:], "TapTether Virtual Keyboard and Mouse")
+	if err := ioctl(f.Fd(), uiDevSetup, uintptr(unsafe.Pointer(&setup))); err != nil {
+		return nil, fmt.Errorf("uinput setup: %w", err)
+	}
+	if err := ioctl(f.Fd(), uiDevCreate, 0); err != nil {
+		return nil, fmt.Errorf("uinput create: %w", err)
+	}
+	// Allow udev/libinput to enumerate the new virtual input device.
+	time.Sleep(250 * time.Millisecond)
+	success = true
+	return device, nil
+}
+
+func (d *virtualDevice) emit(typ, code uint16, value int32) error {
+	// 64-bit Linux struct input_event: timeval{int64,int64}, u16,u16,i32.
+	var buf [24]byte
+	binary.LittleEndian.PutUint16(buf[16:18], typ)
+	binary.LittleEndian.PutUint16(buf[18:20], code)
+	binary.LittleEndian.PutUint32(buf[20:24], uint32(value))
+	_, err := d.f.Write(buf[:])
+	return err
+}
+func (d *virtualDevice) sync() error { return d.emit(evSyn, synReport, 0) }
+func (d *virtualDevice) press(code int) error {
+	if err := d.emit(evKey, uint16(code), 1); err != nil {
+		return err
+	}
+	if err := d.sync(); err != nil {
+		return err
+	}
+	if err := d.emit(evKey, uint16(code), 0); err != nil {
+		return err
+	}
+	return d.sync()
+}
+func (d *virtualDevice) chord(keys []int) (err error) {
+	// Always release held keys even on write failure.
+	defer func() {
+		for i := len(keys) - 1; i >= 0; i-- {
+			_ = d.emit(evKey, uint16(keys[i]), 0)
+		}
+		_ = d.sync()
+	}()
+	for _, k := range keys {
+		if err = d.emit(evKey, uint16(k), 1); err != nil {
+			return err
+		}
+	}
+	return d.sync()
+}
+func (d *virtualDevice) send(e Event) error {
+	switch e.Type {
+	case "ping":
+		return nil
+	case "move":
+		if err := d.emit(evRel, relX, int32(e.DX)); err != nil {
+			return err
+		}
+		if err := d.emit(evRel, relY, int32(e.DY)); err != nil {
+			return err
+		}
+		return d.sync()
+	case "scroll":
+		if e.DY == 0 {
+			return nil
+		}
+		ticks := e.DY
+		if ticks > 8 {
+			ticks = 8
+		}
+		if ticks < -8 {
+			ticks = -8
+		}
+		return d.emitAndSync(evRel, relWheel, int32(-ticks))
+	case "click":
+		key := btnLeft
+		if e.Button == "right" {
+			key = btnRight
+		}
+		if err := d.press(key); err != nil {
+			return err
+		}
+		if e.Button == "double" {
+			return d.press(key)
+		}
+		return nil
+	case "key":
+		keys, err := parseChord(e.Key)
+		if err != nil {
+			return err
+		}
+		return d.chord(keys)
+	case "text":
+		if !utf8.ValidString(e.Text) {
+			return errors.New("invalid UTF-8 text")
+		}
+		for _, r := range e.Text {
+			code, shifted, ok := asciiKey(r)
+			if !ok {
+				return fmt.Errorf("Wayland text input currently supports ASCII; unsupported character %q", r)
+			}
+			if shifted {
+				if err := d.chord([]int{keyLeftShift, code}); err != nil {
+					return err
+				}
+			} else if err := d.press(code); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown input type %q", e.Type)
+	}
+}
+func (d *virtualDevice) emitAndSync(typ, code uint16, val int32) error {
+	if err := d.emit(typ, code, val); err != nil {
+		return err
+	}
+	return d.sync()
+}
+
+var namedKeys = map[string]int{
+	"escape": 1, "esc": 1, "tab": 15, "return": 28, "enter": 28, "backspace": 14,
+	"up": 103, "down": 108, "left": 105, "right": 106, "space": 57, "delete": 111,
+	"ctrl": keyLeftCtrl, "control": keyLeftCtrl, "alt": keyLeftAlt, "shift": keyLeftShift, "super": keyLeftMeta, "meta": keyLeftMeta,
+	"xf86audioraisevolume": keyVolumeUp, "xf86audiolowervolume": keyVolumeDown, "xf86audiomute": keyMute,
+}
+var asciiCodes = map[rune]int{
+	'1': 2, '2': 3, '3': 4, '4': 5, '5': 6, '6': 7, '7': 8, '8': 9, '9': 10, '0': 11,
+	'-': 12, '=': 13, '[': 26, ']': 27, ';': 39, '\'': 40, '`': 41, '\\': 43, ',': 51, '.': 52, '/': 53,
+	'q': 16, 'w': 17, 'e': 18, 'r': 19, 't': 20, 'y': 21, 'u': 22, 'i': 23, 'o': 24, 'p': 25,
+	'a': 30, 's': 31, 'd': 32, 'f': 33, 'g': 34, 'h': 35, 'j': 36, 'k': 37, 'l': 38,
+	'z': 44, 'x': 45, 'c': 46, 'v': 47, 'b': 48, 'n': 49, 'm': 50,
+	' ': 57, '\t': 15, '\n': 28,
+}
+var shiftedSymbols = map[rune]rune{
+	'!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
+	'_': '-', '+': '=', '{': '[', '}': ']', ':': ';', '"': '\'', '~': '`', '|': '\\', '<': ',', '>': '.', '?': '/',
+}
+
+func asciiKey(r rune) (int, bool, bool) {
+	if r >= 'A' && r <= 'Z' {
+		return asciiCodes[r+('a'-'A')], true, true
+	}
+	if val, ok := asciiCodes[r]; ok {
+		return val, false, true
+	}
+	if raw, ok := shiftedSymbols[r]; ok {
+		return asciiCodes[raw], true, true
+	}
+	return 0, false, false
+}
+func parseChord(raw string) ([]int, error) {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(raw)), "+")
+	if len(parts) > 4 {
+		return nil, errors.New("key combination too long")
+	}
+	result := make([]int, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if val, ok := namedKeys[p]; ok {
+			result = append(result, val)
+			continue
+		}
+		if len(p) == 1 {
+			if val, ok := asciiCodes[rune(p[0])]; ok {
+				result = append(result, val)
+				continue
+			}
+		}
+		return nil, fmt.Errorf("unsupported key: %q", p)
+	}
+	return result, nil
+}
+func allEnabledKeys() []int {
+	seen := map[int]bool{}
+	for _, code := range namedKeys {
+		seen[code] = true
+	}
+	for _, code := range asciiCodes {
+		seen[code] = true
+	}
+	seen[btnLeft] = true
+	seen[btnRight] = true
+	keys := make([]int, 0, len(seen))
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func uinputSetupSize() uintptr { return unsafe.Sizeof(uinputSetup{}) }
+TT_UINPUT_NATIVE
+
+write_new agent/internal/input/uinput_linux_test.go <<'TT_UINPUT_TEST'
+//go:build linux
+
+package input
+
+import "testing"
+
+func TestASCIIKeyMap(t *testing.T) {
+	cases := []struct {
+		ch    rune
+		code  int
+		shift bool
+		ok    bool
+	}{
+		{'a', 30, false, true}, {'A', 30, true, true}, {'1', 2, false, true}, {'!', 2, true, true},
+		{' ', 57, false, true}, {'\n', 28, false, true}, {'?', 53, true, true}, {'é', 0, false, false},
+	}
+	for _, tt := range cases {
+		code, shift, ok := asciiKey(tt.ch)
+		if code != tt.code || shift != tt.shift || ok != tt.ok {
+			t.Errorf("asciiKey(%q)=(%d,%t,%t)", tt.ch, code, shift, ok)
+		}
+	}
+}
+func TestKeyChords(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []int
+	}{
+		{"ctrl+c", []int{29, 46}}, {"alt+Tab", []int{56, 15}},
+		{"XF86AudioRaiseVolume", []int{115}}, {"XF86AudioLowerVolume", []int{114}},
+		{"XF86AudioMute", []int{113}},
+	}
+	for _, tt := range tests {
+		got, err := parseChord(tt.input)
+		if err != nil || len(got) != len(tt.want) {
+			t.Errorf("parseChord(%q): %v %v", tt.input, got, err)
+			continue
+		}
+		for i, k := range got {
+			if k != tt.want[i] {
+				t.Errorf("parseChord(%q) [%d]=%d, want %d", tt.input, i, k, tt.want[i])
+			}
+		}
+	}
+	for _, bad := range []string{"unknown", "ctrl+", "ctrl+alt+shift+meta+x"} {
+		if _, err := parseChord(bad); err == nil {
+			t.Errorf("wanted error for %q", bad)
+		}
+	}
+}
+func TestVirtualDeviceLayout(t *testing.T) {
+	// CI has no physical /dev/uinput. Validate ioctl ABI via sizeof in build test.
+	if got := uinputSetupSize(); got != 92 {
+		t.Fatalf("uinput_setup size=%d want=92", got)
+	}
+}
+TT_UINPUT_TEST
+
+write_new bin/5-tt-remote-install-ubuntu.sh <<'TT_UBUNTU_REMOTE'
+#!/usr/bin/env bash
+# Build current TapTether agent, copy, validate, install and configure over SSH.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HOST="${1:-sandip@192.168.68.87}"
+[[ "$HOST" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$ ]] || { echo 'Usage: ./bin/5-tt-remote-install-ubuntu.sh user@host' >&2; exit 2; }
+version="$(cat "$ROOT/VERSION")"
+"$ROOT/bin/2b-tt-ubuntu.sh"
+arch="$(ssh "$HOST" 'dpkg --print-architecture')"
+[[ "$arch" == amd64 || "$arch" == arm64 ]] || { echo "Unsupported remote Ubuntu architecture: $arch" >&2; exit 1; }
+package="$ROOT/dist/ubuntu/taptether-agent_${version}_${arch}.deb"
+[[ -s "$package" ]] || { echo "Missing installer: $package" >&2; exit 1; }
+stage="$(ssh "$HOST" 'mktemp -d /tmp/taptether-install.XXXXXXXX')"
+[[ "$stage" =~ ^/tmp/taptether-install\.[a-zA-Z0-9]+$ ]] || { echo "Invalid remote temp directory: $stage" >&2; exit 1; }
+scp "$package" "$ROOT/bin/4-ubuntu-desktop-setup.sh" "$HOST:$stage/"
+ssh -tt "$HOST" "set -e; dpkg-deb --info '$stage/$(basename "$package")' >/dev/null; sudo apt install -y '$stage/$(basename "$package")'; bash '$stage/4-ubuntu-desktop-setup.sh' install; rm -rf '$stage'; ~/.local/bin/taptetherctl status"
+echo "TapTether $version deployed to $HOST. If /dev/uinput group was added, log out of the Ubuntu desktop and log back in (or reboot)."
+TT_UBUNTU_REMOTE
+
+write_new WAYLAND.md <<'TT_WAYLAND_DOC'
+# TapTether 0.3 — GNOME Wayland / Ubuntu 26.04
+
+TapTether on Linux now supports native `/dev/uinput` virtual devices. This works with GNOME Wayland and X11 without the RemoteDesktop portal used by apps that call XTEST. It does not fix unrelated dialogs from Steam Input or other apps. The hardware-style keyboard/media events may work on the lock screen; keep your pairing token private and restrict port 48321 to trusted LAN devices.
+
+## Install/update from Mac
+
+Run `./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87` from the TapTether repository. The script builds Linux amd64 and arm64 installers, copies the detected architecture over SSH, installs it, adds your Ubuntu user to the restricted `taptether` group, configures `/dev/uinput`, and creates the per-user desktop autostart and dock launcher.
+
+**First-time security setup requires sudo.** Log out of the Ubuntu graphical desktop and log back in (or reboot) to apply group membership. A running SSH shell cannot acquire newly added supplementary groups without a new login. It does not run the agent as root. `taptether` group membership grants access to a powerful virtual keyboard/mouse interface; only grant it to trusted users.
+
+## SSH commands
+
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl status'`
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl start'`
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl restart'`
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl permissions'`
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl pairing'` (PRIVATE TOKEN — never share in a chat)
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl logs'`
+
+The service starts on graphical desktop login through the user's autostart entry, not at the graphical login screen. The Ubuntu dock shortcut launches it on demand. No cloud component is required.
+
+## Limitations
+
+- Keyboard layout for hardware text synthesis is US-English ASCII only in 0.3. Unicode text input needs a future method. Physical host keyboard layouts may change mappings.
+- Go builds compile and unit tests run on Linux; end-to-end uinput and libinput integration must be tested on a real GNOME Wayland desktop.
+- Input injection is privileged by Linux device permissions; do not expose `/dev/uinput` to all users, run this service as root, or expose port 48321 publicly.
+- Volume controls synthesize `KEY_VOLUMEUP`, `KEY_VOLUMEDOWN`, and `KEY_MUTE` media key events. Desktop sound settings and the active audio sink determine actual volume effects.
+- Existing iOS/Android apps must be rebuilt to show the new volume buttons. Pairing credentials persist on Ubuntu unless its user config directory is removed.
+- If GNOME keeps showing Remote Desktop prompts even when TapTether is not involved, investigate Steam Input or other XWayland/XTEST clients separately.
+TT_WAYLAND_DOC
 
 # iOS requires Local Network usage privacy text. The generated app must prompt for permission.
 if [[ -f app/ios/Runner/Info.plist ]]; then

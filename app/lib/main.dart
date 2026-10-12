@@ -232,6 +232,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
             keyButton('Ctrl+C','ctrl+c'), keyButton('Ctrl+V','ctrl+v'),
             keyButton('Ctrl+L','ctrl+l'), keyButton('Alt+Tab','alt+Tab'),
           ]),
+          const SizedBox(height: 8),
+          const Text('System volume', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          Wrap(spacing: 8, runSpacing: 4, children: [
+            keyButton('Volume −', 'XF86AudioLowerVolume'),
+            keyButton('Mute', 'XF86AudioMute'),
+            keyButton('Volume +', 'XF86AudioRaiseVolume'),
+          ]),
         ],
         const SizedBox(height: 16),
         Text(status, style: const TextStyle(fontSize: 12, color: Colors.white70)),

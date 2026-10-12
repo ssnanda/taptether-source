@@ -46,7 +46,8 @@ def write_ar_member(fh, name, data):
         f'{0:<6}'
         f'{"100644":<8}'
         f'{len(data):<10}'
-    ).encode('ascii') + bytes((96, 10))
+        '`\n'
+    ).encode('ascii')
     if len(header) != 60:
         raise AssertionError('Invalid ar header length')
     fh.write(header)
@@ -70,8 +71,8 @@ for arch in ('amd64', 'arm64'):
         f'Architecture: {arch}\n'
         'Maintainer: TapTether <support@taptether.com>\n'
         'Depends: xdotool\n'
-        'Description: TapTether local-first keyboard and trackpad agent\n'
-        ' A local HTTPS remote input agent for an X11 Ubuntu desktop.\n'
+        'Description: TapTether Wayland/X11 virtual keyboard, mouse and volume agent\n'
+        ' A local HTTPS remote input agent with native Linux uinput support.\n'
         ' No cloud account or telemetry.\n'
     ).encode('utf-8')
     members = (

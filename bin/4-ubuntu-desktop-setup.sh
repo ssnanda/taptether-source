@@ -1,195 +1,187 @@
 #!/usr/bin/env bash
-# TapTether X11 desktop integration; run as the desktop user, not with sudo.
+# TapTether GNOME Wayland/X11 desktop setup and SSH control.
+# Run as your ordinary Ubuntu desktop user. setup uses sudo only for /dev/uinput access.
 set -euo pipefail
 
-BIN="$HOME/.local/bin/taptetherctl"
-SERVICE="$HOME/.config/systemd/user/taptether-agent.service"
+CTL="$HOME/.local/bin/taptetherctl"
+UNIT='taptether-agent.service'
+SERVICE="$HOME/.config/systemd/user/$UNIT"
 APP="$HOME/.local/share/applications/taptether.desktop"
 AUTOSTART="$HOME/.config/autostart/taptether-agent.desktop"
-STATE="$HOME/.local/state/taptether"
-UNIT=taptether-agent.service
+STATUS_DIR="$HOME/.local/state/taptether"
 
-fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-note() { printf 'TapTether: %s\n' "$*"; }
+fail() { echo "ERROR: $*" >&2; exit 1; }
+note() { echo "TapTether: $*"; }
 user_bus() {
-  local rt="/run/user/$(id -u)"
-  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$rt}"
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
   if [[ -S "$XDG_RUNTIME_DIR/bus" ]]; then
-    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
   fi
 }
-manager_value() {
-  systemctl --user show-environment 2>/dev/null | sed -n "s/^$1=//p" | head -n 1
-}
-gui_session_type() {
-  local sid typ
-  if command -v loginctl >/dev/null 2>&1; then
-    sid="$(loginctl show-user "$(id -un)" -p Display --value 2>/dev/null || true)"
-    if [[ -n "$sid" ]]; then
-      typ="$(loginctl show-session "$sid" -p Type --value 2>/dev/null || true)"
-      if [[ "$typ" == x11 || "$typ" == wayland ]]; then printf '%s' "$typ"; return; fi
-    fi
+manager_value() { systemctl --user show-environment 2>/dev/null | sed -n "s/^$1=//p" | head -n1; }
+active_gui() {
+  local display_id typ
+  display_id="$(loginctl show-user "$(id -un)" -p Display --value 2>/dev/null || true)"
+  if [[ -n "$display_id" ]]; then
+    typ="$(loginctl show-session "$display_id" -p Type --value 2>/dev/null || true)"
+    if [[ "$typ" == 'wayland' || "$typ" == 'x11' ]]; then printf '%s\n' "$typ"; return 0; fi
   fi
-  typ="$(manager_value XDG_SESSION_TYPE)"
-  if [[ "$typ" == x11 || "$typ" == wayland ]]; then printf '%s' "$typ"; return; fi
-  if [[ "${XDG_SESSION_TYPE:-}" == x11 || "${XDG_SESSION_TYPE:-}" == wayland ]]; then
-    printf '%s' "$XDG_SESSION_TYPE"
-  fi
+  # GNOME's session data can be absent from loginctl in some remote-management cases.
+  if [[ -S "$XDG_RUNTIME_DIR/wayland-0" ]]; then echo 'wayland'; return 0; fi
+  if [[ -n "$(manager_value DISPLAY)" ]]; then echo 'x11'; return 0; fi
+  return 1
 }
-ensure_x11() {
-  command -v xdotool >/dev/null 2>&1 || fail 'xdotool missing; sudo apt install xdotool'
-  local typ manager_disp manager_auth disp auth_candidate
-  typ="$(gui_session_type)"
-  if [[ "$typ" == wayland ]]; then
-    fail 'An active Wayland desktop was detected. TapTether 0.2.x needs Ubuntu on Xorg (X11).'
+check_access() {
+  if [[ -w /dev/uinput ]]; then return 0; fi
+  if [[ ! -e /dev/uinput ]]; then
+    fail '/dev/uinput missing. Install setup first, or run sudo modprobe uinput.'
   fi
-  manager_disp="$(manager_value DISPLAY)"
-  manager_auth="$(manager_value XAUTHORITY)"
-  local -a displays=() auths=()
-  [[ -n "$manager_disp" ]] && displays+=("$manager_disp")
-  if [[ -n "${DISPLAY:-}" && "$DISPLAY" != localhost:* && "$DISPLAY" != 127.0.0.1:* ]]; then displays+=("$DISPLAY"); fi
-  displays+=(':0' ':1' ':2')
-  [[ -n "$manager_auth" ]] && auths+=("$manager_auth")
-  [[ -n "${XAUTHORITY:-}" ]] && auths+=("$XAUTHORITY")
-  auths+=("/run/user/$(id -u)/gdm/Xauthority" "$HOME/.Xauthority")
-  for disp in "${displays[@]}"; do
-    for auth_candidate in "${auths[@]}"; do
-      if [[ -f "$auth_candidate" ]] && env DISPLAY="$disp" XAUTHORITY="$auth_candidate" xdotool getmouselocation >/dev/null 2>&1; then
-        export DISPLAY="$disp" XAUTHORITY="$auth_candidate" XDG_SESSION_TYPE=x11
-        systemctl --user import-environment DISPLAY XAUTHORITY XDG_SESSION_TYPE >/dev/null
-        return 0
-      fi
-    done
-    if env -u XAUTHORITY DISPLAY="$disp" xdotool getmouselocation >/dev/null 2>&1; then
-      export DISPLAY="$disp" XDG_SESSION_TYPE=x11
-      unset XAUTHORITY || true
-      systemctl --user import-environment DISPLAY XDG_SESSION_TYPE >/dev/null
-      return 0
-    fi
-  done
-  fail 'No accessible X11 desktop found. Log into Ubuntu using "Ubuntu on Xorg", then try again. (SSH by itself has no graphical display.)'
+  fail '/dev/uinput not writable by current session. Log out of Ubuntu completely and log back in (or reboot) to activate the taptether group.'
 }
-pairing() {
-  local config="$HOME/.config/taptether" token cert
-  token="$config/pairing.token"
-  cert="$config/server.crt"
-  [[ -r "$token" && -r "$cert" ]] || fail 'Agent has not initialized pairing identity. Start the service first.'
-  command -v openssl >/dev/null 2>&1 || fail 'openssl is required to print certificate fingerprint'
-  command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum is required'
-  note 'PRIVATE pairing details. Do not paste your token into chats or tickets.'
-  printf 'Host IP: '
-  if command -v hostname >/dev/null 2>&1; then hostname -I 2>/dev/null || printf '(check ip addr)\n'; fi
-  printf 'Port: 48321\nToken: '
-  cat "$token"
-  printf 'TLS SHA-256 fingerprint: '
-  openssl x509 -in "$cert" -outform DER | sha256sum | awk '{print toupper($1)}'
+setup_permissions() {
+  # Do not grant uinput access to everyone. Its keyboard privileges are powerful.
+  note 'Configuring restricted /dev/uinput access (sudo required).'
+  sudo groupadd --system --force taptether
+  sudo usermod -aG taptether "$(id -un)"
+  printf 'uinput\n' | sudo tee /etc/modules-load.d/taptether-uinput.conf >/dev/null
+  printf 'KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="taptether", MODE="0660"\n' \
+    | sudo tee /etc/udev/rules.d/80-taptether-uinput.rules >/dev/null
+  sudo modprobe uinput
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger --subsystem-match=misc --sysname-match=uinput || true
+  sudo chgrp taptether /dev/uinput
+  sudo chmod 0660 /dev/uinput
+  if ! id -nG | tr ' ' '\n' | grep -qx 'taptether'; then
+    note 'Your account was added to the taptether group. Log out and log back in (or reboot) before using remote input.'
+  fi
 }
 pin() {
-  command -v gsettings >/dev/null 2>&1 || { note 'gsettings not found; launcher will still appear in Applications.'; return 1; }
-  command -v python3 >/dev/null 2>&1 || { note 'python3 is required to pin to the GNOME dock.'; return 1; }
+  if ! command -v gsettings >/dev/null; then note 'GNOME gsettings unavailable; use Show Applications to pin TapTether.'; return 0; fi
   user_bus
-  python3 - <<'PY'
+  if ! python3 - <<'PY'
 import ast, subprocess, sys
-base=['gsettings','get','org.gnome.shell','favorite-apps']
 try:
-    raw=subprocess.check_output(base,text=True,stderr=subprocess.PIPE).strip()
-    if raw.startswith('@as '): raw=raw[4:]
-    apps=ast.literal_eval(raw)
-    if not isinstance(apps,list): raise ValueError('GNOME favorites are not a list')
-    if 'taptether.desktop' not in apps:
-        apps.append('taptether.desktop')
-        subprocess.run(['gsettings','set','org.gnome.shell','favorite-apps',str(apps)],check=True,stderr=subprocess.PIPE)
-        print('TapTether pinned to GNOME dock.')
-    else: print('TapTether is already pinned to GNOME dock.')
-except (OSError, subprocess.CalledProcessError, SyntaxError, ValueError) as ex:
-    print(f'Could not pin remotely ({ex}). Open Show Applications and right-click TapTether → Add to Favorites.',file=sys.stderr)
+    raw = subprocess.check_output(['gsettings','get','org.gnome.shell','favorite-apps'], text=True, stderr=subprocess.DEVNULL).strip()
+    if raw.startswith('@as '): raw = raw[4:]
+    favorites = ast.literal_eval(raw)
+    if not isinstance(favorites, list): raise ValueError('bad GNOME favorites')
+    if 'taptether.desktop' not in favorites:
+        favorites.append('taptether.desktop')
+        subprocess.run(['gsettings','set','org.gnome.shell','favorite-apps',str(favorites)], check=True)
+    print('TapTether is pinned to the GNOME dock.')
+except Exception as exc:
+    print('Dock pinning unavailable over SSH:', exc, file=sys.stderr)
     sys.exit(1)
 PY
+  then note 'Pin manually from GNOME Show Applications → TapTether → Add to Favorites.'; fi
 }
 install() {
-  [[ "$(id -u)" != 0 ]] || fail 'Run as the normal Ubuntu desktop user, not root or sudo.'
-  [[ -x /usr/local/bin/taptether-agent ]] || fail 'Install the TapTether .deb first (taptether-agent not found).'
-  mkdir -p "${BIN%/*}" "${SERVICE%/*}" "${APP%/*}" "${AUTOSTART%/*}" "$STATE"
-  if [[ "${BASH_SOURCE[0]}" != "$BIN" ]]; then cp "${BASH_SOURCE[0]}" "$BIN"; fi
-  chmod 700 "$BIN"
-  cat > "$SERVICE" <<'SERVICE_EOF'
+  [[ "$(id -u)" != 0 ]] || fail 'Do not run this script with sudo.'
+  [[ -x /usr/local/bin/taptether-agent ]] || fail 'Install the new TapTether .deb first.'
+  command -v sudo >/dev/null || fail 'sudo is required for first-time uinput permissions'
+  setup_permissions
+  mkdir -p "${CTL%/*}" "${SERVICE%/*}" "${APP%/*}" "${AUTOSTART%/*}" "$STATUS_DIR"
+  if [[ "$(realpath "${BASH_SOURCE[0]}")" != "$(realpath -m "$CTL")" ]]; then cp "${BASH_SOURCE[0]}" "$CTL"; fi
+  chmod 700 "$CTL"
+  cat > "$SERVICE" <<'SERVICE_END'
 [Unit]
-Description=TapTether local-only remote input (X11 desktop)
+Description=TapTether local authenticated remote input (Wayland/X11)
 After=graphical-session.target
-
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/taptether-agent
 Restart=on-failure
-RestartSec=4
+RestartSec=5
 UMask=0077
-# stdout contains a private pairing token; avoid putting it into the journal.
+# Agent stdout includes the pairing token: keep it out of the journal.
 StandardOutput=null
 StandardError=journal
 NoNewPrivileges=true
-SERVICE_EOF
-  cat > "$APP" <<DESKTOP_EOF
+[Install]
+WantedBy=default.target
+SERVICE_END
+  cat > "$APP" <<DESKTOP_END
 [Desktop Entry]
-Version=1.0
 Type=Application
 Name=TapTether Agent
-Comment=Start the private TapTether keyboard and trackpad agent
-Exec=$BIN start
+Comment=Control Ubuntu securely from your phone over the local network
+Exec=$CTL start
 Icon=input-keyboard
 Terminal=false
 StartupNotify=false
-Categories=Utility;Network;
-DESKTOP_EOF
-  cat > "$AUTOSTART" <<DESKTOP_EOF
+Categories=Network;Utility;
+DESKTOP_END
+  cat > "$AUTOSTART" <<DESKTOP_END
 [Desktop Entry]
 Type=Application
-Name=TapTether (auto-start)
-Exec=$BIN session-start
+Name=TapTether Desktop Autostart
+Comment=Start TapTether when you sign in to GNOME
+Exec=$CTL session-start
 Icon=input-keyboard
 Terminal=false
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
-DESKTOP_EOF
-  systemctl --user daemon-reload || fail 'Cannot reach user systemd. Verify login and SSH user session.'
-  note 'Installed desktop launcher, per-user service, and automatic startup at graphical login.'
-  if ! pin; then note 'Optional: pin TapTether from Ubuntu Show Applications when logged in.'; fi
-  if ! "$BIN" start; then note 'Agent not started yet; it will start automatically when you log into an X11 desktop.'; fi
-  note 'SSH: taptetherctl status | start | stop | restart | pairing | logs | pin'
+DESKTOP_END
+  user_bus
+  systemctl --user daemon-reload
+  # Autostart at GUI login, not system boot; avoids root daemon and greeter access.
+  systemctl --user disable "$UNIT" >/dev/null 2>&1 || true
+  pin
+  if [[ -w /dev/uinput ]]; then
+    if active_gui >/dev/null; then start; else note 'Service installed; it starts on next graphical login.'; fi
+  else
+    note 'Installation complete. Log out/in before starting the agent from SSH.'
+  fi
+  note 'Commands over SSH: ~/.local/bin/taptetherctl {start|stop|restart|status|pairing|logs|permissions|pin}'
 }
 start() {
-  [[ -f "$SERVICE" ]] || fail "Service missing. Run: bash $(basename "$0") install"
   user_bus
-  ensure_x11
+  [[ -f "$SERVICE" ]] || fail 'Run: bash 4-ubuntu-desktop-setup.sh install'
+  check_access
+  if ! active_gui >/dev/null; then
+    fail 'No active graphical desktop for this user. Log in to GNOME first; SSH alone does not create a desktop.'
+  fi
   systemctl --user start "$UNIT"
   sleep 1
-  systemctl --user is-active --quiet "$UNIT" || fail 'Service failed. Run: taptetherctl logs'
-  note "Agent active on X11 DISPLAY=$DISPLAY."
+  systemctl --user is-active --quiet "$UNIT" || fail 'Agent failed; run taptetherctl logs'
+  note "Agent active; desktop: $(active_gui)."
 }
 status() {
   user_bus
-  printf 'Desktop session: %s\n' "$(gui_session_type || true)"
-  printf 'X11 display in service manager: %s\n' "$(manager_value DISPLAY)"
+  printf 'Desktop: %s\n' "$(active_gui || echo 'not logged in')"
+  printf '/dev/uinput: '; if [[ -w /dev/uinput ]]; then echo 'accessible'; else echo 'not accessible'; fi
   systemctl --user --no-pager status "$UNIT" || true
+}
+permissions() {
+  ls -l /dev/uinput 2>&1 || true
+  printf 'Current groups: '; id -nG
+  if [[ -w /dev/uinput ]]; then note 'Input device accessible.'; else note 'Requires graphical re-login/reboot after group setup.'; fi
+}
+pairing() {
+  local conf="$HOME/.config/taptether"
+  [[ -r "$conf/pairing.token" && -r "$conf/server.crt" ]] || fail 'Agent identity not initialized yet; start the agent.'
+  note 'Private credentials. Do not publish or paste the pairing token into chat.'
+  printf 'LAN IP: '; hostname -I 2>/dev/null || true
+  printf 'Port: 48321\nToken: '; cat "$conf/pairing.token"
+  printf 'Certificate SHA-256 fingerprint: '
+  openssl x509 -in "$conf/server.crt" -outform DER | sha256sum | awk '{print toupper($1)}'
 }
 session_start() {
   user_bus
-  mkdir -p "$STATE"
-  if [[ "${XDG_SESSION_TYPE:-}" == wayland ]]; then
-    printf 'TapTether requires Ubuntu on Xorg, not Wayland.\n' > "$STATE/desktop-status"
-    exit 0
-  fi
-  if ! ensure_x11 > "$STATE/desktop-status" 2>&1; then exit 0; fi
-  systemctl --user restart "$UNIT" 2>> "$STATE/desktop-status" || true
+  mkdir -p "$STATUS_DIR"
+  if ! check_access > "$STATUS_DIR/session-start.log" 2>&1; then exit 0; fi
+  systemctl --user restart "$UNIT" 2>> "$STATUS_DIR/session-start.log" || true
 }
 case "${1:-}" in
   install) install ;;
-  session-start) session_start ;;
   start) start ;;
+  session-start) session_start ;;
   stop) user_bus; systemctl --user stop "$UNIT"; note 'Stopped.' ;;
   restart) user_bus; systemctl --user stop "$UNIT"; start ;;
   status) status ;;
+  permissions) permissions ;;
   pairing) pairing ;;
+  logs) user_bus; journalctl --user -u "$UNIT" -n 60 --no-pager; [[ ! -f "$STATUS_DIR/session-start.log" ]] || cat "$STATUS_DIR/session-start.log" ;;
   pin) pin ;;
-  logs) user_bus; journalctl --user -u "$UNIT" -n 40 --no-pager; [[ -f "$STATE/desktop-status" ]] && cat "$STATE/desktop-status" ;;
-  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|pin|logs}\n' >&2; exit 2 ;;
+  *) echo 'Usage: taptetherctl {install|start|stop|restart|status|pairing|logs|permissions|pin}' >&2; exit 2 ;;
 esac
