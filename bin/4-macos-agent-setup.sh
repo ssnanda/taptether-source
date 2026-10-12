@@ -95,6 +95,27 @@ EOF
   notice 'Allow TapTether in macOS System Settings > Privacy & Security > Accessibility to enable mouse/keyboard.'
   pairing
 }
+pairing_qr() {
+  command -v qrencode >/dev/null 2>&1 || { notice 'Install qrencode: brew install qrencode' >&2; exit 1; }
+  [[ -r "$CONF/pairing.token" && -r "$CONF/server.crt" ]] || { notice 'Agent is not initialized' >&2; exit 1; }
+  local host token fingerprint uri
+  host="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null)"
+  token="$(tr -d '\n' < "$CONF/pairing.token")"
+  fingerprint="$(openssl x509 -in "$CONF/server.crt" -outform DER | shasum -a 256 | awk '{print toupper($1)}')"
+  uri="$(python3 - "$host" "$token" "$fingerprint" <<'PY'
+import sys, urllib.parse
+h,t,f=sys.argv[1:]
+print('taptether://pair?'+urllib.parse.urlencode({'v':'1','host':h,'token':t,'fingerprint':f}))
+PY
+)"
+  notice 'PRIVATE pairing QR. Display only on a trusted terminal.'
+  printf '%s' "$uri" | qrencode -t ANSIUTF8 -o -
+}
+devices() { "$APP" --list-devices; }
+revoke_device() {
+  [[ "$2" =~ ^[0-9a-f]{32}$ ]] || { notice 'Invalid device ID' >&2; exit 1; }
+  "$APP" --revoke-device "$2"
+}
 enable_shutdown() {
   [[ -f "$PLIST" ]] || { notice 'Install the macOS agent first.' >&2; exit 1; }
   /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST" >/dev/null 2>&1 || true
@@ -125,10 +146,13 @@ case "$@" in
   restart) launchctl kickstart -k "$TARGET/$LABEL" ;;
   status) launchctl print "$TARGET/$LABEL" ;;
   pairing) pairing ;;
+  pairing-qr) pairing_qr ;;
+  devices) devices ;;
+  revoke-device) revoke_device "$@" ;;
   logs) tail -n 50 "$LOGDIR/agent.stderr.log" ;;
   check-update) check_update ;;
   update) update_agent ;;
   enable-shutdown) enable_shutdown ;;
   disable-shutdown) disable_shutdown ;;
-  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|pairing|logs|check-update|update|enable-shutdown|disable-shutdown}' >&2; exit 2 ;;
+  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|pairing|pairing-qr|devices|revoke-device ID|logs|check-update|update|enable-shutdown|disable-shutdown}' >&2; exit 2 ;;
 esac
