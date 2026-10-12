@@ -12,6 +12,9 @@ on:
       - 'VERSION'
       - '.github/workflows/agents.yml'
   workflow_dispatch:
+concurrency:
+  group: agents-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -22,7 +25,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: agent/go.mod
-          cache-dependency-path: agent/go.sum
+          cache: false
       - name: Go tests
         run: cd agent && go test ./... && go vet ./...
       - name: Build Ubuntu packages
@@ -39,7 +42,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: agent/go.mod
-          cache-dependency-path: agent/go.sum
+          cache: false
       - name: Go tests
         run: cd agent && go test ./... && go vet ./...
       - name: Build native macOS agents
