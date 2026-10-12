@@ -13,9 +13,9 @@ fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 note() { printf 'TapTether: %s\n' "$*"; }
 user_bus() {
   local rt="/run/user/$(id -u)"
-  export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-$rt}"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$rt}"
   if [[ -S "$XDG_RUNTIME_DIR/bus" ]]; then
-    export DBUS_SESSION_BUS_ADDRESS="\${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
   fi
 }
 manager_value() {
@@ -32,7 +32,7 @@ gui_session_type() {
   fi
   typ="$(manager_value XDG_SESSION_TYPE)"
   if [[ "$typ" == x11 || "$typ" == wayland ]]; then printf '%s' "$typ"; return; fi
-  if [[ "\${XDG_SESSION_TYPE:-}" == x11 || "\${XDG_SESSION_TYPE:-}" == wayland ]]; then
+  if [[ "${XDG_SESSION_TYPE:-}" == x11 || "${XDG_SESSION_TYPE:-}" == wayland ]]; then
     printf '%s' "$XDG_SESSION_TYPE"
   fi
 }
@@ -47,13 +47,13 @@ ensure_x11() {
   manager_auth="$(manager_value XAUTHORITY)"
   local -a displays=() auths=()
   [[ -n "$manager_disp" ]] && displays+=("$manager_disp")
-  if [[ -n "\${DISPLAY:-}" && "$DISPLAY" != localhost:* && "$DISPLAY" != 127.0.0.1:* ]]; then displays+=("$DISPLAY"); fi
+  if [[ -n "${DISPLAY:-}" && "$DISPLAY" != localhost:* && "$DISPLAY" != 127.0.0.1:* ]]; then displays+=("$DISPLAY"); fi
   displays+=(':0' ':1' ':2')
   [[ -n "$manager_auth" ]] && auths+=("$manager_auth")
-  [[ -n "\${XAUTHORITY:-}" ]] && auths+=("$XAUTHORITY")
+  [[ -n "${XAUTHORITY:-}" ]] && auths+=("$XAUTHORITY")
   auths+=("/run/user/$(id -u)/gdm/Xauthority" "$HOME/.Xauthority")
-  for disp in "\${displays[@]}"; do
-    for auth_candidate in "\${auths[@]}"; do
+  for disp in "${displays[@]}"; do
+    for auth_candidate in "${auths[@]}"; do
       if [[ -f "$auth_candidate" ]] && env DISPLAY="$disp" XAUTHORITY="$auth_candidate" xdotool getmouselocation >/dev/null 2>&1; then
         export DISPLAY="$disp" XAUTHORITY="$auth_candidate" XDG_SESSION_TYPE=x11
         systemctl --user import-environment DISPLAY XAUTHORITY XDG_SESSION_TYPE >/dev/null
@@ -109,8 +109,8 @@ PY
 install() {
   [[ "$(id -u)" != 0 ]] || fail 'Run as the normal Ubuntu desktop user, not root or sudo.'
   [[ -x /usr/local/bin/taptether-agent ]] || fail 'Install the TapTether .deb first (taptether-agent not found).'
-  mkdir -p "\${BIN%/*}" "\${SERVICE%/*}" "\${APP%/*}" "\${AUTOSTART%/*}" "$STATE"
-  if [[ "\${BASH_SOURCE[0]}" != "$BIN" ]]; then cp "\${BASH_SOURCE[0]}" "$BIN"; fi
+  mkdir -p "${BIN%/*}" "${SERVICE%/*}" "${APP%/*}" "${AUTOSTART%/*}" "$STATE"
+  if [[ "${BASH_SOURCE[0]}" != "$BIN" ]]; then cp "${BASH_SOURCE[0]}" "$BIN"; fi
   chmod 700 "$BIN"
   cat > "$SERVICE" <<'SERVICE_EOF'
 [Unit]
@@ -174,14 +174,14 @@ status() {
 session_start() {
   user_bus
   mkdir -p "$STATE"
-  if [[ "\${XDG_SESSION_TYPE:-}" == wayland ]]; then
+  if [[ "${XDG_SESSION_TYPE:-}" == wayland ]]; then
     printf 'TapTether requires Ubuntu on Xorg, not Wayland.\n' > "$STATE/desktop-status"
     exit 0
   fi
   if ! ensure_x11 > "$STATE/desktop-status" 2>&1; then exit 0; fi
   systemctl --user restart "$UNIT" 2>> "$STATE/desktop-status" || true
 }
-case "\${1:-}" in
+case "${1:-}" in
   install) install ;;
   session-start) session_start ;;
   start) start ;;
