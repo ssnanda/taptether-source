@@ -5,34 +5,13 @@ import datetime
 import json
 from pathlib import Path
 import plistlib
-import struct
-import zlib
+import shutil
 from zipfile import ZipFile
 
 OWNER = "ssnanda"
 REPO = "taptether.com"
 TAG = "current"
 BASE = f"https://github.com/{OWNER}/{REPO}/releases/download/{TAG}"
-
-def icon_png(path: Path):
-    """Generate a small TapTether placeholder icon with Python's standard library."""
-    size = 128
-    rows = []
-    for y in range(size):
-        row = bytearray(b"\x00")
-        for x in range(size):
-            color = (16, 35, 38)
-            if 10 <= x < 118 and 10 <= y < 118:
-                color = (28, 65, 65)
-            if (27 <= x < 101 and 26 <= y < 42) or (57 <= x < 71 and 35 <= y < 101):
-                color = (87, 230, 194)
-            row.extend(color)
-        rows.append(bytes(row))
-    def chunk(kind, data):
-        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
-    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
-    png += chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b"")
-    path.write_bytes(png)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -98,7 +77,10 @@ def main():
     output.write_text(json.dumps(source, indent=2) + "\n", encoding="utf-8")
     icon = Path(args.icon_output)
     icon.parent.mkdir(parents=True, exist_ok=True)
-    icon_png(icon)
+    source_icon = Path(__file__).resolve().parent.parent / 'dist' / 'branding' / 'TapTether-icon.png'
+    if not source_icon.is_file():
+        raise SystemExit('Brand icon missing. Run bin/9-tt-brand-icons.py before publication.')
+    shutil.copyfile(source_icon, icon)
     print(f"Validated IPA {bundle} {version} ({ipa.stat().st_size:,} bytes)")
     print(f"Generated {output} and {icon}")
 
