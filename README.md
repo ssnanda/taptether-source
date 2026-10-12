@@ -4,7 +4,7 @@ Your devices. Your control. Your network.
 
 Private LAN-only remote control from a Flutter iPhone/Android client to authenticated Linux and macOS input agents.
 
-## 0.3.2+8
+## 0.3.3+9
 
 - Responsive trackpad: adjustable 1x–8x sensitivity (default 3.8x instead of 1.7x), with queued movement rather than dropped pointer updates.
 - Ubuntu amd64/arm64: Wayland and X11 native /dev/uinput mouse, keyboard and media keys.
@@ -64,3 +64,21 @@ The experimental TV companion .ipk is created in dist/lg-webos. Install to a Dev
 Agent requests use local HTTPS with certificate fingerprint pinning and a private pairing token. Do not expose TCP port 48321 to the Internet. In particular, Ubuntu's uinput service can synthesize keyboard and mouse input at the login screen, so its access must be restricted to trusted LAN devices. No cloud telemetry is implemented.
 
 The Windows and Tizen OS input backends remain unimplemented. The bundled installers do not by themselves enable phone SSH provisioning. Native Mac and LG builds require their respective SDKs and must be tested on hardware.
+
+## Current-release publishing and AltStore (0.3.3+9)
+
+IPA/APK build scripts now validate Flutter syntax, build current agents, bundle them, build mobile outputs and publish to one rolling GitHub release via authenticated GitHub CLI.
+
+    ./bin/2a-tt-ipa.sh
+    ./bin/2a-tt-apk.sh
+
+Build without release upload:
+
+    ./bin/2a-tt-ipa.sh --no-publish
+    ./bin/2a-tt-apk.sh --no-publish
+
+A successful IPA build always creates altstore.json from its actual Info.plist bundle ID, app version, build number and file size. Release tag current holds only latest TapTether.ipa, TapTether.apk, two Ubuntu DEBs, two macOS archives and TapTether-icon.png. Superseded local TapTether packages are removed. The GitHub Actions release workflow builds and uploads the same assets after a successful macOS, iOS and Android build.
+
+Local publishing requires authenticated GitHub CLI (gh auth login) or GH_TOKEN in CI. Use the --no-publish flag to skip the upload step.
+
+**Private-repository limitation:** TapTether.com currently uses a PRIVATE GitHub repository. AltStore cannot download its altstore.json or IPA release without authentication. Do not make the project public without an explicit choice. Authenticated GitHub download and direct AltStore sideloading remain possible.
