@@ -11,6 +11,8 @@ UPDATER="$HOME/.local/bin/taptether-agent-update"
 POWER_RULE="/etc/polkit-1/rules.d/80-taptether-shutdown.rules"
 POWER_DROPIN="/etc/systemd/system/taptether-agent.service.d/40-shutdown.conf"
 APP="$HOME/.local/share/applications/taptether.desktop"
+TRAY="$HOME/.local/share/taptether/taptether_tray.py"
+TRAY_AUTOSTART="$HOME/.config/autostart/taptether-tray.desktop"
 OLD_AUTOSTART="$HOME/.config/autostart/taptether-agent.desktop"
 CONFIG="$HOME/.config/taptether"
 AGENT='/usr/local/bin/taptether-agent'
@@ -123,7 +125,7 @@ install() {
   [[ "$homedir" == /* && "$homedir" != *$'\n'* ]] || fail 'Invalid home directory.'
   note 'Configuring /dev/uinput permissions for the service only.'
   setup_permissions
-  mkdir -p "${CTL%/*}" "${APP%/*}" "$CONFIG"
+  mkdir -p "${CTL%/*}" "${APP%/*}" "$CONFIG" "${TRAY%/*}" "${TRAY_AUTOSTART%/*}"
   chmod 700 "$CONFIG"
   if [[ "$(realpath "${BASH_SOURCE[0]}")" != "$(realpath -m "$CTL")" ]]; then
     cp "${BASH_SOURCE[0]}" "$CTL"
@@ -138,18 +140,42 @@ install() {
   else
     note 'TapTether icon was not supplied; reinstall using the current SSH installer for branding.'
   fi
+  if [[ -s "$(dirname "$0")/taptether_tray.py" ]]; then
+    command install -m 0755 "$(dirname "$0")/taptether_tray.py" "$TRAY"
+    # These packages run in the desktop session, never in the privileged agent.
+    if command -v apt-get >/dev/null 2>&1; then
+      sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
+        >/dev/null 2>&1 || note 'Tray dependencies unavailable; install python3-gi, GTK3 and Ayatana AppIndicator manually.'
+    fi
+  else
+    note 'Desktop tray script not staged; installer will still run the background agent.'
+  fi
   cat > "$APP" <<DESKTOP
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=TapTether Agent
-Comment=Start TapTether local keyboard, trackpad and volume agent
-Exec=$CTL start
+Comment=Open the TapTether splash screen and desktop tray
+Exec=/usr/bin/python3 $TRAY --splash
 Icon=taptether
 Terminal=false
-StartupNotify=false
+StartupNotify=true
 Categories=Network;Utility;
 DESKTOP
+  if [[ -s "$TRAY" ]]; then
+    cat > "$TRAY_AUTOSTART" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=TapTether Tray
+Comment=Show TapTether agent controls in the system tray at desktop login
+Exec=/usr/bin/python3 $TRAY
+Icon=taptether
+Terminal=false
+X-GNOME-Autostart-enabled=true
+DESKTOP
+    chmod 0644 "$TRAY_AUTOSTART"
+  fi
   # Migrate from legacy desktop-login systemd user service. Avoid port 48321 collisions.
   user_bus
   systemctl --user disable --now "$UNIT" >/dev/null 2>&1 || true
@@ -189,12 +215,14 @@ SYSTEMD
   sudo systemctl restart "$UNIT"
   ensure_running
   pin
-  note 'Agent running now in the background and enabled at system boot (even before desktop login).'
+  note 'Agent running in the background and enabled at boot (even before login).'
+  note 'Tray starts at next graphical login; use the TapTether dock launcher for its splash screen.'
   note 'You can retrieve credentials later with: ~/.local/bin/taptetherctl pairing'
   printf '\n====== TapTether pairing details ======\n'
   pairing
   printf '=======================================\n'
   note 'SSH controls: ~/.local/bin/taptetherctl {start|stop|restart|status|pairing|check-update|update|enable-shutdown|disable-shutdown}'
+  note 'The GNOME panel may require AppIndicator support; the systemd service does not depend on the tray.'
   note 'Security: uinput grants control even at the lock/login screen. Restrict TCP 48321 to trusted LAN devices.'
 }
 start() {
