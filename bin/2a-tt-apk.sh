@@ -10,6 +10,7 @@ while [[ "$#" -gt 0 ]]; do
     *) break ;;
   esac
 done
+python3 "$ROOT/bin/9-tt-brand-icons.py"
 cd "$ROOT/app"
 flutter pub get
 flutter analyze
