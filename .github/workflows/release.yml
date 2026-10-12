@@ -48,16 +48,33 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Configure Python icon renderer
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install icon renderer dependencies
+        run: python3 -m pip install --disable-pip-version-check Pillow
+
       - name: Generate native iOS and Android runners
         run: |
           cd app
           flutter create --platforms=ios,android --org com.taptether --project-name taptether .
           flutter pub get
 
+      - name: Render TapTether icons for every platform
+        run: |
+          python3 bin/9-tt-brand-icons.py --verify
+          python3 bin/9-tt-brand-icons.py
+          test -s dist/branding/TapTether.icns
+          test -s app/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png
+          test -s app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          test -s tv/lg-webos/icon.png
+
       - name: Validate Bash installer scripts
         run: |
           for script in bin/*.sh; do bash -n "$script"; done
-          python3 -m py_compile bin/6-tt-generate-altstore.py
+          python3 -m py_compile bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py
 
       - name: Validate Go agent and Dart
         run: |
