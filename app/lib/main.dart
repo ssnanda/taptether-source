@@ -322,7 +322,15 @@ class _RemoteScreenState extends State<RemoteScreen> {
   Widget build(BuildContext context) {
     final connected = agent.configured;
     return Scaffold(
-      appBar: AppBar(title: const Text('TapTether'), actions: [
+      appBar: AppBar(
+        leading: Padding(
+          padding: const EdgeInsets.all(7),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.asset('assets/branding/taptether.png'),
+          ),
+        ),
+        title: const Text('TapTether'), actions: [
         IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
           agent.disconnect(); setState(() => status = 'Disconnected');
         } : null, icon: const Icon(Icons.link_off)),
