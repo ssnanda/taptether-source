@@ -49,7 +49,7 @@ jobs:
       - name: Install Pillow
         run: python3 -m pip install --disable-pip-version-check Pillow
       - name: Verify AppKit tray source
-        run: xcrun swiftc -frontend -parse desktop/macos/TapTetherTray.swift
+        run: xcrun swiftc -typecheck desktop/macos/TapTetherTray.swift
       - name: Build native macOS agents
         run: bash bin/2b-tt-macos.sh
       - name: Verify complete macOS installer payloads
