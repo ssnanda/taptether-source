@@ -43,12 +43,12 @@ archive="$tmp/mac-agent.tar.gz"
 curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 12 --max-time 180 --retry 2 "$url" -o "$archive"
 actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
 [[ "$actual" == "$digest" ]] || { echo 'SHA-256 mismatch; aborting' >&2; exit 1; }
-# Permit only four expected installer members. Never extract arbitrary paths.
+# Permit only five expected installer members. Never extract arbitrary paths.
 members="$(tar -tzf "$archive" | LC_ALL=C sort)"
-expected="$(printf '%s\n' TapTether.icns taptether-agent taptether-agent-update-mac taptetherctl-mac | LC_ALL=C sort)"
+expected="$(printf '%s\n' TapTether.icns TapTetherTray taptether-agent taptether-agent-update-mac taptetherctl-mac | LC_ALL=C sort)"
 [[ "$members" == "$expected" ]] || { echo 'Unexpected archive files; aborting' >&2; exit 1; }
 tar -xzf "$archive" -C "$tmp"
 chmod 700 "$tmp/taptetherctl-mac"
-chmod 755 "$tmp/taptether-agent"
+chmod 755 "$tmp/taptether-agent" "$tmp/TapTetherTray"
 echo "Verified macOS archive SHA-256. Installing $latest..."
 "$tmp/taptetherctl-mac" install
