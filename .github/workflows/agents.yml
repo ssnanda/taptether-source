@@ -46,6 +46,12 @@ jobs:
           cache: false
       - name: Go tests
         run: cd agent && go test ./... && go vet ./...
+      - name: Configure Python for brand artwork
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Pillow
+        run: python3 -m pip install --disable-pip-version-check Pillow
       - name: Build native macOS agents
         run: bash bin/2b-tt-macos.sh
       - uses: actions/upload-artifact@v4
