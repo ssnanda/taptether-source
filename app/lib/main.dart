@@ -111,11 +111,47 @@ class _RemoteScreenState extends State<RemoteScreen> {
   final typing = TextEditingController();
   String status = 'Not connected';
   int fingers = 0;
-  DateTime lastMovement = DateTime.fromMillisecondsSinceEpoch(0);
+  double mouseSensitivity = 3.8;
+  double _pendingMoveX = 0;
+  double _pendingMoveY = 0;
+  bool _movementInFlight = false;
+  Timer? _movementTimer;
+
+  // Preserve all touch motion while sending only one network movement at a time.
+  void queueMovement(Offset delta) {
+    _pendingMoveX += delta.dx * mouseSensitivity;
+    _pendingMoveY += delta.dy * mouseSensitivity;
+    _scheduleMovement();
+  }
+
+  void _scheduleMovement() {
+    if (_movementTimer != null || _movementInFlight || !agent.configured) return;
+    _movementTimer = Timer(const Duration(milliseconds: 12), _flushMovement);
+  }
+
+  Future<void> _flushMovement() async {
+    _movementTimer = null;
+    if (!agent.configured || _movementInFlight) return;
+    final dx = _pendingMoveX.truncate().clamp(-300, 300);
+    final dy = _pendingMoveY.truncate().clamp(-300, 300);
+    if (dx == 0 && dy == 0) return;
+    _pendingMoveX -= dx;
+    _pendingMoveY -= dy;
+    _movementInFlight = true;
+    try {
+      await command('move', {'dx': dx, 'dy': dy});
+    } finally {
+      _movementInFlight = false;
+      if (_pendingMoveX.abs() >= 1 || _pendingMoveY.abs() >= 1) {
+        _scheduleMovement();
+      }
+    }
+  }
 
   @override
   void dispose() {
     host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
+    _movementTimer?.cancel();
     agent.disconnect();
     super.dispose();
   }
@@ -159,12 +195,12 @@ class _RemoteScreenState extends State<RemoteScreen> {
             style: TextStyle(color: Color(0xFF57E6C2))),
         const SizedBox(height: 12),
         if (!connected) ...[
-          const Text('Pair with Ubuntu agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))
           const SizedBox(height: 8),
           const Text('Run the agent on Ubuntu and copy its LAN IP, token and certificate SHA-256 fingerprint. These credentials are kept in memory only.'),
           const SizedBox(height: 12),
           TextField(controller: host, autocorrect: false,
-              decoration: const InputDecoration(labelText: 'Ubuntu LAN IP (e.g. 192.168.1.10)', border: OutlineInputBorder())),
+              decoration: const InputDecoration(labelText: 'Computer LAN IP (e.g. 192.168.1.10)', border: OutlineInputBorder())),
           const SizedBox(height: 8),
           TextField(controller: token, obscureText: true, autocorrect: false,
               decoration: const InputDecoration(labelText: 'Agent pairing token', border: OutlineInputBorder())),
@@ -176,6 +212,15 @@ class _RemoteScreenState extends State<RemoteScreen> {
         ] else ...[
           const Text('Trackpad', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           const Text('Move: one finger  ·  Scroll: two fingers  ·  Tap: click  ·  Long press: right click'),
+          Row(children: [
+            Text('Speed: ${mouseSensitivity.toStringAsFixed(1)}×'),
+            Expanded(child: Slider(
+              value: mouseSensitivity,
+              min: 1.0, max: 8.0, divisions: 28,
+              label: '${mouseSensitivity.toStringAsFixed(1)}×',
+              onChanged: (value) => setState(() => mouseSensitivity = value),
+            )),
+          ]),
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () => command('click', {'button': 'left'}),
@@ -186,16 +231,11 @@ class _RemoteScreenState extends State<RemoteScreen> {
               onPointerUp: (_) => fingers = fingers > 0 ? fingers - 1 : 0,
               onPointerCancel: (_) => fingers = fingers > 0 ? fingers - 1 : 0,
               onPointerMove: (event) {
-                final now = DateTime.now();
-                if (now.difference(lastMovement).inMilliseconds < 22) return;
-                lastMovement = now;
                 if (fingers > 1) {
                   final dy = event.delta.dy.round();
                   if (dy != 0) unawaited(command('scroll', {'dy': dy}));
                 } else {
-                  final dx = (event.delta.dx * 1.7).round();
-                  final dy = (event.delta.dy * 1.7).round();
-                  if (dx != 0 || dy != 0) unawaited(command('move', {'dx': dx, 'dy': dy}));
+                  queueMovement(event.delta);
                 }
               },
               child: Container(
