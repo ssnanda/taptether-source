@@ -31,3 +31,10 @@ coverage/
 # Agent packages are built locally before mobile builds
 app/assets/agents/*
 !app/assets/agents/.gitkeep
+
+# Generated platform-specific brand icons
+app/assets/branding/*.png
+app/ios/Runner/Assets.xcassets/AppIcon.appiconset/*.png
+app/android/app/src/main/res/mipmap-*/ic_launcher.png
+tv/lg-webos/icon.png
+tv/lg-webos/largeIcon.png
