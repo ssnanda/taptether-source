@@ -1209,6 +1209,10 @@ X-GNOME-Autostart-enabled=true
 DESKTOP_END
   user_bus
   systemctl --user daemon-reload
+  # Stop an older manual/background agent before starting the upgraded user service.
+  # This avoids "address already in use" on HTTPS port 48321.
+  systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
+  pkill -u "$(id -u)" -x taptether-agent >/dev/null 2>&1 || true
   # Autostart at GUI login, not system boot; avoids root daemon and greeter access.
   systemctl --user disable "$UNIT" >/dev/null 2>&1 || true
   pin
