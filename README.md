@@ -218,3 +218,21 @@ Never paste your PRIVATE key into authorized_keys. Do not trust an SSH host key 
 The splash appears on manual app launch, *not at every computer reboot*, to avoid unexpected desktop popups. Versions come from the actual installed mobile package or desktop agent rather than a hardcoded banner.
 
 All expensive GitHub build/release workflows remain **manual-only** after the previous cleanup change. To validate and publish this release, run "Publish current TapTether release" from the repository's Actions tab once code changes are complete; the workflow validates tray source and builds both architectures, IPA and APK.
+
+## v0.5.4 — SSH key and device management
+
+- **Manage SSH Keys:** Generate multiple named Ed25519 keys, import OpenSSH
+  private keys from Files, rename, pick a default, delete, copy or export
+  public keys, and explicitly export an unencrypted private key with a
+  security warning. Existing single-key identities migrate automatically.
+- **Ubuntu SSH install:** Choose the exact saved key to authenticate or
+  authorize during an independently fingerprint-verified SSH session.
+- **Manage Devices:** Review and reconnect trusted computers, rename them,
+  update their private LAN address, forget a local pairing, and add new
+  computers using QR scanning or the collapsed manual-pairing form.
+- **Privacy:** Keys and device credentials stay in OS secure storage;
+  editing a device never silently changes its certificate pin. Forgetting a
+  computer does not remotely revoke the phone; use agent revocation for that.
+- **Testing:** Unit tests cover multiple keys, selection, rename, duplicate
+  rejection, and migration without identity rotation. Run Flutter analysis
+  and real-device tests before distributing sensitive private-key exports.
