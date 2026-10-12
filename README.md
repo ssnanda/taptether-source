@@ -198,3 +198,36 @@ Never paste your PRIVATE key into authorized_keys. Do not trust an SSH host key 
 The splash appears on manual app launch, *not at every computer reboot*, to avoid unexpected desktop popups. Versions come from the actual installed mobile package or desktop agent rather than a hardcoded banner.
 
 All expensive GitHub build/release workflows remain **manual-only** after the previous cleanup change. To validate and publish this release, run "Publish current TapTether release" from the repository's Actions tab once code changes are complete; the workflow validates tray source and builds both architectures, IPA and APK.
+
+
+## v0.6.0 development — Productivity controls (increment 1)
+
+This work lives on the `feature/v0.6-remote-input` branch until reviewed and tested.
+It has **not** been published to the rolling release.
+
+- **Touch gestures:** Pointer-ID-aware one-finger movement; rate-limited two-finger
+  scrolling; two-finger pinch mapped to the active app's keyboard zoom shortcut;
+  three-finger horizontal swipe to switch applications (Shift reverses direction).
+  Zoom and app switching are keyboard shortcuts, not OS-level touch gestures, so
+  behavior depends on which desktop app is focused.
+- **Keyboard:** Home/End, Page Up/Down, F1–F12, and Copy/Paste/Select All/Undo/Find/
+  New Tab. Mac shortcuts use Command, Linux uses Control; the user can override
+  the Mac shortcut toggle. Ubuntu native and macOS CoreGraphics mappings updated.
+- **Phone clipboard:** Explicit button reads text from the phone clipboard and
+  simulates typing into the currently focused computer window through the pinned,
+  authenticated LAN session. Text is split into <=256-byte UTF-8-safe requests
+  (4 KiB total cap), with no background clipboard reads and no server relay.
+  Ubuntu native input still supports ASCII characters only; macOS supports Unicode.
+  This is **not** bidirectional OS clipboard sync and does not set the desktop
+  system clipboard.
+- **Haptic feedback:** Optional phone feedback after a successful click or key
+  control event. Default on, independently toggleable.
+- **Tests:** Expanded Linux keyboard mapping tests and Unicode clipboard chunking
+  tests. Run `./bin/4-test.sh` locally. Flutter SDK and real-device verification
+  are still required before merging or publishing.
+
+**Still planned for subsequent v0.6 increments:** Authenticated opt-in file
+transfer with strict sandbox/storage limits, desktop-to-phone clipboard support
+subject to OS permissions, gesture fine tuning on hardware, and selectable
+remote layouts. Neither remote clipboard acquisition nor file transfer should
+be treated as shipped.
