@@ -80,6 +80,28 @@ pairing() {
   printf 'TLS certificate SHA-256 fingerprint: '
   openssl x509 -in "$CONFIG/server.crt" -outform DER | sha256sum | awk '{print toupper($1)}'
 }
+pairing_qr() {
+  command -v qrencode >/dev/null 2>&1 || fail 'Install QR renderer: sudo apt install qrencode'
+  [[ -r "$CONFIG/pairing.token" && -r "$CONFIG/server.crt" ]] || fail 'Agent not initialized'
+  local host token fingerprint uri
+  host="$(hostname -I | awk '{print $1}')"
+  token="$(tr -d '\n' < "$CONFIG/pairing.token")"
+  fingerprint="$(openssl x509 -in "$CONFIG/server.crt" -outform DER | sha256sum | awk '{print toupper($1)}')"
+  uri="$(python3 - "$host" "$token" "$fingerprint" <<'PY'
+import sys,urllib.parse
+host,token,fingerprint=sys.argv[1:]
+print('taptether://pair?'+urllib.parse.urlencode({'v':'1','host':host,
+  'token':token,'fingerprint':fingerprint}))
+PY
+)"
+  note 'PRIVATE pairing QR — show only on a trusted terminal.'
+  printf '%s' "$uri" | qrencode -t ANSIUTF8 -o -
+}
+devices() { "$AGENT" --list-devices; }
+revoke_device() {
+  [[ "$2" =~ ^[0-9a-f]{32}$ ]] || fail 'Supply a device ID from taptetherctl devices'
+  "$AGENT" --revoke-device "$2"
+}
 ensure_running() {
   local attempt
   for attempt in $(seq 1 20); do
@@ -246,6 +268,9 @@ case "${1:-}" in
   restart) restart ;;
   status) status ;;
   pairing) pairing ;;
+  pairing-qr) pairing_qr ;;
+  devices) devices ;;
+  revoke-device) revoke_device "$@" ;;
   logs) journalctl --no-pager -u "$UNIT" -n 60 ;;
   permissions) permissions ;;
   pin) pin ;;
@@ -254,5 +279,5 @@ case "${1:-}" in
   enable-shutdown) enable_shutdown ;;
   disable-shutdown) disable_shutdown ;;
   session-start) : ;;  # Compatibility with old GNOME autostart references.
-  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|logs|permissions|pin|check-update|update|enable-shutdown|disable-shutdown}\n' >&2; exit 2 ;;
+  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|pairing-qr|devices|revoke-device ID|logs|permissions|pin|check-update|update|enable-shutdown|disable-shutdown}\n' >&2; exit 2 ;;
 esac
