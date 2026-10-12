@@ -17,8 +17,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        activeVersion = output("/Users/Shared/nonexistent", []).isEmpty
-            ? versionFromAgent() : "unknown"
+        activeVersion = versionFromAgent()
         let menu = NSMenu()
         let version = NSMenuItem(title: "TapTether Agent v" + activeVersion,
                                  action: #selector(showSplash), keyEquivalent: "")
@@ -88,9 +87,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     }
 
     private func versionFromAgent() -> String {
-        return output(NSHomeDirectory() + "/.local/bin/taptether-agent", ["--version"])
-            .isEmpty ? "unknown"
-            : output(NSHomeDirectory() + "/.local/bin/taptether-agent", ["--version"])
+        let version = output(NSHomeDirectory() + "/.local/bin/taptether-agent", ["--version"])
+        return version.isEmpty ? "unknown" : version
     }
 
     private func refreshStatus() {
