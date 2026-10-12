@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -25,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ssnanda/taptether.com/agent/internal/discovery"
 	"github.com/ssnanda/taptether.com/agent/internal/input"
 	"github.com/ssnanda/taptether.com/agent/internal/power"
 )
@@ -141,6 +143,7 @@ func main() {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	go func() { if err:=discovery.Serve(context.Background(),version,48321);err!=nil {log.Printf("LAN discovery unavailable (UDP %d): %v",discovery.Port,err)} }()
 	server := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 8 * time.Second, WriteTimeout: 8 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 4096}
 	log.Fatal(server.ListenAndServeTLS(certFile, keyFile))
 }
