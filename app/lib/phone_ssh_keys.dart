@@ -36,7 +36,7 @@ class PhoneSshKeyStore {
     final seed = await pair.extractPrivateKeyBytes();
     final pub = (await pair.extractPublicKey()).bytes;
     if (seed.length != 32 || pub.length != 32) {
-      throw const StateError('Invalid generated Ed25519 SSH key');
+      throw StateError('Invalid generated Ed25519 SSH key');
     }
     final key = OpenSSHEd25519KeyPair(
       Uint8List.fromList(pub),
