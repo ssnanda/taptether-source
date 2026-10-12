@@ -29,6 +29,11 @@ func TestKeyChords(t *testing.T) {
 		{"ctrl+c", []int{29, 46}}, {"alt+Tab", []int{56, 15}},
 		{"XF86AudioRaiseVolume", []int{115}}, {"XF86AudioLowerVolume", []int{114}},
 		{"XF86AudioMute", []int{113}},
+		{"home", []int{102}}, {"end", []int{107}},
+		{"pageup", []int{104}}, {"pagedown", []int{109}},
+		{"f1", []int{59}}, {"f12", []int{88}},
+		{"ctrl+equal", []int{29, 13}}, {"ctrl+minus", []int{29, 12}},
+		{"shift+alt+tab", []int{42, 56, 15}},
 	}
 	for _, tt := range tests {
 		got, err := parseChord(tt.input)
