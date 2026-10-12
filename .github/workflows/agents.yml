@@ -1,0 +1,51 @@
+name: Build TapTether agents
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agent/**'
+      - 'bin/2b-tt-agent.sh'
+      - 'bin/2b-tt-ubuntu.sh'
+      - 'bin/2b-tt-deb.sh'
+      - 'bin/2b-tt-macos.sh'
+      - 'bin/4-macos-agent-setup.sh'
+      - 'VERSION'
+      - '.github/workflows/agents.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Go tests
+        run: cd agent && go test ./... && go vet ./...
+      - name: Build Ubuntu packages
+        run: bash bin/2b-tt-ubuntu.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-Ubuntu-installers
+          path: dist/ubuntu/*.deb
+          if-no-files-found: error
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Go tests
+        run: cd agent && go test ./... && go vet ./...
+      - name: Build native macOS agents
+        run: bash bin/2b-tt-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-macOS-installers
+          path: dist/macos/*.tar.gz
+          if-no-files-found: error
