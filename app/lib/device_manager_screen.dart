@@ -27,10 +27,12 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
   Future<void> _refresh() async {
     try {
       final updated = await widget.store.read();
-      if (mounted) setState(() {
-        _computers = updated;
-        _error = null;
-      });
+      if (mounted) {
+        setState(() {
+          _computers = updated;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = 'Cannot load saved computers: $e');
     }
