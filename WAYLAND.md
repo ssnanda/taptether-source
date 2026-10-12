@@ -1,29 +1,26 @@
-# TapTether 0.3 — GNOME Wayland / Ubuntu 26.04
+# TapTether 0.3.1 — Ubuntu Wayland/X11 and automatic background service
 
-TapTether on Linux now supports native `/dev/uinput` virtual devices. This works with GNOME Wayland and X11 without the RemoteDesktop portal used by apps that call XTEST. It does not fix unrelated dialogs from Steam Input or other apps. The hardware-style keyboard/media events may work on the lock screen; keep your pairing token private and restrict port 48321 to trusted LAN devices.
+TapTether uses Linux `/dev/uinput` for native keyboard, mouse, and volume events on Wayland or X11. It does not use the GNOME RemoteDesktop portal. The service runs as your normal Ubuntu user, not as root, and is given only the `taptether` supplementary group to access `/dev/uinput`.
 
-## Install/update from Mac
+## Install and pair in one step
 
-Run `./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87` from the TapTether repository. The script builds Linux amd64 and arm64 installers, copies the detected architecture over SSH, installs it, adds your Ubuntu user to the restricted `taptether` group, configures `/dev/uinput`, and creates the per-user desktop autostart and dock launcher.
+From the TapTether repository on macOS: `./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87`
 
-**First-time security setup requires sudo.** Log out of the Ubuntu graphical desktop and log back in (or reboot) to apply group membership. A running SSH shell cannot acquire newly added supplementary groups without a new login. It does not run the agent as root. `taptether` group membership grants access to a powerful virtual keyboard/mouse interface; only grant it to trusted users.
+The command builds the matching .deb, transfers it over SSH, validates and installs it, configures restricted `/dev/uinput` permissions, migrates any old user service, installs the GNOME application launcher, enables the systemd service at boot, starts it immediately in the background, confirms it is running, and displays the LAN IP, HTTPS port, pairing token, and TLS SHA-256 certificate fingerprint. You should **not** need to log out to start the new service.
 
-## SSH commands
+The agent stores credentials in `~/.config/taptether/`. **Treat the pairing token as a password.** Installation terminal output contains it; never paste it into chats or logs.
 
-- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl status'`
-- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl start'`
-- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl restart'`
-- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl permissions'`
-- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl pairing'` (PRIVATE TOKEN — never share in a chat)
-- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl logs'`
+## SSH management
 
-The service starts on graphical desktop login through the user's autostart entry, not at the graphical login screen. The Ubuntu dock shortcut launches it on demand. No cloud component is required.
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl pairing'` — displays private pairing details
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl status'` — status and boot-enabled state
+- `ssh -t sandip@192.168.68.87 '~/.local/bin/taptetherctl restart'` — requires sudo
+- `ssh -t sandip@192.168.68.87 '~/.local/bin/taptetherctl stop'` — requires sudo
+- `ssh -t sandip@192.168.68.87 '~/.local/bin/taptetherctl start'` — requires sudo
+- `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl logs'` — view safe service logs
 
-## Limitations
+## Security and limitations
 
-- Keyboard layout for hardware text synthesis is US-English ASCII only in 0.3. Unicode text input needs a future method. Physical host keyboard layouts may change mappings.
-- Go builds compile and unit tests run on Linux; end-to-end uinput and libinput integration must be tested on a real GNOME Wayland desktop.
-- Input injection is privileged by Linux device permissions; do not expose `/dev/uinput` to all users, run this service as root, or expose port 48321 publicly.
-- Volume controls synthesize `KEY_VOLUMEUP`, `KEY_VOLUMEDOWN`, and `KEY_MUTE` media key events. Desktop sound settings and the active audio sink determine actual volume effects.
-- Existing iOS/Android apps must be rebuilt to show the new volume buttons. Pairing credentials persist on Ubuntu unless its user config directory is removed.
-- If GNOME keeps showing Remote Desktop prompts even when TapTether is not involved, investigate Steam Input or other XWayland/XTEST clients separately.
+The system service starts **at boot**, including before desktop login, and Linux virtual HID events can affect the lock/login screen. Protect the token and restrict inbound TCP 48321 to trusted LAN devices; never expose it to the public internet. The agent does not need to run as root, nor does the SSH user need unrestricted `/dev/uinput` access.
+
+This version's virtual keyboard text synthesis primarily supports US-English ASCII. Actual end-to-end Ubuntu Wayland input, volume controls, and service boot behavior still require on-device testing. This deployment is separate from the mobile IPA/APK build. Existing mobile apps may need rebuilding to expose newer controls.
