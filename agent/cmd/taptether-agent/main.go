@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/ssnanda/taptether.com/agent/internal/input"
+	"github.com/ssnanda/taptether.com/agent/internal/power"
 )
 
 var version = "dev"
@@ -60,7 +61,27 @@ func main() {
 	fmt.Println("Linux Wayland/X11 native uinput and macOS CoreGraphics are supported; macOS requires Accessibility permission. Windows input remains unimplemented.")
 	fmt.Println("No telemetry or outgoing network connections are implemented. Restrict inbound port 48321 to trusted LAN devices.")
 	mux := http.NewServeMux()
-	var mu sync.Mutex
+    mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Cache-Control", "no-store")
+        if r.Method != http.MethodGet {
+            http.Error(w, "GET required", http.StatusMethodNotAllowed)
+            return
+        }
+        if r.TLS == nil || !privateRemote(r.RemoteAddr) {
+            http.Error(w, "LAN TLS required", http.StatusForbidden)
+            return
+        }
+        got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+        if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+            http.Error(w, "not paired", http.StatusUnauthorized)
+            return
+        }
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(map[string]any{
+            "version": version, "shutdownEnabled": power.Enabled(),
+        })
+    })
+    var mu sync.Mutex
 	mux.HandleFunc("/api/control", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
@@ -94,8 +115,20 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		mu.Lock()
-		err := input.Send(cmd)
+        if cmd.Type == "shutdown" {
+            if !power.Enabled() {
+                http.Error(w, "remote shutdown disabled; enable it explicitly on the computer", http.StatusForbidden)
+                return
+            }
+            if err := power.RequestShutdown(); err != nil {
+                http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+                return
+            }
+            w.WriteHeader(http.StatusNoContent)
+            return
+        }
+        mu.Lock()
+        err := input.Send(cmd)
 		mu.Unlock()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
