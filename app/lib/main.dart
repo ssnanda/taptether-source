@@ -30,6 +30,8 @@ class LocalAgent {
   HttpClient? _client;
   Uri? _base;
   String? _token;
+  bool _shutdownEnabled = false;
+  bool get shutdownEnabled => _shutdownEnabled;
 
   bool get configured => _base != null && _client != null;
 
@@ -102,7 +104,10 @@ class LocalAgent {
         return null; // Compatibility with older Ubuntu agents.
       }
       final body = jsonDecode(await utf8.decoder.bind(response).join());
-      if (body is Map && body['version'] is String) return body['version'] as String;
+      if (body is Map && body['version'] is String) {
+        _shutdownEnabled = body['shutdownEnabled'] == true;
+        return body['version'] as String;
+      }
     } catch (_) {
       // Older agent versions and offline connections still work normally.
     }
@@ -114,6 +119,7 @@ class LocalAgent {
     _client = null;
     _base = null;
     _token = null;
+    _shutdownEnabled = false;
   }
 }
 
@@ -411,10 +417,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
           ]),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: confirmShutdown,
+            onPressed: agent.shutdownEnabled ? confirmShutdown : null,
             icon: const Icon(Icons.power_settings_new),
             label: const Text('Shut down computer'),
           ),
+          if (!agent.shutdownEnabled)
+            const Text('Remote shutdown disabled on computer. Enable it with taptetherctl enable-shutdown.'),
+
         ],
         const SizedBox(height: 16),
         Text(status, style: const TextStyle(fontSize: 12, color: Colors.white70)),
