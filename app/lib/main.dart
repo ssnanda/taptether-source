@@ -160,8 +160,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
       final devices = await deviceStore.read();
       if (mounted) setState(() => savedComputers = devices);
     } catch (_) {
-      if (mounted) setState(() =>
-          status = 'Saved devices could not be loaded. Check secure storage permissions.');
+      if (mounted) {
+        setState(() =>
+            status = 'Saved devices could not be loaded. Check secure storage permissions.');
+      }
     }
   }
 
@@ -182,8 +184,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
             : 'Found ${result.length} local computer(s). Select one to pair.';
       });
     } catch (error) {
-      if (mounted) setState(() =>
-          status = 'Discovery unavailable: $error. Enter the IP manually.');
+      if (mounted) {
+        setState(() =>
+            status = 'Discovery unavailable: $error. Enter the IP manually.');
+      }
     } finally {
       if (mounted) setState(() => searching = false);
     }
@@ -449,8 +453,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
         final updated = await deviceStore.upsert(device);
         if (mounted) setState(() => savedComputers = updated);
       } catch (_) {
-        if (mounted) setState(() =>
-            status = 'Connected, but secure storage could not save this pairing.');
+        if (mounted) {
+          setState(() =>
+              status = 'Connected, but secure storage could not save this pairing.');
+        }
       }
     } catch (e) {
       agent.disconnect();
