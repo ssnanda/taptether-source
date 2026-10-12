@@ -6,7 +6,7 @@ void main() {
     final fingerprint = List.filled(64, 'A').join();
     final valid = 'taptether://pair?v=1&host=192.168.68.87&token='
         'abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234'
-        '&fingerprint=NaN';
+        '&fingerprint=$fingerprint';
     final pairing = PairingQR.parse(valid);
     expect(pairing, isNotNull);
     expect(pairing!.host, '192.168.68.87');
