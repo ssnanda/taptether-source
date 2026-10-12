@@ -19,6 +19,9 @@ jobs:
           cache: false
       - name: Go tests
         run: cd agent && go test ./... && go vet ./...
+      - name: Verify Ubuntu tray source
+        run: python3 -m py_compile desktop/ubuntu/taptether_tray.py
+
       - name: Build Ubuntu packages
         run: bash bin/2b-tt-ubuntu.sh
       - uses: actions/upload-artifact@v4
@@ -43,6 +46,8 @@ jobs:
           python-version: '3.12'
       - name: Install Pillow
         run: python3 -m pip install --disable-pip-version-check Pillow
+      - name: Verify AppKit tray source
+        run: xcrun swiftc -frontend -parse desktop/macos/TapTetherTray.swift
       - name: Build native macOS agents
         run: bash bin/2b-tt-macos.sh
       - uses: actions/upload-artifact@v4
