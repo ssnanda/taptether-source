@@ -43,4 +43,8 @@ fi
 # Keep only the current version's local IPA packages.
 find "$ROOT/dist/ios" -maxdepth 1 -type f -name 'TapTether-*.ipa' ! -name "$(basename "$OUTPUT")" -delete
 echo "IPA: $OUTPUT"
-if [[ "$PUBLISH" -eq 1 ]]; then "$ROOT/bin/6-tt-publish-latest.sh"; fi
+python3 "$ROOT/bin/6-tt-generate-altstore.py" \
+  --ipa "$OUTPUT" --version-file "$ROOT/VERSION" \
+  --output "$ROOT/altstore.json" --icon-output "$ROOT/dist/release/TapTether-icon.png"
+echo "AltStore source: $ROOT/altstore.json"
+if [[ "$PUBLISH" -eq 1 ]]; then bash "$ROOT/bin/6-tt-publish-latest.sh"; fi
