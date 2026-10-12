@@ -48,6 +48,17 @@ printf '%s  %s\n' "$digest" "$pkg" | sha256sum --check --status || { echo 'SHA-2
 [[ "$(dpkg-deb --field "$pkg" Architecture)" == "$arch" ]] || { echo 'Architecture mismatch.' >&2; exit 1; }
 echo "Verified $asset against the release SHA-256 digest."
 sudo apt install -y "$pkg"
+# Refresh desktop UI/controllers from the verified, architecture-matched .deb.
+# No new autostart/service privileges are granted during updates.
+bundle=/usr/share/taptether
+for required in 4-ubuntu-desktop-setup.sh 7-tt-update-ubuntu.sh taptether_tray.py TapTether-icon.png; do
+  [[ -s "$bundle/$required" ]] || { echo "Updated package missing $required" >&2; exit 1; }
+done
+install -D -m 0700 "$bundle/4-ubuntu-desktop-setup.sh" "$HOME/.local/bin/taptetherctl"
+install -D -m 0700 "$bundle/7-tt-update-ubuntu.sh" "$HOME/.local/bin/taptether-agent-update"
+install -D -m 0755 "$bundle/taptether_tray.py" "$HOME/.local/share/taptether/taptether_tray.py"
+install -D -m 0644 "$bundle/TapTether-icon.png" "$HOME/.local/share/icons/hicolor/512x512/apps/taptether.png"
 sudo systemctl restart taptether-agent.service
 sudo systemctl is-active --quiet taptether-agent.service
 echo "Upgraded and restarted: $latest. Existing pairing identity was preserved."
+echo "Updated tray resources will load at the next desktop login."

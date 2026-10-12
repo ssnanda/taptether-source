@@ -75,10 +75,35 @@ for arch in ('amd64', 'arm64'):
         ' A local HTTPS remote input agent with native Linux uinput support.\n'
         ' No cloud account or telemetry.\n'
     ).encode('utf-8')
+    # Complete desktop resources travel with every downloadable Ubuntu .deb.
+    # Only the desktop user may run taptether-setup install, not dpkg postinst.
+    payload = [('usr/local/bin/taptether-agent', binary, 0o755)]
+    for dest, source in (
+        ('usr/share/taptether/4-ubuntu-desktop-setup.sh', root / 'bin' / '4-ubuntu-desktop-setup.sh'),
+        ('usr/share/taptether/7-tt-update-ubuntu.sh', root / 'bin' / '7-tt-update-ubuntu.sh'),
+        ('usr/share/taptether/taptether_tray.py', root / 'desktop' / 'ubuntu' / 'taptether_tray.py'),
+    ):
+        if not source.is_file() or source.stat().st_size < 100:
+            raise SystemExit(f'Missing required desktop resource: {source}')
+        payload.append((dest, source.read_bytes(), 0o755))
+    icon = next((
+        candidate for candidate in (
+            root / 'dist' / 'branding' / 'TapTether-icon.png',
+            root / 'assets' / 'branding' / 'TapTether-agent.png',
+        ) if candidate.is_file()
+    ), None)
+    if icon is None or not icon.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'):
+        raise SystemExit('A valid TapTether PNG icon is required for .deb packaging.')
+    payload.append(('usr/share/taptether/TapTether-icon.png', icon.read_bytes(), 0o644))
+    payload.append((
+        'usr/bin/taptether-setup',
+        b'#!/bin/sh\nexec /bin/bash /usr/share/taptether/4-ubuntu-desktop-setup.sh "$@"\n',
+        0o755,
+    ))
     members = (
         ('debian-binary', b'2.0\n'),
         ('control.tar.gz', tar_gz([('control', control, 0o644)])),
-        ('data.tar.gz', tar_gz([('usr/local/bin/taptether-agent', binary, 0o755)])),
+        ('data.tar.gz', tar_gz(payload)),
     )
     output = output_dir / f'taptether-agent_{version}_{arch}.deb'
     fd, temp_path = tempfile.mkstemp(prefix=f'.taptether-{arch}-', suffix='.deb', dir=output_dir)

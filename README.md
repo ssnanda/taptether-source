@@ -39,6 +39,26 @@ Install, start at boot and show pairing token and TLS fingerprint. Retrieve deta
 
     ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl pairing'
 
+### Ubuntu from a downloaded .deb
+
+The current amd64/arm64 `.deb` is self-contained: it installs the background Go
+agent plus the matching tray, splash launcher, update helper and icon. On the
+Ubuntu computer, first install the downloaded package, then finish the
+**per-user** desktop/service setup as the actual desktop user (not root):
+
+    sudo apt install ./TapTetherAgent-Ubuntu-amd64.deb
+    taptether-setup install
+
+Replace amd64 with arm64 for an ARM Ubuntu desktop. The second command asks
+for sudo only for the system service and restricted /dev/uinput configuration.
+It also enables tray autostart at desktop login; the Go agent is independent
+of that menu process. Installing only the .deb deliberately does not choose
+a desktop user or start a privileged service.
+
+Manual `taptetherctl update` refreshes the installed user-facing tray and
+controllers from the verified package; exit and log in again to load the
+updated tray. Existing private pairing identity remains unchanged.
+
 ## macOS background agent
 
 On macOS, extract the correct installer archive from dist/macos and, in the extracted folder, run:
