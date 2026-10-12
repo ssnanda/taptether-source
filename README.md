@@ -34,7 +34,22 @@ Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IP
 | `./bin/3-run-agent.sh` | Start Go agent on current computer |
 | `./bin/3-push-project.sh` | Review and commit all nonignored project files to main |
 | `./bin/4-test.sh` | Go tests + Flutter analyze/tests (when Flutter installed) |
+| `./bin/4-ubuntu-desktop-setup.sh` | SSH-installable Ubuntu X11 desktop launcher, graphical-login autostart, user service, pairing details |
 | `./bin/2d-tt-all.sh` | Build all available Go targets, Ubuntu installers and available mobile targets |
+
+
+## Ubuntu desktop launcher and SSH setup
+
+After installing the Ubuntu .deb, use the TapTether desktop setup helper from your Mac:
+
+1. `scp bin/4-ubuntu-desktop-setup.sh sandip@192.168.68.87:/tmp/taptether-setup.sh`
+2. `ssh -t sandip@192.168.68.87 'bash /tmp/taptether-setup.sh install'`
+
+This installs `~/.local/bin/taptetherctl` for the **normal desktop user**, a user-level systemd service, a dock-launchable application entry, and an XDG graphical-session autostart file. The installer attempts to pin the launcher to the Ubuntu GNOME dock over the desktop D-Bus connection; if the session is not available, pin it later from Show Applications.
+
+Use SSH to manage the agent: `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl start'`, or replace `start` with `stop`, `restart`, `status`, `logs`, or `pairing`. The `pairing` command prints the LAN IP, certificate fingerprint, **and private pairing token**; do not post the token or commit it to GitHub.
+
+**Important:** Auto-start means **at graphical user login after reboot**, not remote control of the login screen. A logged-in **X11/Xorg** desktop session is required. Wayland, headless SSH, and controlling the screen before login are not supported in this prototype. The dock entry is a *launcher*, not a live tray-status indicator. The agent intentionally suppresses stdout in its user service so the secret pairing token isn't saved in systemd logs.
 
 ## Try Ubuntu remote control
 
