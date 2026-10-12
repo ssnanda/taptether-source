@@ -11,6 +11,7 @@ for arch in amd64 arm64; do
   cp "$ROOT/dist/agents/TapTetherAgent-darwin-$arch-$version" "$temp/taptether-agent"
   cp "$ROOT/bin/4-macos-agent-setup.sh" "$temp/taptetherctl-mac"
   cp "$ROOT/bin/8-tt-update-macos.sh" "$temp/taptether-agent-update-mac"
+  cp "$ROOT/dist/branding/TapTether.icns" "$temp/TapTether.icns"
   chmod +x "$temp/taptether-agent" "$temp/taptetherctl-mac" "$temp/taptether-agent-update-mac"
   out="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.tar.gz"
   COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" taptether-agent taptetherctl-mac taptether-agent-update-mac
