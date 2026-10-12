@@ -44,7 +44,7 @@ class PhoneIdentity {
 
   Future<String> signChallenge(String nonce) async {
     final keyPair = SimpleKeyPairData(
-      _private,
+      List<int>.of(_private),
       publicKey: SimplePublicKey(publicKey, type: KeyPairType.ed25519),
       type: KeyPairType.ed25519,
     );
