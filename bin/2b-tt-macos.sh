@@ -15,3 +15,18 @@ for arch in amd64 arm64; do
   rm -rf "$temp"
   echo "macOS installer archive: $out"
 done
+# Retain only this version's macOS archives and binaries locally.
+for OLD in "$ROOT"/dist/macos/TapTetherAgent-macos-*.tar.gz; do
+  [[ -f "$OLD" ]] || continue
+  case "$(basename "$OLD")" in
+    "TapTetherAgent-macos-amd64-$version.tar.gz"|"TapTetherAgent-macos-arm64-$version.tar.gz") ;;
+    *) rm -f "$OLD" ;;
+  esac
+done
+for OLD in "$ROOT"/dist/agents/TapTetherAgent-darwin-*; do
+  [[ -f "$OLD" ]] || continue
+  case "$(basename "$OLD")" in
+    "TapTetherAgent-darwin-amd64-$version"|"TapTetherAgent-darwin-arm64-$version") ;;
+    *) rm -f "$OLD" ;;
+  esac
+done
