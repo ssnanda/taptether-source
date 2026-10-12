@@ -185,7 +185,7 @@ class UbuntuSshProvisioner {
     if (!valid) {
       throw StateError('Generate or import a valid phone SSH key first.');
     }
-    final quotedKey = "'${publicKey}'";
+    final quotedKey = "'$publicKey'";
     final command = 'umask 077; mkdir -p "\$HOME/.ssh" && '
         'chmod 700 "\$HOME/.ssh" && touch "\$HOME/.ssh/authorized_keys" && '
         'chmod 600 "\$HOME/.ssh/authorized_keys" && '
