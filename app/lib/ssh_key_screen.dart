@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:dartssh2/dartssh2.dart';
@@ -30,11 +29,13 @@ class _SshKeyScreenState extends State<SshKeyScreen> {
     try {
       final keys = await _store.listKeys();
       final selected = await _store.selectedId();
-      if (mounted) setState(() {
-        _keys = keys;
-        _selected = selected;
-        _error = null;
-      });
+      if (mounted) {
+        setState(() {
+          _keys = keys;
+          _selected = selected;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = 'Could not read SSH keys: $e');
     }
@@ -156,7 +157,9 @@ class _SshKeyScreenState extends State<SshKeyScreen> {
     if (private && !await _confirm('Export PRIVATE SSH key?',
         'The exported file contains an UNENCRYPTED private key. Anyone '
         'with this file can authenticate as you. Only save to trusted storage.',
-        'Export private key')) return;
+        'Export private key')) {
+      return;
+    }
     await _perform(() async {
       final payload = private
           ? await _store.exportPrivatePem(key.id)
