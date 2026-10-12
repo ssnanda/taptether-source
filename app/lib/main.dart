@@ -142,7 +142,94 @@ class _RemoteScreenState extends State<RemoteScreen> {
   }
 
   bool newerThan(String latest, String installed) {
-    final matcher = RegExp(r'^(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?
+    final pattern = RegExp(r'^([0-9]+)[.]([0-9]+)[.]([0-9]+)(?:[+]([0-9]+))?');
+    final a = pattern.firstMatch(latest);
+    final b = pattern.firstMatch(installed);
+    if (a == null || b == null) return false;
+    for (var i = 1; i <= 4; i++) {
+      final left = int.parse(a.group(i) ?? '0');
+      final right = int.parse(b.group(i) ?? '0');
+      if (left != right) return left > right;
+    }
+    return false;
+  }
+
+  Future<void> checkForUpdates() async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 4);
+    try {
+      // The only startup internet request checks public release metadata.
+      final request = await client.getUrl(Uri.parse(
+        'https://raw.githubusercontent.com/ssnanda/taptether.com/main/altstore.json'));
+      request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+      final response = await request.close().timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) return;
+      final data = jsonDecode(await utf8.decoder.bind(response).join());
+      if (data is! Map || data['apps'] is! List) return;
+      final apps = data['apps'] as List;
+      if (apps.isEmpty || apps.first is! Map) return;
+      final app = apps.first as Map;
+      if (app['version'] is! String) return;
+      final latest = (app['version'] as String) + '+' + (app['buildVersion']?.toString() ?? '0');
+      final local = await PackageInfo.fromPlatform();
+      final current = local.version + '+' + local.buildNumber;
+      if (!mounted) return;
+      setState(() {
+        _latestReleaseVersion = latest;
+        availableAppVersion = newerThan(latest, current) ? latest : null;
+        availableAgentVersion = connectedAgentVersion != null &&
+                newerThan(latest, connectedAgentVersion!)
+            ? latest : null;
+      });
+    } catch (_) {
+      // LAN control remains usable without internet access.
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Widget updateNotices() => Column(children: [
+    if (availableAppVersion != null) Card(child: ListTile(
+      leading: const Icon(Icons.system_update),
+      title: Text('TapTether ' + availableAppVersion! + ' available'),
+      subtitle: const Text('View the new IPA in AltStore / GitHub Releases.'),
+      trailing: const Icon(Icons.open_in_new),
+      onTap: () => launchUrl(
+        Uri.parse('https://github.com/ssnanda/taptether.com/releases/tag/current'),
+        mode: LaunchMode.externalApplication),
+    )),
+    if (availableAgentVersion != null) Card(child: ListTile(
+      leading: const Icon(Icons.computer),
+      title: Text('Computer agent update: ' + availableAgentVersion!),
+      subtitle: const Text('On the computer, run taptetherctl check-update and update.'),
+    )),
+  ]);
+
+  Future<void> confirmShutdown() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Shut down this computer?'),
+        content: const Text('Open applications will close and unsaved work may be lost.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Shut down')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await agent.send('shutdown');
+      if (mounted) setState(() => status = 'Shutdown requested.');
+    } catch (e) {
+      if (mounted) setState(() => status = e.toString());
+    }
+  }
+
   int fingers = 0;
   double mouseSensitivity = 3.8;
   double _pendingMoveX = 0;
