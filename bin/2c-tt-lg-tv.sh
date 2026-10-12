@@ -7,6 +7,7 @@ command -v ares-package >/dev/null 2>&1 || {
   echo 'This is a companion proof of concept, not a system-wide TV remote agent.' >&2
   exit 2
 }
+python3 "$ROOT/bin/9-tt-brand-icons.py"
 mkdir -p "$ROOT/dist/lg-webos"
 ares-package -o "$ROOT/dist/lg-webos" "$ROOT/tv/lg-webos"
 echo 'LG webOS companion .ipk saved in dist/lg-webos/. Use LG Developer Mode / ares-install.'
