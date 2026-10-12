@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(uname -s)" == Darwin ]] || { echo 'Native macOS agent builds require macOS with Xcode tools.' >&2; exit 1; }
 version="$(cat "$ROOT/VERSION")"
+python3 "$ROOT/bin/9-tt-brand-icons.py"
 mkdir -p "$ROOT/dist/macos"
 for arch in amd64 arm64; do
   "$ROOT/bin/2b-tt-agent.sh" darwin "$arch"
