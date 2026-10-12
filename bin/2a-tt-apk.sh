@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 command -v flutter >/dev/null 2>&1 || { echo 'Flutter SDK not found.' >&2;exit 1; }
+"$ROOT/bin/2e-tt-stage-mobile-agents.sh"
 cd "$ROOT/app"
 flutter pub get
 flutter build apk --release "$@"
