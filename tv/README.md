@@ -1,7 +1,23 @@
 # TapTether Smart TV Targets
 
-The Flutter mobile app can build an experimental Android TV APK, but its UI is not yet tailored for D-pad navigation or the Play Store TV requirements.
+## LG webOS companion prototype
 
-LG webOS and Samsung Tizen require **separate vendor SDK targets**. A normal Flutter iOS/Android build cannot produce installable webOS `.ipk` or Tizen `.tpk` packages automatically. Hardware/firmware support varies. The provided LG/Samsung build scripts intentionally fail with clear instructions rather than produce fake deliverables.
+An installable webOS web application source project now lives in tv/lg-webos. It has a local interactive UI that responds to LG remote navigation. It makes no internet connection.
 
-**Planned approach:** Support LG/Samsung remote control from the mobile app through local TV network APIs *without installing an app on the TV* first. Investigate installable TV Flutter targets only if they add meaningful functionality. TV operating systems limit background control and input injection.
+With the current LG webOS CLI installed (ares-package), build via:
+
+    ./bin/2c-tt-lg-tv.sh
+
+Output appears in dist/lg-webos. Enable Developer Mode on your LG TV, configure the TV in the LG CLI, and install using ares-install with your configured device and the generated .ipk.
+
+This is a companion proof of concept, **not** a system-wide keyboard/mouse agent or a functioning phone-to-TV remote. Ordinary webOS TV apps are sandboxed. A future iPhone LG TV remote should use LG's local-network pairing API where supported by the TV model and firmware.
+
+## Android TV
+
+Experimental Android TV APK support exists, but the Flutter screen is designed for phones rather than TV remote/D-pad focus.
+
+## Samsung Tizen
+
+No working Tizen agent/app is shipped yet. Vendor SDK and separate app implementation are required.
+
+Scripts should never claim to produce usable LG/Samsung binaries if the vendor tooling is missing.
