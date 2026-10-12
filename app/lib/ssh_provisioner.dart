@@ -127,6 +127,7 @@ class UbuntuSshProvisioner {
       for (final name in [
         '4-ubuntu-desktop-setup.sh',
         '7-tt-update-ubuntu.sh',
+        'taptether_tray.py',
         'TapTether-icon.png',
       ]) {
         await upload(name, await _loadBytes('assets/agents/$name'));
