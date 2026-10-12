@@ -117,8 +117,10 @@ class _SshKeyScreenState extends State<SshKeyScreen> {
       await _store.importPem(pem, passphrase: passphrase);
       await _refresh();
     } catch (_) {
-      if (mounted) setState(() =>
-          _error = 'Could not import this key. Only valid OpenSSH Ed25519 keys are supported.');
+      if (mounted) {
+        setState(() => _error =
+            'Could not import this key. Only valid OpenSSH Ed25519 keys are supported.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
