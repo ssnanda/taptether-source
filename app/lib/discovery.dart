@@ -1,0 +1,84 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+/// Unauthenticated LAN discovery hints. NEVER treat these as a trusted pairing.
+class DiscoveredDevice {
+  const DiscoveredDevice({
+    required this.name,
+    required this.host,
+    required this.platform,
+    required this.version,
+  });
+
+  final String name;
+  final String host;
+  final String platform;
+  final String version;
+
+  static DiscoveredDevice? parse(Datagram packet) {
+    final ip = packet.address.address;
+    if (!isPrivateIPv4(ip)) return null;
+    try {
+      final decoded = jsonDecode(utf8.decode(packet.data));
+      if (decoded is! Map || decoded['protocol'] != 1 ||
+          decoded['port'] != 48321 ||
+          decoded['name'] is! String ||
+          decoded['platform'] is! String ||
+          decoded['version'] is! String) {
+        return null;
+      }
+      final name = (decoded['name'] as String).trim();
+      if (name.isEmpty || name.length > 64) return null;
+      return DiscoveredDevice(
+        name: name,
+        host: ip,
+        platform: decoded['platform'] as String,
+        version: decoded['version'] as String,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+bool isPrivateIPv4(String input) {
+  final parts = input.split('.');
+  if (parts.length != 4) return false;
+  final octets = parts.map(int.tryParse).toList();
+  if (octets.any((v) => v == null || v < 0 || v > 255)) return false;
+  final first = octets[0]!, second = octets[1]!;
+  return first == 10 || (first == 172 && second >= 16 && second <= 31) ||
+      (first == 192 && second == 168);
+}
+
+/// A two-second UDP broadcast; no account, telemetry or cloud discovery.
+/// Some corporate and guest Wi-Fi networks block broadcast packets.
+Future<List<DiscoveredDevice>> findNearbyDevices({
+  Duration duration = const Duration(seconds: 2),
+}) async {
+  final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+  socket.broadcastEnabled = true;
+  final devices = <String, DiscoveredDevice>{};
+  final subscription = socket.listen((event) {
+    if (event != RawSocketEvent.read) return;
+    Datagram? packet;
+    while ((packet = socket.receive()) != null) {
+      final device = DiscoveredDevice.parse(packet!);
+      if (device != null) devices[device.host] = device;
+    }
+  });
+  try {
+    socket.send(
+      utf8.encode('TAPTETHER_DISCOVER_V1'),
+      InternetAddress('255.255.255.255'),
+      48322,
+    );
+    await Future<void>.delayed(duration);
+  } finally {
+    await subscription.cancel();
+    socket.close();
+  }
+  return devices.values.toList()
+    ..sort((a, b) => a.name.compareTo(b.name));
+}
