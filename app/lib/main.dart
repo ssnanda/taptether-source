@@ -234,6 +234,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   final pin = TextEditingController();
   final typing = TextEditingController();
   String status = 'Not connected';
+  String installedVersion = '…';
   String? availableAppVersion;
   String? availableAgentVersion;
   String? connectedAgentVersion;
@@ -242,6 +243,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
     unawaited(loadComputers());
   }
@@ -524,6 +526,18 @@ class _RemoteScreenState extends State<RemoteScreen> {
       if (left != right) return left > right;
     }
     return false;
+  }
+
+  Future<void> loadInstalledVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() =>
+          installedVersion = '${info.version}+${info.buildNumber}');
+      }
+    } catch (_) {
+      if (mounted) setState(() => installedVersion = 'unavailable');
+    }
   }
 
   Future<void> checkForUpdates() async {
@@ -852,6 +866,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
         ],
         const SizedBox(height: 16),
         Text(status, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+        const SizedBox(height: 12),
+        Center(child: Text('TapTether v$installedVersion',
+          style: const TextStyle(fontSize: 12, color: Colors.white54))),
       ])),
     );
   }
