@@ -186,3 +186,15 @@ To add the copied phone SSH public key once through an existing Ubuntu session:
     # Paste the public key as one complete line into ~/.ssh/authorized_keys.
 
 Never paste your PRIVATE key into authorized_keys. Do not trust an SSH host key merely because a device appeared in LAN discovery. Key import and installer interactions need testing on your iPhone and Ubuntu; CI validates syntax/unit builds, not the physical SSH login.
+
+## v0.5.3 — Visible app versions, desktop splash screens and system trays
+
+- **iOS/Android:** The footer shows the actual installed version and build number using package_info_plus, including when offline.
+- **Ubuntu:** The installer stages desktop/ubuntu/taptether_tray.py, places a branded TapTether launcher in Show Applications/GNOME dock, and configures the tray to start when the desktop user logs in. The launcher shows a roughly 2-second splash with the installed agent version. The tray menu shows service status, version, Start/Restart/Stop (through graphical Polkit authorization), an on-demand update check and safe pairing instructions. It does not display tokens or TLS secrets. The input agent remains a separate systemd system service, including while no user is logged in.
+- **Ubuntu dependencies:** The installer attempts to install python3-gi, gir1.2-gtk-3.0 and gir1.2-ayatanaappindicator3-0.1. GNOME Wayland may additionally need an enabled AppIndicator/Ubuntu AppIndicators shell extension. If the extension is missing, the background service still works; the tray icon may not appear until enabled and the desktop session restarted.
+- **macOS:** Each Intel/Apple Silicon agent archive includes a native Swift/AppKit menu-bar binary. Installing creates ~/Applications/TapTether Agent.app and a separate LaunchAgent for silent tray login startup; clicking the app shows the TapTether splash with agent version. The menu shows service status, controls and update checking. The Go agent is independent of the menu; quitting the menu does not stop input control. A user account with an active graphical login is required for menu-bar presence.
+- **Updates:** Use the existing Ubuntu SSH installer to deploy the newer desktop tray to an existing computer; the macOS updater bundles and refreshes the menu-bar application. Previous device keys and TLS pins remain unchanged.
+
+The splash appears on manual app launch, *not at every computer reboot*, to avoid unexpected desktop popups. Versions come from the actual installed mobile package or desktop agent rather than a hardcoded banner.
+
+All expensive GitHub build/release workflows remain **manual-only** after the previous cleanup change. To validate and publish this release, run "Publish current TapTether release" from the repository's Actions tab once code changes are complete; the workflow validates tray source and builds both architectures, IPA and APK.
