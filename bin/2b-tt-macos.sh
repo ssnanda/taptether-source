@@ -14,7 +14,7 @@ for arch in amd64 arm64; do
   cp "$ROOT/dist/branding/TapTether.icns" "$temp/TapTether.icns"
   chmod +x "$temp/taptether-agent" "$temp/taptetherctl-mac" "$temp/taptether-agent-update-mac"
   out="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.tar.gz"
-  COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" taptether-agent taptetherctl-mac taptether-agent-update-mac
+  COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" taptether-agent taptetherctl-mac taptether-agent-update-mac TapTether.icns
   rm -rf "$temp"
   echo "macOS installer archive: $out"
 done
