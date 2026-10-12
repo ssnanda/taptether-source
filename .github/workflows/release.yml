@@ -1,0 +1,85 @@
+name: Publish current TapTether release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'VERSION'
+      - 'app/**'
+      - 'agent/**'
+      - 'bin/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: taptether-current-release
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: macos-latest
+    timeout-minutes: 80
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Configure Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+
+      - name: Configure Java for Android
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Configure Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - name: Generate native iOS and Android runners
+        run: |
+          cd app
+          flutter create --platforms=ios,android --org com.taptether --project-name taptether .
+          flutter pub get
+
+      - name: Validate Go agent and Dart
+        run: |
+          cd agent
+          go test ./...
+          go vet ./...
+          cd ../app
+          flutter analyze
+          flutter test
+
+      - name: Build bundled Ubuntu and macOS agents plus unsigned IPA
+        run: bash bin/2a-tt-ipa.sh --no-publish
+
+      - name: Build Android APK
+        run: bash bin/2a-tt-apk.sh --no-publish
+
+      - name: Publish current IPA, APK and agents to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash bin/6-tt-publish-latest.sh
+
+      - name: Upload current build outputs for CI debugging
+        uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-current-build
+          path: |
+            dist/release/TapTether*
+            altstore.json
+          retention-days: 1
+          if-no-files-found: error
