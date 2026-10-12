@@ -5,17 +5,24 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/services.dart';
 
 import 'discovery.dart';
+import 'phone_ssh_keys.dart';
+
+enum SshLoginMethod { password, phoneKey }
 
 class SshInstallRequest {
   const SshInstallRequest({
     required this.host, required this.username, required this.sshPassword,
     required this.sudoPassword, required this.hostKeyFingerprint,
+    this.loginMethod = SshLoginMethod.password,
+    this.authorizePhoneKey = false,
   });
   final String host;
   final String username;
   final String sshPassword;
   final String sudoPassword;
   final String hostKeyFingerprint;
+  final SshLoginMethod loginMethod;
+  final bool authorizePhoneKey;
 }
 
 class InstalledAgent {
@@ -39,14 +46,24 @@ class UbuntuSshProvisioner {
     if (!RegExp(r'^SHA256:[A-Za-z0-9+/]{43}$').hasMatch(expected)) {
       throw const FormatException('Enter the verified SSH SHA256: fingerprint.');
     }
-    if (input.sshPassword.isEmpty) {
+    if (input.loginMethod == SshLoginMethod.password &&
+        input.sshPassword.isEmpty) {
       throw const FormatException('SSH login password required.');
+    }
+    if (input.loginMethod == SshLoginMethod.phoneKey &&
+        !await PhoneSshKeyStore().exists) {
+      throw const FormatException('Create or import a phone SSH key first.');
     }
     final socket = await SSHSocket.connect(input.host, 22)
         .timeout(const Duration(seconds: 8));
     final client = SSHClient(
       socket, username: input.username,
-      onPasswordRequest: () => input.sshPassword,
+      identities: input.loginMethod == SshLoginMethod.phoneKey
+          ? await PhoneSshKeyStore().authenticationIdentities()
+          : null,
+      onPasswordRequest: input.loginMethod == SshLoginMethod.password
+          ? () => input.sshPassword
+          : null,
       handshakeTimeout: const Duration(seconds: 12),
       authTimeout: const Duration(seconds: 12),
       onVerifyHostKey: (_, fingerprint) => utf8.decode(fingerprint) == expected,
@@ -55,6 +72,10 @@ class UbuntuSshProvisioner {
     SftpClient? sftp;
     try {
       await client.authenticated.timeout(const Duration(seconds: 20));
+      if (input.loginMethod == SshLoginMethod.password &&
+          input.authorizePhoneKey) {
+        await _authorizePhoneKey(client);
+      }
       final architectureResult = await client.runWithResult('dpkg --print-architecture');
       if (architectureResult.exitCode != 0) {
         throw StateError('Target is not Ubuntu/Debian.');
@@ -144,12 +165,38 @@ class UbuntuSshProvisioner {
       if (sftp != null) await sftp.close();
       if (stage != null) {
         try {
-          await client.run('rm -rf -- "$stage"');
+          await client.run('rm -rf -- $stage');
         } catch (_) {
           // A failed cleanup must not conceal the primary installation error.
         }
       }
       await client.close();
+    }
+  }
+
+  /// Only a verified SSH connection with existing login authorization can
+  /// append the phone's public key. Never transfers private material.
+  static Future<void> _authorizePhoneKey(SSHClient client) async {
+    final publicKey = await PhoneSshKeyStore().publicKeyLine();
+    if (publicKey == null ||
+        !RegExp(r'^ssh-ed25519 [A-Za-z0-9+/=]+ taptether-mobile
+    final data = await rootBundle.load(asset);
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+}
+)
+            .hasMatch(publicKey)) {
+      throw StateError('Generate or import a valid phone SSH key first.');
+    }
+    final command = 'umask 077; mkdir -p "$HOME/.ssh" && '
+        'chmod 700 "$HOME/.ssh" && touch "$HOME/.ssh/authorized_keys" && '
+        'chmod 600 "$HOME/.ssh/authorized_keys" && '
+        '(grep -Fqx -- ' + "'$publicKey'" +
+        ' "$HOME/.ssh/authorized_keys" || printf "%s\\n" ' + "'$publicKey'" +
+        ' >> "$HOME/.ssh/authorized_keys")';
+    final result = await client.runWithResult(command);
+    if (result.exitCode != 0) {
+      throw StateError('Could not authorize phone SSH public key on Ubuntu.');
     }
   }
 
