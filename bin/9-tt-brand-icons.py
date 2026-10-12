@@ -84,6 +84,9 @@ def main() -> None:
         print("Verified both approved app and transparent agent artworks")
         return
     DIST.mkdir(parents=True, exist_ok=True)
+    # Publish browseable high-resolution PNG copies in the source repository.
+    png(app_art, BRANDING / "TapTether-app.png", 1024)
+    png(agent_art, BRANDING / "TapTether-agent.png", 1024)
     png(app_art, DIST / "TapTether-app.png", 1024)
     png(app_art, DIST / "TapTether-icon.png", 512)
     png(agent_art, DIST / "TapTether-mark.png", 512)
