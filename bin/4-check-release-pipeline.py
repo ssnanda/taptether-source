@@ -41,8 +41,10 @@ assert "already published" in publisher
 assert "release-v0.6.2-request" not in workflow
 
 assert "  cleanup-history:" in workflow
-assert "github.event_name == 'schedule' || inputs.task == 'cleanup'" in workflow
-assert "Run workflow" not in workflow or True
+assert "    needs: build-and-publish" in workflow
+assert "always() && (github.event_name == 'schedule'" in workflow
+assert "inputs.task == 'cleanup'" in workflow
+assert "needs.build-and-publish.result == 'success'" in workflow
 
 print("PASS: exactly one Actions workflow, manually selectable release/validate/cleanup")
 print("PASS: validate -> native agents -> IPA/APK -> publish, with same-run artifacts")
