@@ -1,10 +1,6 @@
 name: '1 - Validate current TapTether'
 # Current-version validation; never publish during validation.
 on:
-  push:
-    branches: [feature/v0.6.2-macos-app-lan-scan]
-    paths:
-      - '.github/workflows/validate.yml'
   workflow_dispatch:
 permissions:
   contents: read
