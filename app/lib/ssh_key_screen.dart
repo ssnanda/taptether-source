@@ -225,7 +225,7 @@ class _SshKeyScreenState extends State<SshKeyScreen> {
         Text('${_keys.length} SSH ${_keys.length == 1 ? 'key' : 'keys'} saved',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 6),
-        const Text('Private keys are protected in this phone’s secure storage. '
+        Text('Private keys are protected in this phone’s secure storage. '
             'Select one as the default for SSH connections.',
             style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 14),
