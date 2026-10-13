@@ -1,0 +1,5 @@
+# Explicit one-time release build request
+version=0.6.2+20
+source_sha=3684e65a77395d91af235a00c6e09a4c2c7f81ab
+scope=ipa,apk,ubuntu-amd64,ubuntu-arm64,macos-amd64-tar,macos-arm64-tar,macos-amd64-app-zip,macos-arm64-app-zip
+reason=User-approved TapTether v0.6.2 full release; build and publish only after workflow tests pass
