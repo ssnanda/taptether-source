@@ -327,9 +327,9 @@ trust-reset/recovery flow rather than automatic replacement.
 
 ### Install the macOS agent without a Terminal
 
-1. Download **TapTetherAgent-macOS-arm64.tar.gz** for Apple Silicon,
-   or **TapTetherAgent-macOS-amd64.tar.gz** for Intel, from GitHub Releases.
-2. Double-click the archive to extract it, then double-click **TapTether Agent.app**.
+1. Download **TapTetherAgent-macOS-arm64.zip** for Apple Silicon,
+   or **TapTetherAgent-macOS-amd64.zip** for Intel, from GitHub Releases.
+2. Double-click the ZIP to extract it, then double-click **TapTether Agent.app**.
 3. Choose **Install & Start**. The app copies the agent into
    `~/.local/bin`, installs the launchd background service, creates the
    persistent menu-bar app in `~/Applications`, and checks service status.
@@ -348,7 +348,11 @@ Closing the menu does not stop the agent. **Install / Repair agent** and
 **Start agent** are available from the menu. If the status remains stopped,
 check `~/Library/Logs/TapTether/agent.stderr.log`.
 
-Command-line installation from the same archive remains supported:
+For existing installations, the separate **.tar.gz** agent archive retains its
+original five-file format so the v0.6.1 updater remains compatible.
+The new **.zip** file is for easy first-time installation.
+
+Command-line installation from the legacy .tar.gz archive remains supported:
 
     ./taptetherctl-mac install
     ~/.local/bin/taptetherctl-mac status
