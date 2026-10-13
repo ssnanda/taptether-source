@@ -1,10 +1,6 @@
-name: Validate TapTether 0.6.1 without publishing
-# Rerun on the corrected v0.6.1 source after Flutter lint fixes.
+name: '1 - Validate current TapTether'
+# Current-version validation; never publish during validation.
 on:
-  push:
-    branches: [fix/v0.6.1-ssh-install-experience]
-    paths:
-      - '.github/workflows/v0.6.1-validate.yml'
   workflow_dispatch:
 permissions:
   contents: read

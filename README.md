@@ -321,3 +321,72 @@ The trackpad respects the current light/dark color scheme. Existing SSH key, nav
 Still planned for the rest of v0.6: file transfer and optional bidirectional
 clipboard synchronization. Unexpected host key changes require an explicit
 trust-reset/recovery flow rather than automatic replacement.
+
+
+## v0.6.2+20 — Mac app installation and local IP scanner
+
+### Install the macOS agent without a Terminal
+
+1. Download **TapTetherAgent-macOS-arm64.zip** for Apple Silicon,
+   or **TapTetherAgent-macOS-amd64.zip** for Intel, from GitHub Releases.
+2. Double-click the ZIP to extract it, then double-click **TapTether Agent.app**.
+3. Choose **Install & Start**. The app copies the agent into
+   `~/.local/bin`, installs the launchd background service, creates the
+   persistent menu-bar app in `~/Applications`, and checks service status.
+4. Approve TapTether under **System Settings → Privacy & Security →
+   Accessibility**. Use the menu-bar app’s **Show pairing details** action
+   to retrieve the local IP, private token, and TLS certificate fingerprint
+   without opening a terminal.
+
+The app is ad-hoc signed for personal builds, not Apple-notarized.
+macOS Gatekeeper might require **Control-click → Open** or approval in
+Privacy & Security after download. An Apple Developer identity is required
+for normal trusted distribution; it is not built into TapTether.
+
+On future boots the Go agent and menu bar app are started by launchd.
+Closing the menu does not stop the agent. **Install / Repair agent** and
+**Start agent** are available from the menu. If the status remains stopped,
+check `~/Library/Logs/TapTether/agent.stderr.log`.
+
+For existing installations, the separate **.tar.gz** agent archive retains its
+original five-file format so the v0.6.1 updater remains compatible.
+The new **.zip** file is for easy first-time installation.
+
+Command-line installation from the legacy .tar.gz archive remains supported:
+
+    ./taptetherctl-mac install
+    ~/.local/bin/taptetherctl-mac status
+
+### Scan local IP network
+
+On iPhone/Android, select **Add & Discover → Scan local IP network**.
+The manual scan checks a single private `/24` (254 hosts) using bounded,
+concurrent TCP connections to common ports (TapTether, SSH, HTTP(S), SMB,
+RDP). It attempts local reverse DNS for hostnames and offers port-based
+device identification. Select a discovered IP to prefill manual pairing;
+**scanning never bypasses authentication or TLS pairing**.
+
+The scan runs locally with no cloud APIs. It only lists hosts that respond on
+tested TCP ports; devices with firewall rules or no exposed services may
+not appear. Ordinary iOS/Android apps cannot reliably inspect LAN neighbors’
+MAC addresses, so the app does not claim to obtain them.
+
+### GitHub Actions
+
+Use the repository’s **Actions** tab and **Run workflow** with the desired
+branch for these four independent, numbered workflows:
+
+1. **1 - Validate current TapTether:** shell/Python syntax, Go tests/vet,
+   Flutter static analysis, unit/widget tests and Android debug smoke build.
+2. **2 - Build TapTether agents:** Ubuntu and macOS packages, including the
+   standalone Mac app and bundle validation; temporary downloadable artifacts.
+3. **3 - Publish TapTether release:** full IPA, APK, native agents, package
+   verification, and update to GitHub Releases. Run after validation.
+4. **4 - Clean TapTether Actions history:** manually or on its weekly schedule;
+   removes completed run logs and temporary Actions artifacts, **not**
+   the published GitHub Releases.
+
+Ordinary commits do not trigger full agent/release builds. Historical 0.5.5
+workflow runs may remain visible in GitHub’s Actions history; the current
+source contains only one maintained validation workflow.
+

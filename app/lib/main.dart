@@ -13,6 +13,7 @@ import 'phone_identity.dart';
 import 'qr_pairing.dart';
 import 'ssh_key_screen.dart';
 import 'ubuntu_install_screen.dart';
+import 'lan_scan_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -319,6 +320,21 @@ class _RemoteScreenState extends State<RemoteScreen> {
     }
   }
 
+  Future<void> scanNetwork() async {
+    final selected = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) =>
+          LanScanScreen(initialIp: host.text.trim())),
+    );
+    if (selected == null || !mounted) return;
+    agent.disconnect();
+    setState(() {
+      host.text = selected;
+      discoveredName = selected;
+      _showPairForm = true;
+      status = 'Selected $selected from LAN scan. Pairing credentials are still required.';
+    });
+  }
+
   Future<void> searchNearby() async {
     if (searching) return;
     setState(() {
@@ -495,6 +511,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.network_check),
+              title: const Text('Scan local IP network'),
+              onTap: () {
+                Navigator.pop(context);
+                scanNetwork();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.install_desktop),
               title: const Text('Install Ubuntu agent'),
               onTap: installingAgent ? null : () {
@@ -596,6 +620,11 @@ class _RemoteScreenState extends State<RemoteScreen> {
           avatar: const Icon(Icons.radar, size: 18),
           label: Text(searching ? 'Searching…' : 'Discover'),
           onPressed: searching ? null : searchNearby,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.network_check, size: 18),
+          label: const Text('Scan IPs'),
+          onPressed: scanNetwork,
         ),
         ActionChip(
           avatar: const Icon(Icons.install_desktop, size: 18),

@@ -28,12 +28,14 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         menu.addItem(statusLabel)
         menu.addItem(.separator())
         add(menu, "Show TapTether", #selector(showSplash))
+        add(menu, "Install / Repair agent…", #selector(installAgent))
         add(menu, "Start agent", #selector(startAgent))
         add(menu, "Restart agent", #selector(restartAgent))
         add(menu, "Stop agent", #selector(stopAgent))
         add(menu, "Check for updates", #selector(checkUpdate))
+        add(menu, "Agent diagnostics", #selector(showAgentDiagnostics))
         menu.addItem(.separator())
-        add(menu, "Pairing instructions", #selector(pairingInstructions))
+        add(menu, "Show pairing details", #selector(pairingInstructions))
         add(menu, "Quit menu (agent stays running)", #selector(quitMenu))
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -49,6 +51,10 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         }
         statusItem.menu = menu
         refreshStatus()
+        if !FileManager.default.isExecutableFile(atPath: controller),
+           Bundle.main.path(forResource: "taptetherctl-mac", ofType: nil) != nil {
+            DispatchQueue.main.async { [weak self] in self?.promptSetup() }
+        }
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.refreshStatus()
         }
@@ -96,14 +102,18 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
 
     private func versionFromAgent() -> String {
         let version = output(NSHomeDirectory() + "/.local/bin/taptether-agent", ["--version"])
-        return version.isEmpty ? "unknown" : version
+        if !version.isEmpty { return version }
+        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+            ?? "unknown"
     }
 
     private func refreshStatus() {
         let target = "gui/" + String(getuid()) + "/" + agentLabel
         let state = output("/bin/launchctl", ["print", target])
+        let installed = FileManager.default.isExecutableFile(atPath: controller)
         let isRunning = state.contains("state = running")
-        statusLabel?.title = "Status: " + (isRunning ? "Running" : "Stopped")
+        statusLabel?.title = "Status: " + (isRunning ? "Running" :
+            (installed ? "Stopped — use Start / Repair" : "Not installed"))
     }
 
     private func showNotice(_ title: String, _ body: String) {
@@ -121,22 +131,102 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             let result = self.output(controller, [verb])
             DispatchQueue.main.async {
                 self.refreshStatus()
+                let observed = self.statusLabel?.title ?? "Status unavailable"
                 self.showNotice("TapTether " + verb,
-                    result.isEmpty ? "Could not confirm the operation. Check the service status or use the terminal."
+                    result.isEmpty ? observed + ". If stopped, choose Install / Repair agent."
                                    : String(result.prefix(1000)))
             }
         }
     }
 
-    @objc private func startAgent() { runControl("start") }
+    private func promptSetup() {
+        let prompt = NSAlert()
+        prompt.messageText = "Install TapTether Agent?"
+        prompt.informativeText = "This installs a background agent that starts at login, "
+            + "and keeps the menu-bar app available without a Terminal window. "
+            + "You'll need to allow Accessibility access in macOS settings."
+        prompt.addButton(withTitle: "Install & Start")
+        prompt.addButton(withTitle: "Not now")
+        NSApp.activate(ignoringOtherApps: true)
+        if prompt.runModal() == .alertFirstButtonReturn {
+            installAgent()
+        }
+    }
+
+    @objc private func installAgent() {
+        guard let setup = Bundle.main.path(forResource: "taptetherctl-mac",
+                                          ofType: nil) else {
+            showNotice("Installer files not found",
+                "Use the TapTether Agent.app bundled in the current macOS release.")
+            return
+        }
+        statusLabel?.title = "Status: Installing…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/bin/bash")
+            task.arguments = [setup, "install"]
+            // Installation output contains private pairing material: discard it.
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            var ok = false
+            do {
+                try task.run()
+                task.waitUntilExit()
+                ok = task.terminationStatus == 0
+            } catch {
+                ok = false
+            }
+            DispatchQueue.main.async {
+                self.refreshStatus()
+                if ok {
+                    self.activeVersion = self.versionFromAgent()
+                    self.showNotice("TapTether installed",
+                        "The background agent has been installed. "
+                        + "Check that its status is Running, then open "
+                        + "System Settings → Privacy & Security → Accessibility "
+                        + "and allow TapTether. Use Show pairing details to pair.")
+                } else {
+                    self.showNotice("Installation needs attention",
+                        "The agent could not be installed or started. "
+                        + "Check ~/Library/Logs/TapTether/agent.stderr.log. "
+                        + "Try Install / Repair again after checking permissions.")
+                }
+            }
+        }
+    }
+
+    @objc private func startAgent() {
+        if !FileManager.default.isExecutableFile(atPath: controller) {
+            promptSetup()
+            return
+        }
+        runControl("start")
+    }
     @objc private func restartAgent() { runControl("restart") }
     @objc private func stopAgent() { runControl("stop") }
     @objc private func checkUpdate() { runControl("check-update") }
+    @objc private func showAgentDiagnostics() {
+        let path = NSHomeDirectory() + "/Library/Logs/TapTether/agent.stderr.log"
+        let log = (try? String(contentsOfFile: path, encoding: .utf8))
+            ?? "No agent errors have been logged."
+        showNotice("TapTether agent diagnostics",
+            String(log.suffix(1800)) + "\n\nIf the agent is stopped, use Install / Repair agent.")
+    }
     @objc private func quitMenu() { NSApp.terminate(nil) }
     @objc private func pairingInstructions() {
-        showNotice("Pairing with TapTether",
-            "On a trusted Mac Terminal, run:\n\n~/.local/bin/taptetherctl-mac pairing-qr\n\n"
-            + "The menu does not expose pairing tokens or fingerprints.")
+        guard FileManager.default.isExecutableFile(atPath: controller) else {
+            promptSetup()
+            return
+        }
+        let details = output(controller, ["pairing"])
+        if details.isEmpty {
+            showNotice("Agent not ready",
+                "Start or repair the agent, then try showing pairing details.")
+            return
+        }
+        showNotice("Private pairing details",
+            details + "\n\nKeep the pairing token private. "
+            + "Enter these values in TapTether on your phone.")
     }
 
     @objc private func receiveSplash(_ notification: Notification) {

@@ -45,15 +45,38 @@ install_agent() {
     chmod 700 "$UPDATER"
   fi
   chmod 755 "$APP" "$CTL"
-  # A separate AppKit menu-bar process accompanies the real launchd Go agent.
-  if [[ -s "$SELF/TapTether.icns" && -x "$SELF/TapTetherTray" ]]; then
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1 ||
+      notice 'Agent binary signing requires manual macOS approval.'
+  fi
+  # Supports legacy command-line archives and standalone .app bundles.
+  local tray_source="$SELF/TapTetherTray"
+  if [[ ! -x "$tray_source" && -x "$SELF/../MacOS/TapTetherTray" ]]; then
+    tray_source="$SELF/../MacOS/TapTetherTray"
+  fi
+  if [[ -s "$SELF/TapTether.icns" && -x "$tray_source" ]]; then
     local bundle="$TRAY_BUNDLE"
     mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-    cp "$SELF/TapTether.icns" "$bundle/Contents/Resources/TapTether.icns"
-    cp "$SELF/TapTetherTray" "$bundle/Contents/MacOS/TapTetherTray"
+    local icon_source icon_target binary_source binary_target
+    icon_source="$(cd "$SELF" && pwd -P)/TapTether.icns"
+    icon_target="$(cd "$bundle/Contents/Resources" && pwd -P)/TapTether.icns"
+    binary_source="$(cd "$(dirname "$tray_source")" && pwd -P)/$(basename "$tray_source")"
+    binary_target="$(cd "$bundle/Contents/MacOS" && pwd -P)/TapTetherTray"
+    [[ "$icon_source" == "$icon_target" ]] || cp "$SELF/TapTether.icns" "$icon_target"
+    [[ "$binary_source" == "$binary_target" ]] || cp "$tray_source" "$binary_target"
+    # Include self-install resources for future repairs and direct Finder launch.
+    for resource in taptether-agent taptetherctl-mac taptether-agent-update-mac; do
+      local src="$SELF/$resource" dest="$bundle/Contents/Resources/$resource"
+      [[ -s "$src" ]] || continue
+      [[ "$(cd "$(dirname "$src")" && pwd -P)/$(basename "$src")" == \
+         "$(cd "$(dirname "$dest")" && pwd -P)/$(basename "$dest")" ]] || cp "$src" "$dest"
+    done
     chmod 0755 "$bundle/Contents/MacOS/TapTetherTray"
     rm -f "$bundle/Contents/MacOS/TapTetherLauncher"
-    cat > "$bundle/Contents/Info.plist" <<'MACPLIST'
+    local app_version
+    app_version="$("$APP" --version 2>/dev/null || echo 0.0.0+0)"
+    printf '%s\n' "$app_version" > "$bundle/Contents/Resources/version.txt"
+    cat > "$bundle/Contents/Info.plist" <<MACPLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -63,7 +86,8 @@ install_agent() {
 <key>CFBundleName</key><string>TapTether Agent</string>
 <key>CFBundleDisplayName</key><string>TapTether Agent</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>${app_version%%+*}</string>
+<key>CFBundleVersion</key><string>${app_version##*+}</string>
 <key>LSUIElement</key><true/>
 </dict></plist>
 MACPLIST
@@ -112,7 +136,13 @@ EOF
       notice 'Tray will start at next graphical login.'
   fi
   sleep 2
-  notice 'Background agent installed, started and enabled at login.'
+  local service_state
+  service_state="$(launchctl print "$TARGET/$LABEL" 2>/dev/null || true)"
+  if [[ "$service_state" != *'state = running'* ]]; then
+    notice 'Agent failed to remain running. Review ~/Library/Logs/TapTether/agent.stderr.log' >&2
+    exit 1
+  fi
+  notice 'Background agent installed, running and enabled at login.'
   notice 'TapTether Agent.app displays the splash on demand; the menu bar tray starts silently at login.'
   notice 'Allow TapTether in macOS System Settings > Privacy & Security > Accessibility to enable mouse/keyboard.'
   pairing

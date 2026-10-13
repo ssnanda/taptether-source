@@ -29,8 +29,10 @@ if [[ -s "$APK" ]]; then cp "$APK" "$STAGE/TapTether.apk"; fi
 for ARCH in amd64 arm64; do
   DEB="$(printf '%s/dist/ubuntu/taptether-agent_%s_%s.deb' "$ROOT" "$VERSION" "$ARCH")"
   MAC="$(printf '%s/dist/macos/TapTetherAgent-macos-%s-%s.tar.gz' "$ROOT" "$ARCH" "$VERSION")"
+  MAC_APP="$(printf '%s/dist/macos/TapTetherAgent-macos-%s-%s.zip' "$ROOT" "$ARCH" "$VERSION")"
   if [[ -s "$DEB" ]]; then cp "$DEB" "$STAGE/TapTetherAgent-Ubuntu-$ARCH.deb"; fi
   if [[ -s "$MAC" ]]; then cp "$MAC" "$STAGE/TapTetherAgent-macOS-$ARCH.tar.gz"; fi
+  if [[ -s "$MAC_APP" ]]; then cp "$MAC_APP" "$STAGE/TapTetherAgent-macOS-$ARCH.zip"; fi
 done
 if [[ "$HAS_IPA" -eq 1 ]]; then
   python3 "$ROOT/bin/6-tt-generate-altstore.py" \

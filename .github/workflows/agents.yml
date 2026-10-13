@@ -1,4 +1,4 @@
-name: Build TapTether agents
+name: '2 - Build TapTether agents'
 # Build agents only on explicit request; normal source commits do not run CI.
 on:
   workflow_dispatch:
@@ -57,6 +57,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: TapTether-macOS-installers
-          path: dist/macos/*.tar.gz
+          path: |
+            dist/macos/*.tar.gz
+            dist/macos/*.zip
           if-no-files-found: error
           retention-days: 1
