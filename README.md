@@ -386,10 +386,12 @@ is maintained. Open GitHub **Actions → TapTether - Build, Release & Maintenanc
 - **validate**: Go, Flutter, shell/Python tests and an Android debug smoke
   build. Does not build release installers or publish.
 - **cleanup**: delete completed Actions run history and temporary artifacts.
-  Does not delete GitHub Releases or their IPA/APK/agent downloads.
+  Runs automatically after a successful release, or separately on a manual
+  request or weekly schedule. Does not delete GitHub Releases or downloads.
 
-Cleanup also runs weekly on Sundays without triggering app builds. Source
-commits do not start builds or releases. The three older workflow files were
+Cleanup runs after a successful release and weekly on Sundays without
+triggering any additional app build. Failed builds never trigger release
+publication or automatic cleanup. Source commits do not start builds. The three older workflow files were
 removed; their historical entries may still appear until the cleanup task
 deletes completed runs and GitHub refreshes the interface.
 
