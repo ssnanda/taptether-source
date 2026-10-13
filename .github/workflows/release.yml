@@ -1,24 +1,55 @@
 name: '3 - Publish TapTether release'
 
-# Full IPA/APK/agent builds are expensive. Release only when explicitly requested.
-# GitHub > Actions > Publish current TapTether release > Run workflow.
+# Run manually. Publishing automatically calls 1-Validate and 2-Build
+# as reusable workflows against the same source SHA. No push triggers.
 on:
   workflow_dispatch:
-  # A one-time release-request marker may start this build. Ordinary pushes never do.
-  push:
-    branches: [main]
-    paths:
-      - '.github/release-v0.6.2-request'
 
 permissions:
   contents: write
 
 concurrency:
   group: taptether-current-release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify main and a never-published version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo 'Release only from main.' >&2; exit 1;
+          }
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || {
+            echo 'Invalid VERSION.' >&2; exit 1;
+          }
+          if gh release view "v$version" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$version already published. Increment VERSION before rebuilding." >&2
+            exit 1
+          fi
+
+  validate:
+    needs: preflight
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate.yml
+
+  agents:
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/agents.yml
+
   build-and-publish:
+    needs: agents
     runs-on: macos-latest
     timeout-minutes: 80
     steps:
@@ -100,7 +131,24 @@ jobs:
           grep -q 'TapTetherTray' bin/2b-tt-macos.sh
           grep -q 'taptether_tray.py' bin/5-tt-remote-install-ubuntu.sh
 
-      - name: Build bundled Ubuntu and macOS agents plus unsigned IPA
+      - name: Retrieve Ubuntu packages verified by 2 - Build agents
+        uses: actions/download-artifact@v4
+        with:
+          name: TapTether-Ubuntu-installers
+          path: dist/ubuntu
+
+      - name: Retrieve macOS packages verified by 2 - Build agents
+        uses: actions/download-artifact@v4
+        with:
+          name: TapTether-macOS-installers
+          path: dist/macos
+
+      - name: Reverify same-run native agent packages
+        run: python3 bin/4-validate-desktop-installers.py --platform all
+
+      - name: Build unsigned IPA from verified agents
+        env:
+          TAPTETHER_USE_PREBUILT_AGENTS: '1'
         run: bash bin/2a-tt-ipa.sh --no-publish
 
       - name: Verify packaged desktop setup, splash and tray assets
