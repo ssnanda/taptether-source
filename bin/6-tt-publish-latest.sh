@@ -93,7 +93,7 @@ if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
     if [[ "$NAME" == TapTether* ]]; then
       gh api --method DELETE "repos/$REPO/releases/assets/$ID" >/dev/null
     fi
-  done < <(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | "\\(.id) \\(.name)"')
+  done < <(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | "\(.id) \(.name)"')
   gh release upload "$TAG" -R "$REPO" "${files[@]}"
 else
   gh release create "$TAG" "${files[@]}" -R "$REPO" \
