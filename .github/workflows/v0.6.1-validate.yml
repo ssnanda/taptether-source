@@ -1,4 +1,5 @@
 name: Validate TapTether 0.6.1 without publishing
+# Rerun on the corrected v0.6.1 source after Flutter lint fixes.
 on:
   push:
     branches: [fix/v0.6.1-ssh-install-experience]
