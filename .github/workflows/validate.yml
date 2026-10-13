@@ -2,10 +2,15 @@ name: '1 - Validate current TapTether'
 # Current-version validation; never publish during validation.
 on:
   workflow_dispatch:
+  workflow_call:
+  # Temporary branch-only validation trigger, removed before merge.
+  push:
+    branches: [fix/release-gated-agent-builds-and-timestamps]
+    paths: ['.github/workflows/validate.yml']
 permissions:
   contents: read
 concurrency:
-  group: taptether-061-validation
+  group: taptether-validation-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   validate:
