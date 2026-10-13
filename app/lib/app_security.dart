@@ -240,6 +240,9 @@ class _AppLockGateState extends State<AppLockGate>
     with WidgetsBindingObserver {
   final _security = AppSecurity.instance;
   DateTime? _backgroundedAt;
+  final _pin = TextEditingController();
+  String? _unlockError;
+  bool _unlockBusy = false;
 
   @override
   void initState() {
@@ -273,45 +276,103 @@ class _AppLockGateState extends State<AppLockGate>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _security.removeListener(_onChanged);
+    _pin.dispose();
     super.dispose();
   }
 
-  Future<void> _unlock() async {
-    if (await _security.authenticate(context)) _security.unlock();
+  Future<void> _unlockWithPin() async {
+    if (_unlockBusy) return;
+    setState(() { _unlockBusy = true; _unlockError = null; });
+    try {
+      if (await _security.verifyPin(_pin.text)) {
+        _pin.clear();
+        _security.unlock();
+      } else {
+        if (mounted) setState(() =>
+            _unlockError = _security.lockoutMessage ?? 'Incorrect PIN.');
+      }
+    } finally {
+      if (mounted) setState(() => _unlockBusy = false);
+    }
+  }
+
+  Future<void> _unlockWithBiometrics() async {
+    if (_unlockBusy) return;
+    setState(() { _unlockBusy = true; _unlockError = null; });
+    try {
+      if (await _security.verifyBiometrics('Unlock TapTether')) {
+        _security.unlock();
+      } else if (mounted) {
+        setState(() => _unlockError = 'Biometrics unavailable. Use your PIN.');
+      }
+    } finally {
+      if (mounted) setState(() => _unlockBusy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_security.ready) {
-      return const Scaffold(body: Center(
+      return const Material(child: Center(
           child: CircularProgressIndicator()));
     }
     if (!_security.unlocked) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('TapTether')),
-        body: SafeArea(child: Center(child: Padding(
+      return Material(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: SafeArea(child: Center(child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.lock_outline, size: 64),
             const SizedBox(height: 16),
-            Text('Your devices stay private',
+            Text('Unlock TapTether',
                 style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(_security.loadError ??
-                'Use Face ID, Touch ID, or your six-digit PIN to continue.',
+                'Your devices, keys and credentials remain private.',
                 textAlign: TextAlign.center),
             const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _security.loadError != null
-                  ? () => _security.load() : _unlock,
-              icon: const Icon(Icons.lock_open),
-              label: Text(_security.loadError != null
-                  ? 'Retry secure storage' : 'Unlock TapTether'),
-            ),
+            if (_security.loadError != null)
+              FilledButton(onPressed: _security.load,
+                  child: const Text('Retry secure storage'))
+            else ...[
+              if (_security.biometricEnabled)
+                FilledButton.icon(
+                  onPressed: _unlockBusy ? null : _unlockWithBiometrics,
+                  icon: const Icon(Icons.fingerprint),
+                  label: const Text('Use Face ID / Touch ID'),
+                ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: TextField(
+                  controller: _pin,
+                  autofocus: !_security.biometricEnabled,
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                      labelText: 'Six-digit app PIN', counterText: ''),
+                  onSubmitted: (_) => _unlockWithPin(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _unlockBusy ? null : _unlockWithPin,
+                icon: const Icon(Icons.lock_open),
+                label: const Text('Unlock with PIN'),
+              ),
+              if (_unlockError != null) Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(_unlockError!, textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.error)),
+              ),
+            ],
           ]),
         ))),
       );
     }
     return widget.child;
   }
+
 }
