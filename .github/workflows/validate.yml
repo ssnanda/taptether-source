@@ -3,10 +3,12 @@ name: '1 - Validate current TapTether'
 on:
   workflow_dispatch:
   workflow_call:
-  # Temporary branch-only validation trigger, removed before merge.
-  push:
-    branches: [fix/release-gated-agent-builds-and-timestamps]
-    paths: ['.github/workflows/validate.yml']
+    inputs:
+      skip_android_smoke:
+        description: 'Release builds a real APK; skip redundant debug APK'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -57,6 +59,7 @@ jobs:
           cd app
           flutter test
       - name: Android debug build smoke test
+        if: ${{ !inputs.skip_android_smoke }}
         run: |
           cd app
           flutter build apk --debug
