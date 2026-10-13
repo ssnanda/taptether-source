@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'discovery.dart';
 import 'phone_ssh_keys.dart';
 import 'ssh_provisioner.dart';
 import 'ubuntu_install_validation.dart';
