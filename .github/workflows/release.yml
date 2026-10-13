@@ -19,8 +19,7 @@ on:
     - cron: '37 4 * * 0'
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 concurrency:
   group: taptether-one-workflow-${{ github.event_name }}-${{ github.ref }}
@@ -127,6 +126,8 @@ jobs:
   build-and-publish:
     needs: build-ubuntu
     if: ${{ inputs.task == 'release' }}
+    permissions:
+      contents: write
     runs-on: macos-latest
     timeout-minutes: 80
     env:
@@ -227,6 +228,9 @@ jobs:
 
   cleanup-history:
     if: ${{ github.event_name == 'schedule' || inputs.task == 'cleanup' }}
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
