@@ -1,4 +1,4 @@
-name: Build TapTether agents
+name: '2 - Build TapTether agents'
 # Build agents only on explicit request; normal source commits do not run CI.
 on:
   workflow_dispatch:
