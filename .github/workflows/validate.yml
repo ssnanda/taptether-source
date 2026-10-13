@@ -31,6 +31,7 @@ jobs:
         run: |
           for script in bin/*.sh; do bash -n "$script"; done
           python3 -m py_compile desktop/ubuntu/taptether_tray.py bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py
+          python3 bin/4-check-release-pipeline.py
       - name: Go agent tests and vet
         run: |
           cd agent
