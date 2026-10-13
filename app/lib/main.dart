@@ -13,7 +13,6 @@ import 'phone_identity.dart';
 import 'qr_pairing.dart';
 import 'ssh_key_screen.dart';
 import 'ubuntu_install_screen.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -817,8 +816,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
       for (final chunk in clipboardChunks(value)) {
         await agent.send('text', {'text': chunk});
       }
-      if (mounted) setState(() =>
-          status = 'Typed phone clipboard into the active computer window.');
+      if (mounted) {
+        setState(() =>
+            status = 'Typed phone clipboard into the active computer window.');
+      }
     } catch (error) {
       if (mounted) setState(() => status = 'Clipboard typing failed: $error');
     }
