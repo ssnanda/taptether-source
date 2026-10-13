@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'discovery.dart';
@@ -39,7 +41,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
   @override
   void initState() {
     super.initState();
-    _loadKeys();
+    unawaited(_loadKeys());
   }
 
   Future<void> _loadKeys() async {
