@@ -85,7 +85,7 @@ def check_macos(root: Path, version: str, arch: str) -> None:
             require(not entry.name.startswith('/') and
                     '..' not in Path(entry.name).parts,
                     f'{archive}: unsafe archive path')
-            require(entry.name in flat or
+            require(entry.name in flat or entry.name == 'TapTether Agent.app' or
                     entry.name.startswith('TapTether Agent.app/'),
                     f'{archive}: unexpected path {entry.name}')
         for name in flat | app_files:
