@@ -216,7 +216,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             return
         }
         showNotice("Private pairing details",
-            details + "\\n\\nKeep the pairing token private. "
+            details + "\n\nKeep the pairing token private. "
             + "Enter these values in TapTether on your phone.")
     }
 
