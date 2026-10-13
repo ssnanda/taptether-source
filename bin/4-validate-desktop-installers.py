@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import io
 import plistlib
+import zipfile
+from pathlib import PurePosixPath
 from pathlib import Path
 import tarfile
 
@@ -65,56 +67,59 @@ def check_deb(root: Path, version: str, arch: str) -> None:
 
 def check_macos(root: Path, version: str, arch: str) -> None:
     archive = root / 'dist' / 'macos' / f'TapTetherAgent-macos-{arch}-{version}.tar.gz'
-    require(archive.is_file(), f'Missing macOS archive: {archive}')
+    bundle_zip = root / 'dist' / 'macos' / f'TapTetherAgent-macos-{arch}-{version}.zip'
+    require(archive.is_file() and bundle_zip.is_file(),
+            f'Missing macOS agent archive or Finder-friendly app ZIP: {arch}')
     flat = {'taptether-agent', 'taptetherctl-mac',
             'taptether-agent-update-mac', 'TapTether.icns', 'TapTetherTray'}
-    app = 'TapTether Agent.app/Contents/'
-    app_files = {app + 'Info.plist', app + 'MacOS/TapTetherTray',
-                 app + 'Resources/TapTether.icns',
-                 app + 'Resources/taptether-agent',
-                 app + 'Resources/taptetherctl-mac',
-                 app + 'Resources/taptether-agent-update-mac',
-                 app + 'Resources/version.txt'}
+    # Legacy 5-member format: existing installed agents require exactly this.
     with tarfile.open(archive, mode='r:gz') as tf:
-        entries = {m.name.rstrip('/'): m for m in tf.getmembers()}
-        require(flat | app_files <= entries.keys(),
-                f'{archive}: missing standalone app / agent installer payload')
-        for entry in entries.values():
-            require(not entry.issym() and not entry.islnk(),
-                    f'{archive}: links are not allowed')
-            require(not entry.name.startswith('/') and
-                    '..' not in Path(entry.name).parts,
-                    f'{archive}: unsafe archive path')
-            require(entry.name in flat or entry.name == 'TapTether Agent.app' or
-                    entry.name.startswith('TapTether Agent.app/'),
-                    f'{archive}: unexpected path {entry.name}')
-        for name in flat | app_files:
-            require(entries[name].isfile() and entries[name].size > 0,
-                    f'{archive}: incomplete file: {name}')
-        for name in flat - {'TapTether.icns'} | {
-            app + 'MacOS/TapTetherTray', app + 'Resources/taptether-agent',
-            app + 'Resources/taptetherctl-mac',
-            app + 'Resources/taptether-agent-update-mac'}:
-            require(entries[name].mode & 0o111 != 0,
-                    f'{archive}: missing execute permission: {name}')
+        entries = {m.name: m for m in tf.getmembers()}
+        require(entries.keys() == flat,
+                f'{archive}: legacy updater would reject archive members')
+        for name in flat:
+            require(entries[name].isfile() and entries[name].size > 100,
+                    f'{archive}: incomplete payload {name}')
+            if name != 'TapTether.icns':
+                require(entries[name].mode & 0o111 != 0,
+                        f'{archive}: {name} not executable')
         for name, source in (
             ('taptetherctl-mac', root / 'bin' / '4-macos-agent-setup.sh'),
             ('taptether-agent-update-mac', root / 'bin' / '8-tt-update-macos.sh'),
         ):
-            expected = source.read_bytes()
-            require(tf.extractfile(entries[name]).read() == expected,
+            require(tf.extractfile(entries[name]).read() == source.read_bytes(),
                     f'{archive}: outdated helper {name}')
-            require(tf.extractfile(entries[app + 'Resources/' + name]).read() == expected,
-                    f'{archive}: .app contains outdated {name}')
-        info = plistlib.loads(tf.extractfile(entries[app + 'Info.plist']).read())
+
+    app = 'TapTether Agent.app/Contents/'
+    required = {app + 'Info.plist', app + 'MacOS/TapTetherTray',
+                app + 'Resources/TapTether.icns',
+                app + 'Resources/taptether-agent',
+                app + 'Resources/taptetherctl-mac',
+                app + 'Resources/taptether-agent-update-mac',
+                app + 'Resources/version.txt'}
+    with zipfile.ZipFile(bundle_zip) as zf:
+        names = set(zf.namelist())
+        require(required <= names,
+                f'{bundle_zip}: incomplete standalone macOS app')
+        for name in names:
+            path = PurePosixPath(name)
+            require(not path.is_absolute() and '..' not in path.parts,
+                    f'{bundle_zip}: invalid archive path')
+        info = plistlib.loads(zf.read(app + 'Info.plist'))
         require(info.get('CFBundleExecutable') == 'TapTetherTray' and
                 info.get('CFBundlePackageType') == 'APPL',
-                f'{archive}: invalid macOS app Info.plist')
+                f'{bundle_zip}: invalid macOS app Info.plist')
         require(info.get('CFBundleShortVersionString') == version.split('+')[0],
-                f'{archive}: incorrect app version')
-        require(tf.extractfile(entries[app + 'Resources/version.txt']).read().decode().strip() == version,
-                f'{archive}: incorrect bundled version')
-    print(f'PASS macOS {arch}: standalone .app, install resources, agent, updater and menu bar')
+                f'{bundle_zip}: incorrect app version')
+        require(zf.read(app + 'Resources/version.txt').decode().strip() == version,
+                f'{bundle_zip}: incorrect packaged version')
+        for name, source in (
+            ('taptetherctl-mac', root / 'bin' / '4-macos-agent-setup.sh'),
+            ('taptether-agent-update-mac', root / 'bin' / '8-tt-update-macos.sh'),
+        ):
+            require(zf.read(app + 'Resources/' + name) == source.read_bytes(),
+                    f'{bundle_zip}: outdated app installer resource {name}')
+    print(f'PASS macOS {arch}: compatible tarball and native installable .app ZIP')
 
 
 def main() -> None:
