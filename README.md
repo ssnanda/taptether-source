@@ -373,7 +373,7 @@ MAC addresses, so the app does not claim to obtain them.
 
 ### GitHub Actions — one workflow
 
-Only **TapTether - Build, Release & Maintenance** (`.github/workflows/release.yml`)
+Only **TapTether - Build, Release & Maintenance** (`.github/workflows/taptether.yml`)
 is maintained. Open GitHub **Actions → TapTether - Build, Release & Maintenance
 → Run workflow**, choose a task and start it manually:
 
