@@ -1,0 +1,314 @@
+name: 'TapTether - Build, Release & Maintenance'
+
+# One workflow, one manual Run workflow control. No automatic builds on pushes.
+# Choose Release, Build or Validate. Cleanup is automatic after release / weekly.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Action'
+        type: choice
+        required: true
+        default: release
+        options:
+          - release
+          - build
+          - validate
+  schedule:
+    # Weekly maintenance runs cleanup only, without building anything.
+    - cron: '37 4 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taptether-one-workflow-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release preflight (only before publishing)
+        if: ${{ inputs.task == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo 'Release only from main.' >&2; exit 1;
+          }
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || {
+            echo 'Invalid VERSION.' >&2; exit 1;
+          }
+          if gh release view "v$version" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$version already published. Increment VERSION before rebuilding." >&2
+            exit 1
+          fi
+          if gh release view current -R "$GITHUB_REPOSITORY" \
+                --json name --jq '.name' 2>/dev/null | grep -Fq "TapTether $version"; then
+            echo "TapTether $version is already on current. Increment VERSION before another release." >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Check shell and Python syntax
+        run: |
+          for script in bin/*.sh; do bash -n "$script"; done
+          python3 -m py_compile desktop/ubuntu/taptether_tray.py bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py
+          python3 bin/4-check-release-pipeline.py
+      - name: Go agent tests and vet
+        run: |
+          cd agent
+          go test ./...
+          go vet ./...
+      - name: Initialize Flutter runner and dependencies
+        run: |
+          cd app
+          flutter create --platforms=android --org com.taptether --project-name taptether .
+          flutter pub get
+      - name: Prepare bundled branding used by widget tests
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 bin/9-tt-brand-icons.py --verify
+          python3 bin/9-tt-brand-icons.py
+          test -s app/assets/branding/taptether.png
+      - name: Flutter static analysis
+        run: |
+          cd app
+          flutter analyze
+      - name: Flutter unit and widget tests
+        run: |
+          cd app
+          flutter test
+      - name: Android debug build smoke test
+        if: ${{ inputs.task == 'validate' }}
+        run: |
+          cd app
+          flutter build apk --debug
+
+  build-ubuntu:
+    needs: validate
+    if: ${{ inputs.task == 'release' || inputs.task == 'build' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Verify Ubuntu tray source
+        run: python3 -m py_compile desktop/ubuntu/taptether_tray.py
+
+      - name: Build Ubuntu packages
+        run: bash bin/2b-tt-ubuntu.sh
+      - name: Verify complete Ubuntu installer payloads
+        run: python3 bin/4-validate-desktop-installers.py --platform ubuntu
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-Ubuntu-installers
+          path: dist/ubuntu/*.deb
+          if-no-files-found: error
+          retention-days: 1
+
+  build-and-publish:
+    needs: build-ubuntu
+    if: ${{ inputs.task == 'release' || inputs.task == 'build' }}
+    permissions:
+      contents: write
+    runs-on: macos-latest
+    timeout-minutes: 80
+    env:
+      TAPTETHER_USE_PREBUILT_AGENTS: '1'
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Configure Go for native macOS agents
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+
+      - name: Configure Java for Android
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Configure Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - name: Configure Python icon renderer
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install icon renderer dependencies
+        run: python3 -m pip install --disable-pip-version-check Pillow
+
+      - name: Generate native iOS and Android runners
+        run: |
+          cd app
+          flutter create --platforms=ios,android --org com.taptether --project-name taptether .
+          flutter pub get
+
+      - name: Render TapTether icons for every platform
+        run: |
+          python3 bin/9-tt-brand-icons.py --verify
+          python3 bin/9-tt-brand-icons.py
+          test -s dist/branding/TapTether.icns
+          test -s app/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png
+          test -s app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          test -s tv/lg-webos/icon.png
+
+      - name: Ensure rendered branding matches immutable release source
+        run: git diff --exit-code -- assets/branding
+
+      - name: Validate Bash installer scripts
+        run: |
+          for script in bin/*.sh; do bash -n "$script"; done
+          python3 -m py_compile bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py desktop/ubuntu/taptether_tray.py
+
+      - name: Validate desktop UI package sources
+        run: |
+          test -s desktop/ubuntu/taptether_tray.py
+          test -s desktop/macos/TapTetherTray.swift
+          xcrun swiftc -typecheck desktop/macos/TapTetherTray.swift
+          grep -q 'TapTetherTray' bin/2b-tt-macos.sh
+          grep -q 'taptether_tray.py' bin/5-tt-remote-install-ubuntu.sh
+
+      - name: Build native macOS agents (Intel and Apple Silicon)
+        run: bash bin/2b-tt-macos.sh
+
+      - name: Verify native macOS app and compatible agent packages
+        run: python3 bin/4-validate-desktop-installers.py --platform macos
+
+      - name: Retrieve verified Ubuntu packages from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: TapTether-Ubuntu-installers
+          path: dist/ubuntu
+
+      - name: Verify all native agent packages before app builds
+        run: python3 bin/4-validate-desktop-installers.py --platform all
+
+      - name: Build unsigned IPA with verified agents
+        run: bash bin/2a-tt-ipa.sh --no-publish
+
+      - name: Verify packaged desktop setup, splash and tray assets
+        run: python3 bin/4-validate-desktop-installers.py --platform all
+
+      - name: Build Android APK
+        run: bash bin/2a-tt-apk.sh --no-publish
+
+      - name: Make validated builds available (Build mode only)
+        if: ${{ inputs.task == 'build' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-complete-build-${{ github.run_id }}
+          path: |
+            dist/ios/*.ipa
+            dist/android/*.apk
+            dist/ubuntu/*.deb
+            dist/macos/*.tar.gz
+            dist/macos/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Publish current IPA, APK and agents to GitHub Releases
+        if: ${{ inputs.task == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash bin/6-tt-publish-latest.sh
+
+  cleanup-history:
+    needs: build-and-publish
+    # Weekly cleanup or after a successful release; never erase Build-mode assets.
+    # always() lets maintenance run when build jobs were intentionally skipped.
+    if: ${{ always() && (github.event_name == 'schedule' || (inputs.task == 'release' && needs.build-and-publish.result == 'success')) }}
+    continue-on-error: true
+    permissions:
+      contents: read
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Delete temporary Actions artifacts and completed run history
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          current="${GITHUB_RUN_ID}"
+          artifacts_file="$(mktemp)"
+          runs_file="$(mktemp)"
+          trap 'rm -f "$artifacts_file" "$runs_file"' EXIT
+
+          # Take a stable snapshot before deleting: paginating during deletion
+          # can skip entries when the results shift between pages.
+          gh api --paginate "/repos/$repo/actions/artifacts?per_page=100"             --jq '.artifacts[].id' > "$artifacts_file"
+          gh api --paginate "/repos/$repo/actions/runs?per_page=100"             --jq '.workflow_runs[] | select(.status == "completed") | .id' > "$runs_file"
+
+          artifacts_deleted=0
+          artifacts_failed=0
+          while IFS= read -r id; do
+            [[ "$id" =~ ^[0-9]+$ ]] || continue
+            if gh api --silent -X DELETE "/repos/$repo/actions/artifacts/$id"; then
+              artifacts_deleted=$((artifacts_deleted + 1))
+            else
+              artifacts_failed=$((artifacts_failed + 1))
+            fi
+            sleep 0.2
+          done < "$artifacts_file"
+
+          runs_deleted=0
+          runs_failed=0
+          while IFS= read -r id; do
+            [[ "$id" =~ ^[0-9]+$ ]] || continue
+            [[ "$id" != "$current" ]] || continue
+            if gh api --silent -X DELETE "/repos/$repo/actions/runs/$id"; then
+              runs_deleted=$((runs_deleted + 1))
+            else
+              runs_failed=$((runs_failed + 1))
+            fi
+            sleep 0.2
+          done < "$runs_file"
+
+          {
+            echo '## TapTether Actions cleanup'
+            echo ''
+            echo "- Temporary artifacts deleted: $artifacts_deleted"
+            echo "- Completed workflow runs deleted: $runs_deleted"
+            echo "- Artifacts that could not be deleted: $artifacts_failed"
+            echo "- Runs that could not be deleted: $runs_failed"
+            echo ''
+            echo 'Current/ongoing workflow runs were not touched.'
+            echo 'GitHub Releases, IPA, APK, macOS and Ubuntu installers were not touched.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Deleted $artifacts_deleted Actions artifacts and $runs_deleted completed runs."
+          if (( artifacts_failed > 0 || runs_failed > 0 )); then
+            echo "::warning::Some deletions failed. See job logs and permissions."
+            exit 1
+          fi

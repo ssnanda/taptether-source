@@ -371,26 +371,38 @@ tested TCP ports; devices with firewall rules or no exposed services may
 not appear. Ordinary iOS/Android apps cannot reliably inspect LAN neighbors’
 MAC addresses, so the app does not claim to obtain them.
 
-### GitHub Actions
+### GitHub Actions — one workflow
 
-Use the repository’s **Actions** tab and **Run workflow** with the desired
-branch for these four independent, numbered workflows:
+Only **TapTether - Build, Release & Maintenance** (`.github/workflows/taptether.yml`)
+is maintained. Open GitHub **Actions → TapTether - Build, Release & Maintenance
+→ Run workflow**, choose a task and start it manually:
 
-1. **1 - Validate current TapTether:** shell/Python syntax, Go tests/vet,
-   Flutter static analysis, unit/widget tests and Android debug smoke build.
-2. **2 - Build TapTether agents:** Ubuntu and macOS packages, including the
-   standalone Mac app and bundle validation; temporary downloadable artifacts.
-3. **3 - Publish TapTether release:** full IPA, APK, native agents, package
-   verification, and update to GitHub Releases. Run after validation.
-4. **4 - Clean TapTether Actions history:** manually or on its weekly schedule;
-   removes completed run logs and temporary Actions artifacts, **not**
-   the published GitHub Releases.
+- **release** (default): verify that `main` has a new, unpublished VERSION;
+  perform Go/Flutter tests; build and verify Ubuntu agents; build and verify
+  Intel/Apple Silicon macOS agents, menu-bar apps and installer ZIPs; build
+  IPA and APK from those exact agents; require every artifact; publish the
+  version-specific Latest release and update rolling `current` downloads.
+  Every step is in **one run**; a failed earlier job blocks publication.
+- **build**: validates first, then builds Ubuntu and macOS agents,
+  desktop installers, IPA and APK without publishing. Downloadable build
+  artifacts are available for one day.
+- **validate**: runs tests and an Android debug smoke build, without publishing.
 
-Ordinary commits do not trigger full agent/release builds. Historical 0.5.5
-workflow runs may remain visible in GitHub’s Actions history; the current
-source contains only one maintained validation workflow.
+Cleanup is automatic after a successful release and weekly on Sundays;
+it is not a manual selection. Failed builds never trigger release
+publication or automatic cleanup. Source commits do not start builds. The three older workflow files were
+removed; their historical entries may still appear until the cleanup task
+deletes completed runs and GitHub refreshes the interface.
 
+The `release` mode uses one Ubuntu package job and one macOS release job;
+they appear as **jobs within the same workflow run**, not separately started
+workflows. Packages are built once per release and reused for mobile apps.
 
+Each future release gets a fresh, version-specific GitHub Release
+(e.g. `v0.6.3+21`) marked **Latest** with the new publication timestamp.
+The existing `current` release remains a compatibility alias for stable
+download URLs and retains its original historical timestamp. The pipeline
+rejects an already-published version; increment VERSION before releasing.
 
 ## v0.6.3+21 — Ubuntu install form and actionable failure stages
 
