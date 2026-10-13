@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
+# Create a native, double-clickable TapTether Agent.app for each Mac architecture.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-[[ "$(uname -s)" == Darwin ]] || { echo 'Native macOS agent builds require macOS with Xcode tools.' >&2; exit 1; }
+[[ "$(uname -s)" == Darwin ]] || { echo 'macOS/Xcode required.' >&2; exit 1; }
 version="$(cat "$ROOT/VERSION")"
 python3 "$ROOT/bin/9-tt-brand-icons.py"
 mkdir -p "$ROOT/dist/macos"
@@ -16,28 +17,56 @@ for arch in amd64 arm64; do
     amd64) swift_target="x86_64-apple-macos12.0" ;;
     arm64) swift_target="arm64-apple-macos12.0" ;;
   esac
-  # The menu-bar UI is separate from the Go service and uses only AppKit.
   xcrun swiftc -O -target "$swift_target" \
     "$ROOT/desktop/macos/TapTetherTray.swift" -framework AppKit \
     -o "$temp/TapTetherTray"
-  chmod +x "$temp/taptether-agent" "$temp/taptetherctl-mac" "$temp/taptether-agent-update-mac" "$temp/TapTetherTray"
+  chmod 755 "$temp/taptether-agent" "$temp/taptetherctl-mac" \
+    "$temp/taptether-agent-update-mac" "$temp/TapTetherTray"
+  bundle="$temp/TapTether Agent.app"
+  mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+  cp "$temp/TapTetherTray" "$bundle/Contents/MacOS/TapTetherTray"
+  cp "$temp/TapTether.icns" "$temp/taptether-agent" \
+    "$temp/taptetherctl-mac" "$temp/taptether-agent-update-mac" \
+    "$bundle/Contents/Resources/"
+  printf '%s\n' "$version" > "$bundle/Contents/Resources/version.txt"
+  build="${version##*+}"
+  cat > "$bundle/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.taptether.agent.launcher</string>
+<key>CFBundleExecutable</key><string>TapTetherTray</string>
+<key>CFBundleIconFile</key><string>TapTether.icns</string>
+<key>CFBundleName</key><string>TapTether Agent</string>
+<key>CFBundleDisplayName</key><string>TapTether Agent</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>${version%%+*}</string>
+<key>CFBundleVersion</key><string>$build</string>
+<key>LSUIElement</key><true/>
+</dict></plist>
+EOF
+  plutil -lint "$bundle/Contents/Info.plist" >/dev/null
+  # Personal-use build: no Apple Developer certificate or notarization required
+  # to package; Gatekeeper may still ask for explicit user approval to run.
+  codesign --force --deep --sign - --timestamp=none "$bundle"
   out="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.tar.gz"
-  COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" taptether-agent taptetherctl-mac taptether-agent-update-mac TapTether.icns TapTetherTray
+  COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" \
+    taptether-agent taptetherctl-mac taptether-agent-update-mac \
+    TapTether.icns TapTetherTray 'TapTether Agent.app'
   rm -rf "$temp"
-  echo "macOS installer archive: $out"
+  echo "Double-clickable macOS installer archive: $out"
 done
-# Retain only this version's macOS archives and binaries locally.
-for OLD in "$ROOT"/dist/macos/TapTetherAgent-macos-*.tar.gz; do
-  [[ -f "$OLD" ]] || continue
-  case "$(basename "$OLD")" in
+for old in "$ROOT"/dist/macos/TapTetherAgent-macos-*.tar.gz; do
+  [[ -f "$old" ]] || continue
+  case "$(basename "$old")" in
     "TapTetherAgent-macos-amd64-$version.tar.gz"|"TapTetherAgent-macos-arm64-$version.tar.gz") ;;
-    *) rm -f "$OLD" ;;
+    *) rm -f "$old" ;;
   esac
 done
-for OLD in "$ROOT"/dist/agents/TapTetherAgent-darwin-*; do
-  [[ -f "$OLD" ]] || continue
-  case "$(basename "$OLD")" in
+for old in "$ROOT"/dist/agents/TapTetherAgent-darwin-*; do
+  [[ -f "$old" ]] || continue
+  case "$(basename "$old")" in
     "TapTetherAgent-darwin-amd64-$version"|"TapTetherAgent-darwin-arm64-$version") ;;
-    *) rm -f "$OLD" ;;
+    *) rm -f "$old" ;;
   esac
 done
