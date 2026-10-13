@@ -1,11 +1,7 @@
-name: Clean TapTether Actions history
+name: '4 - Clean TapTether Actions history'
 
-# Creation/updates of this workflow trigger an immediate cleanup once.
-# Subsequent normal commits don't trigger it. Full builds remain manual.
+# Weekly cleanup plus optional manual Run workflow. Normal pushes do nothing.
 on:
-  push:
-    paths:
-      - '.github/workflows/cleanup.yml'
   schedule:
     - cron: '37 4 * * 0'
   workflow_dispatch:
