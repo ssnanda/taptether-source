@@ -70,7 +70,9 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   Future<void> _setPin() async {
     if (_security.enabled &&
         !await _security.authenticate(context,
-            reason: 'Verify identity before changing PIN')) return;
+            reason: 'Verify identity before changing PIN')) {
+      return;
+    }
     if (!mounted) return;
     final first = await _askPin('Choose your app PIN');
     if (first == null || !mounted) return;
@@ -92,7 +94,9 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       await _setPin();
     } else {
       if (!await _security.authenticate(context,
-          reason: 'Verify identity to turn off app lock')) return;
+          reason: 'Verify identity to turn off app lock')) {
+        return;
+      }
       await _run(_security.disable);
     }
   }
@@ -100,13 +104,16 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   Future<void> _toggleBiometrics(bool value) async {
     if (value) {
       if (!await _security.verifyBiometrics('Enable biometric app unlock')) {
-        if (mounted) setState(() =>
-            _error = 'Biometric verification was not completed.');
+        if (mounted) {
+          setState(() => _error = 'Biometric verification was not completed.');
+        }
         return;
       }
     } else {
       if (!await _security.authenticate(context,
-          reason: 'Verify identity to change security settings')) return;
+          reason: 'Verify identity to change security settings')) {
+        return;
+      }
     }
     await _run(() => _security.setBiometrics(value));
   }
@@ -193,8 +200,9 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
             try {
               await AppearanceController.instance.setDark(dark);
             } catch (_) {
-              if (mounted) setState(() =>
-                  _error = 'Could not save appearance preference.');
+              if (mounted) {
+                setState(() => _error = 'Could not save appearance preference.');
+              }
             }
           },
         ),
