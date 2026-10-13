@@ -227,7 +227,7 @@ class _SshKeyScreenState extends State<SshKeyScreen> {
         const SizedBox(height: 6),
         const Text('Private keys are protected in this phone’s secure storage. '
             'Select one as the default for SSH connections.',
-            style: TextStyle(color: Colors.white70)),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 14),
         Row(children: [
           Expanded(child: FilledButton.icon(
