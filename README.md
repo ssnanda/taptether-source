@@ -290,3 +290,34 @@ remote layouts. Neither remote clipboard acquisition nor file transfer should
 be treated as shipped.
 
 The trackpad respects the current light/dark color scheme. Existing SSH key, navigation, and biometric/PIN behavior from v0.5.5 is preserved.
+
+
+## v0.6.1+19 — Mobile Ubuntu installation and first-use SSH trust
+
+- **No fingerprint copying:** The iPhone/Android SSH installer no longer asks
+  the user to go to Ubuntu, run ssh-keygen or manually enter its SHA256 fingerprint.
+  During the first SSH connection, the client accepts the presented host key
+  and stores its fingerprint in OS secure storage **only after successful SSH
+  user authentication**. Every subsequent connection to that exact LAN IP:22
+  must present the identical key. An unexpected change aborts the connection;
+  it is never silently re-trusted.
+- **First-use security tradeoff:** Initial SSH host identity is not independently
+  verified. A malicious server on a compromised local network could impersonate
+  the machine during first login and capture SSH credentials. Use only on networks
+  you trust. No internet relay, analytics or outbound server is involved.
+- **Installation UI:** A separate, scrollable, keyboard-aware mobile screen
+  replaces the crowded alert dialog. It shows only the selected SSH login
+  method, a separate sudo password field, inline validation and real installer
+  stages. The final result clearly distinguishes an installed and saved pairing
+  from a failed install or a successful install with incomplete pairing.
+- **Pairing:** Success is shown only after an authenticated TLS-pinned ping and
+  successful secure saving of the device. If the agent installs but pairing fails,
+  the screen offers Retry pairing without repeating the install.
+- **Test scope:** Host trust pinning/change rejection and installer form validation
+  are covered by new Flutter tests. A real-device integration check and full
+  Flutter test run are required before announcing a verified release. GitHub
+  release workflows should remain manual-only.
+
+Still planned for the rest of v0.6: file transfer and optional bidirectional
+clipboard synchronization. Unexpected host key changes require an explicit
+trust-reset/recovery flow rather than automatic replacement.
