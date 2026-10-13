@@ -2,11 +2,6 @@ name: '2 - Build TapTether agents'
 # Build agents only on explicit request; normal source commits do not run CI.
 on:
   workflow_dispatch:
-  # One final app ZIP + compatible-tar packaging check on this branch.
-  push:
-    branches: [feature/v0.6.2-macos-app-lan-scan]
-    paths:
-      - '.github/workflows/agents.yml'
 
 concurrency:
   group: agents-${{ github.ref }}
