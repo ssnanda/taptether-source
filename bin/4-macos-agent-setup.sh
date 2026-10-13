@@ -45,6 +45,10 @@ install_agent() {
     chmod 700 "$UPDATER"
   fi
   chmod 755 "$APP" "$CTL"
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1 ||
+      notice 'Agent binary signing requires manual macOS approval.'
+  fi
   # Supports legacy command-line archives and standalone .app bundles.
   local tray_source="$SELF/TapTetherTray"
   if [[ ! -x "$tray_source" && -x "$SELF/../MacOS/TapTetherTray" ]]; then
