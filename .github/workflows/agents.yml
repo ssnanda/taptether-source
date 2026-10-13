@@ -62,6 +62,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: TapTether-macOS-installers
-          path: dist/macos/*.tar.gz
+          path: |
+            dist/macos/*.tar.gz
+            dist/macos/*.zip
           if-no-files-found: error
           retention-days: 1
