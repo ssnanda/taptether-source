@@ -7,6 +7,35 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues(<String, String>{}));
 
+  testWidgets('IP field exposes a dot and blocks malformed addresses',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(home: UbuntuInstallScreen(
+      initialHost: '192.168.68.',
+      onInstalled: (_) async => true,
+    )));
+    await tester.pumpAndSettle();
+
+    final ipField = tester.widget<TextField>(
+        find.byType(TextField).first);
+    expect(ipField.keyboardType, TextInputType.url);
+    expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNull);
+
+    await tester.enterText(
+        find.byType(TextFormField).first, '192.168.68.999');
+    await tester.pump();
+    expect(find.textContaining('Enter four dot-separated numbers'),
+        findsOneWidget);
+    expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNull);
+
+    await tester.enterText(
+        find.byType(TextFormField).first, '192.168.68.81');
+    await tester.pump();
+    expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNotNull);
+  });
+
   testWidgets('installer has no fingerprint input and validates before SSH',
       (tester) async {
     var paired = false;

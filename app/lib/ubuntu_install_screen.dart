@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-import 'discovery.dart';
 import 'phone_ssh_keys.dart';
 import 'ssh_provisioner.dart';
+import 'ubuntu_install_validation.dart';
 
 /// Full-screen, keyboard-safe SSH installer. Never prints SSH passwords,
 /// pairing tokens, private keys, or remote installer logs.
@@ -74,8 +75,9 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
   }
 
   String? _validateHost(String? value) =>
-      isPrivateIPv4((value ?? '').trim())
-          ? null : 'Enter a private LAN IPv4 address.';
+      validUbuntuLanIp((value ?? '').trim())
+          ? null : 'Enter four dot-separated numbers (e.g. 192.168.68.81). '
+              'Use a private LAN address.';
 
   String? _validateUsername(String? value) =>
       RegExp(r'^[a-z_][a-z0-9_-]{0,30}$').hasMatch((value ?? '').trim())
@@ -191,7 +193,10 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                     'You do not need to visit the computer to retrieve a fingerprint.',
                     style: TextStyle(color: scheme.onSurfaceVariant)),
                 const SizedBox(height: 18),
-                Form(key: _formKey, child: Column(
+                Form(
+                  key: _formKey,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     TextFormField(
@@ -199,8 +204,17 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                       decoration: const InputDecoration(
                           labelText: 'Ubuntu IP address',
                           hintText: '192.168.1.100'),
-                      keyboardType: TextInputType.number,
+                      // iOS number pads have no dot key. URL layout reliably
+                      // exposes '.', while the formatter permits only IP chars.
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.next,
                       autocorrect: false,
+                      enableSuggestions: false,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                        LengthLimitingTextInputFormatter(15),
+                      ],
+                      onChanged: (_) => setState(() {}),
                       validator: _validateHost,
                     ),
                     const SizedBox(height: 18),
@@ -267,6 +281,10 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                             id == null ? 'Choose an SSH key.' : null,
                       ),
                       const SizedBox(height: 14),
+                      Text('This phone’s SSH public key must be authorized '
+                          'for the selected Ubuntu username. If key login '
+                          'fails, try SSH password for first-time setup.',
+                          style: Theme.of(context).textTheme.bodySmall),
                     ],
                     const Divider(height: 30),
                     Text('Ubuntu administrator access',
@@ -276,7 +294,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                       controller: _sudoPassword,
                       decoration: const InputDecoration(
                         labelText: 'Sudo password (optional)',
-                        helperText: 'Leave blank if sudo is passwordless.'),
+                        helperText: 'Blank only if the Ubuntu account allows passwordless sudo. SSH key login does not grant sudo access.'),
                       obscureText: true,
                       enableSuggestions: false,
                       autocorrect: false,
@@ -346,7 +364,8 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                         label: const Text('Retry pairing'),
                       )
                     : FilledButton.icon(
-                        onPressed: _install,
+                        onPressed: validUbuntuLanIp(_host.text.trim())
+                            ? _install : null,
                         icon: const Icon(Icons.install_desktop),
                         label: const Text('Install & pair'),
                       ),

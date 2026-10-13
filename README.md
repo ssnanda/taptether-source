@@ -404,3 +404,25 @@ The existing `current` release remains a compatibility alias for stable
 download URLs and retains its original historical timestamp. The pipeline
 rejects an already-published version; increment VERSION before releasing.
 
+## v0.6.3+21 — Ubuntu install form and actionable failure stages
+
+- The **Ubuntu IP address** field uses a dot-capable iPhone keyboard,
+  accepts only digits and periods, validates a canonical four-octet
+  private address while editing, and disables **Install & pair**
+  until the address is well-formed.
+- **SSH sign-in failed** (before install): a saved *phone* SSH public key
+  might not exist in the target user’s `~/.ssh/authorized_keys`. A Mac
+  SSH private key that works independently does not authorize this
+  phone's different key. Switch to password login if enabled, or
+  authorize the phone key from another SSH-capable device.
+- **Sudo authorization failed**: SSH key login does not make sudo
+  passwordless. Supply the Ubuntu user's sudo password unless that
+  account has explicit passwordless sudo.
+- Package installation, subsequent systemd/`/dev/uinput` setup, and
+  authentication timeouts now produce distinct safe error messages.
+  Raw remote logs and private pairing tokens remain hidden in the app.
+
+These changes do not grant extra OS privileges, disable SSH host identity
+pinning, or bypass Ubuntu sudo. They require Flutter tests and validation
+before a new mobile release; they cannot confirm any particular Ubuntu
+machine's current permission configuration without device access.
