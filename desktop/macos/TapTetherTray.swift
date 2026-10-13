@@ -33,6 +33,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         add(menu, "Restart agent", #selector(restartAgent))
         add(menu, "Stop agent", #selector(stopAgent))
         add(menu, "Check for updates", #selector(checkUpdate))
+        add(menu, "Agent diagnostics", #selector(showAgentDiagnostics))
         menu.addItem(.separator())
         add(menu, "Show pairing details", #selector(pairingInstructions))
         add(menu, "Quit menu (agent stays running)", #selector(quitMenu))
@@ -204,6 +205,13 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     @objc private func restartAgent() { runControl("restart") }
     @objc private func stopAgent() { runControl("stop") }
     @objc private func checkUpdate() { runControl("check-update") }
+    @objc private func showAgentDiagnostics() {
+        let path = NSHomeDirectory() + "/Library/Logs/TapTether/agent.stderr.log"
+        let log = (try? String(contentsOfFile: path, encoding: .utf8))
+            ?? "No agent errors have been logged."
+        showNotice("TapTether agent diagnostics",
+            String(log.suffix(1800)) + "\n\nIf the agent is stopped, use Install / Repair agent.")
+    }
     @objc private func quitMenu() { NSApp.terminate(nil) }
     @objc private func pairingInstructions() {
         guard FileManager.default.isExecutableFile(atPath: controller) else {
