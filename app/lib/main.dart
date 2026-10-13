@@ -296,11 +296,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
             token.text = installed.token;
             pin.text = installed.fingerprint;
             discoveredName = installed.host;
-            await connect();
-            // The install screen must not claim success unless the pinned TLS
-            // connection works and the trusted device was securely saved.
-            return agent.configured &&
-                savedComputers.any((device) => device.host == installed.host);
+            // Require an authenticated TLS-pinned ping AND successful
+            // persistence. An existing device record must never mask a failed
+            // pairing or a failed secure-storage write.
+            return connect();
           },
         )),
       );
@@ -880,7 +879,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     }
   }
 
-  Future<void> connect({String? existingId, String? deviceId}) async {
+  Future<bool> connect({String? existingId, String? deviceId}) async {
     try {
       final phone = await PhoneIdentity.loadOrCreate();
       agent.configure(host.text, token.text, pin.text,
@@ -929,15 +928,18 @@ class _RemoteScreenState extends State<RemoteScreen> {
         );
         final updated = await deviceStore.upsert(device);
         if (mounted) setState(() => savedComputers = updated);
+        return true;
       } catch (_) {
         if (mounted) {
           setState(() =>
               status = 'Connected, but secure storage could not save this pairing.');
         }
+        return false;
       }
     } catch (e) {
       agent.disconnect();
       if (mounted) setState(() => status = '$e');
+      return false;
     }
   }
 
