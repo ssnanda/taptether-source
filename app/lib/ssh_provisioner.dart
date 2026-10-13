@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'discovery.dart';
 import 'phone_ssh_keys.dart';
 import 'ssh_host_trust.dart';
+import 'ubuntu_install_validation.dart';
 
 enum SshLoginMethod { password, phoneKey }
 
@@ -43,8 +45,9 @@ class UbuntuSshProvisioner {
   }) async {
     void progress(String step) => onProgress?.call(step);
     progress('Checking connection details');
-    if (!isPrivateIPv4(input.host)) {
-      throw const FormatException('SSH target must be private IPv4.');
+    if (!validUbuntuLanIp(input.host)) {
+      throw const FormatException('Enter a valid private LAN IPv4 address '
+          'with four dot-separated numbers.');
     }
     if (!RegExp(r'^[a-z_][a-z0-9_-]{0,30}$').hasMatch(input.username)) {
       throw const FormatException('Invalid Ubuntu username.');
@@ -92,13 +95,23 @@ class UbuntuSshProvisioner {
       progress('Verifying SSH identity and signing in');
       try {
         await client.authenticated.timeout(const Duration(seconds: 20));
+      } on TimeoutException {
+        throw StateError('SSH sign-in timed out. Check the SSH username, '
+            'that port 22 is reachable, and the selected login method.');
       } catch (_) {
         if (hostKeyChanged) {
           throw StateError('The SSH identity of this computer has changed. '
               'Connection blocked; TapTether will not automatically trust a '
               'different server at this address.');
         }
-        rethrow;
+        if (input.loginMethod == SshLoginMethod.phoneKey) {
+          throw StateError('SSH sign-in failed. The selected phone SSH key '
+              'may not be authorized for this Ubuntu username. '
+              'Try SSH password login, or authorize this phone public key '
+              'for that user on Ubuntu.');
+        }
+        throw StateError('SSH sign-in failed. Check the Ubuntu username, '
+            'SSH password and SSH server authentication settings.');
       }
       final observed = observedFingerprint;
       if (observed == null) {
@@ -172,8 +185,13 @@ class UbuntuSshProvisioner {
       final sudoCheck = input.sudoPassword.isEmpty
           ? 'sudo -n -v'
           : 'sudo -k && sudo -S -p "" -v';
-      final command = "$sudoCheck && sudo -n apt install -y '$stage/$filename' "
-          "&& bash '$stage/4-ubuntu-desktop-setup.sh' install";
+      // Use distinct exit codes for each stage. Never show remote stdout or
+      // stderr verbatim: the setup script prints private pairing credentials.
+      final command = '''
+if ! $sudoCheck; then exit 41; fi
+if ! sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y '$stage/$filename'; then exit 42; fi
+if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
+''';
       final session = await client.execute(command, pty: const SSHPtyConfig());
       if (input.sudoPassword.isNotEmpty) {
         session.stdin.add(Uint8List.fromList(
@@ -186,9 +204,24 @@ class UbuntuSshProvisioner {
       ]).timeout(const Duration(minutes: 5));
       final code = await session.waitForExit(timeout: const Duration(seconds: 10));
       if (code != 0) {
-        // Never display raw installation logs: they include private pairing data.
-        throw StateError('Installation failed (exit ${code ?? "unknown"}). '
-            'Verify SSH, sudo, and systemd permissions.');
+        // Never display raw installer output; it contains pairing secrets.
+        switch (code) {
+          case 41:
+            throw StateError('Ubuntu sudo authorization failed. Enter the '
+                'Ubuntu sudo password (separate from your SSH key), or '
+                'enable passwordless sudo for the account.');
+          case 42:
+            throw StateError('Ubuntu package installation failed. Check '
+                'available disk space, apt/dpkg locks and package-manager '
+                'health on the target computer.');
+          case 43:
+            throw StateError('The Ubuntu agent setup failed after package '
+                'installation. Check systemd and /dev/uinput permissions '
+                'using: sudo systemctl status taptether-agent --no-pager');
+          default:
+            throw StateError('Installation stopped unexpectedly (exit '
+                '${code ?? "unknown"}). Check Ubuntu SSH and service logs.');
+        }
       }
       progress('Reading agent pairing details');
       final output = utf8.decode(bytes, allowMalformed: true);
