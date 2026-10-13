@@ -5,8 +5,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 folder = ROOT / ".github" / "workflows"
 workflow_files = sorted(folder.glob("*.yml")) + sorted(folder.glob("*.yaml"))
-assert len(workflow_files) == 1 and workflow_files[0].name == "release.yml", (
-    "Expected exactly one maintained Actions workflow: release.yml"
+assert len(workflow_files) == 1 and workflow_files[0].name == "taptether.yml", (
+    "Expected exactly one maintained Actions workflow: taptether.yml"
 )
 
 workflow = workflow_files[0].read_text(encoding="utf-8")
