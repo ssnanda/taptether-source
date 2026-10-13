@@ -5,7 +5,6 @@ import 'package:crypto/crypto.dart';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/services.dart';
 
-import 'discovery.dart';
 import 'phone_ssh_keys.dart';
 import 'ssh_host_trust.dart';
 import 'ubuntu_install_validation.dart';
@@ -188,7 +187,7 @@ class UbuntuSshProvisioner {
       // Use distinct exit codes for each stage. Never show remote stdout or
       // stderr verbatim: the setup script prints private pairing credentials.
       final command = '''
-if ! $sudoCheck; then exit 41; fi
+if ! ( $sudoCheck ); then exit 41; fi
 if ! sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y '$stage/$filename'; then exit 42; fi
 if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
 ''';
