@@ -1,4 +1,4 @@
-name: Publish current TapTether release
+name: '3 - Publish TapTether release'
 
 # Full IPA/APK/agent builds are expensive. Release only when explicitly requested.
 # GitHub > Actions > Publish current TapTether release > Run workflow.
@@ -8,7 +8,7 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/release-v0.6.1-request'
+      - '.github/release-v0.6.2-request'
 
 permissions:
   contents: write
