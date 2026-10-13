@@ -1,0 +1,60 @@
+name: Validate TapTether 0.6.1 without publishing
+# Rerun on the corrected v0.6.1 source after Flutter lint fixes.
+on:
+  push:
+    branches: [fix/v0.6.1-ssh-install-experience]
+    paths:
+      - '.github/workflows/v0.6.1-validate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: taptether-061-validation
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Check shell and Python syntax
+        run: |
+          for script in bin/*.sh; do bash -n "$script"; done
+          python3 -m py_compile desktop/ubuntu/taptether_tray.py bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py
+      - name: Go agent tests and vet
+        run: |
+          cd agent
+          go test ./...
+          go vet ./...
+      - name: Initialize Flutter runner and dependencies
+        run: |
+          cd app
+          flutter create --platforms=android --org com.taptether --project-name taptether .
+          flutter pub get
+      - name: Prepare bundled branding used by widget tests
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 bin/9-tt-brand-icons.py --verify
+          python3 bin/9-tt-brand-icons.py
+          test -s app/assets/branding/taptether.png
+      - name: Flutter static analysis
+        run: |
+          cd app
+          flutter analyze
+      - name: Flutter unit and widget tests
+        run: |
+          cd app
+          flutter test
+      - name: Android debug build smoke test
+        run: |
+          cd app
+          flutter build apk --debug

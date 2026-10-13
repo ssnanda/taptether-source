@@ -11,10 +11,8 @@ import 'device_manager_screen.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
 import 'qr_pairing.dart';
-import 'ssh_provisioner.dart';
 import 'ssh_key_screen.dart';
-import 'phone_ssh_keys.dart';
-import 'package:flutter/gestures.dart';
+import 'ubuntu_install_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -287,123 +285,23 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Future<void> installUbuntuViaSsh() async {
     if (installingAgent) return;
-    final sshHost = TextEditingController(text: host.text);
-    final user = TextEditingController();
-    final sshPassword = TextEditingController();
-    final sudoPassword = TextEditingController();
-    final sshFingerprint = TextEditingController();
-    var loginMethod = SshLoginMethod.password;
-    var authorizeKey = false;
-    final sshKeys = await PhoneSshKeyStore().listKeys();
-    var sshKeyId = await PhoneSshKeyStore().selectedId();
-    final hasKey = sshKeys.isNotEmpty;
-    if (!mounted) return;
-    final approved = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-        title: const Text('Install Ubuntu agent over SSH'),
-        content: SingleChildScrollView(child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Verify the SSH host fingerprint independently on '
-                'your Ubuntu computer before proceeding. SSH must be enabled '
-                'and the user must have sudo privileges.'),
-            TextField(controller: sshHost,
-              decoration: const InputDecoration(labelText: 'Ubuntu LAN IP')),
-            TextField(controller: user,
-              decoration: const InputDecoration(labelText: 'SSH username')),
-            TextField(controller: sshFingerprint, autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'Verified SSH host SHA256: fingerprint')),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<SshLoginMethod>(
-              initialValue: loginMethod,
-              decoration: const InputDecoration(labelText: 'SSH login method'),
-              items: [
-                const DropdownMenuItem(
-                    value: SshLoginMethod.password, child: Text('SSH password')),
-                DropdownMenuItem(
-                    value: SshLoginMethod.phoneKey,
-                    enabled: hasKey, child: const Text('TapTether SSH key')),
-              ],
-              onChanged: (value) {
-                if (value != null) setDialogState(() => loginMethod = value);
-              },
-            ),
-            if (sshKeys.isNotEmpty)
-              DropdownButtonFormField<String>(
-                initialValue: sshKeyId,
-                decoration: const InputDecoration(labelText: 'SSH key for this computer'),
-                items: [for (final key in sshKeys)
-                  DropdownMenuItem(value: key.id, child: Text(key.name))],
-                onChanged: (id) => setDialogState(() => sshKeyId = id),
-              ),
-            if (loginMethod == SshLoginMethod.password)
-              TextField(controller: sshPassword, obscureText: true,
-                decoration: const InputDecoration(labelText: 'SSH password')),
-            if (loginMethod == SshLoginMethod.password && hasKey)
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: authorizeKey,
-                onChanged: (v) => setDialogState(() => authorizeKey = v ?? false),
-                title: const Text('Authorize this phone SSH key'),
-                subtitle: const Text('Add only the public key to Ubuntu authorized_keys '
-                    'after a verified password login. No private key is uploaded.'),
-              ),
-            if (!hasKey)
-              const Text('Generate or import an SSH key under My SSH Key '
-                  'to enable password-free SSH installation.'),
-            TextField(controller: sudoPassword, obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Ubuntu sudo password (leave blank if passwordless)')),
-            const SizedBox(height: 10),
-            const Text('Verify on the computer: '
-              'sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256. '
-              'The SSH connection will be rejected if its host key does not match.'),
-          ],
-        )),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false),
-            child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true),
-            child: const Text('Install & pair')),
-        ],
-      ),
-      ),
-    );
-    final request = approved == true
-        ? SshInstallRequest(
-          host: sshHost.text.trim(),
-          username: user.text.trim(),
-          sshPassword: sshPassword.text,
-          sudoPassword: sudoPassword.text,
-          hostKeyFingerprint: sshFingerprint.text.trim(),
-          loginMethod: loginMethod,
-          authorizePhoneKey: authorizeKey,
-          sshKeyId: sshKeyId,
-        )
-        : null;
-    sshHost.dispose();
-    user.dispose();
-    sshPassword.dispose();
-    sudoPassword.dispose();
-    sshFingerprint.dispose();
-    if (request == null || !mounted) return;
-    setState(() {
-      installingAgent = true;
-      status = 'Installing Ubuntu agent over authenticated SSH…';
-    });
+    setState(() => installingAgent = true);
     try {
-      final installed = await UbuntuSshProvisioner.install(request);
-      if (!mounted) return;
-      host.text = installed.host;
-      token.text = installed.token;
-      pin.text = installed.fingerprint;
-      discoveredName = installed.host;
-      await connect(); // Enroll phone key and save trusted device.
-    } catch (e) {
-      if (mounted) setState(() => status = 'SSH installation: $e');
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => UbuntuInstallScreen(
+          initialHost: host.text,
+          onInstalled: (installed) async {
+            host.text = installed.host;
+            token.text = installed.token;
+            pin.text = installed.fingerprint;
+            discoveredName = installed.host;
+            // Require an authenticated TLS-pinned ping AND successful
+            // persistence. An existing device record must never mask a failed
+            // pairing or a failed secure-storage write.
+            return connect();
+          },
+        )),
+      );
     } finally {
       if (mounted) setState(() => installingAgent = false);
     }
@@ -918,8 +816,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
       for (final chunk in clipboardChunks(value)) {
         await agent.send('text', {'text': chunk});
       }
-      if (mounted) setState(() =>
-          status = 'Typed phone clipboard into the active computer window.');
+      if (mounted) {
+        setState(() =>
+            status = 'Typed phone clipboard into the active computer window.');
+      }
     } catch (error) {
       if (mounted) setState(() => status = 'Clipboard typing failed: $error');
     }
@@ -980,7 +880,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     }
   }
 
-  Future<void> connect({String? existingId, String? deviceId}) async {
+  Future<bool> connect({String? existingId, String? deviceId}) async {
     try {
       final phone = await PhoneIdentity.loadOrCreate();
       agent.configure(host.text, token.text, pin.text,
@@ -1029,15 +929,18 @@ class _RemoteScreenState extends State<RemoteScreen> {
         );
         final updated = await deviceStore.upsert(device);
         if (mounted) setState(() => savedComputers = updated);
+        return true;
       } catch (_) {
         if (mounted) {
           setState(() =>
               status = 'Connected, but secure storage could not save this pairing.');
         }
+        return false;
       }
     } catch (e) {
       agent.disconnect();
       if (mounted) setState(() => status = '$e');
+      return false;
     }
   }
 
@@ -1088,7 +991,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
           TextField(controller: pin, autocorrect: false,
               decoration: const InputDecoration(labelText: 'Certificate SHA-256 fingerprint', border: OutlineInputBorder())),
           const SizedBox(height: 10),
-          FilledButton.icon(onPressed: connect, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
+          FilledButton.icon(onPressed: () async { await connect(); }, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
           ],
         ] else ...[
           OutlinedButton.icon(

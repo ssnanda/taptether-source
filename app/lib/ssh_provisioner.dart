@@ -6,13 +6,14 @@ import 'package:flutter/services.dart';
 
 import 'discovery.dart';
 import 'phone_ssh_keys.dart';
+import 'ssh_host_trust.dart';
 
 enum SshLoginMethod { password, phoneKey }
 
 class SshInstallRequest {
   const SshInstallRequest({
     required this.host, required this.username, required this.sshPassword,
-    required this.sudoPassword, required this.hostKeyFingerprint,
+    required this.sudoPassword,
     this.loginMethod = SshLoginMethod.password,
     this.authorizePhoneKey = false, this.sshKeyId,
   });
@@ -20,7 +21,6 @@ class SshInstallRequest {
   final String username;
   final String sshPassword;
   final String sudoPassword;
-  final String hostKeyFingerprint;
   final SshLoginMethod loginMethod;
   final bool authorizePhoneKey;
   final String? sshKeyId;
@@ -33,19 +33,21 @@ class InstalledAgent {
   final String fingerprint;
 }
 
-/// Installs a bundled, SHA-verified Ubuntu package using SSH with an
-/// out-of-band VERIFIED SSH host key. SSH passwords are never saved.
+/// Installs a bundled, SHA-verified Ubuntu package using authenticated SSH.
+/// Trusts a host key only on the first successful SSH login, then pins it in
+/// protected storage. Unexpected later changes are never silently accepted.
 class UbuntuSshProvisioner {
-  static Future<InstalledAgent> install(SshInstallRequest input) async {
+  static Future<InstalledAgent> install(SshInstallRequest input, {
+    void Function(String step)? onProgress,
+    SshHostTrustStore? hostTrustStore,
+  }) async {
+    void progress(String step) => onProgress?.call(step);
+    progress('Checking connection details');
     if (!isPrivateIPv4(input.host)) {
       throw const FormatException('SSH target must be private IPv4.');
     }
     if (!RegExp(r'^[a-z_][a-z0-9_-]{0,30}$').hasMatch(input.username)) {
       throw const FormatException('Invalid Ubuntu username.');
-    }
-    final expected = input.hostKeyFingerprint.trim();
-    if (!RegExp(r'^SHA256:[A-Za-z0-9+/]{43}$').hasMatch(expected)) {
-      throw const FormatException('Enter the verified SSH SHA256: fingerprint.');
     }
     if (input.loginMethod == SshLoginMethod.password &&
         input.sshPassword.isEmpty) {
@@ -55,28 +57,59 @@ class UbuntuSshProvisioner {
         !await PhoneSshKeyStore().exists) {
       throw const FormatException('Create or import a phone SSH key first.');
     }
+    final trust = hostTrustStore ?? SshHostTrustStore();
+    final savedFingerprint = await trust.trustedFingerprint(input.host);
+    final identities = input.loginMethod == SshLoginMethod.phoneKey
+        ? await PhoneSshKeyStore().authenticationIdentities(id: input.sshKeyId)
+        : null;
+    progress('Connecting to the SSH server');
     final socket = await SSHSocket.connect(input.host, 22)
         .timeout(const Duration(seconds: 8));
+    String? observedFingerprint;
+    bool hostKeyChanged = false;
     final client = SSHClient(
       socket, username: input.username,
-      identities: input.loginMethod == SshLoginMethod.phoneKey
-          ? await PhoneSshKeyStore().authenticationIdentities(id: input.sshKeyId)
-          : null,
+      identities: identities,
       onPasswordRequest: input.loginMethod == SshLoginMethod.password
           ? () => input.sshPassword
           : null,
       handshakeTimeout: const Duration(seconds: 12),
       authTimeout: const Duration(seconds: 12),
-      onVerifyHostKey: (_, fingerprint) => utf8.decode(fingerprint) == expected,
+      onVerifyHostKey: (_, fingerprint) {
+        final received = utf8.decode(fingerprint);
+        observedFingerprint = received;
+        if (!SshHostTrustStore.validFingerprint(received)) return false;
+        if (savedFingerprint != null && savedFingerprint != received) {
+          hostKeyChanged = true;
+          return false;
+        }
+        return true;
+      },
     );
     String? stage;
     SftpClient? sftp;
     try {
-      await client.authenticated.timeout(const Duration(seconds: 20));
+      progress('Verifying SSH identity and signing in');
+      try {
+        await client.authenticated.timeout(const Duration(seconds: 20));
+      } catch (_) {
+        if (hostKeyChanged) {
+          throw StateError('The SSH identity of this computer has changed. '
+              'Connection blocked; TapTether will not automatically trust a '
+              'different server at this address.');
+        }
+        rethrow;
+      }
+      final observed = observedFingerprint;
+      if (observed == null) {
+        throw StateError('SSH server identity unavailable; refusing install.');
+      }
+      await trust.rememberAuthenticated(input.host, observed);
       if (input.loginMethod == SshLoginMethod.password &&
           input.authorizePhoneKey) {
         await _authorizePhoneKey(client, input.sshKeyId);
       }
+      progress('Checking Ubuntu architecture');
       final architectureResult = await client.runWithResult('dpkg --print-architecture');
       if (architectureResult.exitCode != 0) {
         throw StateError('Target is not Ubuntu/Debian.');
@@ -102,6 +135,7 @@ class UbuntuSshProvisioner {
               .hasMatch(filename)) {
         throw const FormatException('Invalid package metadata.');
       }
+      progress('Verifying bundled installer');
       final deb = await _loadBytes(asset);
       if (sha256.convert(deb).toString() != expectedHash) {
         throw StateError('Bundled Ubuntu agent SHA-256 mismatch.');
@@ -113,6 +147,7 @@ class UbuntuSshProvisioner {
       if (!RegExp(r'^/tmp/taptether-phone[.][A-Za-z0-9]{8}$').hasMatch(stage)) {
         throw StateError('Unsafe staging directory.');
       }
+      progress('Uploading Ubuntu agent securely');
       sftp = await client.sftp();
       Future<void> upload(String name, Uint8List bytes) async {
         final file = await sftp!.open('$stage/$name',
@@ -133,6 +168,7 @@ class UbuntuSshProvisioner {
       ]) {
         await upload(name, await _loadBytes('assets/agents/$name'));
       }
+      progress('Installing agent and starting service');
       final sudoCheck = input.sudoPassword.isEmpty
           ? 'sudo -n -v'
           : 'sudo -k && sudo -S -p "" -v';
@@ -154,6 +190,7 @@ class UbuntuSshProvisioner {
         throw StateError('Installation failed (exit ${code ?? "unknown"}). '
             'Verify SSH, sudo, and systemd permissions.');
       }
+      progress('Reading agent pairing details');
       final output = utf8.decode(bytes, allowMalformed: true);
       final t = RegExp(r'Pairing token:\s*([a-f0-9]{48})').firstMatch(output);
       final f = RegExp(r'TLS certificate SHA-256 fingerprint:\s*([A-Fa-f0-9]{64})')
