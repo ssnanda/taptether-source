@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
+import 'clipboard_chunks.dart';
 import 'appearance.dart';
 import 'app_security.dart';
 import 'security_settings_screen.dart';
@@ -13,7 +14,9 @@ import 'qr_pairing.dart';
 import 'ssh_provisioner.dart';
 import 'ssh_key_screen.dart';
 import 'phone_ssh_keys.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -259,6 +262,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
   String? availableAgentVersion;
   String? connectedAgentVersion;
   String? _latestReleaseVersion;
+  bool _macShortcuts = false;
+  bool _haptics = true;
 
   @override
   void initState() {
@@ -445,6 +450,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void selectDiscovered(DiscoveredDevice device) {
     setState(() {
       discoveredName = device.name;
+      _macShortcuts = device.platform == 'darwin';
       _showPairForm = true;
       host.text = device.host;
       token.clear();
@@ -458,6 +464,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     token.text = device.token;
     pin.text = device.fingerprint;
     discoveredName = device.name;
+    _macShortcuts = device.platform == 'darwin';
     await connect(existingId: device.id, deviceId: device.deviceId);
   }
 
@@ -806,8 +813,117 @@ class _RemoteScreenState extends State<RemoteScreen> {
   }
 
 
-  int fingers = 0;
+  final Map<int, Offset> _touches = {};
+  double? _pinchStart;
+  bool _pinching = false;
+  double _swipeX = 0;
+  bool _swipeSent = false;
+  bool _multiTouchGesture = false;
+  double _scrollRemainder = 0;
+  int _pendingScroll = 0;
+  Timer? _scrollTimer;
+  bool _scrollInFlight = false;
   double mouseSensitivity = 3.8;
+
+  void _touchDown(PointerDownEvent e) {
+    if (_touches.isEmpty) _multiTouchGesture = false;
+    _touches[e.pointer] = e.localPosition;
+    if (_touches.length > 1) _multiTouchGesture = true;
+    _pinchStart = _touches.length == 2
+        ? (_touches.values.first - _touches.values.last).distance : null;
+    _pinching = false;
+    if (_touches.length == 3) {
+      _swipeX = 0;
+      _swipeSent = false;
+    }
+  }
+
+  void _touchMove(PointerMoveEvent e) {
+    final before = _touches[e.pointer];
+    if (before == null) return;
+    _touches[e.pointer] = e.localPosition;
+    final delta = e.localPosition - before;
+    if (_touches.length == 1) {
+      queueMovement(delta);
+    } else if (_touches.length == 2) {
+      final distance = (_touches.values.first - _touches.values.last).distance;
+      _pinchStart ??= distance;
+      if ((distance - _pinchStart!).abs() >= 40) {
+        _pinching = true;
+        unawaited(command('key', {'key': _shortcut(
+            distance > _pinchStart! ? 'equal' : 'minus')}));
+        _pinchStart = distance;
+      }
+      if (!_pinching) {
+        _scrollRemainder += delta.dy / 15;
+        final ticks = _scrollRemainder.truncate();
+        if (ticks != 0) {
+          _scrollRemainder -= ticks;
+          _pendingScroll += ticks;
+          _scheduleScroll();
+        }
+      }
+    } else if (_touches.length >= 3 && !_swipeSent) {
+      _swipeX += delta.dx;
+      if (_swipeX.abs() >= 115) {
+        _swipeSent = true;
+        unawaited(command('key', {'key': _macShortcuts
+            ? (_swipeX > 0 ? 'cmd+tab' : 'shift+cmd+tab')
+            : (_swipeX > 0 ? 'alt+tab' : 'shift+alt+tab')}));
+      }
+    }
+  }
+
+  void _touchUp(PointerEvent e) {
+    _touches.remove(e.pointer);
+    if (_touches.length < 2) {
+      _pinchStart = null;
+      _pinching = false;
+      _scrollRemainder = 0;
+    }
+    if (_touches.length < 3) _swipeX = 0;
+  }
+
+  String _shortcut(String key) =>
+      '${_macShortcuts ? 'cmd' : 'ctrl'}+$key';
+
+  void _scheduleScroll() {
+    if (_scrollTimer != null || _scrollInFlight || !agent.configured) return;
+    _scrollTimer = Timer(const Duration(milliseconds: 20), _flushScroll);
+  }
+
+  Future<void> _flushScroll() async {
+    _scrollTimer = null;
+    if (!agent.configured || _scrollInFlight) return;
+    final ticks = _pendingScroll.clamp(-8, 8).toInt();
+    if (ticks == 0) return;
+    _pendingScroll -= ticks;
+    _scrollInFlight = true;
+    try {
+      await command('scroll', {'dy': ticks});
+    } finally {
+      _scrollInFlight = false;
+      if (_pendingScroll != 0) _scheduleScroll();
+    }
+  }
+
+  // Only by explicit tap; sends text into the focused desktop app, not the OS clipboard.
+  Future<void> typePhoneClipboard() async {
+    try {
+      final value = (await Clipboard.getData('text/plain'))?.text;
+      if (value == null || value.isEmpty) {
+        if (mounted) setState(() => status = 'Phone clipboard has no text.');
+        return;
+      }
+      for (final chunk in clipboardChunks(value)) {
+        await agent.send('text', {'text': chunk});
+      }
+      if (mounted) setState(() =>
+          status = 'Typed phone clipboard into the active computer window.');
+    } catch (error) {
+      if (mounted) setState(() => status = 'Clipboard typing failed: $error');
+    }
+  }
   double _pendingMoveX = 0;
   double _pendingMoveY = 0;
   bool _movementInFlight = false;
@@ -848,6 +964,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void dispose() {
     host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
     _movementTimer?.cancel();
+    _scrollTimer?.cancel();
     agent.disconnect();
     super.dispose();
   }
@@ -855,6 +972,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
   Future<void> command(String type, [Map<String, Object> data = const {}]) async {
     try {
       await agent.send(type, data);
+      if (_haptics && (type == 'click' || type == 'key')) {
+        unawaited(HapticFeedback.selectionClick());
+      }
     } catch (e) {
       if (mounted) setState(() => status = e.toString());
     }
@@ -980,7 +1100,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
             label: const Text('Switch computer'),
           ),
           const Text('Trackpad', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-          const Text('Move: one finger  ·  Scroll: two fingers  ·  Tap: click  ·  Long press: right click'),
+          const Text('Move: one finger · Scroll/pinch: two fingers · Switch apps: three-finger swipe · Tap: click · Hold: right click'),
           Row(children: [
             Text('Speed: ${mouseSensitivity.toStringAsFixed(1)}×'),
             Expanded(child: Slider(
@@ -992,28 +1112,28 @@ class _RemoteScreenState extends State<RemoteScreen> {
           ]),
           const SizedBox(height: 8),
           GestureDetector(
-            onTap: () => command('click', {'button': 'left'}),
-            onDoubleTap: () => command('click', {'button': 'double'}),
-            onLongPress: () => command('click', {'button': 'right'}),
+            onTap: () {
+              if (!_multiTouchGesture) unawaited(command('click', {'button': 'left'}));
+            },
+            onDoubleTap: () {
+              if (!_multiTouchGesture) unawaited(command('click', {'button': 'double'}));
+            },
+            onLongPress: () {
+              if (!_multiTouchGesture) unawaited(command('click', {'button': 'right'}));
+            },
             child: Listener(
-              onPointerDown: (_) => fingers++,
-              onPointerUp: (_) => fingers = fingers > 0 ? fingers - 1 : 0,
-              onPointerCancel: (_) => fingers = fingers > 0 ? fingers - 1 : 0,
-              onPointerMove: (event) {
-                if (fingers > 1) {
-                  final dy = event.delta.dy.round();
-                  if (dy != 0) unawaited(command('scroll', {'dy': dy}));
-                } else {
-                  queueMovement(event.delta);
-                }
-              },
+              onPointerDown: _touchDown,
+              onPointerUp: _touchUp,
+              onPointerCancel: _touchUp,
+              onPointerMove: _touchMove,
               child: Container(
                 height: 260,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1B393C),
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF57E6C2).withValues(alpha: 0.25))),
-                child: const Center(child: Icon(Icons.touch_app, size: 50, color: Color(0xFF57E6C2))),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25))),
+                child: Center(child: Icon(Icons.touch_app, size: 50,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer)),
               ),
             ),
           ),
@@ -1023,6 +1143,26 @@ class _RemoteScreenState extends State<RemoteScreen> {
             const SizedBox(width: 8),
             Expanded(child: OutlinedButton(onPressed: () => command('click', {'button': 'right'}), child: const Text('Right click'))),
           ]),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Mac shortcuts (⌘ instead of Ctrl)'),
+            value: _macShortcuts,
+            onChanged: (value) => setState(() => _macShortcuts = value),
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Haptic feedback'),
+            value: _haptics,
+            onChanged: (value) => setState(() => _haptics = value),
+          ),
+          OutlinedButton.icon(
+            onPressed: typePhoneClipboard,
+            icon: const Icon(Icons.content_paste_go),
+            label: const Text('Type phone clipboard on computer'),
+          ),
+          Text('Types up to 4 KB into the focused app. Ubuntu native input supports ASCII text. No automatic clipboard syncing.',
+              style: TextStyle(fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 12),
           TextField(controller: typing, autocorrect: false, enableSuggestions: false,
             decoration: const InputDecoration(labelText: 'Type on computer', border: OutlineInputBorder()),
@@ -1038,8 +1178,20 @@ class _RemoteScreenState extends State<RemoteScreen> {
             keyButton('Enter','Return'), keyButton('⌫','BackSpace'),
             keyButton('↑','Up'), keyButton('↓','Down'),
             keyButton('←','Left'), keyButton('→','Right'),
-            keyButton('Ctrl+C','ctrl+c'), keyButton('Ctrl+V','ctrl+v'),
-            keyButton('Ctrl+L','ctrl+l'), keyButton('Alt+Tab','alt+Tab'),
+            keyButton('Copy', _shortcut('c')),
+            keyButton('Paste', _shortcut('v')),
+            keyButton('Select all', _shortcut('a')),
+            keyButton('Undo', _shortcut('z')),
+            keyButton('Find', _shortcut('f')),
+            keyButton('New tab', _shortcut('t')),
+            keyButton('Switch app', _macShortcuts ? 'cmd+tab' : 'alt+tab'),
+          ]),
+          const SizedBox(height: 8),
+          const Text('Extended keyboard', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          Wrap(spacing: 8, runSpacing: 4, children: [
+            keyButton('Home', 'home'), keyButton('End', 'end'),
+            keyButton('PgUp', 'pageup'), keyButton('PgDn', 'pagedown'),
+            for (var f = 1; f <= 12; f++) keyButton('F$f', 'f$f'),
           ]),
           const SizedBox(height: 8),
           const Text('System volume', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
