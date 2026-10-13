@@ -390,3 +390,39 @@ Ordinary commits do not trigger full agent/release builds. Historical 0.5.5
 workflow runs may remain visible in GitHub’s Actions history; the current
 source contains only one maintained validation workflow.
 
+
+
+### Release dates and build dependency (pipeline update)
+
+The numbered Actions workflows can each be started manually. **Workflow 3**
+now orchestrates the complete, ordered chain in the **same run**:
+
+1. **Preflight**: require `main` and a version not yet released.
+2. **1 - Validate current TapTether**: Go/Flutter checks and Android smoke test.
+3. **2 - Build TapTether agents**: Linux and macOS jobs must both succeed;
+   verified Ubuntu .deb, Mac .tar.gz and Mac .app .zip artifacts are uploaded
+   to that same run.
+4. **3 - Publish TapTether release**: only if all prerequisites passed,
+   download/reverify those exact native artifacts, build IPA/APK without
+   recompiling agents, require all nine expected assets, and publish.
+
+A **failed** agent build prevents publication. Running workflow 2 separately
+does not authorize a future workflow 3; workflow 3 calls its **own** workflow
+2 and consumes its artifacts. No automatic publishing on source pushes.
+
+GitHub's existing **`current`** release was originally published on
+October 11, 2026. Editing a release and uploading new assets does **not**
+change GitHub's `published_at` timestamp, which caused v0.6.2 to show an
+older date despite newly built binaries. Each future published version gets
+a distinct, freshly created release, such as `v0.6.3+21`, marked **Latest**,
+with the actual publication date, source commit and run ID recorded in its
+notes. The old `current` release is retained and refreshed as a
+**rolling compatibility download alias** for existing clients and AltStore.
+Its historical publication timestamp does not change and it is not
+marked Latest. Do not treat the old `current` date as the build date.
+
+Published versions are immutable from TapTether's normal workflow: rerun
+with the same VERSION is rejected; increment VERSION to publish a new build.
+Build artifacts inside GitHub Actions remain temporary and are removed by
+the existing cleanup workflow; version-specific and current GitHub Release
+assets are retained independently of Actions artifacts.
