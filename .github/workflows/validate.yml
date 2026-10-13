@@ -4,7 +4,7 @@ on:
   push:
     branches: [feature/v0.6.2-macos-app-lan-scan]
     paths:
-      - '.github/workflows/v0.6.1-validate.yml'
+      - '.github/workflows/validate.yml'
   workflow_dispatch:
 permissions:
   contents: read
