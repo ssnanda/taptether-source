@@ -1,0 +1,4 @@
+Requested release: TapTether v0.6.1+19
+Scope: iOS IPA, Android APK, Ubuntu amd64/arm64 .deb agents, macOS Intel/Apple Silicon agent bundles with native menu-bar app.
+Reason: Explicit user request to build and publish v0.6.1 after integrating Ubuntu SSH install improvements.
+One-time GitHub Actions release request; never retrigger automatically.
