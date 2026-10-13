@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'phone_ssh_keys.dart';
+import 'app_security.dart';
 
 class SshKeyScreen extends StatefulWidget {
   const SshKeyScreen({super.key});
@@ -154,6 +155,10 @@ class _SshKeyScreenState extends State<SshKeyScreen> {
   }
 
   Future<void> _export(SavedSshKey key, {required bool private}) async {
+    if (private && !await AppSecurity.instance.authenticate(context,
+        reason: 'Verify identity to export a private SSH key')) {
+      return;
+    }
     if (private && !await _confirm('Export PRIVATE SSH key?',
         'The exported file contains an UNENCRYPTED private key. Anyone '
         'with this file can authenticate as you. Only save to trusted storage.',
@@ -256,7 +261,7 @@ class _SshKeyScreenState extends State<SshKeyScreen> {
                 Text(key.id == _selected ? 'Default SSH key' : 'Ed25519',
                     style: TextStyle(color: key.id == _selected
                         ? Theme.of(context).colorScheme.primary
-                        : Colors.white70)),
+                        : Theme.of(context).colorScheme.onSurfaceVariant)),
                 Text(_fingerprint(key), maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12)),
