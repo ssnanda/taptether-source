@@ -130,8 +130,9 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             let result = self.output(controller, [verb])
             DispatchQueue.main.async {
                 self.refreshStatus()
+                let observed = self.statusLabel?.title ?? "Status unavailable"
                 self.showNotice("TapTether " + verb,
-                    result.isEmpty ? "Could not confirm the operation. Check the service status or use the terminal."
+                    result.isEmpty ? observed + ". If stopped, choose Install / Repair agent."
                                    : String(result.prefix(1000)))
             }
         }
