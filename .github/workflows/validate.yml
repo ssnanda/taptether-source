@@ -2,10 +2,17 @@ name: '1 - Validate current TapTether'
 # Current-version validation; never publish during validation.
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      skip_android_smoke:
+        description: 'Release builds a real APK; skip redundant debug APK'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: taptether-061-validation
+  group: taptether-validation-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   validate:
@@ -26,6 +33,7 @@ jobs:
         run: |
           for script in bin/*.sh; do bash -n "$script"; done
           python3 -m py_compile desktop/ubuntu/taptether_tray.py bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py
+          python3 bin/4-check-release-pipeline.py
       - name: Go agent tests and vet
         run: |
           cd agent
@@ -51,6 +59,7 @@ jobs:
           cd app
           flutter test
       - name: Android debug build smoke test
+        if: ${{ !inputs.skip_android_smoke }}
         run: |
           cd app
           flutter build apk --debug

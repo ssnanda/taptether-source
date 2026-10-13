@@ -2,9 +2,10 @@ name: '2 - Build TapTether agents'
 # Build agents only on explicit request; normal source commits do not run CI.
 on:
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
-  group: agents-${{ github.ref }}
+  group: agents-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
