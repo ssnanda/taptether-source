@@ -1,0 +1,47 @@
+name: Validate TapTether v0.5.5 without publishing
+
+# Trigger once through the explicit marker; normal source pushes cost no Actions minutes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/v0.5.5-navigation-security]
+    paths:
+      - '.github/v0.5.5-validation-request'
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Generate native Android runner
+        run: |
+          cd app
+          flutter create --platforms=android --org com.taptether --project-name taptether .
+          flutter pub get
+      - name: Configure biometric and networking permissions
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 bin/9-tt-brand-icons.py --verify
+          python3 bin/9-tt-brand-icons.py
+          grep -q 'FlutterFragmentActivity' app/android/app/src/main/kotlin/com/taptether/taptether/MainActivity.kt
+          grep -q 'android.permission.USE_BIOMETRIC' app/android/app/src/main/AndroidManifest.xml
+      - name: Static analysis and Flutter tests
+        run: |
+          cd app
+          flutter analyze
+          flutter test
+      - name: Android debug build smoke test
+        run: |
+          cd app
+          flutter build apk --debug
