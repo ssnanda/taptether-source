@@ -4,7 +4,7 @@ import 'package:taptether/clipboard_chunks.dart';
 
 void main() {
   test('clipboard split preserves UTF-8 text without exceeding command limit', () {
-    final value = List.filled(255, 'A').join() + '😀' + List.filled(200, '世界').join();
+    final value = "${List.filled(255, 'A').join()}😀${List.filled(200, '世界').join()}";
     final chunks = clipboardChunks(value);
     expect(chunks.join(), value);
     expect(chunks.length, greaterThan(1));
