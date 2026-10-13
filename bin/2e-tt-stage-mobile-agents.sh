@@ -2,11 +2,17 @@
 # Build native agents first, then stage checksummed installation archives as Flutter assets.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-"$ROOT/bin/2b-tt-ubuntu.sh"
-if [[ "$(uname -s)" == Darwin ]]; then
-  "$ROOT/bin/2b-tt-macos.sh"
+if [[ "${TAPTETHER_USE_PREBUILT_AGENTS:-0}" == 1 ]]; then
+  # Reuse packages from the *same release workflow run*. Package audits
+  # compare the embedded setup/updater against this checked-out source.
+  python3 "$ROOT/bin/4-validate-desktop-installers.py" --platform all
 else
-  echo 'macOS native builds require Mac/Xcode. Staging existing same-version Mac archives if present.'
+  "$ROOT/bin/2b-tt-ubuntu.sh"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    "$ROOT/bin/2b-tt-macos.sh"
+  else
+    echo 'macOS native builds require Mac/Xcode. Staging existing same-version Mac archives if present.'
+  fi
 fi
 python3 - "$ROOT" <<'TT_STAGE_PY'
 import hashlib
