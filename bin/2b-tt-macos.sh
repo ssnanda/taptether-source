@@ -50,17 +50,23 @@ EOF
   # Personal-use build: no Apple Developer certificate or notarization required
   # to package; Gatekeeper may still ask for explicit user approval to run.
   codesign --force --deep --sign - --timestamp=none "$bundle"
+  # Keep the original five-member archive unchanged so existing v0.6.1
+  # agents can upgrade with their strict manifest-checking updater.
   out="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.tar.gz"
   COPYFILE_DISABLE=1 tar -czf "$out" -C "$temp" \
     taptether-agent taptetherctl-mac taptether-agent-update-mac \
-    TapTether.icns TapTetherTray 'TapTether Agent.app'
+    TapTether.icns TapTetherTray
+  # Separate Finder-friendly artifact: unzip and open the .app, no Terminal.
+  app_zip="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.zip"
+  ditto -c -k --sequesterRsrc --keepParent "$bundle" "$app_zip"
   rm -rf "$temp"
-  echo "Double-clickable macOS installer archive: $out"
+  echo "Compatible macOS agent archive: $out"
+  echo "Double-clickable macOS app ZIP: $app_zip"
 done
-for old in "$ROOT"/dist/macos/TapTetherAgent-macos-*.tar.gz; do
+for old in "$ROOT"/dist/macos/TapTetherAgent-macos-*.tar.gz "$ROOT"/dist/macos/TapTetherAgent-macos-*.zip; do
   [[ -f "$old" ]] || continue
   case "$(basename "$old")" in
-    "TapTetherAgent-macos-amd64-$version.tar.gz"|"TapTetherAgent-macos-arm64-$version.tar.gz") ;;
+    "TapTetherAgent-macos-amd64-$version.tar.gz"|"TapTetherAgent-macos-arm64-$version.tar.gz"|"TapTetherAgent-macos-amd64-$version.zip"|"TapTetherAgent-macos-arm64-$version.zip") ;;
     *) rm -f "$old" ;;
   esac
 done
