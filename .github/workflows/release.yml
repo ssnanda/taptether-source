@@ -35,6 +35,11 @@ jobs:
             echo "v$version already published. Increment VERSION before rebuilding." >&2
             exit 1
           fi
+          if gh release view current -R "$GITHUB_REPOSITORY" \
+                --json name --jq '.name' 2>/dev/null | grep -Fq "TapTether $version"; then
+            echo "TapTether $version is already on current. Increment VERSION before another release." >&2
+            exit 1
+          fi
 
   validate:
     needs: preflight
