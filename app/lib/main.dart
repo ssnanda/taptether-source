@@ -990,7 +990,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
           TextField(controller: pin, autocorrect: false,
               decoration: const InputDecoration(labelText: 'Certificate SHA-256 fingerprint', border: OutlineInputBorder())),
           const SizedBox(height: 10),
-          FilledButton.icon(onPressed: () => unawaited(connect()), icon: const Icon(Icons.lan), label: const Text('Connect locally')),
+          FilledButton.icon(onPressed: () async { await connect(); }, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
           ],
         ] else ...[
           OutlinedButton.icon(
