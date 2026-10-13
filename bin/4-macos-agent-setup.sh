@@ -132,7 +132,9 @@ EOF
       notice 'Tray will start at next graphical login.'
   fi
   sleep 2
-  if ! launchctl print "$TARGET/$LABEL" 2>/dev/null | grep -q 'state = running'; then
+  local service_state
+  service_state="$(launchctl print "$TARGET/$LABEL" 2>/dev/null || true)"
+  if [[ "$service_state" != *'state = running'* ]]; then
     notice 'Agent failed to remain running. Review ~/Library/Logs/TapTether/agent.stderr.log' >&2
     exit 1
   fi
