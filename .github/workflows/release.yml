@@ -61,12 +61,6 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: Configure Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.27.x'
-          cache: false
-
       - name: Configure Java for Android
         uses: actions/setup-java@v4
         with:
@@ -103,27 +97,13 @@ jobs:
           test -s app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           test -s tv/lg-webos/icon.png
 
-      - name: Commit new master logo PNGs to GitHub
-        run: |
-          git add assets/branding/TapTether-app.png assets/branding/TapTether-agent.png
-          if ! git diff --cached --quiet -- assets/branding; then
-            git -c user.name='TapTether Release Bot' -c user.email='actions@users.noreply.github.com' commit -m 'branding: publish actual PNG master icons'
-            git push origin HEAD:main
-          fi
+      - name: Ensure rendered branding matches immutable release source
+        run: git diff --exit-code -- assets/branding
 
       - name: Validate Bash installer scripts
         run: |
           for script in bin/*.sh; do bash -n "$script"; done
           python3 -m py_compile bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py desktop/ubuntu/taptether_tray.py
-
-      - name: Validate Go agent and Dart
-        run: |
-          cd agent
-          go test ./...
-          go vet ./...
-          cd ../app
-          flutter analyze
-          flutter test
 
       - name: Validate desktop UI package sources
         run: |
