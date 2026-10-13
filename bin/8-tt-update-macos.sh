@@ -43,10 +43,30 @@ archive="$tmp/mac-agent.tar.gz"
 curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 12 --max-time 180 --retry 2 "$url" -o "$archive"
 actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
 [[ "$actual" == "$digest" ]] || { echo 'SHA-256 mismatch; aborting' >&2; exit 1; }
-# Permit only five expected installer members. Never extract arbitrary paths.
-members="$(tar -tzf "$archive" | LC_ALL=C sort)"
-expected="$(printf '%s\n' TapTether.icns TapTetherTray taptether-agent taptether-agent-update-mac taptetherctl-mac | LC_ALL=C sort)"
-[[ "$members" == "$expected" ]] || { echo 'Unexpected archive files; aborting' >&2; exit 1; }
+# Validate all archive entries before extraction. New versions include the
+# native .app alongside legacy flat files for safe upgrades.
+python3 - "$archive" <<'TT_CHECK_TAR'
+import sys,tarfile
+from pathlib import PurePosixPath
+with tarfile.open(sys.argv[1], 'r:gz') as tf:
+    members = tf.getmembers()
+    names = {m.name.rstrip('/') for m in members}
+    flat = {'TapTether.icns', 'TapTetherTray', 'taptether-agent',
+            'taptether-agent-update-mac', 'taptetherctl-mac'}
+    app = 'TapTether Agent.app/Contents/'
+    need = flat | {app+'Info.plist', app+'MacOS/TapTetherTray',
+                   app+'Resources/taptether-agent',
+                   app+'Resources/taptetherctl-mac',
+                   app+'Resources/taptether-agent-update-mac'}
+    if not need <= names:
+        raise SystemExit('Incomplete macOS app archive; refusing update')
+    for m in members:
+        path = PurePosixPath(m.name)
+        if path.is_absolute() or '..' in path.parts or m.issym() or m.islnk():
+            raise SystemExit('Unsafe archive member')
+        if m.name not in flat and not m.name.startswith('TapTether Agent.app/'):
+            raise SystemExit('Unexpected macOS archive member')
+TT_CHECK_TAR
 tar -xzf "$archive" -C "$tmp"
 chmod 700 "$tmp/taptetherctl-mac"
 chmod 755 "$tmp/taptether-agent" "$tmp/TapTetherTray"
