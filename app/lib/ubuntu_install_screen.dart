@@ -281,6 +281,10 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                             id == null ? 'Choose an SSH key.' : null,
                       ),
                       const SizedBox(height: 14),
+                      Text('This phone’s SSH public key must be authorized '
+                          'for the selected Ubuntu username. If key login '
+                          'fails, try SSH password for first-time setup.',
+                          style: Theme.of(context).textTheme.bodySmall),
                     ],
                     const Divider(height: 30),
                     Text('Ubuntu administrator access',
@@ -290,7 +294,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                       controller: _sudoPassword,
                       decoration: const InputDecoration(
                         labelText: 'Sudo password (optional)',
-                        helperText: 'Leave blank if sudo is passwordless.'),
+                        helperText: 'Blank only if the Ubuntu account allows passwordless sudo. SSH key login does not grant sudo access.'),
                       obscureText: true,
                       enableSuggestions: false,
                       autocorrect: false,
