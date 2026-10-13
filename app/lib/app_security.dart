@@ -288,8 +288,10 @@ class _AppLockGateState extends State<AppLockGate>
         _pin.clear();
         _security.unlock();
       } else {
-        if (mounted) setState(() =>
-            _unlockError = _security.lockoutMessage ?? 'Incorrect PIN.');
+        if (mounted) {
+          setState(() =>
+              _unlockError = _security.lockoutMessage ?? 'Incorrect PIN.');
+        }
       }
     } finally {
       if (mounted) setState(() => _unlockBusy = false);
