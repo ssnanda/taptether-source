@@ -52,6 +52,8 @@ jobs:
     needs: agents
     runs-on: macos-latest
     timeout-minutes: 80
+    env:
+      TAPTETHER_USE_PREBUILT_AGENTS: '1'
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -147,8 +149,6 @@ jobs:
         run: python3 bin/4-validate-desktop-installers.py --platform all
 
       - name: Build unsigned IPA from verified agents
-        env:
-          TAPTETHER_USE_PREBUILT_AGENTS: '1'
         run: bash bin/2a-tt-ipa.sh --no-publish
 
       - name: Verify packaged desktop setup, splash and tray assets
