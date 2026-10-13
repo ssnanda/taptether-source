@@ -40,6 +40,12 @@ jobs:
           cd app
           flutter create --platforms=android --org com.taptether --project-name taptether .
           flutter pub get
+      - name: Prepare bundled branding used by widget tests
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 bin/9-tt-brand-icons.py --verify
+          python3 bin/9-tt-brand-icons.py
+          test -s app/assets/branding/taptether.png
       - name: Flutter static analysis
         run: |
           cd app
@@ -48,3 +54,7 @@ jobs:
         run: |
           cd app
           flutter test
+      - name: Android debug build smoke test
+        run: |
+          cd app
+          flutter build apk --debug
