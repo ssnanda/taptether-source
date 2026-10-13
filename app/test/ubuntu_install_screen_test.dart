@@ -15,8 +15,8 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    final ipField = tester.widget<TextFormField>(
-        find.byType(TextFormField).first);
+    final ipField = tester.widget<TextField>(
+        find.byType(TextField).first);
     expect(ipField.keyboardType, TextInputType.url);
     expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
         isNull);
