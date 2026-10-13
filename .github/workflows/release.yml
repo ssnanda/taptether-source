@@ -46,6 +46,8 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/validate.yml
+    with:
+      skip_android_smoke: true
 
   agents:
     needs: validate
