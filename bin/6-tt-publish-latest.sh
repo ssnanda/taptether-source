@@ -70,7 +70,7 @@ fi
 # alias for AltStore and existing auto-updaters (their URLs never change).
 PUBLISHED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 SOURCE_SHA="$(git rev-parse HEAD)"
-NOTES="TapTether $VERSION — release completed $PUBLISHED_AT (UTC).
+NOTES="TapTether $VERSION — build checks completed; publication started $PUBLISHED_AT (UTC).
 Source commit: $SOURCE_SHA
 Build workflow: https://github.com/$REPO/actions/runs/${GITHUB_RUN_ID:-manual}
 All native agents were built and verified before IPA/APK publication.
