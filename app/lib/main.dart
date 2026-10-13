@@ -895,7 +895,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   Future<void> _flushScroll() async {
     _scrollTimer = null;
     if (!agent.configured || _scrollInFlight) return;
-    final ticks = _pendingScroll.clamp(-8, 8);
+    final ticks = _pendingScroll.clamp(-8, 8).toInt();
     if (ticks == 0) return;
     _pendingScroll -= ticks;
     _scrollInFlight = true;
@@ -1160,8 +1160,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
             icon: const Icon(Icons.content_paste_go),
             label: const Text('Type phone clipboard on computer'),
           ),
-          const Text('Types up to 4 KB into the focused app. Ubuntu native input supports ASCII text. No automatic clipboard syncing.',
-              style: TextStyle(fontSize: 12, color: Colors.white70)),
+          Text('Types up to 4 KB into the focused app. Ubuntu native input supports ASCII text. No automatic clipboard syncing.',
+              style: TextStyle(fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 12),
           TextField(controller: typing, autocorrect: false, enableSuggestions: false,
             decoration: const InputDecoration(labelText: 'Type on computer', border: OutlineInputBorder()),
