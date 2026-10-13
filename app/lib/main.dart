@@ -622,6 +622,11 @@ class _RemoteScreenState extends State<RemoteScreen> {
           onPressed: searching ? null : searchNearby,
         ),
         ActionChip(
+          avatar: const Icon(Icons.network_check, size: 18),
+          label: const Text('Scan IPs'),
+          onPressed: scanNetwork,
+        ),
+        ActionChip(
           avatar: const Icon(Icons.install_desktop, size: 18),
           label: const Text('Install agent'),
           onPressed: installingAgent ? null : installUbuntuViaSsh,
