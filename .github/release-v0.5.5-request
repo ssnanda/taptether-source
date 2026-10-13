@@ -1,0 +1,3 @@
+TapTether release request 0.5.5+17
+Source: PR #4 merged to main (ae691be78fc8985f71bb86ce54019e3319e4e5e4)
+One-time build of IPA, APK, Ubuntu and macOS agent packages, then publish current release.
