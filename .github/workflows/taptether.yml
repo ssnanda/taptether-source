@@ -17,11 +17,6 @@ on:
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
     - cron: '37 4 * * 0'
-  # Temporary, scoped removal of two specific v0.5.5 Actions runs.
-  # No validation/build/release jobs execute on this push.
-  push:
-    branches: [main]
-    paths: ['.github/workflows/taptether.yml']
 
 permissions:
   contents: read
@@ -31,35 +26,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  cleanup-legacy-v055-once:
-    if: ${{ github.event_name == 'push' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    timeout-minutes: 5
-    steps:
-      - name: Remove only the two obsolete v0.5.5 run records
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          for id in 38417726055 38417374146; do
-            run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" 2>/dev/null || true)"
-            if [[ -z "$run" ]]; then
-              echo "Legacy run $id already absent"
-              continue
-            fi
-            name="$(printf '%s' "$run" | jq -r .name)"
-            state="$(printf '%s' "$run" | jq -r .status)"
-            [[ "$name" == 'Validate TapTether v0.5.5 without publishing' && "$state" == completed ]] || {
-              echo "Refusing to delete mismatched run $id" >&2
-              exit 1
-            }
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$id"
-            echo "Removed obsolete 0.5.5 run $id"
-          done
-
   validate:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
