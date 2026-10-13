@@ -2,7 +2,7 @@ name: '1 - Validate current TapTether'
 # Current-version validation; never publish during validation.
 on:
   workflow_dispatch:
-  # One isolated validation run for the v0.6.3 bugfix branch.
+  # Second isolated validation run after fixing the Flutter widget test.
   push:
     branches: [fix/v0.6.3-ubuntu-ip-and-install-diagnostics]
     paths: ['.github/workflows/validate.yml']
