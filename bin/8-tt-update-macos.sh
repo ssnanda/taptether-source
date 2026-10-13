@@ -64,7 +64,8 @@ with tarfile.open(sys.argv[1], 'r:gz') as tf:
         path = PurePosixPath(m.name)
         if path.is_absolute() or '..' in path.parts or m.issym() or m.islnk():
             raise SystemExit('Unsafe archive member')
-        if m.name not in flat and not m.name.startswith('TapTether Agent.app/'):
+        if (m.name not in flat and m.name.rstrip('/') != 'TapTether Agent.app'
+                and not m.name.startswith('TapTether Agent.app/')):
             raise SystemExit('Unexpected macOS archive member')
 TT_CHECK_TAR
 tar -xzf "$archive" -C "$tmp"
