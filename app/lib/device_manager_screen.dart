@@ -185,10 +185,10 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
             ),
           )),
         const SizedBox(height: 16),
-        const Text('Saved connections retain their verified TLS fingerprint '
+        Text('Saved connections retain their verified TLS fingerprint '
             'and authentication credentials. Changing an address does not '
             'silently trust a different computer.',
-            style: TextStyle(color: Colors.white70)),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ],
     ),
   );

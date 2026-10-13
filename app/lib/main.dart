@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
+import 'appearance.dart';
+import 'app_security.dart';
+import 'security_settings_screen.dart';
 import 'device_manager_screen.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
@@ -16,20 +19,34 @@ import 'package:url_launcher/url_launcher.dart';
 
 void main() => runApp(const TapTetherApp());
 
-class TapTetherApp extends StatelessWidget {
+class TapTetherApp extends StatefulWidget {
   const TapTetherApp({super.key});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'TapTether',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          brightness: Brightness.dark,
-          useMaterial3: true,
-          colorSchemeSeed: const Color(0xFF57E6C2),
-          scaffoldBackgroundColor: const Color(0xFF102326),
-        ),
-        home: const RemoteScreen(),
-      );
+  State<TapTetherApp> createState() => _TapTetherAppState();
+}
+
+class _TapTetherAppState extends State<TapTetherApp> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(AppearanceController.instance.load());
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<ThemeMode>(
+    valueListenable: AppearanceController.instance,
+    builder: (context, mode, _) => MaterialApp(
+      title: 'TapTether',
+      debugShowCheckedModeBanner: false,
+      theme: TapTetherPalette.light(),
+      darkTheme: TapTetherPalette.dark(),
+      themeMode: mode,
+      builder: (context, navigator) => AppLockGate(
+        child: navigator ?? const SizedBox.shrink(),
+      ),
+      home: const RemoteScreen(),
+    ),
+  );
 }
 
 /// Pin the locally generated certificate. Never accept arbitrary certificates.
@@ -230,6 +247,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   bool searching = false;
   bool installingAgent = false;
   bool _showPairForm = false;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   String? discoveredName;
   final host = TextEditingController();
   final token = TextEditingController();
@@ -478,24 +496,165 @@ class _RemoteScreenState extends State<RemoteScreen> {
     if (addNew == true && mounted) setState(() => _showPairForm = true);
   }
 
+  Future<void> openSshKeys() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const SshKeyScreen(),
+    ));
+  }
+
+  Future<void> openSecuritySettings() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const SecuritySettingsScreen(),
+    ));
+  }
+
+  void showPairForm() {
+    if (agent.configured) agent.disconnect();
+    setState(() {
+      _showPairForm = true;
+      status = 'Enter verified computer pairing details.';
+    });
+  }
+
+  Widget appDrawer() => Drawer(
+    child: SafeArea(child: ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.asset('assets/branding/taptether.png',
+                  width: 54, height: 54),
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('TapTether',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const Text('Your network. Your control.'),
+              ],
+            )),
+          ]),
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.devices_outlined),
+          title: const Text('My Devices'),
+          onTap: () {
+            Navigator.pop(context);
+            if (agent.configured) {
+              agent.disconnect();
+              setState(() => status = 'Select a device to connect.');
+            }
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.key_outlined),
+          title: const Text('SSH Keys'),
+          onTap: () {
+            Navigator.pop(context);
+            openSshKeys();
+          },
+        ),
+        ExpansionTile(
+          leading: const Icon(Icons.add_circle_outline),
+          title: const Text('Add & Discover'),
+          childrenPadding: const EdgeInsets.only(left: 16),
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Pair computer'),
+              onTap: () {
+                Navigator.pop(context);
+                showPairForm();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code_scanner),
+              title: const Text('Scan QR'),
+              onTap: () {
+                Navigator.pop(context);
+                scanQrPairing();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.radar),
+              title: const Text('Discover computers'),
+              onTap: () {
+                Navigator.pop(context);
+                if (agent.configured) agent.disconnect();
+                searchNearby();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.install_desktop),
+              title: const Text('Install Ubuntu agent'),
+              onTap: installingAgent ? null : () {
+                Navigator.pop(context);
+                installUbuntuViaSsh();
+              },
+            ),
+          ],
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.shield_outlined),
+          title: const Text('Security & Appearance'),
+          onTap: () {
+            Navigator.pop(context);
+            openSecuritySettings();
+          },
+        ),
+        AboutListTile(
+          icon: const Icon(Icons.info_outline),
+          applicationName: 'TapTether',
+          applicationVersion: installedVersion,
+          child: const Text('About'),
+        ),
+      ],
+    )),
+  );
+
   Widget deviceDashboard() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Row(children: [
-        const Expanded(child: Text('My Devices',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
-        TextButton.icon(onPressed: openDeviceManager,
+        Expanded(child: Text('My Devices',
+          style: Theme.of(context).textTheme.headlineSmall)),
+        TextButton.icon(
+          onPressed: openDeviceManager,
           icon: const Icon(Icons.settings_outlined),
-          label: const Text('Manage')),
+          label: const Text('Manage'),
+        ),
       ]),
+      const SizedBox(height: 8),
       if (savedComputers.isEmpty)
-        const Card(child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('No saved computers. Add a verified computer '
-              'to connect later in one tap.'),
+        Card(child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.devices_other_outlined, size: 36),
+              const SizedBox(height: 12),
+              Text('No computers paired yet',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 6),
+              const Text('Pair a computer on your local network '
+                  'to reconnect with a single tap.'),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: showPairForm,
+                icon: const Icon(Icons.add),
+                label: const Text('Pair computer'),
+              ),
+            ],
+          ),
         ))
       else
-        for (final device in savedComputers.take(3))
+        for (final device in savedComputers)
           Card(child: ListTile(
             leading: Icon(device.platform == 'darwin'
                 ? Icons.laptop_mac : Icons.computer),
@@ -506,49 +665,39 @@ class _RemoteScreenState extends State<RemoteScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => connectSaved(device),
           )),
-      const SizedBox(height: 8),
-      SizedBox(width: double.infinity, child: FilledButton.icon(
-        onPressed: () => setState(() => _showPairForm = !_showPairForm),
-        icon: Icon(_showPairForm ? Icons.close : Icons.add),
-        label: Text(_showPairForm ? 'Hide manual pairing' : 'Add computer'),
-      )),
-      const SizedBox(height: 8),
-      Row(children: [
-        Expanded(child: OutlinedButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const SshKeyScreen())),
-          icon: const Icon(Icons.key_outlined),
-          label: const Text('SSH Keys'),
-        )),
-        const SizedBox(width: 8),
-        Expanded(child: OutlinedButton.icon(
-          onPressed: scanQrPairing,
-          icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Scan QR'),
-        )),
-      ]),
-      SizedBox(width: double.infinity, child: OutlinedButton.icon(
-        onPressed: installingAgent ? null : installUbuntuViaSsh,
-        icon: const Icon(Icons.install_desktop),
-        label: const Text('Install Ubuntu agent via SSH'),
-      )),
-      SizedBox(width: double.infinity, child: OutlinedButton.icon(
-        onPressed: searching ? null : searchNearby,
-        icon: searching
-            ? const SizedBox(width: 16, height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.radar),
-        label: Text(searching ? 'Searching local network…'
-            : 'Find nearby computers'),
-      )),
       for (final nearby in nearbyComputers)
-        ListTile(
-          leading: const Icon(Icons.computer),
+        Card(child: ListTile(
+          leading: const Icon(Icons.radar),
           title: Text(nearby.name),
           subtitle: Text('${nearby.host} · ${nearby.platform}'),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const Icon(Icons.add_link),
           onTap: () => selectDiscovered(nearby),
+        )),
+      const SizedBox(height: 20),
+      Text('Quick actions', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 6),
+      Wrap(spacing: 8, runSpacing: 4, children: [
+        ActionChip(
+          avatar: const Icon(Icons.add, size: 18),
+          label: const Text('Pair'),
+          onPressed: showPairForm,
         ),
+        ActionChip(
+          avatar: const Icon(Icons.qr_code_scanner, size: 18),
+          label: const Text('Scan QR'),
+          onPressed: scanQrPairing,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.radar, size: 18),
+          label: Text(searching ? 'Searching…' : 'Discover'),
+          onPressed: searching ? null : searchNearby,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.install_desktop, size: 18),
+          label: const Text('Install agent'),
+          onPressed: installingAgent ? null : installUbuntuViaSsh,
+        ),
+      ]),
       const SizedBox(height: 14),
     ],
   );
@@ -782,13 +931,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
   Widget build(BuildContext context) {
     final connected = agent.configured;
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: appDrawer(),
       appBar: AppBar(
-        leading: Padding(
-          padding: const EdgeInsets.all(7),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.asset('assets/branding/taptether.png'),
-          ),
+        leading: IconButton(
+          tooltip: 'Open navigation',
+          icon: const Icon(Icons.menu),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
         title: const Text('TapTether'), actions: [
         IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
@@ -796,8 +945,11 @@ class _RemoteScreenState extends State<RemoteScreen> {
         } : null, icon: const Icon(Icons.link_off)),
       ]),
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        const Text('Your devices. Your control. Your network.',
-            style: TextStyle(color: Color(0xFF57E6C2))),
+        Text('Your devices. Your control. Your network.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w500,
+            )),
         const SizedBox(height: 12),
         updateNotices(),
         if (!connected) ...[
@@ -907,10 +1059,12 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
         ],
         const SizedBox(height: 16),
-        Text(status, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+        Text(status, style: TextStyle(fontSize: 12,
+          color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 12),
         Center(child: Text('TapTether v$installedVersion',
-          style: const TextStyle(fontSize: 12, color: Colors.white54))),
+          style: TextStyle(fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant))),
       ])),
     );
   }

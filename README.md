@@ -236,3 +236,23 @@ All expensive GitHub build/release workflows remain **manual-only** after the pr
 - **Testing:** Unit tests cover multiple keys, selection, rename, duplicate
   rejection, and migration without identity rotation. Run Flutter analysis
   and real-device tests before distributing sensitive private-key exports.
+
+## v0.5.5 — Navigation, appearance, and app privacy
+
+- **Home:** My Devices is the default dashboard with saved computers front and
+  center, plus compact pairing and discovery quick actions at the bottom.
+- **Navigation:** Left drawer for My Devices, SSH Keys, grouped Add & Discover
+  (manual pairing, QR, local discovery, Ubuntu installer), Security & Appearance,
+  and About.
+- **Appearance:** Light neutral default with white surfaces, deep teal accents,
+  readable contrast, and an optional persistent dark mode.
+- **App lock:** Optional six-digit app PIN (salted PBKDF2-HMAC-SHA256 verifier
+  stored in Keychain/Android secure storage). Face ID, Touch ID, and Android
+  biometrics are optional after PIN setup. PIN is always the fallback.
+  Background lock delays: immediately, 30 seconds, 1 minute, or 5 minutes.
+- **Sensitive actions:** Private SSH key export requires reauthentication when
+  the app lock is enabled. No PIN, biometric data, or telemetry is uploaded.
+- **Native build:** Post-generation configuration adds iOS Face ID usage
+  description, Android biometric permission, and FlutterFragmentActivity.
+- **Release policy:** Normal commits do not initiate IPA/APK build workflows;
+  publish only after validated source and installers match the version.

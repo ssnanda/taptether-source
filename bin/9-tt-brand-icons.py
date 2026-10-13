@@ -78,6 +78,9 @@ def platform_network_permissions() -> None:
         info["NSCameraUsageDescription"] = (
             "TapTether scans a pairing QR displayed on your computer."
         )
+        info["NSFaceIDUsageDescription"] = (
+            "Unlock TapTether and protect your paired computers and SSH keys."
+        )
         with ios.open("wb") as fh:
             plistlib.dump(info, fh)
         print("iOS: configured local network discovery permission")
@@ -97,11 +100,28 @@ def platform_network_permissions() -> None:
             camera = ET.Element("uses-permission")
             camera.set(android_name, "android.permission.CAMERA")
             root.insert(0, camera)
+        if not any(item.get(android_name) == "android.permission.USE_BIOMETRIC"
+                   for item in root.findall("uses-permission")):
+            biometric = ET.Element("uses-permission")
+            biometric.set(android_name, "android.permission.USE_BIOMETRIC")
+            root.insert(0, biometric)
         application = root.find("application")
         if application is not None:
             application.set("{http://schemas.android.com/apk/res/android}label", "TapTether")
         tree.write(android, encoding="utf-8", xml_declaration=True)
-        print("Android: configured LAN network permission")
+        # local_auth requires FragmentActivity; flutter create regenerates this file.
+        activity_files = list((APP / "android/app/src/main").rglob("MainActivity.kt"))
+        activity_files += list((APP / "android/app/src/main").rglob("MainActivity.java"))
+        if len(activity_files) != 1:
+            raise SystemExit("Expected exactly one generated Android MainActivity")
+        activity = activity_files[0]
+        source = activity.read_text()
+        if "FlutterFragmentActivity" not in source:
+            if "FlutterActivity" not in source:
+                raise SystemExit("Could not configure biometric-capable MainActivity")
+            source = source.replace("FlutterActivity", "FlutterFragmentActivity")
+            activity.write_text(source)
+        print("Android: configured LAN and biometric permissions + FragmentActivity")
 
 def macos_icns(image: Image.Image) -> None:
     if sys.platform != "darwin" or not shutil.which("iconutil"):
