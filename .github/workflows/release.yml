@@ -1,7 +1,7 @@
 name: 'TapTether - Build, Release & Maintenance'
 
 # One workflow, one manual Run workflow control. No automatic builds on pushes.
-# Select Release, Validate Only, or Clean History when running manually.
+# Choose Release, Build or Validate. Cleanup is automatic after release / weekly.
 on:
   workflow_dispatch:
     inputs:
@@ -12,8 +12,8 @@ on:
         default: release
         options:
           - release
+          - build
           - validate
-          - cleanup
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
     - cron: '37 4 * * 0'
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   validate:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.task != 'cleanup' }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -101,7 +101,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ inputs.task == 'release' }}
+    if: ${{ inputs.task == 'release' || inputs.task == 'build' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +125,7 @@ jobs:
 
   build-and-publish:
     needs: build-ubuntu
-    if: ${{ inputs.task == 'release' }}
+    if: ${{ inputs.task == 'release' || inputs.task == 'build' }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -221,16 +221,31 @@ jobs:
       - name: Build Android APK
         run: bash bin/2a-tt-apk.sh --no-publish
 
+      - name: Make validated builds available (Build mode only)
+        if: ${{ inputs.task == 'build' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-complete-build-${{ github.run_id }}
+          path: |
+            dist/ios/*.ipa
+            dist/android/*.apk
+            dist/ubuntu/*.deb
+            dist/macos/*.tar.gz
+            dist/macos/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Publish current IPA, APK and agents to GitHub Releases
+        if: ${{ inputs.task == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash bin/6-tt-publish-latest.sh
 
   cleanup-history:
     needs: build-and-publish
-    # After a successful release, or on a standalone manual/weekly cleanup.
-    # always() lets maintenance run when build jobs were deliberately skipped.
-    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup' || (inputs.task == 'release' && needs.build-and-publish.result == 'success')) }}
+    # Weekly cleanup or after a successful release; never erase Build-mode assets.
+    # always() lets maintenance run when build jobs were intentionally skipped.
+    if: ${{ always() && (github.event_name == 'schedule' || (inputs.task == 'release' && needs.build-and-publish.result == 'success')) }}
     continue-on-error: true
     permissions:
       contents: read
