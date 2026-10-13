@@ -227,7 +227,11 @@ jobs:
         run: bash bin/6-tt-publish-latest.sh
 
   cleanup-history:
-    if: ${{ github.event_name == 'schedule' || inputs.task == 'cleanup' }}
+    needs: build-and-publish
+    # After a successful release, or on a standalone manual/weekly cleanup.
+    # always() lets maintenance run when build jobs were deliberately skipped.
+    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup' || (inputs.task == 'release' && needs.build-and-publish.result == 'success')) }}
+    continue-on-error: true
     permissions:
       contents: read
       actions: write
