@@ -13,6 +13,7 @@ for arch in amd64 arm64; do
   cp "$ROOT/bin/4-macos-agent-setup.sh" "$temp/taptetherctl-mac"
   cp "$ROOT/bin/8-tt-update-macos.sh" "$temp/taptether-agent-update-mac"
   cp "$ROOT/dist/branding/TapTether.icns" "$temp/TapTether.icns"
+  codesign --force --sign - --timestamp=none "$temp/taptether-agent"
   case "$arch" in
     amd64) swift_target="x86_64-apple-macos12.0" ;;
     arm64) swift_target="arm64-apple-macos12.0" ;;
