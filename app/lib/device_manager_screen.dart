@@ -178,8 +178,7 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 ? Icons.laptop_mac : Icons.computer),
             title: Text(device.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            subtitle: Text(device.host + ' · ' +
-                deviceLocations[device.location]!,
+            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}',
                 maxLines: 2, overflow: TextOverflow.ellipsis),
             onTap: _busy ? null : () => _action(device, 'connect'),
             trailing: PopupMenuButton<String>(
