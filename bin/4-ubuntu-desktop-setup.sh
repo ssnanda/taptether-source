@@ -25,38 +25,6 @@ user_bus() {
     export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
   fi
 }
-pin() {
-  if ! command -v gsettings >/dev/null 2>&1; then
-    note 'GNOME dock not available here. The launcher remains in Show Applications.'
-    return 0
-  fi
-  user_bus
-  if ! python3 - <<'PY'
-import ast
-import subprocess
-import sys
-try:
-    value = subprocess.check_output(
-        ['gsettings', 'get', 'org.gnome.shell', 'favorite-apps'],
-        text=True, stderr=subprocess.DEVNULL).strip()
-    if value.startswith('@as '):
-        value = value[4:]
-    entries = ast.literal_eval(value)
-    if not isinstance(entries, list):
-        raise ValueError('unexpected favorites setting')
-    if 'taptether.desktop' not in entries:
-        entries.append('taptether.desktop')
-        subprocess.run(['gsettings', 'set', 'org.gnome.shell', 'favorite-apps', str(entries)],
-                       check=True, stderr=subprocess.DEVNULL)
-    print('TapTether added to the GNOME dock.')
-except (OSError, ValueError, SyntaxError, subprocess.CalledProcessError) as exc:
-    print('Dock pinning was not possible over SSH:', exc, file=sys.stderr)
-    sys.exit(1)
-PY
-  then
-    note 'Pin it manually: Show Applications → TapTether → Add to Favorites.'
-  fi
-}
 unpin_legacy_launcher() {
   command -v gsettings >/dev/null 2>&1 || return 0
   user_bus
