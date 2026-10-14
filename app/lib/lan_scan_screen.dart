@@ -9,9 +9,11 @@ import 'computer_store.dart';
 class LanScanScreen extends StatefulWidget {
   const LanScanScreen({
     super.key, this.initialIp, this.knownComputers = const [],
+    this.macResolver,
   });
   final String? initialIp;
   final List<SavedComputer> knownComputers;
+  final Future<Map<String, String>> Function()? macResolver;
 
   @override
   State<LanScanScreen> createState() => _LanScanScreenState();
@@ -25,6 +27,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
   String? _notRespondingIp;
   bool _editedPrefix = false;
   List<LanHost> _hosts = [];
+  Map<String, String> _cachedMacs = {};
   bool _busy = false;
   bool _cancel = false;
   int _completed = 0;
@@ -78,6 +81,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
     setState(() {
       _error = null;
       _hosts = [];
+      _cachedMacs = {};
       _completed = 0;
       _total = targets.length * 254;
       _cancel = false;
@@ -111,6 +115,12 @@ class _LanScanScreenState extends State<LanScanScreen> {
             });
           });
         }
+      }
+      // A paired, authenticated desktop can read its own ARP cache;
+      // mobile iOS cannot directly inspect other devices' MAC addresses.
+      if (!_cancel && widget.macResolver != null) {
+        final neighbors = await widget.macResolver!();
+        if (mounted) setState(() => _cachedMacs = neighbors);
       }
     } catch (_) {
       if (mounted) {
@@ -169,7 +179,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
   String _subtitle(LanHost device) {
     final matches = widget.knownComputers.where((e) =>
         e.host == device.ip && e.macAddress.isNotEmpty);
-    final mac = device.macAddress ??
+    final mac = device.macAddress ?? _cachedMacs[device.ip] ??
         (matches.isNotEmpty ? matches.first.macAddress : null);
     return '${device.scanSubtitle}'
         '${mac == null || mac.isEmpty ? '' : '\nMAC: $mac'}';
@@ -320,9 +330,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
               onTap: () => Navigator.pop(context, device.ip),
             )),
           const SizedBox(height: 16),
-          Text('MAC addresses are shown for devices that reported them '
-              'through an authenticated pairing. Other MACs may be '
-              'unavailable on iOS.',
+          Text('MAC addresses come from paired agents or their LAN '
+              'neighbor caches when available. They may be missing '
+              'or stale, and do not prove a device is online.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 6),
           const Text('Tap any result to use its IP in the computer pairing form. '
