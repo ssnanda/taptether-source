@@ -204,8 +204,8 @@ diagnostics() {
     printf 'LaunchAgent: loaded but not running\n'
   fi
   local last_exit pid
-  last_exit="$(printf '%s\n' "$state" | awk '/last exit code = / {print $NF; exit}')"
-  pid="$(printf '%s\n' "$state" | awk '/pid = / {print $NF; exit}')"
+  last_exit="$(printf '%s\n' "$state" | awk '/last exit code = / {value=$NF} END {if (value != "") print value}')"
+  pid="$(printf '%s\n' "$state" | awk '/pid = / {value=$NF} END {if (value != "") print value}')"
   [[ "$last_exit" =~ ^[0-9]+$ ]] && printf 'Last exit code: %s\n' "$last_exit"
   [[ "$pid" =~ ^[0-9]+$ ]] && printf 'Process PID: %s\n' "$pid"
   if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:48321 -sTCP:LISTEN >/dev/null 2>&1; then
