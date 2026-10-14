@@ -696,7 +696,19 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     )),
   );
 
-  Widget deviceDashboard() => Column(
+  Widget deviceDashboard() {
+    final currentLocation = _locationFilter == 'automatic'
+        ? _detectedLocation
+        : (_locationFilter == 'all' ? null : _locationFilter);
+    final visibleDevices = savedComputers.where((device) {
+      final matchesLocation = currentLocation != null
+          ? device.location == currentLocation
+          : (_locationFilter == 'automatic' && _wifiRange != null
+              ? lanRangeContains(_wifiRange!, device.host)
+              : true);
+      return matchesLocation && (_showOffline || _online[device.id] == true);
+    }).toList();
+    return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Row(children: [
@@ -709,6 +721,64 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ),
       ]),
       const SizedBox(height: 8),
+      if (savedComputers.isNotEmpty) ...[
+        Row(children: [
+          Expanded(child: DropdownButtonFormField<String>(
+            key: const ValueKey('device-location-filter'),
+            initialValue: _locationFilter,
+            decoration: const InputDecoration(
+              isDense: true, labelText: 'Location'),
+            items: [
+              DropdownMenuItem(value: 'automatic',
+                child: Text(_detectedLocation == null
+                    ? 'Current network' : 'Current · ' +
+                        deviceLocations[_detectedLocation]!)),
+              const DropdownMenuItem(
+                value: 'all', child: Text('All locations')),
+              for (final category in deviceLocations.entries)
+                DropdownMenuItem(value: category.key, child: Text(category.value)),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _locationFilter = value);
+            },
+          )),
+          IconButton(
+            tooltip: 'Check online computers',
+            onPressed: _checkingHeartbeat ? null : _refreshHeartbeats,
+            icon: const Icon(Icons.refresh),
+          ),
+        ]),
+        Row(children: [
+          Checkbox(
+            key: const ValueKey('show-offline-devices'),
+            value: _showOffline,
+            onChanged: (value) => setState(() => _showOffline = value ?? false),
+          ),
+          const Text('Show offline'),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _wifiRange == null ? null : _labelCurrentNetwork,
+            icon: const Icon(Icons.location_on_outlined, size: 17),
+            label: const Text('Label network'),
+          ),
+        ]),
+        if (_wifiRange != null)
+          Text('Wi-Fi: ' + _wifiRange!.cidr +
+              (_detectedLocation == null ? ' · Unassigned'
+                  : ' · ' + deviceLocations[_detectedLocation]!),
+              style: Theme.of(context).textTheme.bodySmall),
+        if (_checkingHeartbeat)
+          const LinearProgressIndicator(),
+        const SizedBox(height: 8),
+        if (visibleDevices.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Text(_checkingHeartbeat
+                ? 'Checking which computers are online…'
+                : 'No online computers for this location. Select Show offline '
+                  'to see saved devices or change the location filter.'),
+          ),
+      ],
       if (savedComputers.isEmpty)
         Card(child: Padding(
           padding: const EdgeInsets.all(20),
@@ -732,15 +802,22 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           ),
         ))
       else
-        for (final device in savedComputers)
+        for (final device in visibleDevices)
           Card(child: ListTile(
             leading: Icon(device.platform == 'darwin'
                 ? Icons.laptop_mac : Icons.computer),
             title: Text(device.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            subtitle: Text(device.host, maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            trailing: const Icon(Icons.chevron_right),
+            subtitle: Text(device.host + ' · ' +
+                deviceLocations[device.location]! +
+                ' · ' + (_online[device.id] == true
+                    ? 'Online' : _online[device.id] == false
+                        ? 'Offline' : 'Checking…'),
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+            trailing: Icon(Icons.circle, size: 13,
+                color: _online[device.id] == true
+                    ? Colors.green : Theme.of(context)
+                        .colorScheme.outline),
             onTap: () => connectSaved(device),
           )),
       for (final nearby in nearbyComputers)
@@ -783,7 +860,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       ]),
       const SizedBox(height: 14),
     ],
-  );
+   );
+  }
 
   bool newerThan(String latest, String installed) {
     final pattern = RegExp(r'^([0-9]+)[.]([0-9]+)[.]([0-9]+)(?:[+]([0-9]+))?');
