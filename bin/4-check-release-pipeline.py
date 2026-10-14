@@ -18,9 +18,10 @@ assert "schedule:" in workflow
 assert "task:" in workflow
 assert all(f"- {mode}" in workflow for mode in ("release", "build", "validate"))
 assert "          - cleanup" not in workflow
-assert "  push:\n    branches: [main]" in workflow, (
-    "Auto-release only from main"
+assert "  push:\n    branches: [main, fix/v0.6-remote-scan-mac-details]" in workflow, (
+    "Main production releases and explicit branch-only Windows validation"
 )
+assert "github.ref == 'refs/heads/main'" in workflow
 assert "    paths:\n      - VERSION" in workflow, (
     "Automatically run releases only for explicit VERSION changes"
 )
