@@ -16,7 +16,7 @@ try {
     $cert.Dispose()
 }
 $addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-    Where-Object { $_.IPAddress -match '^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)' } |
+    Where-Object { $_.IPAddress -match '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' } |
     Select-Object -ExpandProperty IPAddress
 Write-Host 'TapTether Windows pairing details — PRIVATE' -ForegroundColor Cyan
 Write-Host ('LAN IP: ' + ($addresses -join ', '))
