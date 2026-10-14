@@ -193,7 +193,8 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
               onSelected: (action) => _action(device, action),
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'connect', child: Text('Connect')),
-                if (device.platform == 'linux' || device.platform == 'darwin')
+                if (device.platform == 'linux' || device.platform == 'darwin' ||
+                    device.platform == 'windows')
                   const PopupMenuItem(
                     value: 'update',
                     child: Row(children: [
