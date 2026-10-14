@@ -572,9 +572,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   }
 
   Future<void> updateSavedAgent(SavedComputer device) async {
-    if (device.platform != 'linux' && device.platform != 'darwin') {
+    if (device.platform != 'linux' && device.platform != 'darwin' &&
+        device.platform != 'windows') {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Windows local updates are not ready yet.'),
+        content: Text('This operating system has no supported updater.'),
       ));
       return;
     }
@@ -597,7 +598,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     // Existing installed agents own the update action and verify the release.
     // Ubuntu requires the user to have separately enabled noninteractive sudo.
     // Older agents or machines without it retain the SSH GUI fallback.
-    if (device.platform == 'darwin' || device.platform == 'linux') {
+    if (device.platform == 'darwin' ||
+        device.platform == 'linux' || device.platform == 'windows') {
       final client = LocalAgent();
       try {
         final phone = device.deviceId.isEmpty
@@ -908,7 +910,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                 maxLines: 2, overflow: TextOverflow.ellipsis),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               if (device.platform == 'linux' ||
-                  device.platform == 'darwin')
+                  device.platform == 'darwin' ||
+                  device.platform == 'windows')
                 IconButton(
                   tooltip: 'Update agent',
                   onPressed: () => updateSavedAgent(device),
