@@ -49,6 +49,7 @@ def check_deb(root: Path, version: str, arch: str) -> None:
     sources = {
         'usr/share/taptether/4-ubuntu-desktop-setup.sh': root / 'bin' / '4-ubuntu-desktop-setup.sh',
         'usr/share/taptether/7-tt-update-ubuntu.sh': root / 'bin' / '7-tt-update-ubuntu.sh',
+        'usr/share/taptether/9-tt-system-update-ubuntu.sh': root / 'bin' / '9-tt-system-update-ubuntu.sh',
         'usr/share/taptether/taptether_tray.py': root / 'desktop' / 'ubuntu' / 'taptether_tray.py',
     }
     expected = {'usr/local/bin/taptether-agent', 'usr/bin/taptether-setup',
