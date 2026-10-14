@@ -98,7 +98,7 @@ LanProbeHost? parseSsdpHost(String sourceIp, List<int> payload) {
   // No attacker-controlled markup, line breaks or oversized labels.
   final safe = label.replaceAll(RegExp(r'[^\w .()\/-]'), '').trim();
   return LanProbeHost(sourceIp,
-      safe.isEmpty ? 'UPnP device' : safe.substring(0, safe.length.clamp(0, 60)),
+      safe.isEmpty ? 'UPnP device' : safe.substring(0, safe.length > 60 ? 60 : safe.length),
       'SSDP');
 }
 
