@@ -33,6 +33,8 @@ for ARCH in amd64 arm64; do
   if [[ -s "$DEB" ]]; then cp "$DEB" "$STAGE/TapTetherAgent-Ubuntu-$ARCH.deb"; fi
   if [[ -s "$MAC" ]]; then cp "$MAC" "$STAGE/TapTetherAgent-macOS-$ARCH.tar.gz"; fi
   if [[ -s "$MAC_APP" ]]; then cp "$MAC_APP" "$STAGE/TapTetherAgent-macOS-$ARCH.zip"; fi
+  WIN="$ROOT/dist/windows/TapTetherAgent-Windows-$ARCH-$VERSION.zip"
+  if [[ -s "$WIN" ]]; then cp "$WIN" "$STAGE/TapTetherAgent-Windows-$ARCH.zip"; fi
 done
 if [[ "$HAS_IPA" -eq 1 ]]; then
   python3 "$ROOT/bin/6-tt-generate-altstore.py" \
@@ -42,12 +44,13 @@ else
   echo 'No current-version IPA found. Skipping altstore.json refresh.'
 fi
 # Never call this a successful release with missing or mixed-version assets.
-# All nine files must be produced by the verified agent + mobile jobs.
+# All eleven files must be produced by the verified agent + mobile jobs.
 expected_assets=(
   TapTether-icon.png TapTether.ipa TapTether.apk
   TapTetherAgent-Ubuntu-amd64.deb TapTetherAgent-Ubuntu-arm64.deb
   TapTetherAgent-macOS-amd64.tar.gz TapTetherAgent-macOS-arm64.tar.gz
   TapTetherAgent-macOS-amd64.zip TapTetherAgent-macOS-arm64.zip
+  TapTetherAgent-Windows-amd64.zip TapTetherAgent-Windows-arm64.zip
 )
 for asset in "${expected_assets[@]}"; do
   [[ -s "$STAGE/$asset" ]] || {
