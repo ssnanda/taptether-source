@@ -15,13 +15,15 @@ class InstallAgentScreen extends StatefulWidget {
   const InstallAgentScreen({
     super.key,
     required this.initialHost,
-    required this.onUbuntuInstalled,
+    required this.onInstalled,
     this.knownPlatform,
+    this.updateOnly = false,
   });
 
   final String initialHost;
   final String? knownPlatform;
-  final Future<bool> Function(InstalledAgent) onUbuntuInstalled;
+  final bool updateOnly;
+  final Future<bool> Function(InstalledAgent, String) onInstalled;
 
   @override
   State<InstallAgentScreen> createState() => _InstallAgentScreenState();
@@ -58,12 +60,14 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
     super.dispose();
   }
 
-  Future<void> _ubuntu() async {
+  Future<void> _sshInstallOrUpdate() async {
     final ip = _address.text.trim();
     await Navigator.of(context).push<void>(MaterialPageRoute(
       builder: (_) => UbuntuInstallScreen(
         initialHost: ip,
-        onInstalled: widget.onUbuntuInstalled,
+        isMac: _platform == 'darwin',
+        updateOnly: widget.updateOnly,
+        onInstalled: (installed) => widget.onInstalled(installed, _platform!),
       ),
     ));
   }
@@ -82,11 +86,11 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Install Agent')),
+      appBar: AppBar(title: Text(widget.updateOnly ? 'Update Agent' : 'Install Agent')),
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(18),
         children: [
-          Text('Install TapTether on a computer',
+          Text(widget.updateOnly ? 'Update TapTether remotely' : 'Install TapTether on a computer',
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           const Text('One installer screen for all supported computer types. '
@@ -125,24 +129,40 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
                 'An unpaired computer cannot be identified securely from '
                 'its IP address alone.'),
           if (_platform == 'linux') ...[
-            const Text('Ubuntu installation uses SSH and your saved phone '
-                'SSH key or Ubuntu password. No cloud account needed.'),
+            Text('Ubuntu ${widget.updateOnly ? 'update' : 'installation'} uses SSH '
+                'and your saved phone key or SSH password. '
+                'Package updates preserve your pairing credentials.'),
             const SizedBox(height: 12),
             FilledButton.icon(
-              onPressed: isPrivateIPv4(_address.text.trim()) ? _ubuntu : null,
+              onPressed: isPrivateIPv4(_address.text.trim())
+                  ? _sshInstallOrUpdate : null,
               icon: const Icon(Icons.terminal),
-              label: const Text('Install over SSH'),
+              label: Text(widget.updateOnly ? 'Update over SSH' : 'Install over SSH'),
             ),
           ],
           if (_platform == 'darwin') ...[
-            const Text('Download the macOS TapTether Agent.app ZIP on the '
-                'computer, open the app in Finder, and choose Install / '
-                'Repair. macOS may request Accessibility permission.'),
+            Text('macOS ${widget.updateOnly ? 'update' : 'installation'} '
+                'uses SSH Remote Login. Use a saved phone SSH key or your '
+                'Mac account password. The agent runs through launchd and '
+                'preserves your pairing. Sudo is not required.'),
+            const SizedBox(height: 8),
+            const Text('Before first setup, enable Remote Login in '
+                'System Settings > General > Sharing on the Mac. '
+                'A signed-in desktop session is needed for launchd. '
+                'Accessibility access must be approved on the Mac.'),
             const SizedBox(height: 12),
             FilledButton.icon(
+              onPressed: isPrivateIPv4(_address.text.trim())
+                  ? _sshInstallOrUpdate : null,
+              icon: const Icon(Icons.terminal),
+              label: Text(widget.updateOnly
+                  ? 'Update Mac over SSH' : 'Install Mac over SSH'),
+            ),
+            const SizedBox(height: 6),
+            TextButton.icon(
               onPressed: _openMacDownload,
               icon: const Icon(Icons.download_outlined),
-              label: const Text('Open macOS agent download'),
+              label: const Text('Manual macOS download (optional)'),
             ),
           ],
           if (_platform == 'windows') ...[
