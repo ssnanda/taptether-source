@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'computer_store.dart';
 import 'discovery.dart';
+import 'network_location.dart';
 
 /// Lists devices with previously verified TLS fingerprints and phone identity.
 /// Discovery alone is never treated as trusted pairing.
@@ -61,7 +62,7 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
     return value;
   }
 
-  Future<void> _edit(SavedComputer device, {String? name, String? host}) async {
+  Future<void> _edit(SavedComputer device, {String? name, String? host, String? location}) async {
     if (_busy) return;
     final nextName = (name ?? device.name).trim();
     final nextHost = (host ?? device.host).trim();
@@ -81,6 +82,8 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
         id: device.id, name: nextName, host: nextHost,
         token: device.token, fingerprint: device.fingerprint,
         platform: device.platform, deviceId: device.deviceId,
+        customName: name == null ? device.customName : true,
+        location: location ?? device.location,
       ));
       await _refresh();
     } catch (e) {
@@ -133,6 +136,11 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
             'Private IPv4', device.host);
         if (host != null && mounted) await _edit(device, host: host);
         return;
+      case 'home':
+      case 'office':
+      case 'other':
+        await _edit(device, location: action);
+        return;
       case 'forget':
         await _forget(device);
         return;
@@ -170,8 +178,9 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 ? Icons.laptop_mac : Icons.computer),
             title: Text(device.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            subtitle: Text(device.host, maxLines: 1,
-                overflow: TextOverflow.ellipsis),
+            subtitle: Text(device.host + ' · ' +
+                deviceLocations[device.location]!,
+                maxLines: 2, overflow: TextOverflow.ellipsis),
             onTap: _busy ? null : () => _action(device, 'connect'),
             trailing: PopupMenuButton<String>(
               tooltip: 'Manage ${device.name}', enabled: !_busy,
@@ -180,6 +189,11 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 PopupMenuItem(value: 'connect', child: Text('Connect')),
                 PopupMenuItem(value: 'rename', child: Text('Rename')),
                 PopupMenuItem(value: 'address', child: Text('Change LAN address')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'home', child: Text('Location: Home')),
+                PopupMenuItem(value: 'office', child: Text('Location: Office')),
+                PopupMenuItem(value: 'other', child: Text('Location: Other')),
+                PopupMenuDivider(),
                 PopupMenuItem(value: 'forget', child: Text('Forget device')),
               ],
             ),
