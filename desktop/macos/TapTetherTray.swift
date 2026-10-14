@@ -52,6 +52,20 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         }
         statusItem.menu = menu
         refreshStatus()
+        // Installed user agents sometimes remain unloaded after first login
+        // or an app update. Re-establish the LaunchAgent once, off the UI
+        // thread, without opening Terminal or showing unwanted popups.
+        if FileManager.default.isExecutableFile(atPath: controller) {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self = self else { return }
+                let target = "gui/" + String(getuid()) + "/" + agentLabel
+                let state = self.output("/bin/launchctl", ["print", target])
+                if !state.contains("state = running") {
+                    _ = self.output(controller, ["start"])
+                }
+                DispatchQueue.main.async { self.refreshStatus() }
+            }
+        }
         if !FileManager.default.isExecutableFile(atPath: controller),
            Bundle.main.path(forResource: "taptetherctl-mac", ofType: nil) != nil {
             DispatchQueue.main.async { [weak self] in self?.promptSetup() }
