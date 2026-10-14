@@ -12,6 +12,8 @@ void main() {
     expect(value.trackpadExpanded, true);
     expect(value.arrowsExpanded, false);
     expect(value.moreExpanded, false);
+    expect(value.presentationMode, false);
+    expect(value.presentationApp, 'powerPoint');
     expect(value.expandedSections, isEmpty);
     expect(value.quickKeys, defaultRemoteQuickKeys);
   });
@@ -23,6 +25,8 @@ void main() {
       trackpadExpanded: false,
       arrowsExpanded: true,
       moreExpanded: true,
+      presentationMode: true,
+      presentationApp: 'googleSlides',
       expandedSections: ['editing', 'volume'],
       quickKeys: ['paste', 'enter', 'escape'],
     );
@@ -32,6 +36,7 @@ void main() {
     final anotherHost = await store.read('192.168.68.87');
     expect(anotherHost.quickKeys, defaultRemoteQuickKeys);
     expect(anotherHost.trackpadExpanded, true);
+    expect(anotherHost.presentationMode, false);
   });
 
   test('rejects obsolete or duplicate controls and invalid sections', () {
@@ -39,11 +44,15 @@ void main() {
       'trackpadExpanded': false,
       'quickKeys': ['escape', 'removed', 'escape', 'paste'],
       'expandedSections': ['editing', 'unsupported', 'editing'],
+      'presentationMode': true,
+      'presentationApp': 'unsupported',
     });
     expect(parsed.quickKeys, ['escape', 'paste']);
     expect(remoteQuickKeyLabels['f12'], 'F12');
     expect(parsed.expandedSections, ['editing']);
     expect(parsed.trackpadExpanded, false);
+    expect(parsed.presentationMode, true);
+    expect(parsed.presentationApp, 'powerPoint');
   });
 
   test('malformed preferences restore a usable default remote', () async {
