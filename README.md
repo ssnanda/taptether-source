@@ -647,3 +647,7 @@ this patch corrects the final stale test and retries the gated release.
   passwords or private keys are included in exported diagnostics.
 - Increment the phone and agent release version to **0.6.10+30**.
   Updating VERSION on main triggers the single gated release workflow.
+
+### 0.6.10+31 validation hotfix
+
+The first 0.6.10+30 automatic release failed at Flutter analysis without publishing. This revision escapes the remote macOS shell's `$HOME` so Dart does not try to interpolate a nonexistent variable, and encloses the LAN scanner's conditional `continue` in braces to satisfy the Flutter lint. No device, pairing, or installer behavior changed.
