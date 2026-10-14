@@ -15,7 +15,7 @@ void main() {
     expect(PresentationShortcuts.start(PresentationApp.powerPoint, isMac: true),
         'cmd+shift+return');
     expect(PresentationShortcuts.start(PresentationApp.powerPoint, isMac: false),
-        'ctrl+f5');
+        'f5');
     expect(PresentationShortcuts.start(PresentationApp.googleSlides, isMac: true),
         'cmd+shift+return');
     expect(PresentationShortcuts.start(PresentationApp.googleSlides, isMac: false),
@@ -45,7 +45,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('slide-stop')));
     await tester.pump();
-    expect(pressed, ['Right', 'Left', 'ctrl+f5', 'b', 'Escape']);
+    expect(pressed, ['Right', 'Left', 'f5', 'b', 'Escape']);
     expect(find.textContaining('speaker notes'), findsOneWidget);
   });
 
