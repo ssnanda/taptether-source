@@ -262,12 +262,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
                       ? Icons.desktop_windows_outlined
                       : Icons.devices_other_outlined),
               title: Text(device.displayName),
-              subtitle: Text(
-                  'IP: ${device.ip}' +
-                  (device.displayName != device.deviceType
-                      ? ' · ${device.deviceType}' : '') +
-                  (device.openPorts.isNotEmpty
-                      ? '\nTCP: ${device.openPorts.join(", ")}' : '')),
+              subtitle: Text(device.scanSubtitle),
               isThreeLine: device.openPorts.isNotEmpty,
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.pop(context, device.ip),
