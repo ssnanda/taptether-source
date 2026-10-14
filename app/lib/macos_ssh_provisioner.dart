@@ -132,7 +132,7 @@ class MacSshProvisioner {
       final arch = macosArchiveArchitecture(lines[0], lines[1]);
       if (updateOnly) {
         final existing = await client.runWithResult(
-            'test -x "$HOME/.local/bin/taptether-agent"');
+            'test -x "\$HOME/.local/bin/taptether-agent"');
         if (existing.exitCode != 0) {
           throw StateError('[NOT-INSTALLED] No TapTether agent was found on '
               'this Mac. Choose Install Agent rather than Update Agent.');
