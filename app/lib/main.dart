@@ -437,7 +437,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     await connect();
   }
 
-  Future<void> openAgentInstaller() async => _launchAgentInstaller();
+  Future<void> openAgentInstaller() => _launchAgentInstaller();
 
   Future<void> _launchAgentInstaller({
     SavedComputer? device,
