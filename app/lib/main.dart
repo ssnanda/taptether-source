@@ -1342,6 +1342,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         } catch (_) {}
       }
       _connectedPlatform = agent.reportedPlatform ?? _connectedPlatform;
+      if (_connectedPlatform == 'windows' || _connectedPlatform == 'linux') {
+        _macShortcuts = false;
+      }
       if (verifiedName != null) discoveredName = verifiedName;
       if (mounted) {
         setState(() {
@@ -1771,7 +1774,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                     setState(() => mouseSensitivity = value),
               )),
             ]),
-            if (_connectedPlatform != 'linux')
+            if (_connectedPlatform != 'linux' &&
+                _connectedPlatform != 'windows')
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Mac shortcuts (⌘)'),
