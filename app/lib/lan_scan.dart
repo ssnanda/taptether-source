@@ -13,11 +13,46 @@ class LanHost {
     required this.hostname,
     required this.openPorts,
     this.macAddress,
+    this.platform,
+    this.agentAnnounced = false,
   });
   final String ip;
   final String hostname;
   final List<int> openPorts;
   final String? macAddress;
+  // UDP announcements are not authenticated; verification still requires
+  // the saved TLS fingerprint and credentials.
+  final String? platform;
+  final bool agentAnnounced;
+
+  String get deviceType {
+    if (agentAnnounced) {
+      switch (platform) {
+        case 'darwin': return 'Mac · TapTether agent (unverified)';
+        case 'linux': return 'Linux · TapTether agent (unverified)';
+        case 'windows': return 'Windows · TapTether agent (unverified)';
+        default: return 'TapTether agent (unverified)';
+      }
+    }
+    if (openPorts.contains(48321)) return 'TapTether computer (unverified)';
+    if (openPorts.contains(3389)) return 'Remote Desktop computer';
+    if (openPorts.contains(445)) return 'File sharing device';
+    if (openPorts.contains(22)) return 'SSH-enabled computer / server';
+    if (openPorts.contains(80) || openPorts.contains(443)) {
+      return 'Web-enabled device';
+    }
+    return 'Network device';
+  }
+
+  /// No duplicate IPv4 title/subtitle when DNS provides no hostname.
+  String get displayName => hostname.trim().isNotEmpty && hostname != ip
+      ? hostname : deviceType;
+
+  String get scanSubtitle {
+    final extra = displayName == deviceType ? '' : ' · $deviceType';
+    final tcp = openPorts.isEmpty ? '' : '\nTCP: ${openPorts.join(", ")}';
+    return 'IP: $ip$extra$tcp';
+  }
 
   String get deviceHint {
     if (openPorts.contains(48321)) return 'TapTether agent (likely)';
@@ -160,6 +195,91 @@ Future<DetectedLanRange?> detectLanRange() async {
 Future<String?> defaultScanPrefix() async =>
     (await detectLanRange())?.activePrefix;
 
+/// Merge a best-effort, unauthenticated agent announcement with TCP results
+/// by IP. Agent hosts can appear even if none of the scanned TCP ports responds.
+/// Never treat a UDP platform/name as proof of the computer's identity.
+List<LanHost> mergeDiscoveredAgents(
+  List<LanHost> tcpHosts,
+  List<DiscoveredDevice> announcements,
+  String prefix,
+) {
+  final byIp = <String, LanHost>{for (final host in tcpHosts) host.ip: host};
+  for (final device in announcements) {
+    if (!isPrivateIPv4(device.host) ||
+        prefixFromIp(device.host) != prefix) continue;
+    final existing = byIp[device.host];
+    byIp[device.host] = LanHost(
+      ip: device.host,
+      hostname: device.name,
+      openPorts: existing?.openPorts ?? const [],
+      macAddress: existing?.macAddress,
+      platform: device.platform,
+      agentAnnounced: true,
+    );
+  }
+  return byIp.values.toList()
+    ..sort((a, b) {
+      final aParts = a.ip.split('.').map(int.parse).toList();
+      final bParts = b.ip.split('.').map(int.parse).toList();
+      for (var i = 0; i < 4; i++) {
+        final diff = aParts[i].compareTo(bParts[i]);
+        if (diff != 0) return diff;
+      }
+      return 0;
+    });
+}
+
+/// User-requested one-IP check for computers like a Mac with firewall-
+/// protected ports. A non-responding host is *not* represented as online.
+Future<LanHost?> checkPrivateLanIp(
+  String ip, {
+  Duration timeout = const Duration(milliseconds: 550),
+}) async {
+  if (!isPrivateIPv4(ip)) {
+    throw const FormatException('Enter an address on a private LAN');
+  }
+  Future<bool> accepting(int port) async {
+    try {
+      final socket = await Socket.connect(ip, port, timeout: timeout);
+      socket.destroy();
+      return true;
+    } on SocketException {
+      return false;
+    } on TimeoutException {
+      return false;
+    }
+  }
+
+  final discovery = findNearbyDevices(
+    targetIp: ip,
+    duration: const Duration(milliseconds: 1100),
+  ).catchError((Object _) => <DiscoveredDevice>[]);
+  final listening = await Future.wait(lanScanPorts.map(accepting));
+  final ports = <int>[
+    for (var index = 0; index < lanScanPorts.length; index++)
+      if (listening[index]) lanScanPorts[index],
+  ];
+  final announcements = await discovery;
+  var hostname = ip;
+  if (ports.isNotEmpty) {
+    try {
+      final resolved = await InternetAddress(ip)
+          .reverse().timeout(const Duration(milliseconds: 650));
+      if (resolved.host != ip) hostname = resolved.host;
+    } catch (_) {
+      // Reverse DNS isn't required to probe a LAN address.
+    }
+  }
+  final matches = mergeDiscoveredAgents(
+    ports.isEmpty ? const <LanHost>[] : [
+      LanHost(ip: ip, hostname: hostname, openPorts: ports),
+    ],
+    announcements,
+    prefixFromIp(ip)!,
+  );
+  return matches.isEmpty ? null : matches.first;
+}
+
 /// Reports only hosts accepting at least one tested TCP port; this is
 /// not a complete inventory of devices behind firewalls or with no open ports.
 Future<List<LanHost>> scanPrivate24(
@@ -178,6 +298,12 @@ Future<List<LanHost>> scanPrivate24(
     throw const FormatException('Invalid scan bounds.');
   }
   final results = <LanHost>[];
+  // Probe the agent's local UDP discovery protocol alongside TCP. If UDP
+  // broadcast is blocked by iOS or a firewall the TCP scan still works.
+  final agentDiscovery = findNearbyDevices(
+    scanPrefix: prefix,
+    duration: const Duration(seconds: 2),
+  ).catchError((Object _) => <DiscoveredDevice>[]);
   var next = 1;
   var done = 0;
   Future<bool> listening(String host, int port) async {
@@ -225,9 +351,10 @@ Future<List<LanHost>> scanPrivate24(
     parallelism < hostCount ? parallelism : hostCount,
     (_) => worker(),
   ));
-  return results..sort((a, b) {
-    final left = a.ip.split('.').last;
-    final right = b.ip.split('.').last;
-    return int.parse(left).compareTo(int.parse(right));
-  });
+  if (cancelled?.call() ?? false) {
+    // Respect cancellation; do not add late discovery responses.
+    return mergeDiscoveredAgents(results, const [], prefix);
+  }
+  final announced = await agentDiscovery;
+  return mergeDiscoveredAgents(results, announced, prefix);
 }
