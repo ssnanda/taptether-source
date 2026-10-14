@@ -1001,6 +1001,207 @@ class _RemoteScreenState extends State<RemoteScreen> {
         child: Text(label, textAlign: TextAlign.center),
       ));
 
+
+  Future<void> _loadLayoutForHost(String expectedHost) async {
+    final loaded = await remoteLayoutStore.read(expectedHost);
+    if (mounted && agent.configured && host.text.trim() == expectedHost) {
+      setState(() => _remoteLayout = loaded);
+    }
+  }
+
+  void _setLayout(RemoteLayoutSettings next) {
+    setState(() => _remoteLayout = next);
+    unawaited(_persistLayout(host.text.trim(), next));
+  }
+
+  Future<void> _persistLayout(
+      String computer, RemoteLayoutSettings value) async {
+    if (computer.isEmpty) return;
+    try {
+      await remoteLayoutStore.write(computer, value);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Unable to save control preferences on this phone.'),
+        ));
+      }
+    }
+  }
+
+  RemoteLayoutSettings _changedLayout({
+    bool? trackpad,
+    bool? arrows,
+    bool? more,
+    List<String>? sections,
+    List<String>? quick,
+  }) => RemoteLayoutSettings(
+    trackpadExpanded: trackpad ?? _remoteLayout.trackpadExpanded,
+    arrowsExpanded: arrows ?? _remoteLayout.arrowsExpanded,
+    moreExpanded: more ?? _remoteLayout.moreExpanded,
+    expandedSections: sections ?? _remoteLayout.expandedSections,
+    quickKeys: quick ?? _remoteLayout.quickKeys,
+  );
+
+  void _toggleMoreSection(String id) {
+    final enabled = _remoteLayout.expandedSections.toSet();
+    if (!enabled.add(id)) enabled.remove(id);
+    _setLayout(_changedLayout(sections: enabled.toList()));
+  }
+
+  void _handleRemoteFailure(Object error) {
+    if (!mounted) return;
+    final disconnected = error is SocketException ||
+        error is TimeoutException ||
+        error is HandshakeException ||
+        error is HttpException;
+    setState(() {
+      if (disconnected) {
+        _connectionLost = true;
+        _connectionTechnical = error.toString();
+        status = 'Connection lost';
+        _pendingMoveX = 0;
+        _pendingMoveY = 0;
+        _pendingScroll = 0;
+      } else {
+        status = 'Remote command failed. Check the computer connection.';
+      }
+    });
+  }
+
+  Future<void> _retryRemoteConnection() async {
+    if (_retryingConnection || !agent.configured) return;
+    setState(() => _retryingConnection = true);
+    try {
+      await agent.send('ping');
+      if (mounted) {
+        setState(() {
+          _connectionLost = false;
+          _connectionTechnical = null;
+          status = 'Connected to ${host.text.trim()}';
+        });
+      }
+    } catch (error) {
+      _handleRemoteFailure(error);
+    } finally {
+      if (mounted) setState(() => _retryingConnection = false);
+    }
+  }
+
+  String _quickKeyCommand(String id) {
+    switch (id) {
+      case 'escape': return 'Escape';
+      case 'tab': return 'Tab';
+      case 'enter': return 'Return';
+      case 'backspace': return 'BackSpace';
+      case 'up': return 'Up';
+      case 'down': return 'Down';
+      case 'left': return 'Left';
+      case 'right': return 'Right';
+      case 'copy': return _shortcut('c');
+      case 'paste': return _shortcut('v');
+      case 'selectAll': return _shortcut('a');
+      case 'undo': return _shortcut('z');
+      case 'find': return _shortcut('f');
+      case 'newTab': return _shortcut('t');
+      case 'switchApp': return _macShortcuts ? 'cmd+tab' : 'alt+tab';
+      case 'home': return 'home';
+      case 'end': return 'end';
+      case 'pageUp': return 'pageup';
+      case 'pageDown': return 'pagedown';
+      case 'volumeDown': return 'XF86AudioLowerVolume';
+      case 'mute': return 'XF86AudioMute';
+      case 'volumeUp': return 'XF86AudioRaiseVolume';
+      default: throw ArgumentError.value(id, 'id', 'Unknown remote control');
+    }
+  }
+
+  Widget _quickKeyButton(String id) =>
+      keyButton(remoteQuickKeyLabels[id]!, _quickKeyCommand(id));
+
+  Future<void> _customizeQuickKeys() async {
+    final chosen = _remoteLayout.quickKeys.toList();
+    final result = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, updateSheet) => SafeArea(child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.75,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(children: [
+              Row(children: [
+                Expanded(child: Text('Customize quick keys',
+                    style: Theme.of(context).textTheme.titleLarge)),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, chosen),
+                  child: const Text('Save'),
+                ),
+              ]),
+              const Text('Choose visible buttons and move them up or down '
+                  'to set the order. These settings are saved per computer.'),
+              const SizedBox(height: 8),
+              Expanded(child: ListView(children: [
+                if (chosen.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text('No quick keys selected. Add buttons below.'),
+                  ),
+                for (var i = 0; i < chosen.length; i++)
+                  ListTile(
+                    key: ValueKey('quick-${chosen[i]}'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(remoteQuickKeyLabels[chosen[i]]!),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                        tooltip: 'Move up',
+                        icon: const Icon(Icons.arrow_upward),
+                        onPressed: i == 0 ? null : () => updateSheet(() {
+                          final key = chosen.removeAt(i);
+                          chosen.insert(i - 1, key);
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Move down',
+                        icon: const Icon(Icons.arrow_downward),
+                        onPressed: i == chosen.length - 1 ? null
+                            : () => updateSheet(() {
+                          final key = chosen.removeAt(i);
+                          chosen.insert(i + 1, key);
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => updateSheet(() => chosen.removeAt(i)),
+                      ),
+                    ]),
+                  ),
+                const Divider(),
+                Text('Available controls',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 4, children: [
+                  for (final entry in remoteQuickKeyLabels.entries)
+                    if (!chosen.contains(entry.key))
+                      ActionChip(
+                        avatar: const Icon(Icons.add, size: 18),
+                        label: Text(entry.value),
+                        onPressed: () => updateSheet(() => chosen.add(entry.key)),
+                      ),
+                ]),
+              ])),
+            ]),
+          ),
+        )),
+      ),
+    );
+    if (result != null && mounted) {
+      _setLayout(_changedLayout(quick: result));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final connected = agent.configured;
