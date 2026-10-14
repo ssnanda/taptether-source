@@ -168,10 +168,10 @@ assert "UbuntuSshProvisioner.install" in ssh_ui
 assert "Update Agent over SSH" in device_manager
 assert "onUpdate: (device)" in remote
 assert "macos" in stage and 'TapTetherAgent-macos-' in stage
-assert "MacSshProvisioner" in (ROOT / "app" / "test" /
-    "macos_ssh_provisioner_test.dart").read_text(encoding="utf-8") or (
-        ROOT / "app" / "test" / "macos_ssh_provisioner_test.dart"
-    ).is_file()
+mac_test = (ROOT / "app" / "test" /
+    "macos_ssh_provisioner_test.dart").read_text(encoding="utf-8")
+assert "macosPairingFromOutput" in mac_test
+assert "macosArchiveArchitecture" in mac_test
 assert "mergeDiscoveredAgents(" in lan
 assert "checkPrivateLanIp(" in lan
 assert "device.scanSubtitle" in scan_screen
