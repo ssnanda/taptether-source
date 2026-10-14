@@ -613,3 +613,37 @@ One previously existing drawer test still asserted the retired button text
 entry and verify the old OS-specific label is absent. The first build 28
 pipeline passed Flutter static analysis and 47 of 48 widget/unit tests;
 this patch corrects the final stale test and retries the gated release.
+
+## 0.6.10+30 — Remote SSH agent updates, Mac installation and scan improvements
+
+- **My Devices → Manage → Update Agent over SSH:** Update an existing,
+  paired Ubuntu or macOS agent directly from iPhone without visiting the
+  computer. This uses the selected saved phone SSH key or SSH password,
+  authenticates the SSH host key, and uploads the matching binary archive
+  from the phone's current release. Windows remains unsupported.
+- **Install Agent → macOS → Install over SSH:** Installs the native macOS
+  background agent and menu-bar application remotely. The existing
+  macOS user LaunchAgent setup is reused. The phone verifies the
+  release-bundled macOS archive by SHA-256, selects Intel/Apple Silicon
+  according to the SSH target, and uploads it by encrypted SFTP.
+  Installation is per-user and never uses sudo.
+- **Update is not first-time install:** Both SSH updaters require an
+  existing agent when Update is selected. Installing/updating does not
+  erase the Mac's pairing token, TLS identity or saved trusted host key.
+  TapTether connects again to verify the agent after installation.
+- **Mac prerequisites:** Enable *Remote Login* once under System Settings
+  > General > Sharing. The Mac needs an active desktop login for the
+  launchd GUI session. macOS Accessibility authorization still requires
+  confirmation on the Mac; SSH cannot silently bypass that approval.
+- **Scan fixes:** Discovered results show a hostname or best-effort
+  device type as the title and only one IP field, with observed TCP
+  services underneath. UDP TapTether-agent discovery can find responsive
+  agents even if the six scanned TCP ports are closed. Devices such as
+  an unseen MacBook can be checked by IP explicitly; no response is
+  labeled *not detected*, not *offline*. iOS does not permit reliable
+  ARP/MAC-vendor classification of arbitrary neighbors.
+- Tests cover macOS architecture, safe pairing extraction, shared SSH
+  install/update UI and scan discovery. No raw SSH output, pairing tokens,
+  passwords or private keys are included in exported diagnostics.
+- Increment the phone and agent release version to **0.6.10+30**.
+  Updating VERSION on main triggers the single gated release workflow.
