@@ -166,11 +166,21 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
             ),
           ],
           if (_platform == 'windows') ...[
-            const Text('Windows agent support is on the later roadmap. '
-                'Windows does not need SSH for basic local installation: '
-                'a future signed installer will run on the Windows PC '
-                'and pair with the phone using a QR code or pairing code. '
-                'Remote Windows installation is not yet available.'),
+            const Text('Install on your Windows computer (no SSH). '
+                'Download and extract the Windows agent ZIP, double-click '
+                'Install-TapTether.cmd, then Show-Pairing.cmd. '
+                'Enter the displayed private token and TLS fingerprint '
+                'to pair this phone. The agent starts at Windows sign-in.'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _openMacDownload,
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Download Windows agent'),
+            ),
+            if (widget.updateOnly)
+              const Text('For paired Windows computers with the new agent, '
+                  'use My Devices → Update Agent. Older versions can be '
+                  'upgraded locally by running the downloaded installer.'),
           ],
         ],
       )),
