@@ -6,50 +6,35 @@ import (
     "errors"
     "os"
     "os/exec"
-    "path/filepath"
     "sync"
     "time"
 )
 
-// Ubuntu package upgrades require elevated privileges. This is available
-// only where the computer owner has ALREADY configured noninteractive sudo.
-// No sudoers entries are added and no authorization is bypassed.
+// An installer-managed, narrowly authorized systemd unit performs package
+// updates as root. The input agent itself remains unprivileged and cannot
+// execute arbitrary commands or use sudo (NoNewPrivileges=true).
 var updateMu sync.Mutex
 var lastStart time.Time
 
-func helper() (string, error) {
-    home, err := os.UserHomeDir()
-    if err != nil { return "", err }
-    path := filepath.Join(home, ".local", "bin", "taptether-agent-update")
-    stat, err := os.Lstat(path)
-    if err != nil { return "", err }
-    if !stat.Mode().IsRegular() || stat.Mode().Perm()&0111 == 0 {
-        return "", errors.New("installed agent update helper is unavailable")
-    }
-    return path, nil
-}
-
 func Supported() bool {
-    if _, err := helper(); err != nil { return false }
-    // Never trigger an interactive sudo prompt inside a background service.
-    check := exec.Command("sudo", "-n", "true")
-    return check.Run() == nil
+    info, err := os.Stat("/etc/systemd/system/taptether-update.service")
+    return err == nil && info.Mode().IsRegular()
 }
 
 func Start() error {
     updateMu.Lock()
     defer updateMu.Unlock()
-    if time.Since(lastStart) < 3*time.Minute {
-        return errors.New("update was already requested")
-    }
-    path, err := helper()
-    if err != nil { return err }
     if !Supported() {
-        return errors.New("agent update requires preconfigured passwordless sudo")
+        return errors.New("install the new Ubuntu update service first")
     }
-    cmd := exec.Command("/bin/bash", path, "update")
+    if time.Since(lastStart) < 3*time.Minute {
+        return errors.New("update already requested")
+    }
+    // A fixed systemd unit, with a polkit rule restricted to this single
+    // operation, avoids broad passwordless sudo rights for the agent.
+    cmd := exec.Command("systemctl", "start", "--no-block", "taptether-update.service")
     cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
-    if err := cmd.Start(); err != nil { return err }
+    if err := cmd.Run(); err != nil { return err }
     lastStart = time.Now()
-    return cmd.Process.Release()
+    return nil
 }
