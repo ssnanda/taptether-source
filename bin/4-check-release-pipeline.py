@@ -150,6 +150,33 @@ assert "'hostname'" not in agent_main or '"hostname": hostname' in agent_main
 assert '"platform": runtime.GOOS' in agent_main
 assert "deviceLocations" in remote and "NetworkLocationStore" in remote
 
+# macOS and Ubuntu install/update are performed from the phone using
+# checksum-verified same-build assets and per-host trusted SSH identities.
+mac_ssh = (ROOT / "app" / "lib" / "macos_ssh_provisioner.dart").read_text(
+    encoding="utf-8")
+ssh_ui = (ROOT / "app" / "lib" / "ubuntu_install_screen.dart").read_text(
+    encoding="utf-8")
+device_manager = (ROOT / "app" / "lib" / "device_manager_screen.dart").read_text(
+    encoding="utf-8")
+assert "MacSshProvisioner" in mac_ssh
+assert "sha256.convert(archive)" in mac_ssh
+assert "rememberAuthenticated(input.host" in mac_ssh
+assert "updateOnly" in mac_ssh and "updateOnly" in provisioner
+assert "macosPairingFromOutput" in mac_ssh
+assert "MacSshProvisioner.install" in ssh_ui
+assert "UbuntuSshProvisioner.install" in ssh_ui
+assert "Update Agent over SSH" in device_manager
+assert "onUpdate: (device)" in remote
+assert "macos" in stage and 'TapTetherAgent-macos-' in stage
+mac_test = (ROOT / "app" / "test" /
+    "macos_ssh_provisioner_test.dart").read_text(encoding="utf-8")
+assert "macosPairingFromOutput" in mac_test
+assert "macosArchiveArchitecture" in mac_test
+assert "mergeDiscoveredAgents(" in lan
+assert "checkPrivateLanIp(" in lan
+assert "device.scanSubtitle" in scan_screen
+assert "Check a specific computer" in scan_screen
+
 
 print("PASS: one Actions workflow, auto Release on VERSION, three manual choices")
 print("PASS: validate -> native agents -> IPA/APK -> publish, with same-run artifacts")

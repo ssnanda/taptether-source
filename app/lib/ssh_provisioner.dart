@@ -40,6 +40,7 @@ class InstalledAgent {
 /// protected storage. Unexpected later changes are never silently accepted.
 class UbuntuSshProvisioner {
   static Future<InstalledAgent> install(SshInstallRequest input, {
+    bool updateOnly = false,
     void Function(String step)? onProgress,
     SshHostTrustStore? hostTrustStore,
   }) async {
@@ -120,7 +121,7 @@ class UbuntuSshProvisioner {
       await trust.rememberAuthenticated(input.host, observed);
       if (input.loginMethod == SshLoginMethod.password &&
           input.authorizePhoneKey) {
-        await _authorizePhoneKey(client, input.sshKeyId);
+        await authorizePhoneKey(client, input.sshKeyId);
       }
       progress('Checking Ubuntu architecture');
       final architectureResult = await client.runWithResult('dpkg --print-architecture');
@@ -130,6 +131,14 @@ class UbuntuSshProvisioner {
       final arch = utf8.decode(architectureResult.stdout).trim();
       if (arch != 'amd64' && arch != 'arm64') {
         throw StateError('Unsupported Ubuntu architecture.');
+      }
+      if (updateOnly) {
+        final existing = await client.runWithResult(
+            'test -x /usr/local/bin/taptether-agent');
+        if (existing.exitCode != 0) {
+          throw StateError('[NOT-INSTALLED] No TapTether agent found on Ubuntu. '
+              'Choose Install Agent instead of Update Agent.');
+        }
       }
       final manifest = jsonDecode(
           await rootBundle.loadString('assets/agents/manifest.json'));
@@ -272,7 +281,7 @@ if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
   /// Only an SSH connection to a separately verified host can add the public
   /// key after successful existing user authentication. No private key leaves
   /// the phone.
-  static Future<void> _authorizePhoneKey(SSHClient client, String? keyId) async {
+  static Future<void> authorizePhoneKey(SSHClient client, String? keyId) async {
     final publicKey = await PhoneSshKeyStore().publicKeyLine(id: keyId);
     final valid = publicKey != null &&
         RegExp(r'^ssh-ed25519 [A-Za-z0-9+/=]+ taptether-mobile')
