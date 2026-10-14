@@ -745,7 +745,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
       await agent.send('shutdown');
       if (mounted) setState(() => status = 'Shutdown requested.');
     } catch (e) {
-      if (mounted) setState(() => status = e.toString());
+      _handleRemoteFailure(e);
     }
   }
 
@@ -860,7 +860,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
             status = 'Typed phone clipboard into the active computer window.');
       }
     } catch (error) {
-      if (mounted) setState(() => status = 'Clipboard typing failed: $error');
+      _handleRemoteFailure(error);
     }
   }
   double _pendingMoveX = 0;
@@ -928,6 +928,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Future<bool> connect({String? existingId, String? deviceId}) async {
     try {
+      if (mounted) {
+        setState(() => _remoteLayout = const RemoteLayoutSettings());
+      }
       final phone = await PhoneIdentity.loadOrCreate();
       agent.configure(host.text, token.text, pin.text,
         identity: deviceId != null && deviceId.isNotEmpty ? phone : null,
@@ -1062,6 +1065,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
         _pendingMoveX = 0;
         _pendingMoveY = 0;
         _pendingScroll = 0;
+        _touches.clear();
       } else {
         status = 'Remote command failed. Check the computer connection.';
       }
