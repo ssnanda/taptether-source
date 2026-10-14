@@ -124,7 +124,9 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
     final valid = widget.isMac
         ? RegExp(r'^[a-zA-Z_][a-zA-Z0-9_.-]{0,63}$').hasMatch(username)
         : RegExp(r'^[a-z_][a-z0-9_-]{0,30}$').hasMatch(username);
-    return valid ? null : 'Enter a valid $_osLabel account username.';
+    return valid ? null : (widget.isMac
+        ? 'Enter a valid macOS short account username.'
+        : 'Enter a valid Ubuntu username.');
   }
 
   void _report(String stage) {
