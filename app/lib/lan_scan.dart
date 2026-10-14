@@ -129,7 +129,13 @@ Future<DetectedLanRange?> detectLanRange() async {
     final ip = await info.getWifiIP();
     final mask = await info.getWifiSubmask();
     if (ip != null && mask != null) {
-      final range = rangeFromWifi(ip, mask, ssid: await info.getWifiName());
+      String? ssid;
+      try {
+        ssid = await info.getWifiName();
+      } catch (_) {
+        // An unavailable SSID must not erase an otherwise valid CIDR.
+      }
+      final range = rangeFromWifi(ip, mask, ssid: ssid);
       if (range != null) return range;
     }
   } catch (_) {
