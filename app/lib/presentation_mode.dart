@@ -90,7 +90,7 @@ class PresentationControls extends StatelessWidget {
       children: [
         DropdownButtonFormField<PresentationApp>(
           key: const ValueKey('presentation-app'),
-          value: app,
+          initialValue: app,
           decoration: const InputDecoration(
             isDense: true,
             prefixIcon: Icon(Icons.slideshow_outlined),
