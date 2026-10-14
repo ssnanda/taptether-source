@@ -27,8 +27,9 @@ class PresentationShortcuts {
       case PresentationApp.keynote:
         return isMac ? 'alt+cmd+p' : null;
       case PresentationApp.powerPoint:
-        // PowerPoint desktop on Mac, PowerPoint web on Ubuntu.
-        return isMac ? 'cmd+shift+return' : 'ctrl+f5';
+        // Windows PowerPoint desktop uses F5; Mac uses the native
+        // full-screen slideshow shortcut.
+        return isMac ? 'cmd+shift+return' : 'f5';
       case PresentationApp.googleSlides:
         // Google Slides in a foreground browser, from the beginning.
         return isMac ? 'cmd+shift+return' : 'ctrl+f5';
