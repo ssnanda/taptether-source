@@ -101,6 +101,7 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
               LengthLimitingTextInputFormatter(15),
             ],
             autocorrect: false,
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
               labelText: 'Computer LAN IP',
               helperText: 'The local network prefix is filled automatically',
