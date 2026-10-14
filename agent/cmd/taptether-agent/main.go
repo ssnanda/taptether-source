@@ -30,6 +30,7 @@ import (
 	"github.com/ssnanda/taptether.com/agent/internal/input"
 	"github.com/ssnanda/taptether.com/agent/internal/identity"
 	"github.com/ssnanda/taptether.com/agent/internal/power"
+    "github.com/ssnanda/taptether.com/agent/internal/updater"
 )
 
 var version = "dev"
@@ -80,6 +81,41 @@ func main() {
 	mux := http.NewServeMux()
 	access := &identityAPI{devices: registry, legacyToken: token}
 	access.Register(mux)
+    // Upgrades require a previously paired, TLS-pinned phone. The server
+    // chooses its own fixed updater; clients never supply commands or URLs.
+    mux.HandleFunc("/api/update", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Cache-Control", "no-store")
+        if r.Method != http.MethodPost {
+            http.Error(w, "POST required", http.StatusMethodNotAllowed)
+            return
+        }
+        if r.TLS == nil || !privateRemote(r.RemoteAddr) {
+            http.Error(w, "LAN TLS required", http.StatusForbidden)
+            return
+        }
+        if !access.authorized(r) {
+            http.Error(w, "not paired", http.StatusUnauthorized)
+            return
+        }
+        r.Body = http.MaxBytesReader(w, r.Body, 256)
+        defer r.Body.Close()
+        var req struct { Confirm bool `json:"confirm"` }
+        d := json.NewDecoder(r.Body)
+        d.DisallowUnknownFields()
+        if d.Decode(&req) != nil || d.Decode(new(any)) != io.EOF || !req.Confirm {
+            http.Error(w, "explicit confirmation required", http.StatusBadRequest)
+            return
+        }
+        if !updater.Supported() {
+            http.Error(w, "use the built-in SSH updater or local installer", http.StatusNotImplemented)
+            return
+        }
+        if err := updater.Start(); err != nil {
+            http.Error(w, "update could not be started", http.StatusServiceUnavailable)
+            return
+        }
+        w.WriteHeader(http.StatusAccepted)
+    })
     mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Cache-Control", "no-store")
         if r.Method != http.MethodGet {
