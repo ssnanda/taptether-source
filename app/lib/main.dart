@@ -1457,7 +1457,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
         _advancedSection('preferences', 'Remote preferences',
           Icons.settings_outlined, Column(children: [
             Row(children: [
-              Text('Pointer: ' + mouseSensitivity.toStringAsFixed(1) + '×'),
+              Text('Pointer: ${mouseSensitivity.toStringAsFixed(1)}×'),
               Expanded(child: Slider(
                 value: mouseSensitivity, min: 1.0, max: 8.0, divisions: 28,
                 onChanged: (value) =>
