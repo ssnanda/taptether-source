@@ -17,6 +17,7 @@ import 'phone_identity.dart';
 import 'qr_pairing.dart';
 import 'ssh_key_screen.dart';
 import 'ubuntu_install_screen.dart';
+import 'install_agent_screen.dart';
 import 'lan_scan_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -429,26 +430,28 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     await connect();
   }
 
-  Future<void> installUbuntuViaSsh() async {
+  Future<void> openAgentInstaller() async {
     if (installingAgent) return;
     setState(() => installingAgent = true);
     try {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(builder: (_) => UbuntuInstallScreen(
-          initialHost: host.text,
-          onInstalled: (installed) async {
+      final address = host.text.trim();
+      final known = savedComputers.where((d) => d.host == address);
+      final knownPlatform = agent.reportedPlatform ??
+          (known.isNotEmpty ? known.first.platform : _connectedPlatform);
+      await Navigator.of(context).push<void>(MaterialPageRoute(
+        builder: (_) => InstallAgentScreen(
+          initialHost: address,
+          knownPlatform: knownPlatform,
+          onUbuntuInstalled: (installed) async {
             host.text = installed.host;
             token.text = installed.token;
             pin.text = installed.fingerprint;
             discoveredName = installed.host;
             _connectedPlatform = 'linux';
-            // Require an authenticated TLS-pinned ping AND successful
-            // persistence. An existing device record must never mask a failed
-            // pairing or a failed secure-storage write.
             return connect();
           },
-        )),
-      );
+        ),
+      ));
     } finally {
       if (mounted) setState(() => installingAgent = false);
     }
@@ -669,10 +672,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
             ),
             ListTile(
               leading: const Icon(Icons.install_desktop),
-              title: const Text('Install Ubuntu agent'),
+              title: const Text('Install Agent'),
               onTap: installingAgent ? null : () {
                 Navigator.pop(context);
-                installUbuntuViaSsh();
+                openAgentInstaller();
               },
             ),
           ],
@@ -855,7 +858,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ActionChip(
           avatar: const Icon(Icons.install_desktop, size: 18),
           label: const Text('Install agent'),
-          onPressed: installingAgent ? null : installUbuntuViaSsh,
+          onPressed: installingAgent ? null : openAgentInstaller,
         ),
       ]),
       const SizedBox(height: 14),
