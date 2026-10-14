@@ -54,8 +54,22 @@ def check_deb(root: Path, version: str, arch: str) -> None:
     expected = {'usr/local/bin/taptether-agent', 'usr/bin/taptether-setup',
                 'usr/share/taptether/TapTether-icon.png', *sources.keys()}
     with tarfile.open(fileobj=io.BytesIO(ar['data.tar.gz']), mode='r:gz') as tf:
-        entries = {m.name: m for m in tf.getmembers() if m.isfile()}
+        members = {m.name.rstrip('/'): m for m in tf.getmembers()}
+        entries = {name: m for name, m in members.items() if m.isfile()}
         require(expected <= entries.keys(), f'{archive}: missing payload: {sorted(expected - entries.keys())}')
+        # A tar archive of files alone may list correctly with dpkg-deb
+        # --contents but fail to install on a clean Ubuntu computer:
+        # every parent directory must be a real directory entry in data.tar.
+        for name in expected:
+            for parent in PurePosixPath(name).parents:
+                directory = parent.as_posix()
+                if directory == '.':
+                    continue
+                member = members.get(directory)
+                require(member is not None and member.isdir(),
+                        f'{archive}: missing parent directory: {directory}/')
+                require(member.mode & 0o111 == 0o111,
+                        f'{archive}: parent directory not traversable: {directory}/')
         for package_name, source in sources.items():
             require(tf.extractfile(entries[package_name]).read() == source.read_bytes(),
                     f'{archive}: outdated bundled helper {package_name}')
