@@ -36,7 +36,9 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
   bool _busy = false;
   bool _success = false;
   String? _error;
+  String? _failureStage;
   String _stage = '';
+  final List<String> _installSteps = [];
   InstalledAgent? _installed;
 
   @override
@@ -84,7 +86,37 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
           ? null : 'Enter a valid Ubuntu username.';
 
   void _report(String stage) {
-    if (mounted) setState(() => _stage = stage);
+    if (mounted) {
+      setState(() {
+        _stage = stage;
+        if (_installSteps.isEmpty || _installSteps.last != stage) {
+          _installSteps.add(stage);
+        }
+      });
+    }
+  }
+
+  /// Explicitly shareable report, built only from local UI selections and
+  /// fixed safe diagnostics. Never include SSH command output or secrets.
+  String _diagnosticsReport() => [
+        'TapTether Ubuntu installer diagnostics (v0.6.4+22)',
+        'Computer: ${_host.text.trim()}',
+        'Ubuntu username: ${_username.text.trim()}',
+        'SSH method: ${_login == SshLoginMethod.phoneKey ? 'saved phone key' : 'password'}',
+        'Sudo password entered: ${_sudoPassword.text.isNotEmpty ? 'yes' : 'no'}',
+        'Failed stage: ${_failureStage ?? _stage}',
+        if (_installSteps.isNotEmpty)
+          'Stages reached: ${_installSteps.join(' > ')}',
+        'Result: ${_error ?? 'No error recorded'}',
+        'Passwords, SSH private keys, pairing tokens, and raw remote logs excluded.',
+      ].join('\n');
+
+  Future<void> _copyDiagnostics() async {
+    await Clipboard.setData(ClipboardData(text: _diagnosticsReport()));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Safe installer diagnostics copied')));
+    }
   }
 
   Future<void> _pairInstalled() async {
@@ -102,6 +134,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
               'verify and save the phone pairing. You can retry pairing.';
         _stage = paired ? 'Installed and paired successfully'
             : 'Installed, but not paired';
+        _failureStage = paired ? null : 'Pairing and saving computer';
       });
     } catch (_) {
       if (!mounted) return;
@@ -110,6 +143,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
         _error = 'Ubuntu installation completed, but pairing failed. '
             'Check the device connection and retry pairing.';
         _stage = 'Installed, but not paired';
+        _failureStage = 'Pairing and saving computer';
       });
     }
   }
@@ -125,6 +159,8 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
       _busy = true;
       _success = false;
       _error = null;
+      _failureStage = null;
+      _installSteps.clear();
       _installed = null;
       _stage = 'Preparing secure local connection';
     });
@@ -147,6 +183,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
         setState(() {
           _busy = false;
           _error = error.message;
+          _failureStage = _stage;
           _stage = 'Could not start installation';
         });
       }
@@ -154,6 +191,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
+        _failureStage = _stage;
         // Never include SSH command output or credentials in a status view.
         _error = error is StateError ? error.message.toString() :
             'SSH installation failed at: $_stage. '
@@ -294,7 +332,8 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                       controller: _sudoPassword,
                       decoration: const InputDecoration(
                         labelText: 'Sudo password (optional)',
-                        helperText: 'Blank only if the Ubuntu account allows passwordless sudo. SSH key login does not grant sudo access.'),
+                        helperText: 'Blank only if the Ubuntu account allows passwordless sudo. SSH key login does not grant sudo access.',
+                        helperMaxLines: 3),
                       obscureText: true,
                       enableSuggestions: false,
                       autocorrect: false,
@@ -339,6 +378,26 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                           style: TextStyle(fontWeight: FontWeight.w600)),
                       const SizedBox(height: 6),
                       Text(_error!),
+                      const SizedBox(height: 12),
+                      ExpansionTile(
+                        title: const Text('Installation diagnostics'),
+                        subtitle: const Text('View stages and copy a safe report'),
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: EdgeInsets.zero,
+                        children: [
+                          SelectableText(_diagnosticsReport(),
+                              style: Theme.of(context).textTheme.bodySmall),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: _copyDiagnostics,
+                              icon: const Icon(Icons.copy_outlined),
+                              label: const Text('Copy diagnostics'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 )),

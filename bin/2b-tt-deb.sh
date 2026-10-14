@@ -70,7 +70,7 @@ for arch in ('amd64', 'arm64'):
         'Priority: optional\n'
         f'Architecture: {arch}\n'
         'Maintainer: TapTether <support@taptether.com>\n'
-        'Depends: xdotool\n'
+        'Suggests: xdotool\n'
         'Description: TapTether Wayland/X11 virtual keyboard, mouse and volume agent\n'
         ' A local HTTPS remote input agent with native Linux uinput support.\n'
         ' No cloud account or telemetry.\n'
