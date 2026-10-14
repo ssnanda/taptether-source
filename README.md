@@ -605,3 +605,11 @@ network scanning, Wi-Fi location detection and installer screens.
 The underlying 0.6.9 device/presentation feature set is unchanged.
 Both VERSION and the mobile build number advance to 0.6.9+28, so the
 single automatic Release workflow can retry on the merge to main.
+
+### 0.6.9+29 — unified installer widget regression fix
+
+One previously existing drawer test still asserted the retired button text
+`Install Ubuntu agent`. Update it to require the actual `Install Agent`
+entry and verify the old OS-specific label is absent. The first build 28
+pipeline passed Flutter static analysis and 47 of 48 widget/unit tests;
+this patch corrects the final stale test and retries the gated release.
