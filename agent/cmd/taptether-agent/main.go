@@ -137,6 +137,7 @@ func main() {
         _ = json.NewEncoder(w).Encode(map[string]any{
             "version": version, "shutdownEnabled": power.Enabled(),
             "hostname": hostname, "platform": runtime.GOOS,
+            "macAddress": localHardwareAddress(),
         })
     })
     var mu sync.Mutex
@@ -287,3 +288,26 @@ func ensureCertificate(crt, key string) error {
 
 // A CN is not required for cert pinning; the certificate is never publicly trusted.
 func pkixName() pkix.Name { return pkix.Name{CommonName: "TapTether Local Agent"} }
+
+ // localHardwareAddress is included only in authenticated /api/info.
+ // Prefer an active interface with an RFC1918 IPv4 address, ignoring VPN
+ // tunnel/loopback adapters and random virtual interfaces when possible.
+func localHardwareAddress() string {
+    interfaces, err := net.Interfaces()
+    if err != nil { return "" }
+    for _, network := range interfaces {
+        if network.Flags&net.FlagUp == 0 || network.Flags&net.FlagLoopback != 0 ||
+            len(network.HardwareAddr) != 6 { continue }
+        addresses, err := network.Addrs()
+        if err != nil { continue }
+        for _, address := range addresses {
+            ipv4, ok := address.(*net.IPNet)
+            if !ok { continue }
+            ip := ipv4.IP.To4()
+            if ip != nil && ip.IsPrivate() {
+                return strings.ToUpper(network.HardwareAddr.String())
+            }
+        }
+    }
+    return ""
+}
