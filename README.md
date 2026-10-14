@@ -535,3 +535,29 @@ single GitHub Release workflow after merging; no build on push.
 
 macOS service startup still requires physical-device testing and macOS
 Accessibility permission; no code can automatically bypass that OS prompt.
+
+## 0.6.9+27 — landscape remote and basic presentation controller
+
+- Rotating a connected iPhone or Android phone to **landscape** switches
+  the normal remote to a split-screen layout: large trackpad on the left,
+  scrollable typing, quick keys, arrows and More controls on the right.
+  Both sides respect the saved trackpad/button visibility settings.
+  Portrait remains compact and collapsible.
+- Switch between **Remote** and **Presentation** while connected. Presenter
+  mode uses large Previous/Next arrows and Start, Blank/Restore and
+  End (Esc) controls. These are authenticated local keyboard shortcuts
+  sent to the currently focused presentation application.
+- Choose **PowerPoint**, **Google Slides** or **Keynote** (Mac only).
+  Start uses the platform's application shortcut; arrows, B and Esc
+  control the already-running slideshow. No desktop API permissions
+  beyond the normal TapTether agent are required.
+- Remember chosen presentation app and Remote/Presentation view
+  separately on each computer. Entering presentation mode does not
+  take over the display or inspect slides.
+- **Later roadmap, not implemented:** speaker notes, slide thumbnails,
+  slide counters, presenter display mirroring or optional screen
+  sharing. These require a future consent-based screen-sharing or
+  application-specific integration and are not part of 0.6.
+- Bump `VERSION` and `app/pubspec.yaml` to 0.6.9+27.
+  The single GitHub Actions workflow automatically validates, builds
+  and publishes on this `VERSION` change to `main`.
