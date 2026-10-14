@@ -56,9 +56,17 @@ bool isPrivateIPv4(String input) {
 Future<List<DiscoveredDevice>> findNearbyDevices({
   Duration duration = const Duration(seconds: 2),
   String? scanPrefix,
+  String? targetIp,
 }) async {
   if (scanPrefix != null && !isPrivateIPv4('$scanPrefix.1')) {
     throw const FormatException('Discovery requires a private /24 prefix');
+  }
+  if (targetIp != null && !isPrivateIPv4(targetIp)) {
+    throw const FormatException('Discovery target must be a private IPv4');
+  }
+  if (targetIp != null && scanPrefix != null &&
+      !targetIp.startsWith('$scanPrefix.')) {
+    throw const FormatException('Discovery target outside selected subnet');
   }
   final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
   socket.broadcastEnabled = true;
@@ -75,6 +83,15 @@ Future<List<DiscoveredDevice>> findNearbyDevices({
     final probe = utf8.encode('TAPTETHER_DISCOVER_V1');
     // Try LAN broadcast plus limited on-link unicast. Some iOS networks
     // disallow broadcast without special entitlements, but permit unicast.
+    if (targetIp != null) {
+      try {
+        socket.send(probe, InternetAddress(targetIp), 48322);
+      } on SocketException {
+        // Target may have no agent or local network may be restricted.
+      }
+      await Future<void>.delayed(duration);
+      return devices.values.toList();
+    }
     try {
       socket.send(probe, InternetAddress('255.255.255.255'), 48322);
     } on SocketException {
