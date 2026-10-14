@@ -595,3 +595,13 @@ Accessibility permission; no code can automatically bypass that OS prompt.
 layout retention, /22 scanning, network labels and device filtering.
 Physical iPhone/Android, Ubuntu and macOS regression checks are still
 required before declaring remote control hardware-verified.
+
+### 0.6.9+28 — strict Flutter analyzer repair
+
+The first automatic 0.6.9+27 release stopped at Flutter static analysis
+with 17 informational lint findings. This revision repairs string
+interpolation and missing control-flow braces throughout device management,
+network scanning, Wi-Fi location detection and installer screens.
+The underlying 0.6.9 device/presentation feature set is unchanged.
+Both VERSION and the mobile build number advance to 0.6.9+28, so the
+single automatic Release workflow can retry on the merge to main.
