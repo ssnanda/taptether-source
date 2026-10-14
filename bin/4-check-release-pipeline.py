@@ -26,6 +26,23 @@ assert "    needs: validate" in workflow
 assert "inputs.task == 'release' || inputs.task == 'build'" in workflow
 assert "  build-and-publish:" in workflow
 assert "    needs: build-ubuntu" in workflow
+# All scripts invoked directly by a release build must have an executable
+# Git mode; bash-invoked scripts are permitted to be non-executable.
+for script in (
+    "bin/2b-tt-agent.sh",
+    "bin/2b-tt-ubuntu.sh",
+    "bin/2b-tt-deb.sh",
+    "bin/2b-tt-macos.sh",
+    "bin/2e-tt-stage-mobile-agents.sh",
+):
+    assert (ROOT / script).stat().st_mode & 0o111, (
+        f"{script} must be executable in Git; check chmod +x"
+    )
+ubuntu_builder = (ROOT / "bin" / "2b-tt-ubuntu.sh").read_text(encoding="utf-8")
+assert 'bash "$ROOT/bin/2b-tt-deb.sh"' in ubuntu_builder, (
+    "Invoke the Debian package builder via bash to avoid exit 126"
+)
+
 assert "run: bash bin/2b-tt-ubuntu.sh" in workflow
 assert "run: bash bin/2b-tt-macos.sh" in workflow
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
