@@ -112,6 +112,9 @@ class LocalAgent {
     _deviceId = deviceId;
     _session = null;
     _sessionExpires = null;
+    _reportedHostname = null;
+    _reportedPlatform = null;
+    _shutdownEnabled = false;
   }
 
   static bool _isLocalHost(String host) {
@@ -273,6 +276,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   String _locationFilter = 'automatic';
   bool _showOffline = false;
   bool _checkingHeartbeat = false;
+  String? _lastNetworkId;
   final Map<String, bool> _online = {};
   RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
   String? _connectedPlatform;
@@ -327,8 +331,11 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   Future<void> _refreshNetworkLocation() async {
     final current = await detectLanRange();
     final label = await networkLocationStore.locationFor(current);
+    final identity = networkLocationStore.identifier(current);
     if (mounted) {
       setState(() {
+        if (_lastNetworkId != identity) _online.clear();
+        _lastNetworkId = identity;
         _wifiRange = current;
         _detectedLocation = label;
       });
@@ -1224,7 +1231,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           customName: existing?.customName ?? false,
         );
         final updated = await deviceStore.upsert(device);
-        if (mounted) setState(() => savedComputers = updated);
+        if (mounted) setState(() {
+          savedComputers = updated;
+          _online[device.id] = true;
+        });
         unawaited(_loadLayoutForHost(host.text.trim()));
         return true;
       } catch (_) {
