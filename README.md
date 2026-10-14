@@ -474,3 +474,18 @@ the actual Ubuntu hosts. The user triggers Release only after merge.
   disposable Ubuntu builder. A bad package stops release publication.
 - Normal pushes still do not trigger builds. Only user-initiated Release
   validates, builds and publishes.
+
+### 0.6.6+24 packaging hotfix — parent directories in Ubuntu .deb
+
+The first attempted 0.6.6+24 release failed at GitHub's native dpkg
+installation step. The custom Debian package builder wrote files such as
+`usr/share/taptether/4-ubuntu-desktop-setup.sh` without recording the
+`usr/`, `usr/share/` and `usr/share/taptether/` directories in
+`data.tar.gz`. Dpkg could list the package but could not unpack it on a
+fresh system.
+
+The builder now declares each unique parent directory with safe mode 0755
+before writing files. Package auditing rejects incomplete directory
+structures, and a fast offline regression test runs in the validation job.
+The existing native dpkg install gate remains in place. The version stays
+0.6.6+24 because the failed attempt did not publish a release.
