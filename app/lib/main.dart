@@ -1300,6 +1300,86 @@ class _RemoteScreenState extends State<RemoteScreen> {
     ),
   );
 
+  List<Widget> _moreControlSections() => [
+        _advancedSection('editing', 'Editing & shortcuts',
+          Icons.edit_outlined, Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(spacing: 8, runSpacing: 4, children: [
+                for (final id in [
+                  'copy', 'paste', 'selectAll', 'undo', 'find', 'newTab',
+                  'switchApp',
+                ]) _quickKeyButton(id),
+              ]),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _connectionLost ? null : typePhoneClipboard,
+                icon: const Icon(Icons.content_paste_go),
+                label: const Text('Type phone clipboard'),
+              ),
+              Text('Explicit action only · up to 4 KB · no clipboard sync',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+        _advancedSection('extended', 'Extended keyboard',
+          Icons.keyboard_alt_outlined, Wrap(
+            spacing: 8, runSpacing: 4, children: [
+              for (final id in ['home', 'end', 'pageUp', 'pageDown'])
+                _quickKeyButton(id),
+              for (var f = 1; f <= 12; f++) keyButton('F$f', 'f$f'),
+            ],
+          ),
+        ),
+        _advancedSection('volume', 'Volume & media',
+          Icons.volume_up_outlined, Wrap(
+            spacing: 8, runSpacing: 4, children: [
+              for (final id in ['volumeDown', 'mute', 'volumeUp'])
+                _quickKeyButton(id),
+            ],
+          ),
+        ),
+        _advancedSection('power', 'Power',
+          Icons.power_settings_new_outlined, Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              OutlinedButton.icon(
+                onPressed: agent.shutdownEnabled ? confirmShutdown : null,
+                icon: const Icon(Icons.power_settings_new),
+                label: const Text('Shut down computer'),
+              ),
+              if (!agent.shutdownEnabled)
+                const Text('Remote shutdown is disabled. Enable it on '
+                    'Ubuntu with taptetherctl enable-shutdown.'),
+            ],
+          ),
+        ),
+        _advancedSection('preferences', 'Remote preferences',
+          Icons.settings_outlined, Column(children: [
+            Row(children: [
+              Text('Pointer: ${mouseSensitivity.toStringAsFixed(1)}×'),
+              Expanded(child: Slider(
+                value: mouseSensitivity, min: 1.0, max: 8.0, divisions: 28,
+                onChanged: (value) =>
+                    setState(() => mouseSensitivity = value),
+              )),
+            ]),
+            if (_connectedPlatform != 'linux')
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Mac shortcuts (⌘)'),
+                value: _macShortcuts,
+                onChanged: (value) => setState(() => _macShortcuts = value),
+              ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Haptic feedback'),
+              value: _haptics,
+              onChanged: (value) => setState(() => _haptics = value),
+            ),
+          ]),
+        ),
+  ];
+
   Widget _connectedControls() {
     final colors = Theme.of(context).colorScheme;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1406,85 +1486,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
         label: Text(_remoteLayout.moreExpanded
             ? 'Hide more controls' : 'More controls'),
       ),
-      if (_remoteLayout.moreExpanded) ...[
-        _advancedSection('editing', 'Editing & shortcuts',
-          Icons.edit_outlined, Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(spacing: 8, runSpacing: 4, children: [
-                for (final id in [
-                  'copy', 'paste', 'selectAll', 'undo', 'find', 'newTab',
-                  'switchApp',
-                ]) _quickKeyButton(id),
-              ]),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _connectionLost ? null : typePhoneClipboard,
-                icon: const Icon(Icons.content_paste_go),
-                label: const Text('Type phone clipboard'),
-              ),
-              Text('Explicit action only · up to 4 KB · no clipboard sync',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-        ),
-        _advancedSection('extended', 'Extended keyboard',
-          Icons.keyboard_alt_outlined, Wrap(
-            spacing: 8, runSpacing: 4, children: [
-              for (final id in ['home', 'end', 'pageUp', 'pageDown'])
-                _quickKeyButton(id),
-              for (var f = 1; f <= 12; f++) keyButton('F$f', 'f$f'),
-            ],
-          ),
-        ),
-        _advancedSection('volume', 'Volume & media',
-          Icons.volume_up_outlined, Wrap(
-            spacing: 8, runSpacing: 4, children: [
-              for (final id in ['volumeDown', 'mute', 'volumeUp'])
-                _quickKeyButton(id),
-            ],
-          ),
-        ),
-        _advancedSection('power', 'Power',
-          Icons.power_settings_new_outlined, Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              OutlinedButton.icon(
-                onPressed: agent.shutdownEnabled ? confirmShutdown : null,
-                icon: const Icon(Icons.power_settings_new),
-                label: const Text('Shut down computer'),
-              ),
-              if (!agent.shutdownEnabled)
-                const Text('Remote shutdown is disabled. Enable it on '
-                    'Ubuntu with taptetherctl enable-shutdown.'),
-            ],
-          ),
-        ),
-        _advancedSection('preferences', 'Remote preferences',
-          Icons.settings_outlined, Column(children: [
-            Row(children: [
-              Text('Pointer: ${mouseSensitivity.toStringAsFixed(1)}×'),
-              Expanded(child: Slider(
-                value: mouseSensitivity, min: 1.0, max: 8.0, divisions: 28,
-                onChanged: (value) =>
-                    setState(() => mouseSensitivity = value),
-              )),
-            ]),
-            if (_connectedPlatform != 'linux')
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Mac shortcuts (⌘)'),
-                value: _macShortcuts,
-                onChanged: (value) => setState(() => _macShortcuts = value),
-              ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Haptic feedback'),
-              value: _haptics,
-              onChanged: (value) => setState(() => _haptics = value),
-            ),
-          ]),
-        ),
-      ],
+      if (_remoteLayout.moreExpanded) ..._moreControlSections(),
     ]);
   }
 
