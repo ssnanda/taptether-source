@@ -58,6 +58,9 @@ assert "Verify Ubuntu packages with native dpkg" in workflow
 assert 'sudo dpkg --install "dist/ubuntu/taptether-agent_' in workflow
 assert "dpkg-deb --info" in workflow
 
+assert "python3 bin/4-test-deb-packaging.py" in workflow, (
+    "Run offline Debian payload regression test before expensive agent builds"
+)
 assert "run: bash bin/2b-tt-ubuntu.sh" in workflow
 assert "run: bash bin/2b-tt-macos.sh" in workflow
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
