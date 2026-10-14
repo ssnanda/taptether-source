@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
+import 'remote_layout_settings.dart';
 import 'clipboard_chunks.dart';
 import 'appearance.dart';
 import 'app_security.dart';
@@ -244,6 +245,12 @@ class RemoteScreen extends StatefulWidget {
 class _RemoteScreenState extends State<RemoteScreen> {
   final agent = LocalAgent();
   final deviceStore = ComputerStore();
+  final remoteLayoutStore = RemoteLayoutStore();
+  RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
+  String? _connectedPlatform;
+  bool _connectionLost = false;
+  String? _connectionTechnical;
+  bool _retryingConnection = false;
   List<SavedComputer> savedComputers = [];
   List<DiscoveredDevice> nearbyComputers = [];
   bool searching = false;
@@ -296,6 +303,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
             token.text = installed.token;
             pin.text = installed.fingerprint;
             discoveredName = installed.host;
+            _connectedPlatform = 'linux';
             // Require an authenticated TLS-pinned ping AND successful
             // persistence. An existing device record must never mask a failed
             // pairing or a failed secure-storage write.
@@ -364,6 +372,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void selectDiscovered(DiscoveredDevice device) {
     setState(() {
       discoveredName = device.name;
+      _connectedPlatform = device.platform;
       _macShortcuts = device.platform == 'darwin';
       _showPairForm = true;
       host.text = device.host;
@@ -378,6 +387,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     token.text = device.token;
     pin.text = device.fingerprint;
     discoveredName = device.name;
+    _connectedPlatform = device.platform;
     _macShortcuts = device.platform == 'darwin';
     await connect(existingId: device.id, deviceId: device.deviceId);
   }
@@ -901,11 +911,18 @@ class _RemoteScreenState extends State<RemoteScreen> {
   Future<void> command(String type, [Map<String, Object> data = const {}]) async {
     try {
       await agent.send(type, data);
+      if (_connectionLost && mounted) {
+        setState(() {
+          _connectionLost = false;
+          _connectionTechnical = null;
+          status = 'Connected to ${host.text.trim()}';
+        });
+      }
       if (_haptics && (type == 'click' || type == 'key')) {
         unawaited(HapticFeedback.selectionClick());
       }
     } catch (e) {
-      if (mounted) setState(() => status = e.toString());
+      _handleRemoteFailure(e);
     }
   }
 
@@ -934,6 +951,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
       if (mounted) {
         setState(() {
         status = 'Connected to ${host.text.trim()}';
+        _connectionLost = false;
+        _connectionTechnical = null;
         connectedAgentVersion = currentAgent;
         availableAgentVersion = currentAgent != null &&
                 _latestReleaseVersion != null &&
@@ -954,10 +973,12 @@ class _RemoteScreenState extends State<RemoteScreen> {
           deviceId: enrolledId,
           fingerprint: pin.text.replaceAll(RegExp(r'[^a-fA-F0-9]'), '').toUpperCase(),
           platform: discovered.isEmpty
-              ? (existing?.platform ?? 'computer') : discovered.first.platform,
+              ? (_connectedPlatform ?? existing?.platform ?? 'computer')
+              : discovered.first.platform,
         );
         final updated = await deviceStore.upsert(device);
         if (mounted) setState(() => savedComputers = updated);
+        unawaited(_loadLayoutForHost(host.text.trim()));
         return true;
       } catch (_) {
         if (mounted) {
@@ -975,7 +996,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Widget keyButton(String label, String key, {double? width}) =>
       SizedBox(width: width, child: OutlinedButton(
-        onPressed: agent.configured ? () => command('key', {'key': key}) : null,
+        onPressed: agent.configured && !_connectionLost
+            ? () => command('key', {'key': key}) : null,
         child: Text(label, textAlign: TextAlign.center),
       ));
 
@@ -997,12 +1019,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
         } : null, icon: const Icon(Icons.link_off)),
       ]),
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('Your devices. Your control. Your network.',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w500,
-            )),
-        const SizedBox(height: 12),
+        if (!connected) ...[
+          Text('Your devices. Your control. Your network.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              )),
+          const SizedBox(height: 12),
+        ],
         updateNotices(),
         if (!connected) ...[
           deviceDashboard(),
@@ -1143,8 +1167,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
         ],
         const SizedBox(height: 16),
-        Text(status, style: TextStyle(fontSize: 12,
-          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        if (!connected || !_connectionLost)
+          Text(status, style: TextStyle(fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 12),
         Center(child: Text('TapTether v$installedVersion',
           style: TextStyle(fontSize: 12,
