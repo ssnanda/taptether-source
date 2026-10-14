@@ -179,6 +179,81 @@ disable_shutdown() {
   launchctl bootstrap "$TARGET" "$PLIST"
   notice 'Remote shutdown disabled.'
 }
+# Safe, local diagnostics for the Finder menu app. Intentionally do not
+# print raw stderr or launchctl dumps: either may contain private identities.
+diagnostics() {
+  printf 'TapTether macOS agent diagnostics\n'
+  printf 'User UID: %s\n' "$(id -u)"
+  if [[ -x "$APP" ]]; then
+    printf 'Agent version: %s\n' "$("$APP" --version 2>/dev/null || echo unavailable)"
+  else
+    printf 'Agent binary: missing or not executable\n'
+  fi
+  if [[ -f "$PLIST" ]]; then
+    printf 'LaunchAgent plist: installed\n'
+  else
+    printf 'LaunchAgent plist: missing (choose Install / Repair agent)\n'
+  fi
+  local state
+  state="$(launchctl print "$TARGET/$LABEL" 2>/dev/null || true)"
+  if [[ -z "$state" ]]; then
+    printf 'LaunchAgent: not loaded\n'
+  elif [[ "$state" == *'state = running'* ]]; then
+    printf 'LaunchAgent: running\n'
+  else
+    printf 'LaunchAgent: loaded but not running\n'
+  fi
+  local last_exit pid
+  last_exit="$(printf '%s\n' "$state" | awk '/last exit code = / {print $NF; exit}')"
+  pid="$(printf '%s\n' "$state" | awk '/pid = / {print $NF; exit}')"
+  [[ "$last_exit" =~ ^[0-9]+$ ]] && printf 'Last exit code: %s\n' "$last_exit"
+  [[ "$pid" =~ ^[0-9]+$ ]] && printf 'Process PID: %s\n' "$pid"
+  if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:48321 -sTCP:LISTEN >/dev/null 2>&1; then
+    printf 'TCP 48321: listening\n'
+  else
+    printf 'TCP 48321: not listening\n'
+  fi
+  local error_log="$LOGDIR/agent.stderr.log"
+  if [[ -s "$error_log" ]]; then
+    printf 'Agent error log: present\n'
+    if tail -n 30 "$error_log" | grep -Eiq 'address already in use|bind: address already in use'; then
+      printf 'Hint: another application may already use port 48321\n'
+    elif tail -n 30 "$error_log" | grep -Eiq 'operation not permitted|permission denied'; then
+      printf 'Hint: macOS denied a required file or network permission\n'
+    elif tail -n 30 "$error_log" | grep -Eiq 'certificate/key incomplete|existing pairing token invalid'; then
+      printf 'Hint: existing agent identity is incomplete; do not delete pairing files\n'
+    else
+      printf 'Hint: agent exited; open Install / Repair agent or inspect local log\n'
+    fi
+  else
+    printf 'Agent error log: empty or missing\n'
+  fi
+  printf 'Accessibility: check System Settings > Privacy & Security > Accessibility\n'
+  printf 'Privacy: no passwords, pairing tokens, certificates or raw log lines included\n'
+}
+
+start_agent() {
+  [[ -f "$PLIST" ]] || { notice 'Agent not installed. Choose Install / Repair agent first.' >&2; return 1; }
+  if ! launchctl print "$TARGET/$LABEL" >/dev/null 2>&1; then
+    launchctl bootstrap "$TARGET" "$PLIST" || {
+      notice 'Could not load the LaunchAgent. Choose Agent diagnostics / Repair.' >&2
+      return 1
+    }
+  fi
+  launchctl kickstart -k "$TARGET/$LABEL" || {
+    notice 'LaunchAgent could not start. Choose Agent diagnostics.' >&2
+    return 1
+  }
+  sleep 1
+  local state
+  state="$(launchctl print "$TARGET/$LABEL" 2>/dev/null || true)"
+  if [[ "$state" != *'state = running'* ]]; then
+    notice 'Agent started then exited. Choose Agent diagnostics / Install Repair.' >&2
+    return 1
+  fi
+  notice 'TapTether agent is running. Use Show pairing details in the menu bar.'
+}
+
 check_update() {
   [[ -f "$UPDATER" ]] || { notice 'Update helper missing; install the newest macOS agent archive.' >&2; exit 1; }
   bash "$UPDATER" check
@@ -189,18 +264,19 @@ update_agent() {
 }
 case "$1" in
   install) install_agent ;;
-  start) launchctl bootstrap "$TARGET" "$PLIST" 2>/dev/null || true; launchctl kickstart -k "$TARGET/$LABEL" ;;
+  start) start_agent ;;
   stop) launchctl bootout "$TARGET/$LABEL" ;;
-  restart) launchctl kickstart -k "$TARGET/$LABEL" ;;
+  restart) start_agent ;;
   status) launchctl print "$TARGET/$LABEL" ;;
   pairing) pairing ;;
   pairing-qr) pairing_qr ;;
   devices) devices ;;
   revoke-device) revoke_device "$@" ;;
   logs) tail -n 50 "$LOGDIR/agent.stderr.log" ;;
+  diagnostics) diagnostics ;;
   check-update) check_update ;;
   update) update_agent ;;
   enable-shutdown) enable_shutdown ;;
   disable-shutdown) disable_shutdown ;;
-  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|pairing|pairing-qr|devices|revoke-device ID|logs|check-update|update|enable-shutdown|disable-shutdown}' >&2; exit 2 ;;
+  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|diagnostics|pairing|pairing-qr|devices|revoke-device ID|logs|check-update|update|enable-shutdown|disable-shutdown}' >&2; exit 2 ;;
 esac
