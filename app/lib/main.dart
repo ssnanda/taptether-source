@@ -261,10 +261,18 @@ class RemoteScreen extends StatefulWidget {
   State<RemoteScreen> createState() => _RemoteScreenState();
 }
 
-class _RemoteScreenState extends State<RemoteScreen> {
+class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver {
   final agent = LocalAgent();
   final deviceStore = ComputerStore();
   final remoteLayoutStore = RemoteLayoutStore();
+  final networkLocationStore = NetworkLocationStore();
+  Timer? _heartbeatTimer;
+  DetectedLanRange? _wifiRange;
+  String? _detectedLocation;
+  String _locationFilter = 'automatic';
+  bool _showOffline = false;
+  bool _checkingHeartbeat = false;
+  final Map<String, bool> _online = {};
   RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
   String? _connectedPlatform;
   bool _connectionLost = false;
@@ -296,6 +304,117 @@ class _RemoteScreenState extends State<RemoteScreen> {
     unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
     unawaited(loadComputers());
+    unawaited(_refreshNetworkLocation());
+    WidgetsBinding.instance.addObserver(this);
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed) {
+        unawaited(_refreshNetworkLocation());
+        unawaited(_refreshHeartbeats());
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshNetworkLocation());
+      unawaited(_refreshHeartbeats());
+    }
+  }
+
+  Future<void> _refreshNetworkLocation() async {
+    final current = await detectLanRange();
+    final label = await networkLocationStore.locationFor(current);
+    if (mounted) {
+      setState(() {
+        _wifiRange = current;
+        _detectedLocation = label;
+      });
+    }
+  }
+
+  Future<bool> _pingSavedDevice(
+      SavedComputer device, PhoneIdentity? phone) async {
+    final connection = LocalAgent();
+    try {
+      connection.configure(device.host, device.token, device.fingerprint,
+          identity: device.deviceId.isNotEmpty ? phone : null,
+          deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
+      await connection.send('ping');
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      connection.disconnect();
+    }
+  }
+
+  Future<void> _refreshHeartbeats() async {
+    if (_checkingHeartbeat || savedComputers.isEmpty) return;
+    _checkingHeartbeat = true;
+    if (mounted) setState(() {});
+    try {
+      PhoneIdentity? phone;
+      try {
+        if (savedComputers.any((d) => d.deviceId.isNotEmpty)) {
+          phone = await PhoneIdentity.loadOrCreate();
+        }
+      } catch (_) {}
+      final snapshot = savedComputers.toList();
+      // Up to four TLS-pinned, authenticated pings at a time, once per
+      // minute while foregrounded. No local-network sweep or cloud traffic.
+      for (var start = 0; start < snapshot.length; start += 4) {
+        final chunk = snapshot.skip(start).take(4).toList();
+        final values = await Future.wait(
+          chunk.map((device) => _pingSavedDevice(device, phone)),
+        );
+        if (!mounted) break;
+        setState(() {
+          for (var i = 0; i < chunk.length; i++) {
+            _online[chunk[i].id] = values[i];
+          }
+        });
+      }
+    } finally {
+      _checkingHeartbeat = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _labelCurrentNetwork() async {
+    final network = _wifiRange;
+    if (network == null) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialog) => SimpleDialog(
+        title: const Text('This Wi-Fi network belongs to'),
+        children: [
+          for (final item in deviceLocations.entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialog, item.key),
+              child: Text(item.value),
+            ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await networkLocationStore.assign(network, choice);
+    // Assign existing uncategorized devices inside this subnet to the
+    // chosen location. Never override an explicitly selected category.
+    for (final device in savedComputers.toList()) {
+      if (device.location == 'other' &&
+          lanRangeContains(network, device.host)) {
+        await deviceStore.upsert(SavedComputer(
+          id: device.id, name: device.name, host: device.host,
+          token: device.token, fingerprint: device.fingerprint,
+          platform: device.platform, deviceId: device.deviceId,
+          customName: device.customName, location: choice,
+        ));
+      }
+    }
+    await loadComputers();
+    await _refreshNetworkLocation();
   }
 
   Future<void> scanQrPairing() async {
@@ -339,6 +458,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     try {
       final devices = await deviceStore.read();
       if (mounted) setState(() => savedComputers = devices);
+      unawaited(_refreshHeartbeats());
     } catch (_) {
       if (mounted) {
         setState(() =>
@@ -920,6 +1040,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _heartbeatTimer?.cancel();
     host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
     _movementTimer?.cancel();
     _scrollTimer?.cancel();
