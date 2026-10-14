@@ -286,7 +286,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                   children: [
                     TextFormField(
                       controller: _host,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                           labelText: '$_osLabel IP address',
                           hintText: 'Enter the final host number'),
                       // iOS number pads have no dot key. URL layout reliably
