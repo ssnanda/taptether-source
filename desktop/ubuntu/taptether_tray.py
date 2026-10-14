@@ -198,8 +198,7 @@ def main():
     else:
         # GTK StatusIcon fallback is X11-only. There must never be a
         # permanently visible GTK window in the dock or task switcher.
-        if not Gdk.Display.get_default() or not (
-                Gdk.Display.get_default().get_name().startswith(":")):
+        if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
             print("TapTether tray requires AppIndicator support on Wayland. "
                   "Install the Ubuntu AppIndicator extension and "
                   "gir1.2-ayatanaappindicator3-0.1.", file=sys.stderr)
