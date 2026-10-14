@@ -442,3 +442,18 @@ machine's current permission configuration without device access.
 
 These fixes address a likely dependency failure but must still be tested on
 the actual Ubuntu hosts. The user triggers Release only after merge.
+
+## v0.6.5+23 — Ubuntu package installation without the _apt sandbox
+
+- Install the SHA-verified, mobile-bundled Ubuntu .deb using `sudo dpkg --install`
+  rather than `apt-get install` from the private SSH staging directory.
+  That directory remains restricted to the SSH user (mode 0700).
+- Avoid a misleading apt `_apt` sandbox "Permission denied" failure:
+  unlike apt, root-owned dpkg can read the uploaded package without making
+  the SSH staging area readable to other users.
+- Keep `xdotool` as an optional X11 fallback, not a required dependency.
+- Show more precise on-phone `PKG-...` package-installation diagnostics.
+  Authentication failures, package installation and background-agent setup
+  retain separate codes. No raw private pairing output is copied into reports.
+- The actual device root cause remains to be confirmed by installation on
+  the Ubuntu computers. Release remains manually initiated.

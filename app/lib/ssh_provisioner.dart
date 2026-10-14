@@ -185,11 +185,16 @@ class UbuntuSshProvisioner {
       final sudoCheck = input.sudoPassword.isEmpty
           ? 'sudo -n -v'
           : 'sudo -k && sudo -S -p "" -v';
-      // Use distinct exit codes for each stage. Never show remote stdout or
-      // stderr verbatim: the setup script prints private pairing credentials.
+      // The SSH staging folder is intentionally 0700, so apt's _apt user
+      // cannot traverse it. dpkg runs with elevated privileges and does not
+      // require exposing the uploaded package to other local users.
+      // This verified .deb has no required external Debian dependencies.
+      // Keep distinct exit codes for sudo (41), install (42), setup (43).
+      // Never show unfiltered remote logs or private pairing credentials.
       final command = '''
 if ! ( $sudoCheck ); then exit 41; fi
-if ! sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends '$stage/$filename'; then exit 42; fi
+if ! sudo -n -v; then exit 41; fi
+if ! sudo -n env DEBIAN_FRONTEND=noninteractive dpkg --install '$stage/$filename'; then exit 42; fi
 if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
 ''';
       final session = await client.execute(command, pty: const SSHPtyConfig());
@@ -211,8 +216,8 @@ if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
                 'Ubuntu sudo password (separate from your SSH key), or '
                 'enable passwordless sudo for the account.');
           case 42:
-            // Classify apt errors locally but never show unfiltered output.
-            // Setup logs may include sensitive pairing credentials.
+            // Classify dpkg errors without showing unfiltered output.
+            // Subsequent setup logs may contain pairing credentials.
             throw StateError(ubuntuPackageFailureMessage(
                 utf8.decode(bytes, allowMalformed: true)));
           case 43:
