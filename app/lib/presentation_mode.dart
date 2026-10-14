@@ -64,21 +64,24 @@ class PresentationControls extends StatelessWidget {
     Key? widgetKey,
   }) {
     final action = enabled && key != null ? () => onKey(key) : null;
+    final content = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: landscape ? 20 : 25),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          maxLines: 2,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: landscape ? 11 : 13),
+        ),
+      ],
+    );
     return SizedBox(
       height: landscape ? 60 : 78,
       child: prominent
-          ? FilledButton.icon(
-              key: widgetKey,
-              onPressed: action,
-              icon: Icon(icon, size: 26),
-              label: Text(label, textAlign: TextAlign.center),
-            )
-          : OutlinedButton.icon(
-              key: widgetKey,
-              onPressed: action,
-              icon: Icon(icon, size: 22),
-              label: Text(label, textAlign: TextAlign.center),
-            ),
+          ? FilledButton(key: widgetKey, onPressed: action, child: content)
+          : OutlinedButton(key: widgetKey, onPressed: action, child: content),
     );
   }
 
