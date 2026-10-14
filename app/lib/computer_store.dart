@@ -14,6 +14,8 @@ class SavedComputer {
     required this.fingerprint,
     this.platform = 'computer',
     this.deviceId = '',
+    this.location = 'other',
+    this.customName = false,
   });
 
   final String id;
@@ -23,11 +25,14 @@ class SavedComputer {
   final String fingerprint;
   final String platform;
   final String deviceId;
+  final String location;
+  final bool customName;
 
   Map<String, String> toJson() => {
     'id': id, 'name': name, 'host': host, 'token': token,
     'fingerprint': fingerprint, 'platform': platform,
-    'deviceId': deviceId,
+    'deviceId': deviceId, 'location': location,
+    'customName': customName.toString(),
   };
 
   static SavedComputer fromJson(Map<String, dynamic> data) {
@@ -36,6 +41,9 @@ class SavedComputer {
       id: value('id'), name: value('name'), host: value('host'),
       token: value('token'), fingerprint: value('fingerprint'),
       platform: value('platform'), deviceId: value('deviceId'),
+      location: const {'home', 'office', 'other'}.contains(value('location'))
+          ? value('location') : 'other',
+      customName: value('customName') == 'true',
     );
     if (computer.id.isEmpty || computer.host.isEmpty ||
         (computer.token.length < 20 && computer.deviceId.length != 32) ||

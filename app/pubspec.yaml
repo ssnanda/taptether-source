@@ -1,7 +1,7 @@
 name: taptether
 description: Local-first universal remote for trusted personal devices.
 publish_to: none
-version: 0.6.8+26
+version: 0.6.9+27
 environment:
   sdk: '>=3.4.0 <4.0.0'
 dependencies:
@@ -16,6 +16,7 @@ dependencies:
   package_info_plus: ^8.3.1
   local_auth: ^2.3.0
   url_launcher: ^6.3.1
+  network_info_plus: ^6.1.4
 dev_dependencies:
   flutter_test:
     sdk: flutter

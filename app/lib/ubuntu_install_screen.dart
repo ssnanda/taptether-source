@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'phone_ssh_keys.dart';
 import 'ssh_provisioner.dart';
 import 'ubuntu_install_validation.dart';
+import 'lan_scan.dart';
 
 /// Full-screen, keyboard-safe SSH installer. Never prints SSH passwords,
 /// pairing tokens, private keys, or remote installer logs.
@@ -48,6 +49,18 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
     super.initState();
     unawaited(_loadKeys());
     unawaited(_loadVersion());
+    unawaited(_prefillLocalNetwork());
+  }
+
+  Future<void> _prefillLocalNetwork() async {
+    if (validUbuntuLanIp(_host.text.trim())) return;
+    final detected = await detectLanRange();
+    if (!mounted || detected == null ||
+        validUbuntuLanIp(_host.text.trim())) return;
+    setState(() {
+      _host.text = detected.activePrefix + '.';
+      _host.selection = TextSelection.collapsed(offset: _host.text.length);
+    });
   }
 
   Future<void> _loadVersion() async {
@@ -257,7 +270,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                       controller: _host,
                       decoration: const InputDecoration(
                           labelText: 'Ubuntu IP address',
-                          hintText: '192.168.1.100'),
+                          hintText: 'Enter the final host number'),
                       // iOS number pads have no dot key. URL layout reliably
                       // exposes '.', while the formatter permits only IP chars.
                       keyboardType: TextInputType.url,

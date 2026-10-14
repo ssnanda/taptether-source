@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -94,8 +95,12 @@ func main() {
             return
         }
         w.Header().Set("Content-Type", "application/json")
+        hostname, _ := os.Hostname()
+        // Only authenticated LAN clients see OS/hostname metadata. Never
+        // reveal this via unauthenticated HTTP or pairing endpoints.
         _ = json.NewEncoder(w).Encode(map[string]any{
             "version": version, "shutdownEnabled": power.Enabled(),
+            "hostname": hostname, "platform": runtime.GOOS,
         })
     })
     var mu sync.Mutex

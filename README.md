@@ -535,3 +535,63 @@ single GitHub Release workflow after merging; no build on push.
 
 macOS service startup still requires physical-device testing and macOS
 Accessibility permission; no code can automatically bypass that OS prompt.
+
+## 0.6.9+27 — landscape remote and basic presentation controller
+
+- Rotating a connected iPhone or Android phone to **landscape** switches
+  the normal remote to a split-screen layout: large trackpad on the left,
+  scrollable typing, quick keys, arrows and More controls on the right.
+  Both sides respect the saved trackpad/button visibility settings.
+  Portrait remains compact and collapsible.
+- Switch between **Remote** and **Presentation** while connected. Presenter
+  mode uses large Previous/Next arrows and Start, Blank/Restore and
+  End (Esc) controls. These are authenticated local keyboard shortcuts
+  sent to the currently focused presentation application.
+- Choose **PowerPoint**, **Google Slides** or **Keynote** (Mac only).
+  Start uses the platform's application shortcut; arrows, B and Esc
+  control the already-running slideshow. No desktop API permissions
+  beyond the normal TapTether agent are required.
+- Remember chosen presentation app and Remote/Presentation view
+  separately on each computer. Entering presentation mode does not
+  take over the display or inspect slides.
+- **Later roadmap, not implemented:** speaker notes, slide thumbnails,
+  slide counters, presenter display mirroring or optional screen
+  sharing. These require a future consent-based screen-sharing or
+  application-specific integration and are not part of 0.6.
+- Bump `VERSION` and `app/pubspec.yaml` to 0.6.9+27.
+  The single GitHub Actions workflow automatically validates, builds
+  and publishes on this `VERSION` change to `main`.
+
+
+### 0.6.9 — Device dashboard, discovery and installation
+
+- After an authenticated, TLS-pinned connection, TapTether reads the
+  computer's hostname and OS from `/api/info` and saves the hostname as
+  its default display name. Manual device renames remain respected.
+  Older agents may use a reverse-DNS display hint after authentication.
+- The phone detects its private Wi-Fi IPv4 address and subnet mask.
+  **IP Scan** defaults to the current /24 and offers neighboring /24
+  slices within larger local networks such as 192.168.68.0/22.
+  Scans remain bounded, local and explicitly initiated.
+- **Install Agent** is one OS-aware entry: known verified platform is
+  preselected; unpaired hosts prompt for OS. Ubuntu uses SSH, macOS uses
+  the downloadable Finder/menu-bar agent, and Windows is clearly
+  shown as future support (no Windows SSH assumption or fake installer).
+  The installer prepopulates the current IP prefix without inventing a host.
+- **My Devices** checks signed or token-authenticated TLS heartbeats
+  while the app is foregrounded, at most once per minute. Offline devices
+  are hidden by default; **Show offline** and manual Refresh expose
+  unreachable saved devices. Heartbeat never trusts an open TCP port alone.
+- Saved computers can be categorized **Home**, **Office** or **Other**.
+  Users can label the current Wi-Fi network once; subsequent visits select
+  its category automatically without GPS or cloud tracking. A manual
+  location selector overrides the detected category. If iOS does not
+  permit SSID access, only the current CIDR is available, and overlapping
+  Wi-Fi networks can need manual selection.
+- Windows agent installation, presentation speaker notes and future
+  screen sharing remain outside this 0.6.9 release.
+
+**Verification:** Flutter unit/widget tests cover presentation buttons,
+layout retention, /22 scanning, network labels and device filtering.
+Physical iPhone/Android, Ubuntu and macOS regression checks are still
+required before declaring remote control hardware-verified.

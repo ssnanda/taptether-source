@@ -112,6 +112,45 @@ assert remote.count("Widget build(BuildContext context)") == 2
 assert "if (RegExp(r'^f(?:[1-9]|1[0-2])$').hasMatch(id)) return id;" in remote
 assert "}).hasMatch(id)) return id;" not in remote
 
+# Presentation mode shares only authenticated LAN keyboard commands; no
+# screen-reading or note capture is part of the 0.6.9 feature.
+presentation = (ROOT / "app" / "lib" / "presentation_mode.dart").read_text(
+    encoding="utf-8")
+layout = (ROOT / "app" / "lib" / "remote_layout_settings.dart").read_text(
+    encoding="utf-8")
+assert 'Widget _landscapeRemote()' in remote
+assert 'MediaQuery.orientationOf(context) == Orientation.landscape' in remote
+assert 'Widget _presentationView(bool landscape)' in remote
+assert 'SegmentedButton<bool>' in remote
+assert 'PresentationShortcuts.start' in presentation
+assert "static const next = 'Right';" in presentation
+assert "static const previous = 'Left';" in presentation
+assert "static const stop = 'Escape';" in presentation
+assert "static const blankToggle = 'b';" in presentation
+assert "this.presentationMode = false" in layout
+assert "this.presentationApp = 'powerPoint'" in layout
+
+# Dashboard/discovery release guards. A previously hard-coded home subnet
+# must not silently return through either the scanner or device installer.
+lan = (ROOT / "app" / "lib" / "lan_scan.dart").read_text(encoding="utf-8")
+scan_screen = (ROOT / "app" / "lib" / "lan_scan_screen.dart").read_text(encoding="utf-8")
+installer = (ROOT / "app" / "lib" / "install_agent_screen.dart").read_text(encoding="utf-8")
+devices = (ROOT / "app" / "lib" / "device_visibility.dart").read_text(encoding="utf-8")
+agent_main = (ROOT / "agent" / "cmd" / "taptether-agent" / "main.go").read_text(
+    encoding="utf-8")
+assert "rangeFromWifi(" in lan and "getWifiSubmask()" in lan
+assert "lanRangeContains(" in lan
+assert "_network!.scanPrefixes" in scan_screen
+assert "InstallAgentScreen" in installer and "Computer OS" in installer
+assert "knownPlatform" in installer and "Windows agent support" in installer
+assert "visibleSavedDevices(" in devices and "showOffline" in devices
+assert "Timer.periodic(const Duration(seconds: 60)" in remote
+assert "RefreshHeartbeats" not in remote or "_refreshHeartbeats()" in remote
+assert "'hostname'" not in agent_main or '"hostname": hostname' in agent_main
+assert '"platform": runtime.GOOS' in agent_main
+assert "deviceLocations" in remote and "NetworkLocationStore" in remote
+
+
 print("PASS: one Actions workflow, auto Release on VERSION, three manual choices")
 print("PASS: validate -> native agents -> IPA/APK -> publish, with same-run artifacts")
 print("PASS: weekly cleanup and immutable version-tagged Latest releases")

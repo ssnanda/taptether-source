@@ -44,6 +44,8 @@ class RemoteLayoutSettings {
     this.trackpadExpanded = true,
     this.arrowsExpanded = false,
     this.moreExpanded = false,
+    this.presentationMode = false,
+    this.presentationApp = 'powerPoint',
     this.expandedSections = const <String>[],
     this.quickKeys = defaultRemoteQuickKeys,
   });
@@ -51,6 +53,8 @@ class RemoteLayoutSettings {
   final bool trackpadExpanded;
   final bool arrowsExpanded;
   final bool moreExpanded;
+  final bool presentationMode;
+  final String presentationApp;
   final List<String> expandedSections;
   final List<String> quickKeys;
 
@@ -58,6 +62,8 @@ class RemoteLayoutSettings {
     'trackpadExpanded': trackpadExpanded,
     'arrowsExpanded': arrowsExpanded,
     'moreExpanded': moreExpanded,
+    'presentationMode': presentationMode,
+    'presentationApp': presentationApp,
     'expandedSections': expandedSections,
     'quickKeys': quickKeys,
   };
@@ -80,6 +86,11 @@ class RemoteLayoutSettings {
           ? values['trackpadExpanded'] as bool : true,
       arrowsExpanded: values['arrowsExpanded'] == true,
       moreExpanded: values['moreExpanded'] == true,
+      presentationMode: values['presentationMode'] == true,
+      presentationApp: const {'powerPoint', 'googleSlides', 'keynote'}
+              .contains(values['presentationApp'])
+          ? values['presentationApp'] as String
+          : 'powerPoint',
       expandedSections: sections,
       quickKeys: keys,
     );

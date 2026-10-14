@@ -15,6 +15,8 @@ class LanScanScreen extends StatefulWidget {
 
 class _LanScanScreenState extends State<LanScanScreen> {
   final _prefix = TextEditingController();
+  DetectedLanRange? _network;
+  bool _editedPrefix = false;
   List<LanHost> _hosts = [];
   bool _busy = false;
   bool _cancel = false;
@@ -24,16 +26,19 @@ class _LanScanScreenState extends State<LanScanScreen> {
   @override
   void initState() {
     super.initState();
-    _prefix.text = prefixFromIp(widget.initialIp ?? '') ?? '';
     unawaited(_loadDefault());
   }
 
   Future<void> _loadDefault() async {
-    if (_prefix.text.isNotEmpty) return;
-    final prefix = await defaultScanPrefix();
-    if (mounted && prefix != null && _prefix.text.isEmpty) {
-      setState(() => _prefix.text = prefix);
-    }
+    final range = await detectLanRange();
+    if (!mounted) return;
+    setState(() {
+      _network = range;
+      if (!_editedPrefix) {
+        _prefix.text = range?.activePrefix ??
+            (prefixFromIp(widget.initialIp ?? '') ?? '');
+      }
+    });
   }
 
   @override
@@ -48,7 +53,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
     FocusScope.of(context).unfocus();
     final prefix = _prefix.text.trim();
     if (!validPrivate24Prefix(prefix)) {
-      setState(() => _error = 'Enter a private /24 subnet such as 192.168.68.');
+      setState(() => _error = 'Enter a private IPv4 /24 prefix (e.g. 192.168.1).');
       return;
     }
     setState(() {
@@ -85,15 +90,45 @@ class _LanScanScreenState extends State<LanScanScreen> {
         children: [
           const Text('Scan one local /24 subnet for common TCP services. '
               'This runs on your phone and never uploads network information.'),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          if (_network != null) ...[
+            Text('Phone Wi-Fi: ' + _network!.ip +
+                ' · Network: ' + _network!.cidr,
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            if (_network!.scanPrefixes.length > 1)
+              DropdownButtonFormField<String>(
+                key: const ValueKey('lan-range-picker'),
+                initialValue: _network!.scanPrefixes.contains(_prefix.text)
+                    ? _prefix.text : _network!.activePrefix,
+                decoration: const InputDecoration(
+                  labelText: 'Choose nearby /24 scan range',
+                  isDense: true,
+                ),
+                items: [
+                  for (final value in _network!.scanPrefixes)
+                    DropdownMenuItem(value: value, child: Text(value + '.0/24')),
+                ],
+                onChanged: _busy ? null : (selected) {
+                  if (selected != null) {
+                    setState(() {
+                      _editedPrefix = true;
+                      _prefix.text = selected;
+                    });
+                  }
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
           TextField(
             controller: _prefix,
             enabled: !_busy,
-            keyboardType: TextInputType.number,
+            keyboardType: TextInputType.url,
+            onChanged: (_) => _editedPrefix = true,
             decoration: const InputDecoration(
               labelText: 'Network prefix',
-              hintText: '192.168.68',
-              helperText: 'Checks .1 through .254 on a trusted private network',
+              hintText: '192.168.1',
+              helperText: 'Checks .1–.254 for the selected /24. Larger subnets offer more ranges above.',
             ),
           ),
           const SizedBox(height: 12),
