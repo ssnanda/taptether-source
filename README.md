@@ -664,7 +664,7 @@ behavior changed. Version build number advances to +32 to trigger the automatic
 main-branch validation and release workflow again after merge.
 
 
-## v0.6.11+33 — remote polish, LAN inventory, Windows test agent, and agent updates
+## v0.6.11+34 — remote polish, LAN inventory, Windows test agent, and agent updates
 
 - **Remote UI:** gesture recognizer captures trackpad panning so the phone's
   surrounding list does not scroll. Simplify the connected screen: remove the
@@ -696,7 +696,7 @@ main-branch validation and release workflow again after merge.
   integration enabled by the desktop environment.
 - **Release pipeline:** gate publication on validated Ubuntu, native macOS,
   Windows cross-compiled ZIPs, Flutter checks, and checksum/package audits.
-  Publishing version v0.6.11+33 requires merging to main; ordinary branch
+  Publishing version v0.6.11+34 requires merging to main; ordinary branch
   changes do not launch the expensive production workflow.
 
 **Validation status:** code and regression tests are committed to a separate
