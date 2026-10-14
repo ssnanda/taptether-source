@@ -54,6 +54,10 @@ assert 'apt-get install -y --no-install-recommends' not in provisioner, (
 assert "'Suggests: xdotool" in deb_builder
 assert "'Depends: xdotool" not in deb_builder
 
+assert "Verify Ubuntu packages with native dpkg" in workflow
+assert 'sudo dpkg --install "dist/ubuntu/taptether-agent_' in workflow
+assert "dpkg-deb --info" in workflow
+
 assert "run: bash bin/2b-tt-ubuntu.sh" in workflow
 assert "run: bash bin/2b-tt-macos.sh" in workflow
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow

@@ -116,6 +116,18 @@ jobs:
         run: bash bin/2b-tt-ubuntu.sh
       - name: Verify complete Ubuntu installer payloads
         run: python3 bin/4-validate-desktop-installers.py --platform ubuntu
+      - name: Verify Ubuntu packages with native dpkg
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          for arch in amd64 arm64; do
+            deb="dist/ubuntu/taptether-agent_${version}_${arch}.deb"
+            dpkg-deb --info "$deb" >/dev/null
+            dpkg-deb --contents "$deb" >/dev/null
+          done
+          # Install in disposable CI runner before publishing mobile binaries.
+          sudo dpkg --install "dist/ubuntu/taptether-agent_${version}_amd64.deb"
+          test "$(dpkg-query -W -f='${Status}' taptether-agent)" = 'install ok installed'
       - uses: actions/upload-artifact@v4
         with:
           name: TapTether-Ubuntu-installers

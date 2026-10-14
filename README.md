@@ -457,3 +457,20 @@ the actual Ubuntu hosts. The user triggers Release only after merge.
   retain separate codes. No raw private pairing output is copied into reports.
 - The actual device root cause remains to be confirmed by installation on
   the Ubuntu computers. Release remains manually initiated.
+
+## v0.6.6+24 — actionable Ubuntu package diagnostics
+
+- The copied installer report now reads the actual installed app version
+  from iOS/Android package information instead of claiming v0.6.4+22.
+- The SSH installer captures *only* the Debian package-install output in
+  its private staging area. When dpkg fails, the iPhone shows a classified
+  error, real dpkg exit code and one bounded **sanitized** dpkg error line.
+  SSH/sudo passwords, private keys, pairing tokens, paths and remote
+  terminal logs are never exported verbatim.
+- Additional error classes include package/file conflicts, mismatched
+  architectures, missing files, package database and filesystem errors.
+- Before publishing the IPA/APK, GitHub Release validates both Ubuntu .deb
+  files with native dpkg-deb and actually installs the amd64 .deb into the
+  disposable Ubuntu builder. A bad package stops release publication.
+- Normal pushes still do not trigger builds. Only user-initiated Release
+  validates, builds and publishes.

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'phone_ssh_keys.dart';
 import 'ssh_provisioner.dart';
@@ -38,6 +39,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
   String? _error;
   String? _failureStage;
   String _stage = '';
+  String _appVersion = 'unavailable';
   final List<String> _installSteps = [];
   InstalledAgent? _installed;
 
@@ -45,6 +47,20 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
   void initState() {
     super.initState();
     unawaited(_loadKeys());
+    unawaited(_loadVersion());
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _appVersion =
+            info.buildNumber.isEmpty ? info.version
+                : '${info.version}+${info.buildNumber}');
+      }
+    } catch (_) {
+      // Unavailable version metadata must not produce a fictitious version.
+    }
   }
 
   Future<void> _loadKeys() async {
@@ -99,7 +115,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
   /// Explicitly shareable report, built only from local UI selections and
   /// fixed safe diagnostics. Never include SSH command output or secrets.
   String _diagnosticsReport() => [
-        'TapTether Ubuntu installer diagnostics (v0.6.4+22)',
+        'TapTether Ubuntu installer diagnostics (v$_appVersion)',
         'Computer: ${_host.text.trim()}',
         'Ubuntu username: ${_username.text.trim()}',
         'SSH method: ${_login == SshLoginMethod.phoneKey ? 'saved phone key' : 'password'}',

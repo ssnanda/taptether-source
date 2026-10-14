@@ -2,10 +2,45 @@
 /// Never surface raw command output: repository URLs or later setup stages
 /// may contain secrets.
 String ubuntuPackageFailureMessage(String output) {
-  final details = output.toLowerCase();
+  // Prefer the isolated dpkg-only output. Legacy reports can still be
+  // classified, but no unfiltered terminal output is ever exported.
+  final segment = RegExp(
+    r'TAPTETHER_DPKG_BEGIN\s*([\s\S]*?)\s*TAPTETHER_DPKG_END',
+  ).firstMatch(output);
+  final isolated = segment?.group(1) ?? output;
+  final details = isolated.toLowerCase();
   String code, description;
 
-  if (details.contains("couldn't be accessed by user '_apt'") ||
+  if (details.contains('trying to overwrite') ||
+      details.contains('which is also in package') ||
+      details.contains('conflicting packages')) {
+    code = 'PKG-CONFLICT';
+    description = 'An existing Ubuntu package owns a file needed by the '
+        'agent. See the sanitized dpkg detail for more information.';
+  } else if (details.contains('package architecture') &&
+      details.contains('does not match system')) {
+    code = 'PKG-ARCH';
+    description = 'The agent package does not match the Ubuntu CPU architecture.';
+  } else if (details.contains('dpkg was interrupted') ||
+      details.contains('status database area is locked')) {
+    code = 'PKG-DATABASE';
+    description = 'Ubuntu package database needs repair or is being updated.';
+  } else if (details.contains('cannot access archive') ||
+      details.contains('failed to open archive') ||
+      details.contains('no such file or directory')) {
+    code = 'PKG-ARCHIVE-ACCESS';
+    description = 'Ubuntu could not open the uploaded package.';
+  } else if (details.contains('post-installation script') ||
+      details.contains('pre-installation script')) {
+    code = 'PKG-SCRIPT';
+    description = 'A Debian package installation script failed.';
+  } else if (details.contains('unable to create') ||
+      details.contains('unable to open') ||
+      details.contains('failed to write') ||
+      details.contains('unable to stat')) {
+    code = 'PKG-FILESYSTEM';
+    description = 'Ubuntu could not write or inspect files during installation.';
+  } else if (details.contains("couldn't be accessed by user '_apt'") ||
       details.contains('pkgacquire::run (13: permission denied)')) {
     code = 'PKG-APT-SANDBOX';
     description = 'The previous apt installer could not read the package '
@@ -60,5 +95,33 @@ String ubuntuPackageFailureMessage(String output) {
         'Inspect apt/dpkg health and package sources on the target computer.';
   }
 
-  return '[$code] $description (stage: package installation, exit code: 42).';
+  final hint = _safeDpkgHint(segment?.group(1) ?? '');
+  final status = RegExp(r'TAPTETHER_DPKG_STATUS:([0-9]{1,3})')
+      .firstMatch(output)?.group(1);
+  return '[$code] $description (stage: package installation, '
+      'exit code: 42${status == null ? '' : ', dpkg exit: $status'}).'
+      '${hint == null ? '' : ' Sanitized dpkg detail: $hint'}';
+}
+
+/// Only include a bounded line from dpkg itself, never stdout from SSH or
+/// sudo authentication. Scrub file paths, URLs, emails, IPs and opaque tokens.
+String? _safeDpkgHint(String isolated) {
+  for (final line in isolated.split(RegExp(r'\r?\n'))) {
+    if (!RegExp(r'^\s*dpkg(?:-deb)?:\s*(?:error|dependency problems)',
+            caseSensitive: false)
+        .hasMatch(line)) {
+      continue;
+    }
+    var safe = line.trim()
+        .replaceAll(RegExp(r'https?://\S+', caseSensitive: false), '[url]')
+        .replaceAll(RegExp(r'/\S+'), '[path]')
+        .replaceAll(RegExp(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'),
+            '[email]')
+        .replaceAll(RegExp(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'), '[ip]')
+        .replaceAll(RegExp(r'[A-Za-z0-9+/_=-]{24,}'), '[redacted]')
+        .replaceAll(RegExp(r'[^\x20-\x7E]'), ' ');
+    if (safe.length > 200) safe = '${safe.substring(0, 200)}…';
+    return safe;
+  }
+  return null;
 }
