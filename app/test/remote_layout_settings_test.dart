@@ -41,6 +41,7 @@ void main() {
       'expandedSections': ['editing', 'unsupported', 'editing'],
     });
     expect(parsed.quickKeys, ['escape', 'paste']);
+    expect(remoteQuickKeyLabels['f12'], 'F12');
     expect(parsed.expandedSections, ['editing']);
     expect(parsed.trackpadExpanded, false);
   });
