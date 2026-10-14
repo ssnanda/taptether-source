@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import io
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import sys
 import tarfile
@@ -26,7 +26,22 @@ output_dir.mkdir(parents=True, exist_ok=True)
 def tar_gz(members):
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode='w:gz', format=tarfile.USTAR_FORMAT) as archive:
+        directories = set()
         for path, content, mode in members:
+            # dpkg requires each parent directory to be declared in data.tar,
+            # not just implied by a file name. Missing entries break fresh
+            # Ubuntu installs with 'unable to create ... No such file'.
+            for parent in reversed(PurePosixPath(path).parents):
+                directory = parent.as_posix()
+                if directory == '.' or directory in directories:
+                    continue
+                entry = tarfile.TarInfo(directory + '/')
+                entry.type = tarfile.DIRTYPE
+                entry.mode = 0o755
+                entry.uid = entry.gid = entry.mtime = 0
+                entry.uname = entry.gname = 'root'
+                archive.addfile(entry)
+                directories.add(directory)
             entry = tarfile.TarInfo(path)
             entry.size = len(content)
             entry.mode = mode
