@@ -7,9 +7,10 @@ import 'network_location.dart';
 /// Discovery alone is never treated as trusted pairing.
 class DeviceManagerScreen extends StatefulWidget {
   const DeviceManagerScreen({super.key, required this.store,
-    required this.onConnect});
+    required this.onConnect, required this.onUpdate});
   final ComputerStore store;
   final Future<void> Function(SavedComputer) onConnect;
+  final Future<void> Function(SavedComputer) onUpdate;
   @override
   State<DeviceManagerScreen> createState() => _DeviceManagerScreenState();
 }
@@ -127,6 +128,10 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
         await widget.onConnect(device);
         if (mounted) Navigator.pop(context);
         return;
+      case 'update':
+        await widget.onUpdate(device);
+        if (mounted) await _refresh();
+        return;
       case 'rename':
         final name = await _ask('Rename device', 'Display name', device.name);
         if (name != null && mounted) await _edit(device, name: name);
@@ -184,16 +189,25 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
             trailing: PopupMenuButton<String>(
               tooltip: 'Manage ${device.name}', enabled: !_busy,
               onSelected: (action) => _action(device, action),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'connect', child: Text('Connect')),
-                PopupMenuItem(value: 'rename', child: Text('Rename')),
-                PopupMenuItem(value: 'address', child: Text('Change LAN address')),
-                PopupMenuDivider(),
-                PopupMenuItem(value: 'home', child: Text('Location: Home')),
-                PopupMenuItem(value: 'office', child: Text('Location: Office')),
-                PopupMenuItem(value: 'other', child: Text('Location: Other')),
-                PopupMenuDivider(),
-                PopupMenuItem(value: 'forget', child: Text('Forget device')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'connect', child: Text('Connect')),
+                if (device.platform == 'linux' || device.platform == 'darwin')
+                  const PopupMenuItem(
+                    value: 'update',
+                    child: Row(children: [
+                      Icon(Icons.system_update_alt),
+                      SizedBox(width: 8),
+                      Text('Update Agent over SSH'),
+                    ]),
+                  ),
+                const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                const PopupMenuItem(value: 'address', child: Text('Change LAN address')),
+                const PopupMenuDivider(),
+                const PopupMenuItem(value: 'home', child: Text('Location: Home')),
+                const PopupMenuItem(value: 'office', child: Text('Location: Office')),
+                const PopupMenuItem(value: 'other', child: Text('Location: Other')),
+                const PopupMenuDivider(),
+                const PopupMenuItem(value: 'forget', child: Text('Forget device')),
               ],
             ),
           )),
