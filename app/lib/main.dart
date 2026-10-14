@@ -249,6 +249,3655 @@ class LocalAgent {
     return null;
   }
 
+  /// Optional locally cached ARP neighbors from a TLS-verified, paired agent.
+  /// Older agents may not support this endpoint and return an empty map.
+  Future<Map<String, String>> trustedLanNeighbors() async {
+    if (!configured) return {};
+    try {
+      final request = await _client!.getUrl(_base!.resolve('/api/neighbors'));
+      request.headers.set(HttpHeaders.authorizationHeader,
+          'Bearer ${await _bearer()}');
+      final response = await request.close().timeout(
+          const Duration(seconds: 5));
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        return {};
+      }
+      final decoded = jsonDecode(await utf8.decoder.bind(response).join());
+      if (decoded is! List || decoded.length > 1024) return {};
+      final result = <String, String>{};
+      for (final item in decoded) {
+        if (item is! Map || item['ip'] is! String ||
+            item['mac'] is! String) continue;
+        final ip = item['ip'] as String;
+        final mac = item['mac'] as String;
+        if (isPrivateIPv4(ip) && RegExp(
+          r'^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}
+  /// A 501 means this OS/version still requires the existing SSH GUI.
+  Future<bool> requestUpdate() async {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final req = await _client!.postUrl(_base!.resolve('/api/update'));
+    req.headers.contentType = ContentType.json;
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+    req.write(jsonEncode({'confirm': true}));
+    final res = await req.close().timeout(const Duration(seconds: 8));
+    final result = res.statusCode;
+    await res.drain<void>();
+    if (result == 202) return true;
+    if (result == 404 || result == 501) return false;
+    throw StateError('Computer could not start the update (HTTP $result).');
+  }
+
+  void disconnect() {
+    _client?.close(force: true);
+    _client = null;
+    _base = null;
+    _token = null;
+    _identity = null;
+    _deviceId = null;
+    _session = null;
+    _sessionExpires = null;
+    _shutdownEnabled = false;
+    _reportedHostname = null;
+    _reportedPlatform = null;
+    _reportedMacAddress = null;
+  }
+}
+
+class RemoteScreen extends StatefulWidget {
+  const RemoteScreen({super.key});
+  @override
+  State<RemoteScreen> createState() => _RemoteScreenState();
+}
+
+class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver {
+  final agent = LocalAgent();
+  final deviceStore = ComputerStore();
+  final remoteLayoutStore = RemoteLayoutStore();
+  final networkLocationStore = NetworkLocationStore();
+  Timer? _heartbeatTimer;
+  DetectedLanRange? _wifiRange;
+  String? _detectedLocation;
+  String _locationFilter = 'automatic';
+  bool _showOffline = false;
+  bool _checkingHeartbeat = false;
+  String? _lastNetworkId;
+  final Map<String, bool> _online = {};
+  RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
+  String? _connectedPlatform;
+  bool _connectionLost = false;
+  String? _connectionTechnical;
+  bool _retryingConnection = false;
+  List<SavedComputer> savedComputers = [];
+  List<DiscoveredDevice> nearbyComputers = [];
+  bool searching = false;
+  bool installingAgent = false;
+  bool _showPairForm = false;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  String? discoveredName;
+  final host = TextEditingController();
+  final token = TextEditingController();
+  final pin = TextEditingController();
+  final typing = TextEditingController();
+  String status = 'Not connected';
+  String installedVersion = '…';
+  String? availableAppVersion;
+  String? availableAgentVersion;
+  String? connectedAgentVersion;
+  String? _latestReleaseVersion;
+  bool _macShortcuts = false;
+  bool _haptics = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(loadInstalledVersion());
+    unawaited(checkForUpdates());
+    unawaited(loadComputers());
+    unawaited(_refreshNetworkLocation());
+    WidgetsBinding.instance.addObserver(this);
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed) {
+        unawaited(_refreshNetworkLocation());
+        unawaited(_refreshHeartbeats());
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshNetworkLocation());
+      unawaited(_refreshHeartbeats());
+    }
+  }
+
+  Future<void> _refreshNetworkLocation() async {
+    final current = await detectLanRange();
+    final label = await networkLocationStore.locationFor(current);
+    final identity = networkLocationStore.identifier(current);
+    if (mounted) {
+      setState(() {
+        if (_lastNetworkId != identity) _online.clear();
+        _lastNetworkId = identity;
+        _wifiRange = current;
+        _detectedLocation = label;
+      });
+    }
+  }
+
+  Future<bool> _pingSavedDevice(
+      SavedComputer device, PhoneIdentity? phone) async {
+    final connection = LocalAgent();
+    try {
+      connection.configure(device.host, device.token, device.fingerprint,
+          identity: device.deviceId.isNotEmpty ? phone : null,
+          deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
+      await connection.send('ping');
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      connection.disconnect();
+    }
+  }
+
+  Future<void> _refreshHeartbeats() async {
+    if (_checkingHeartbeat || savedComputers.isEmpty) return;
+    _checkingHeartbeat = true;
+    if (mounted) setState(() {});
+    try {
+      PhoneIdentity? phone;
+      try {
+        if (savedComputers.any((d) => d.deviceId.isNotEmpty)) {
+          phone = await PhoneIdentity.loadOrCreate();
+        }
+      } catch (_) {}
+      final snapshot = savedComputers.toList();
+      // Up to four TLS-pinned, authenticated pings at a time, once per
+      // minute while foregrounded. No local-network sweep or cloud traffic.
+      for (var start = 0; start < snapshot.length; start += 4) {
+        final chunk = snapshot.skip(start).take(4).toList();
+        final values = await Future.wait(
+          chunk.map((device) => _pingSavedDevice(device, phone)),
+        );
+        if (!mounted) break;
+        setState(() {
+          for (var i = 0; i < chunk.length; i++) {
+            _online[chunk[i].id] = values[i];
+          }
+        });
+      }
+    } finally {
+      _checkingHeartbeat = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _labelCurrentNetwork() async {
+    final network = _wifiRange;
+    if (network == null) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialog) => SimpleDialog(
+        title: const Text('This Wi-Fi network belongs to'),
+        children: [
+          for (final item in deviceLocations.entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialog, item.key),
+              child: Text(item.value),
+            ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await networkLocationStore.assign(network, choice);
+    // Assign existing uncategorized devices inside this subnet to the
+    // chosen location. Never override an explicitly selected category.
+    for (final device in savedComputers.toList()) {
+      if (device.location == 'other' &&
+          lanRangeContains(network, device.host)) {
+        await deviceStore.upsert(SavedComputer(
+          id: device.id, name: device.name, host: device.host,
+          token: device.token, fingerprint: device.fingerprint,
+          platform: device.platform, deviceId: device.deviceId,
+          customName: device.customName, location: choice,
+          macAddress: device.macAddress,
+        ));
+      }
+    }
+    await loadComputers();
+    await _refreshNetworkLocation();
+  }
+
+  Future<void> scanQrPairing() async {
+    final scanned = await Navigator.of(context).push<PairingQR>(
+      MaterialPageRoute(builder: (_) => const PairingScanner()),
+    );
+    if (scanned == null || !mounted) return;
+    host.text = scanned.host;
+    token.text = scanned.token;
+    pin.text = scanned.fingerprint;
+    discoveredName = scanned.host;
+    await connect();
+  }
+
+  Future<void> openAgentInstaller() => _launchAgentInstaller();
+
+  Future<void> _launchAgentInstaller({
+    SavedComputer? device,
+    bool updateOnly = false,
+  }) async {
+    if (installingAgent) return;
+    setState(() => installingAgent = true);
+    try {
+      final address = device?.host ?? host.text.trim();
+      final known = savedComputers.where((d) => d.host == address);
+      final platform = device?.platform ?? agent.reportedPlatform ??
+          (known.isNotEmpty ? known.first.platform : _connectedPlatform);
+      await Navigator.of(context).push<void>(MaterialPageRoute(
+        builder: (_) => InstallAgentScreen(
+          initialHost: address,
+          knownPlatform: platform,
+          updateOnly: updateOnly,
+          onInstalled: (installed, installedPlatform) async {
+            host.text = installed.host;
+            token.text = installed.token;
+            pin.text = installed.fingerprint;
+            discoveredName = device?.name ?? installed.host;
+            _connectedPlatform = installedPlatform;
+            return connect();
+          },
+        ),
+      ));
+    } finally {
+      if (mounted) setState(() => installingAgent = false);
+    }
+  }
+
+  Future<void> loadComputers() async {
+    try {
+      final devices = await deviceStore.read();
+      if (mounted) setState(() => savedComputers = devices);
+      unawaited(_refreshHeartbeats());
+    } catch (_) {
+      if (mounted) {
+        setState(() =>
+            status = 'Saved devices could not be loaded. Check secure storage permissions.');
+      }
+    }
+  }
+
+  Future<Map<String, String>> _trustedMacDiscovery() async {
+    final current = _wifiRange;
+    if (current == null) return {};
+    final candidates = savedComputers.where((device) =>
+        lanRangeContains(current, device.host)).take(3);
+    PhoneIdentity? phone;
+    try {
+      if (candidates.any((device) => device.deviceId.isNotEmpty)) {
+        phone = await PhoneIdentity.loadOrCreate();
+      }
+    } catch (_) {}
+    final combined = <String, String>{};
+    for (final device in candidates) {
+      final connection = LocalAgent();
+      try {
+        connection.configure(device.host, device.token, device.fingerprint,
+            identity: device.deviceId.isNotEmpty ? phone : null,
+            deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
+        combined.addAll(await connection.trustedLanNeighbors());
+      } catch (_) {
+        // Offline or older agents cannot provide neighbor information.
+      } finally {
+        connection.disconnect();
+      }
+    }
+    return combined;
+  }
+
+  Future<void> scanNetwork() async {
+    final selected = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) =>
+          LanScanScreen(initialIp: host.text.trim(),
+              knownComputers: savedComputers,
+              macResolver: _trustedMacDiscovery)),
+    );
+    if (selected == null || !mounted) return;
+    agent.disconnect();
+    setState(() {
+      host.text = selected;
+      discoveredName = selected;
+      _showPairForm = true;
+      status = 'Selected $selected from LAN scan. Pairing credentials are still required.';
+    });
+  }
+
+  Future<void> searchNearby() async {
+    if (searching) return;
+    setState(() {
+      searching = true;
+      nearbyComputers = [];
+      status = 'Looking for TapTether agents on the local network…';
+    });
+    try {
+      final result = await findNearbyDevices();
+      if (!mounted) return;
+      setState(() {
+        nearbyComputers = result;
+        status = result.isEmpty
+            ? 'No agents found. Check Wi-Fi, firewall UDP 48322, or enter the address manually.'
+            : 'Found ${result.length} local computer(s). Select one to pair.';
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() =>
+            status = 'Discovery unavailable: $error. Enter the IP manually.');
+      }
+    } finally {
+      if (mounted) setState(() => searching = false);
+    }
+  }
+
+  void selectDiscovered(DiscoveredDevice device) {
+    setState(() {
+      discoveredName = device.name;
+      _connectedPlatform = device.platform;
+      _macShortcuts = device.platform == 'darwin';
+      _showPairForm = true;
+      host.text = device.host;
+      token.clear();
+      pin.clear();
+      status = 'Discovered ${device.name}. Enter its token and certificate fingerprint to verify ownership.';
+    });
+  }
+
+  Future<void> connectSaved(SavedComputer device) async {
+    host.text = device.host;
+    token.text = device.token;
+    pin.text = device.fingerprint;
+    discoveredName = device.name;
+    _connectedPlatform = device.platform;
+    _macShortcuts = device.platform == 'darwin';
+    await connect(existingId: device.id, deviceId: device.deviceId);
+  }
+
+  Future<void> updateSavedAgent(SavedComputer device) async {
+    if (device.platform != 'linux' && device.platform != 'darwin' &&
+        device.platform != 'windows') {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('This operating system has no supported updater.'),
+      ));
+      return;
+    }
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text('Update ${device.name}?'),
+        content: const Text(
+          'Install the latest published agent version. '
+          'The computer may briefly disconnect during the update.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Update')),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    // Existing installed agents own the update action and verify the release.
+    // Ubuntu requires the user to have separately enabled noninteractive sudo.
+    // Older agents or machines without it retain the SSH GUI fallback.
+    if (device.platform == 'darwin' ||
+        device.platform == 'linux' || device.platform == 'windows') {
+      final client = LocalAgent();
+      try {
+        final phone = device.deviceId.isEmpty
+            ? null : await PhoneIdentity.loadOrCreate();
+        client.configure(device.host, device.token, device.fingerprint,
+            identity: phone,
+            deviceId: device.deviceId.isEmpty ? null : device.deviceId);
+        if (await client.requestUpdate()) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Update started on ${device.name}.'),
+            ));
+          }
+          return;
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text(
+              'Direct update unavailable. Opening SSH update instead.')),
+          );
+        }
+      } finally {
+        client.disconnect();
+      }
+    }
+    if (mounted) {
+      await _launchAgentInstaller(device: device, updateOnly: true);
+    }
+  }
+
+  Future<void> forgetComputer(SavedComputer device) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text('Forget ${device.name}?'),
+        content: const Text('Its saved token and certificate fingerprint will be erased from this phone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Forget')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final updated = await deviceStore.remove(device.id);
+      if (mounted) setState(() => savedComputers = updated);
+    } catch (_) {
+      if (mounted) setState(() => status = 'Cannot erase saved pairing from secure storage.');
+    }
+  }
+
+  Future<void> openDeviceManager() async {
+    final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => DeviceManagerScreen(
+        store: deviceStore,
+        onConnect: connectSaved,
+        onUpdate: updateSavedAgent,
+      ),
+    ));
+    if (!mounted) return;
+    await loadComputers();
+    if (addNew == true && mounted) setState(() => _showPairForm = true);
+  }
+
+  Future<void> openSshKeys() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const SshKeyScreen(),
+    ));
+  }
+
+  Future<void> openSecuritySettings() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const SecuritySettingsScreen(),
+    ));
+  }
+
+  void showPairForm() {
+    if (agent.configured) agent.disconnect();
+    setState(() {
+      _showPairForm = true;
+      status = 'Enter verified computer pairing details.';
+    });
+  }
+
+  Widget appDrawer() => Drawer(
+    child: SafeArea(child: ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.asset('assets/branding/taptether.png',
+                  width: 54, height: 54),
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('TapTether',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const Text('Your network. Your control.'),
+              ],
+            )),
+          ]),
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.devices_outlined),
+          title: const Text('My Devices'),
+          onTap: () {
+            Navigator.pop(context);
+            if (agent.configured) {
+              agent.disconnect();
+              setState(() => status = 'Select a device to connect.');
+            }
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.key_outlined),
+          title: const Text('SSH Keys'),
+          onTap: () {
+            Navigator.pop(context);
+            openSshKeys();
+          },
+        ),
+        ExpansionTile(
+          leading: const Icon(Icons.add_circle_outline),
+          title: const Text('Add & Discover'),
+          childrenPadding: const EdgeInsets.only(left: 16),
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Pair computer'),
+              onTap: () {
+                Navigator.pop(context);
+                showPairForm();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code_scanner),
+              title: const Text('Scan QR'),
+              onTap: () {
+                Navigator.pop(context);
+                scanQrPairing();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.radar),
+              title: const Text('Discover computers'),
+              onTap: () {
+                Navigator.pop(context);
+                if (agent.configured) agent.disconnect();
+                searchNearby();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.network_check),
+              title: const Text('Scan local IP network'),
+              onTap: () {
+                Navigator.pop(context);
+                scanNetwork();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.install_desktop),
+              title: const Text('Install Agent'),
+              onTap: installingAgent ? null : () {
+                Navigator.pop(context);
+                openAgentInstaller();
+              },
+            ),
+          ],
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.shield_outlined),
+          title: const Text('Security & Appearance'),
+          onTap: () {
+            Navigator.pop(context);
+            openSecuritySettings();
+          },
+        ),
+        AboutListTile(
+          icon: const Icon(Icons.info_outline),
+          applicationName: 'TapTether',
+          applicationVersion: installedVersion,
+          child: const Text('About'),
+        ),
+      ],
+    )),
+  );
+
+  Widget deviceDashboard() {
+    final visibleDevices = visibleSavedDevices(
+      savedComputers,
+      online: _online,
+      locationFilter: _locationFilter,
+      currentLocation: _detectedLocation,
+      currentNetwork: _wifiRange,
+      showOffline: _showOffline,
+    );
+    return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(children: [
+        Expanded(child: Text('My Devices',
+          style: Theme.of(context).textTheme.headlineSmall)),
+        TextButton.icon(
+          onPressed: openDeviceManager,
+          icon: const Icon(Icons.settings_outlined),
+          label: const Text('Manage'),
+        ),
+      ]),
+      const SizedBox(height: 8),
+      if (savedComputers.isNotEmpty) ...[
+        Row(children: [
+          Expanded(child: DropdownButtonFormField<String>(
+            key: const ValueKey('device-location-filter'),
+            initialValue: _locationFilter,
+            decoration: const InputDecoration(
+              isDense: true, labelText: 'Location'),
+            items: [
+              DropdownMenuItem(value: 'automatic',
+                child: Text(_detectedLocation == null
+                    ? 'Current network'
+                     : 'Current · ${deviceLocations[_detectedLocation]!}')),
+              const DropdownMenuItem(
+                value: 'all', child: Text('All locations')),
+              for (final category in deviceLocations.entries)
+                DropdownMenuItem(value: category.key, child: Text(category.value)),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _locationFilter = value);
+            },
+          )),
+          IconButton(
+            tooltip: 'Check online computers',
+            onPressed: _checkingHeartbeat ? null : _refreshHeartbeats,
+            icon: const Icon(Icons.refresh),
+          ),
+        ]),
+        Row(children: [
+          Checkbox(
+            key: const ValueKey('show-offline-devices'),
+            value: _showOffline,
+            onChanged: (value) => setState(() => _showOffline = value ?? false),
+          ),
+          const Text('Show offline'),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _wifiRange == null ? null : _labelCurrentNetwork,
+            icon: const Icon(Icons.location_on_outlined, size: 17),
+            label: const Text('Label network'),
+          ),
+        ]),
+        if (_wifiRange != null)
+          Text('Wi-Fi: ${_wifiRange!.cidr}'
+              '${_detectedLocation == null ? ' · Unassigned' : ' · ${deviceLocations[_detectedLocation]!}'}',
+              style: Theme.of(context).textTheme.bodySmall),
+        if (_checkingHeartbeat)
+          const LinearProgressIndicator(),
+        const SizedBox(height: 8),
+        if (visibleDevices.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Text(_checkingHeartbeat
+                ? 'Checking which computers are online…'
+                : 'No online computers for this location. Select Show offline '
+                  'to see saved devices or change the location filter.'),
+          ),
+      ],
+      if (savedComputers.isEmpty)
+        Card(child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.devices_other_outlined, size: 36),
+              const SizedBox(height: 12),
+              Text('No computers paired yet',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 6),
+              const Text('Pair a computer on your local network '
+                  'to reconnect with a single tap.'),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: showPairForm,
+                icon: const Icon(Icons.add),
+                label: const Text('Pair computer'),
+              ),
+            ],
+          ),
+        ))
+      else
+        for (final device in visibleDevices)
+          Card(child: ListTile(
+            leading: Icon(device.platform == 'darwin'
+                ? Icons.laptop_mac : Icons.computer),
+            title: Text(device.name, maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
+                ' · ${_online[device.id] == true ? 'Online' : _online[device.id] == false ? 'Offline' : 'Checking…'}',
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (device.platform == 'linux' ||
+                  device.platform == 'darwin' ||
+                  device.platform == 'windows')
+                IconButton(
+                  tooltip: 'Update agent',
+                  onPressed: () => updateSavedAgent(device),
+                  icon: const Icon(Icons.system_update_alt),
+                ),
+              Icon(Icons.circle, size: 13,
+                  color: _online[device.id] == true
+                      ? Colors.green : Theme.of(context)
+                          .colorScheme.outline),
+            ]),
+            onTap: () => connectSaved(device),
+          )),
+      for (final nearby in nearbyComputers)
+        Card(child: ListTile(
+          leading: const Icon(Icons.radar),
+          title: Text(nearby.name),
+          subtitle: Text('${nearby.host} · ${nearby.platform}'),
+          trailing: const Icon(Icons.add_link),
+          onTap: () => selectDiscovered(nearby),
+        )),
+      const SizedBox(height: 20),
+      Text('Quick actions', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 6),
+      Wrap(spacing: 8, runSpacing: 4, children: [
+        ActionChip(
+          avatar: const Icon(Icons.add, size: 18),
+          label: const Text('Pair'),
+          onPressed: showPairForm,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.qr_code_scanner, size: 18),
+          label: const Text('Scan QR'),
+          onPressed: scanQrPairing,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.radar, size: 18),
+          label: Text(searching ? 'Searching…' : 'Discover'),
+          onPressed: searching ? null : searchNearby,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.network_check, size: 18),
+          label: const Text('Scan IPs'),
+          onPressed: scanNetwork,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.install_desktop, size: 18),
+          label: const Text('Install agent'),
+          onPressed: installingAgent ? null : openAgentInstaller,
+        ),
+      ]),
+      const SizedBox(height: 14),
+    ],
+   );
+  }
+
+  bool newerThan(String latest, String installed) {
+    final pattern = RegExp(r'^([0-9]+)[.]([0-9]+)[.]([0-9]+)(?:[+]([0-9]+))?');
+    final a = pattern.firstMatch(latest);
+    final b = pattern.firstMatch(installed);
+    if (a == null || b == null) return false;
+    for (var i = 1; i <= 4; i++) {
+      final left = int.parse(a.group(i) ?? '0');
+      final right = int.parse(b.group(i) ?? '0');
+      if (left != right) return left > right;
+    }
+    return false;
+  }
+
+  Future<void> loadInstalledVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() =>
+          installedVersion = '${info.version}+${info.buildNumber}');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => installedVersion = 'unavailable');
+      }
+    }
+  }
+
+  Future<void> checkForUpdates() async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 4);
+    try {
+      // The only startup internet request checks public release metadata.
+      final request = await client.getUrl(Uri.parse(
+        'https://raw.githubusercontent.com/ssnanda/taptether.com/main/altstore.json'));
+      request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+      final response = await request.close().timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) return;
+      final data = jsonDecode(await utf8.decoder.bind(response).join());
+      if (data is! Map || data['apps'] is! List) return;
+      final apps = data['apps'] as List;
+      if (apps.isEmpty || apps.first is! Map) return;
+      final app = apps.first as Map;
+      if (app['version'] is! String) return;
+      final latest = "${app['version']}+${app['buildVersion']}";
+      final local = await PackageInfo.fromPlatform();
+      final current = '${local.version}+${local.buildNumber}';
+      if (!mounted) return;
+      setState(() {
+        _latestReleaseVersion = latest;
+        availableAppVersion = newerThan(latest, current) ? latest : null;
+        availableAgentVersion = connectedAgentVersion != null &&
+                newerThan(latest, connectedAgentVersion!)
+            ? latest : null;
+      });
+    } catch (_) {
+      // LAN control remains usable without internet access.
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Widget updateNotices() => Column(children: [
+    if (availableAppVersion != null) Card(child: ListTile(
+      leading: const Icon(Icons.system_update),
+      title: Text('TapTether ${availableAppVersion!} available'),
+      subtitle: const Text('View the new IPA in AltStore / GitHub Releases.'),
+      trailing: const Icon(Icons.open_in_new),
+      onTap: () => launchUrl(
+        Uri.parse('https://github.com/ssnanda/taptether.com/releases/tag/current'),
+        mode: LaunchMode.externalApplication),
+    )),
+    if (availableAgentVersion != null) Card(child: ListTile(
+      leading: const Icon(Icons.computer),
+      title: Text('Computer agent update: ${availableAgentVersion!}'),
+      subtitle: const Text('On the computer, run taptetherctl check-update and update.'),
+    )),
+  ]);
+
+  Future<void> confirmShutdown() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Shut down this computer?'),
+        content: const Text('Open applications will close and unsaved work may be lost.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Shut down')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await agent.send('shutdown');
+      if (mounted) setState(() => status = 'Shutdown requested.');
+    } catch (e) {
+      _handleRemoteFailure(e);
+    }
+  }
+
+
+  final Map<int, Offset> _touches = {};
+  double? _pinchStart;
+  bool _pinching = false;
+  double _swipeX = 0;
+  bool _swipeSent = false;
+  bool _multiTouchGesture = false;
+  double _scrollRemainder = 0;
+  int _pendingScroll = 0;
+  Timer? _scrollTimer;
+  bool _scrollInFlight = false;
+  double mouseSensitivity = 3.8;
+
+  void _touchDown(PointerDownEvent e) {
+    if (_touches.isEmpty) _multiTouchGesture = false;
+    _touches[e.pointer] = e.localPosition;
+    if (_touches.length > 1) _multiTouchGesture = true;
+    _pinchStart = _touches.length == 2
+        ? (_touches.values.first - _touches.values.last).distance : null;
+    _pinching = false;
+    if (_touches.length == 3) {
+      _swipeX = 0;
+      _swipeSent = false;
+    }
+  }
+
+  void _touchMove(PointerMoveEvent e) {
+    final before = _touches[e.pointer];
+    if (before == null) return;
+    _touches[e.pointer] = e.localPosition;
+    final delta = e.localPosition - before;
+    if (_touches.length == 1) {
+      queueMovement(delta);
+    } else if (_touches.length == 2) {
+      final distance = (_touches.values.first - _touches.values.last).distance;
+      _pinchStart ??= distance;
+      if ((distance - _pinchStart!).abs() >= 40) {
+        _pinching = true;
+        unawaited(command('key', {'key': _shortcut(
+            distance > _pinchStart! ? 'equal' : 'minus')}));
+        _pinchStart = distance;
+      }
+      if (!_pinching) {
+        _scrollRemainder += delta.dy / 15;
+        final ticks = _scrollRemainder.truncate();
+        if (ticks != 0) {
+          _scrollRemainder -= ticks;
+          _pendingScroll += ticks;
+          _scheduleScroll();
+        }
+      }
+    } else if (_touches.length >= 3 && !_swipeSent) {
+      _swipeX += delta.dx;
+      if (_swipeX.abs() >= 115) {
+        _swipeSent = true;
+        unawaited(command('key', {'key': _macShortcuts
+            ? (_swipeX > 0 ? 'cmd+tab' : 'shift+cmd+tab')
+            : (_swipeX > 0 ? 'alt+tab' : 'shift+alt+tab')}));
+      }
+    }
+  }
+
+  void _touchUp(PointerEvent e) {
+    _touches.remove(e.pointer);
+    if (_touches.length < 2) {
+      _pinchStart = null;
+      _pinching = false;
+      _scrollRemainder = 0;
+    }
+    if (_touches.length < 3) _swipeX = 0;
+  }
+
+  String _shortcut(String key) =>
+      '${_macShortcuts ? 'cmd' : 'ctrl'}+$key';
+
+  void _scheduleScroll() {
+    if (_scrollTimer != null || _scrollInFlight || !agent.configured) return;
+    _scrollTimer = Timer(const Duration(milliseconds: 20), _flushScroll);
+  }
+
+  Future<void> _flushScroll() async {
+    _scrollTimer = null;
+    if (!agent.configured || _scrollInFlight) return;
+    final ticks = _pendingScroll.clamp(-8, 8).toInt();
+    if (ticks == 0) return;
+    _pendingScroll -= ticks;
+    _scrollInFlight = true;
+    try {
+      await command('scroll', {'dy': ticks});
+    } finally {
+      _scrollInFlight = false;
+      if (_pendingScroll != 0) _scheduleScroll();
+    }
+  }
+
+  // Only by explicit tap; sends text into the focused desktop app, not the OS clipboard.
+  Future<void> typePhoneClipboard() async {
+    try {
+      final value = (await Clipboard.getData('text/plain'))?.text;
+      if (value == null || value.isEmpty) {
+        if (mounted) setState(() => status = 'Phone clipboard has no text.');
+        return;
+      }
+      for (final chunk in clipboardChunks(value)) {
+        await agent.send('text', {'text': chunk});
+      }
+      if (mounted) {
+        setState(() =>
+            status = 'Typed phone clipboard into the active computer window.');
+      }
+    } catch (error) {
+      _handleRemoteFailure(error);
+    }
+  }
+  double _pendingMoveX = 0;
+  double _pendingMoveY = 0;
+  bool _movementInFlight = false;
+  Timer? _movementTimer;
+
+  // Preserve all touch motion while sending only one network movement at a time.
+  void queueMovement(Offset delta) {
+    _pendingMoveX += delta.dx * mouseSensitivity;
+    _pendingMoveY += delta.dy * mouseSensitivity;
+    _scheduleMovement();
+  }
+
+  void _scheduleMovement() {
+    if (_movementTimer != null || _movementInFlight || !agent.configured) return;
+    _movementTimer = Timer(const Duration(milliseconds: 12), _flushMovement);
+  }
+
+  Future<void> _flushMovement() async {
+    _movementTimer = null;
+    if (!agent.configured || _movementInFlight) return;
+    final dx = _pendingMoveX.truncate().clamp(-300, 300);
+    final dy = _pendingMoveY.truncate().clamp(-300, 300);
+    if (dx == 0 && dy == 0) return;
+    _pendingMoveX -= dx;
+    _pendingMoveY -= dy;
+    _movementInFlight = true;
+    try {
+      await command('move', {'dx': dx, 'dy': dy});
+    } finally {
+      _movementInFlight = false;
+      if (_pendingMoveX.abs() >= 1 || _pendingMoveY.abs() >= 1) {
+        _scheduleMovement();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _heartbeatTimer?.cancel();
+    host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
+    _movementTimer?.cancel();
+    _scrollTimer?.cancel();
+    agent.disconnect();
+    super.dispose();
+  }
+
+  Future<void> command(String type, [Map<String, Object> data = const {}]) async {
+    try {
+      await agent.send(type, data);
+      if (_connectionLost && mounted) {
+        setState(() {
+          _connectionLost = false;
+          _connectionTechnical = null;
+          status = 'Connected to ${host.text.trim()}';
+        });
+      }
+      if (_haptics && (type == 'click' || type == 'key')) {
+        unawaited(HapticFeedback.selectionClick());
+      }
+    } catch (e) {
+      _handleRemoteFailure(e);
+    }
+  }
+
+  Future<bool> connect({String? existingId, String? deviceId}) async {
+    try {
+      if (mounted) {
+        setState(() => _remoteLayout = const RemoteLayoutSettings());
+      }
+      final phone = await PhoneIdentity.loadOrCreate();
+      agent.configure(host.text, token.text, pin.text,
+        identity: deviceId != null && deviceId.isNotEmpty ? phone : null,
+        deviceId: deviceId != null && deviceId.isNotEmpty ? deviceId : null);
+      await agent.send('ping');
+      // Upgrade legacy token pairing to a device-specific signed identity.
+      var enrolledId = deviceId ?? '';
+      if (enrolledId.isEmpty) {
+        try {
+          enrolledId = await agent.enrollPhone(phone, 'Phone');
+          agent.usePhoneKey(phone, enrolledId);
+          await agent.send('ping');
+        } catch (_) {
+          // Older agents still accept legacy token pairing until upgraded.
+          agent.configure(host.text, token.text, pin.text);
+          await agent.send('ping');
+          enrolledId = '';
+        }
+      }
+      final currentAgent = await agent.agentVersion();
+      String? verifiedName = agent.reportedHostname;
+      // Older agents do not yet report hostname; reverse DNS is only a
+      // display hint after a successful authenticated, TLS-pinned ping.
+      if (verifiedName == null) {
+        try {
+          final ip = InternetAddress(host.text.trim());
+          final reverse = await ip.reverse()
+              .timeout(const Duration(milliseconds: 750));
+          if (reverse.host != host.text.trim() &&
+              RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$')
+                  .hasMatch(reverse.host)) {
+            verifiedName = reverse.host;
+          }
+        } catch (_) {}
+      }
+      _connectedPlatform = agent.reportedPlatform ?? _connectedPlatform;
+      if (verifiedName != null) discoveredName = verifiedName;
+      if (mounted) {
+        setState(() {
+        status = 'Connected to ${host.text.trim()}';
+        _connectionLost = false;
+        _connectionTechnical = null;
+        connectedAgentVersion = currentAgent;
+        availableAgentVersion = currentAgent != null &&
+                _latestReleaseVersion != null &&
+                newerThan(_latestReleaseVersion!, currentAgent)
+            ? _latestReleaseVersion : null;
+        });
+      }
+      // Persist only after certificate pin verification and authenticated ping.
+      try {
+        final matches = savedComputers.where((d) => d.host == host.text.trim());
+        final existing = matches.isEmpty ? null : matches.first;
+        final discovered = nearbyComputers.where((d) => d.host == host.text.trim());
+        final location = _detectedLocation ?? existing?.location ?? 'other';
+        final device = SavedComputer(
+          id: existingId ?? existing?.id ?? SavedComputer.newId(),
+          name: existing?.customName == true
+              ? existing!.name
+              : verifiedName ?? discoveredName ?? existing?.name ?? host.text.trim(),
+          host: host.text.trim(),
+          token: enrolledId.isEmpty ? token.text.trim() : '',
+          deviceId: enrolledId,
+          fingerprint: pin.text.replaceAll(RegExp(r'[^a-fA-F0-9]'), '').toUpperCase(),
+          platform: agent.reportedPlatform ?? (discovered.isEmpty
+              ? (_connectedPlatform ?? existing?.platform ?? 'computer')
+              : discovered.first.platform),
+          location: location,
+          customName: existing?.customName ?? false,
+          macAddress: agent.reportedMacAddress ?? existing?.macAddress ?? '',
+        );
+        final updated = await deviceStore.upsert(device);
+        if (mounted) {
+          setState(() {
+            savedComputers = updated;
+            _online[device.id] = true;
+          });
+        }
+        unawaited(_loadLayoutForHost(host.text.trim()));
+        return true;
+      } catch (_) {
+        if (mounted) {
+          setState(() =>
+              status = 'Connected, but secure storage could not save this pairing.');
+        }
+        return false;
+      }
+    } catch (e) {
+      agent.disconnect();
+      if (mounted) setState(() => status = '$e');
+      return false;
+    }
+  }
+
+  Widget keyButton(String label, String key, {double? width}) =>
+      SizedBox(width: width, child: OutlinedButton(
+        onPressed: agent.configured && !_connectionLost
+            ? () => command('key', {'key': key}) : null,
+        child: Text(label, textAlign: TextAlign.center),
+      ));
+
+
+  Future<void> _loadLayoutForHost(String expectedHost) async {
+    final loaded = await remoteLayoutStore.read(expectedHost);
+    if (mounted && agent.configured && host.text.trim() == expectedHost) {
+      setState(() => _remoteLayout = loaded);
+    }
+  }
+
+  void _setLayout(RemoteLayoutSettings next) {
+    setState(() => _remoteLayout = next);
+    unawaited(_persistLayout(host.text.trim(), next));
+  }
+
+  Future<void> _persistLayout(
+      String computer, RemoteLayoutSettings value) async {
+    if (computer.isEmpty) return;
+    try {
+      await remoteLayoutStore.write(computer, value);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Unable to save control preferences on this phone.'),
+        ));
+      }
+    }
+  }
+
+  RemoteLayoutSettings _changedLayout({
+    bool? trackpad,
+    bool? arrows,
+    bool? more,
+    bool? presenting,
+    String? presentationApp,
+    List<String>? sections,
+    List<String>? quick,
+  }) => RemoteLayoutSettings(
+    trackpadExpanded: trackpad ?? _remoteLayout.trackpadExpanded,
+    arrowsExpanded: arrows ?? _remoteLayout.arrowsExpanded,
+    moreExpanded: more ?? _remoteLayout.moreExpanded,
+    presentationMode: presenting ?? _remoteLayout.presentationMode,
+    presentationApp: presentationApp ?? _remoteLayout.presentationApp,
+    expandedSections: sections ?? _remoteLayout.expandedSections,
+    quickKeys: quick ?? _remoteLayout.quickKeys,
+  );
+
+  void _toggleMoreSection(String id) {
+    final enabled = _remoteLayout.expandedSections.toSet();
+    if (!enabled.add(id)) enabled.remove(id);
+    _setLayout(_changedLayout(sections: enabled.toList()));
+  }
+
+  void _handleRemoteFailure(Object error) {
+    if (!mounted) return;
+    final disconnected = error is SocketException ||
+        error is TimeoutException ||
+        error is HandshakeException ||
+        error is HttpException;
+    setState(() {
+      if (disconnected) {
+        _connectionLost = true;
+        _connectionTechnical = error.toString();
+        status = 'Connection lost';
+        _pendingMoveX = 0;
+        _pendingMoveY = 0;
+        _pendingScroll = 0;
+        _touches.clear();
+      } else {
+        status = 'Remote command failed. Check the computer connection.';
+      }
+    });
+  }
+
+  Future<void> _retryRemoteConnection() async {
+    if (_retryingConnection || !agent.configured) return;
+    setState(() => _retryingConnection = true);
+    try {
+      await agent.send('ping');
+      if (mounted) {
+        setState(() {
+          _connectionLost = false;
+          _connectionTechnical = null;
+          status = 'Connected to ${host.text.trim()}';
+        });
+      }
+    } catch (error) {
+      _handleRemoteFailure(error);
+    } finally {
+      if (mounted) setState(() => _retryingConnection = false);
+    }
+  }
+
+  String _quickKeyCommand(String id) {
+    if (RegExp(r'^f(?:[1-9]|1[0-2])$').hasMatch(id)) return id;
+    switch (id) {
+      case 'escape': return 'Escape';
+      case 'tab': return 'Tab';
+      case 'enter': return 'Return';
+      case 'backspace': return 'BackSpace';
+      case 'up': return 'Up';
+      case 'down': return 'Down';
+      case 'left': return 'Left';
+      case 'right': return 'Right';
+      case 'copy': return _shortcut('c');
+      case 'paste': return _shortcut('v');
+      case 'selectAll': return _shortcut('a');
+      case 'undo': return _shortcut('z');
+      case 'find': return _shortcut('f');
+      case 'newTab': return _shortcut('t');
+      case 'switchApp': return _macShortcuts ? 'cmd+tab' : 'alt+tab';
+      case 'home': return 'home';
+      case 'end': return 'end';
+      case 'pageUp': return 'pageup';
+      case 'pageDown': return 'pagedown';
+      case 'volumeDown': return 'XF86AudioLowerVolume';
+      case 'mute': return 'XF86AudioMute';
+      case 'volumeUp': return 'XF86AudioRaiseVolume';
+      default: throw ArgumentError.value(id, 'id', 'Unknown remote control');
+    }
+  }
+
+  Widget _quickKeyButton(String id) =>
+      keyButton(remoteQuickKeyLabels[id]!, _quickKeyCommand(id));
+
+  Future<void> _customizeQuickKeys() async {
+    final chosen = _remoteLayout.quickKeys.toList();
+    final result = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, updateSheet) => SafeArea(child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.75,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(children: [
+              Row(children: [
+                Expanded(child: Text('Customize quick keys',
+                    style: Theme.of(context).textTheme.titleLarge)),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, chosen),
+                  child: const Text('Save'),
+                ),
+              ]),
+              const Text('Choose visible buttons and move them up or down '
+                  'to set the order. These settings are saved per computer.'),
+              const SizedBox(height: 8),
+              Expanded(child: ListView(children: [
+                if (chosen.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text('No quick keys selected. Add buttons below.'),
+                  ),
+                for (var i = 0; i < chosen.length; i++)
+                  ListTile(
+                    key: ValueKey('quick-${chosen[i]}'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(remoteQuickKeyLabels[chosen[i]]!),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                        tooltip: 'Move up',
+                        icon: const Icon(Icons.arrow_upward),
+                        onPressed: i == 0 ? null : () => updateSheet(() {
+                          final key = chosen.removeAt(i);
+                          chosen.insert(i - 1, key);
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Move down',
+                        icon: const Icon(Icons.arrow_downward),
+                        onPressed: i == chosen.length - 1 ? null
+                            : () => updateSheet(() {
+                          final key = chosen.removeAt(i);
+                          chosen.insert(i + 1, key);
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => updateSheet(() => chosen.removeAt(i)),
+                      ),
+                    ]),
+                  ),
+                const Divider(),
+                Text('Available controls',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 4, children: [
+                  for (final entry in remoteQuickKeyLabels.entries)
+                    if (!chosen.contains(entry.key))
+                      ActionChip(
+                        avatar: const Icon(Icons.add, size: 18),
+                        label: Text(entry.value),
+                        onPressed: () => updateSheet(() => chosen.add(entry.key)),
+                      ),
+                ]),
+              ])),
+            ]),
+          ),
+        )),
+      ),
+    );
+    if (result != null && mounted) {
+      _setLayout(_changedLayout(quick: result));
+    }
+  }
+
+
+  Widget _advancedSection(String id, String title, IconData icon,
+      Widget content) {
+    final open = _remoteLayout.expandedSections.contains(id);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon),
+        title: Text(title),
+        trailing: Icon(open ? Icons.expand_less : Icons.expand_more),
+        onTap: () => _toggleMoreSection(id),
+      ),
+      if (open) Padding(padding: const EdgeInsets.only(bottom: 12),
+          child: content),
+      const Divider(height: 1),
+    ]);
+  }
+
+  Widget _arrowPad() => Column(children: [
+    Center(child: _quickKeyButton('up')),
+    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      _quickKeyButton('left'),
+      const SizedBox(width: 8),
+      _quickKeyButton('down'),
+      const SizedBox(width: 8),
+      _quickKeyButton('right'),
+    ]),
+  ]);
+
+  Widget _trackpadSurface({double height = 224}) => GestureDetector(
+    // Win the gesture arena against the enclosing ListView. A Listener
+    // receives raw multi-touch pointer events but cannot stop parent scroll.
+    // Pointer tracking below continues to handle movement and two-finger
+    // gestures; these pan handlers deliberately do not send duplicate input.
+    behavior: HitTestBehavior.opaque,
+    onPanStart: (_) {},
+    onPanUpdate: (_) {},
+    onTap: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'left'}));
+    },
+    onDoubleTap: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'double'}));
+    },
+    onLongPress: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'right'}));
+    },
+    child: Listener(
+      onPointerDown: _connectionLost ? null : _touchDown,
+      onPointerUp: _connectionLost ? null : _touchUp,
+      onPointerCancel: _connectionLost ? null : _touchUp,
+      onPointerMove: _connectionLost ? null : _touchMove,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.primary
+                .withValues(alpha: 0.25))),
+        child: Center(child: Icon(Icons.touch_app, size: 36,
+            color: Theme.of(context).colorScheme.onPrimaryContainer
+                .withValues(alpha: 0.5))),
+      ),
+    ),
+  );
+
+  Widget _connectionBanner() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.wifi_off_outlined),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Connection lost',
+              style: Theme.of(context).textTheme.titleMedium)),
+          TextButton.icon(
+            onPressed: _retryingConnection ? null : _retryRemoteConnection,
+            icon: const Icon(Icons.refresh),
+            label: Text(_retryingConnection ? 'Retrying…' : 'Retry'),
+          ),
+        ]),
+        const Text('The computer agent is not responding. Check that it '
+            'is running and retry.'),
+        if (_connectionTechnical != null)
+          ExpansionTile(
+            title: const Text('Technical details'),
+            tilePadding: EdgeInsets.zero,
+            children: [SelectableText(_connectionTechnical!,
+                style: Theme.of(context).textTheme.bodySmall)],
+          ),
+      ]),
+    ),
+  );
+
+  List<Widget> _moreControlSections() => [
+        _advancedSection('editing', 'Editing & shortcuts',
+          Icons.edit_outlined, Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(spacing: 8, runSpacing: 4, children: [
+                for (final id in [
+                  'copy', 'paste', 'selectAll', 'undo', 'find', 'newTab',
+                  'switchApp',
+                ]) _quickKeyButton(id),
+              ]),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _connectionLost ? null : typePhoneClipboard,
+                icon: const Icon(Icons.content_paste_go),
+                label: const Text('Type phone clipboard'),
+              ),
+              // Clipboard action is intentionally explicit. Technical detail
+              // belongs in Help, not the main remote-control surface.
+            ],
+          ),
+        ),
+        _advancedSection('extended', 'Extended keyboard',
+          Icons.keyboard_alt_outlined, Wrap(
+            spacing: 8, runSpacing: 4, children: [
+              for (final id in ['home', 'end', 'pageUp', 'pageDown'])
+                _quickKeyButton(id),
+              for (var f = 1; f <= 12; f++) keyButton('F$f', 'f$f'),
+            ],
+          ),
+        ),
+        _advancedSection('volume', 'Volume & media',
+          Icons.volume_up_outlined, Wrap(
+            spacing: 8, runSpacing: 4, children: [
+              for (final id in ['volumeDown', 'mute', 'volumeUp'])
+                _quickKeyButton(id),
+            ],
+          ),
+        ),
+        _advancedSection('power', 'Power',
+          Icons.power_settings_new_outlined, Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              OutlinedButton.icon(
+                onPressed: agent.shutdownEnabled ? confirmShutdown : null,
+                icon: const Icon(Icons.power_settings_new),
+                label: const Text('Shut down computer'),
+              ),
+              if (!agent.shutdownEnabled)
+                const Text('Shutdown is not enabled on this computer.'),
+            ],
+          ),
+        ),
+        _advancedSection('preferences', 'Remote preferences',
+          Icons.settings_outlined, Column(children: [
+            Row(children: [
+              Text('Pointer: ${mouseSensitivity.toStringAsFixed(1)}×'),
+              Expanded(child: Slider(
+                value: mouseSensitivity, min: 1.0, max: 8.0, divisions: 28,
+                onChanged: (value) =>
+                    setState(() => mouseSensitivity = value),
+              )),
+            ]),
+            if (_connectedPlatform != 'linux')
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Mac shortcuts (⌘)'),
+                value: _macShortcuts,
+                onChanged: (value) => setState(() => _macShortcuts = value),
+              ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Haptic feedback'),
+              value: _haptics,
+              onChanged: (value) => setState(() => _haptics = value),
+            ),
+          ]),
+        ),
+  ];
+
+
+  Widget _modeSwitcher() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: SegmentedButton<bool>(
+      key: const ValueKey('remote-mode-switcher'),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment<bool>(
+          value: false,
+          label: Text('Remote'),
+          icon: Icon(Icons.mouse_outlined),
+        ),
+        ButtonSegment<bool>(
+          value: true,
+          label: Text('Presentation'),
+          icon: Icon(Icons.slideshow_outlined),
+        ),
+      ],
+      selected: {_remoteLayout.presentationMode},
+      onSelectionChanged: (selection) => _setLayout(
+        _changedLayout(presenting: selection.first),
+      ),
+    ),
+  );
+
+  Widget _presentationView(bool landscape) {
+    final isMac = _connectedPlatform == 'darwin' ||
+        (_connectedPlatform == null && _macShortcuts);
+    final selected = PresentationApp.values.firstWhere(
+      (candidate) => candidate.name == _remoteLayout.presentationApp,
+      orElse: () => PresentationApp.powerPoint,
+    );
+    final app = !isMac && selected == PresentationApp.keynote
+        ? PresentationApp.powerPoint : selected;
+    return PresentationControls(
+      key: const ValueKey('presentation-remote'),
+      app: app,
+      isMac: isMac,
+      enabled: agent.configured && !_connectionLost,
+      landscape: landscape,
+      onAppChanged: (selection) => _setLayout(
+        _changedLayout(presentationApp: selection.name),
+      ),
+      onKey: (key) => unawaited(command('key', {'key': key})),
+    );
+  }
+
+  Widget _landscapeRemote() {
+    final screen = MediaQuery.sizeOf(context);
+    final safe = MediaQuery.paddingOf(context);
+    final available = (screen.height - safe.vertical -
+        kToolbarHeight - 132.0).clamp(185.0, 390.0).toDouble();
+    return SizedBox(
+      key: const ValueKey('landscape-remote'),
+      height: available,
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(
+          flex: 6,
+          child: Column(children: [
+            Row(children: [
+              Expanded(child: TextButton.icon(
+                key: const ValueKey('landscape-trackpad-toggle'),
+                onPressed: () => _setLayout(_changedLayout(
+                  trackpad: !_remoteLayout.trackpadExpanded,
+                )),
+                icon: Icon(_remoteLayout.trackpadExpanded
+                    ? Icons.expand_less : Icons.expand_more),
+                label: Text(_remoteLayout.trackpadExpanded
+                    ? 'Hide trackpad' : 'Show trackpad'),
+              )),
+            ]),
+            if (_remoteLayout.trackpadExpanded) ...[
+              Expanded(child: LayoutBuilder(
+                builder: (context, limits) => _trackpadSurface(
+                  height: limits.maxHeight,
+                ),
+              )),
+              const SizedBox(height: 4),
+              Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: _connectionLost ? null :
+                      () => command('click', {'button': 'left'}),
+                  child: const Text('Left click'),
+                )),
+                const SizedBox(width: 6),
+                Expanded(child: OutlinedButton(
+                  onPressed: _connectionLost ? null :
+                      () => command('click', {'button': 'right'}),
+                  child: const Text('Right click'),
+                )),
+              ]),
+            ] else
+              const Expanded(child: Center(
+                child: Text('Trackpad hidden. Tap Show trackpad to open.'),
+              )),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 5,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _landscapeTyping(),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: Text('Quick keys',
+                    style: Theme.of(context).textTheme.titleSmall)),
+                  TextButton(
+                    onPressed: _customizeQuickKeys,
+                    child: const Text('Customize'),
+                  ),
+                ]),
+                if (_remoteLayout.quickKeys.isEmpty)
+                  const Text('Add quick keys using Customize.')
+                else
+                  Wrap(spacing: 4, runSpacing: 3, children: [
+                    for (final id in _remoteLayout.quickKeys)
+                      _quickKeyButton(id),
+                  ]),
+                TextButton.icon(
+                  onPressed: () => _setLayout(_changedLayout(
+                    arrows: !_remoteLayout.arrowsExpanded,
+                  )),
+                  icon: Icon(_remoteLayout.arrowsExpanded
+                      ? Icons.expand_less : Icons.expand_more),
+                  label: const Text('Arrow pad'),
+                ),
+                if (_remoteLayout.arrowsExpanded) _arrowPad(),
+                OutlinedButton.icon(
+                  onPressed: () => _setLayout(_changedLayout(
+                    more: !_remoteLayout.moreExpanded,
+                  )),
+                  icon: Icon(_remoteLayout.moreExpanded
+                      ? Icons.expand_less : Icons.expand_more),
+                  label: const Text('More controls'),
+                ),
+                if (_remoteLayout.moreExpanded) ..._moreControlSections(),
+              ],
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _landscapeTyping() => TextField(
+    controller: typing,
+    enabled: !_connectionLost,
+    autocorrect: false,
+    enableSuggestions: false,
+    decoration: const InputDecoration(
+      isDense: true,
+      prefixIcon: Icon(Icons.keyboard_outlined),
+      labelText: 'Type on computer',
+    ),
+    onChanged: (text) {
+      if (text.isNotEmpty) {
+        unawaited(command('text', {'text': text}));
+        typing.clear();
+      }
+    },
+  );
+
+  Widget _connectedControls() {
+    final colors = Theme.of(context).colorScheme;
+    final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Icon(Icons.circle, color: _connectionLost ? colors.error
+            : colors.primary, size: 11),
+        const SizedBox(width: 8),
+        Expanded(child: Text(discoveredName ?? host.text.trim(),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium)),
+        IconButton(
+          tooltip: 'Switch computer',
+          onPressed: () {
+            agent.disconnect();
+            setState(() {
+              _connectionLost = false;
+              _connectionTechnical = null;
+              status = 'Select a device to connect.';
+            });
+          },
+          icon: const Icon(Icons.swap_horiz, size: 20),
+        ),
+      ]),
+      if (_connectionLost) _connectionBanner(),
+      _modeSwitcher(),
+      if (_remoteLayout.presentationMode) _presentationView(landscape),
+      if (!_remoteLayout.presentationMode && landscape) _landscapeRemote(),
+      if (!_remoteLayout.presentationMode && !landscape) ...[
+      ListTile(
+        key: const ValueKey('trackpad-toggle'),
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        contentPadding: EdgeInsets.zero,
+        title: Text('Trackpad',
+            style: Theme.of(context).textTheme.titleMedium),
+        trailing: Icon(_remoteLayout.trackpadExpanded
+            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+        onTap: () => _setLayout(_changedLayout(
+          trackpad: !_remoteLayout.trackpadExpanded)),
+      ),
+      if (_remoteLayout.trackpadExpanded) ...[
+        _trackpadSurface(),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: OutlinedButton(
+            onPressed: _connectionLost ? null :
+                () => command('click', {'button': 'left'}),
+            child: const Text('Left click'),
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: OutlinedButton(
+            onPressed: _connectionLost ? null :
+                () => command('click', {'button': 'right'}),
+            child: const Text('Right click'),
+          )),
+        ]),
+        const SizedBox(height: 8),
+      ],
+      TextField(
+        controller: typing,
+        enabled: !_connectionLost,
+        autocorrect: false,
+        enableSuggestions: false,
+        decoration: const InputDecoration(
+          isDense: true,
+          prefixIcon: Icon(Icons.keyboard_outlined),
+          labelText: 'Type on computer',
+        ),
+        onChanged: (text) {
+          if (text.isNotEmpty) {
+            unawaited(command('text', {'text': text}));
+            typing.clear();
+          }
+        },
+      ),
+      const SizedBox(height: 10),
+      Row(children: [
+        Expanded(child: Text('Shortcuts',
+            style: Theme.of(context).textTheme.titleSmall)),
+        TextButton.icon(
+          onPressed: _customizeQuickKeys,
+          icon: const Icon(Icons.tune, size: 18),
+          label: const Text('Customize'),
+        ),
+      ]),
+      if (_remoteLayout.quickKeys.isEmpty)
+        const Text('Choose shortcuts using Customize.')
+      else
+        Wrap(spacing: 8, runSpacing: 4, children: [
+          for (final id in _remoteLayout.quickKeys) _quickKeyButton(id),
+        ]),
+      TextButton.icon(
+        key: const ValueKey('arrow-keys-toggle'),
+        onPressed: () => _setLayout(_changedLayout(
+          arrows: !_remoteLayout.arrowsExpanded)),
+        icon: Icon(_remoteLayout.arrowsExpanded
+            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+        label: Text(_remoteLayout.arrowsExpanded
+            ? 'Hide arrow keys' : 'Show arrow keys'),
+      ),
+      if (_remoteLayout.arrowsExpanded) _arrowPad(),
+      const Divider(),
+      OutlinedButton.icon(
+        key: const ValueKey('more-controls-toggle'),
+        onPressed: () => _setLayout(_changedLayout(
+          more: !_remoteLayout.moreExpanded)),
+        icon: Icon(_remoteLayout.moreExpanded
+            ? Icons.expand_less : Icons.expand_more),
+        label: Text(_remoteLayout.moreExpanded
+            ? 'Hide more controls' : 'More controls'),
+      ),
+      if (_remoteLayout.moreExpanded) ..._moreControlSections(),
+      ],
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = agent.configured;
+    return Scaffold(
+      key: _scaffoldKey,
+      drawer: appDrawer(),
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Open navigation',
+          icon: const Icon(Icons.menu),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+        title: const Text('TapTether'), actions: [
+        IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
+          agent.disconnect(); setState(() => status = 'Disconnected');
+        } : null, icon: const Icon(Icons.link_off)),
+      ]),
+      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
+        if (!connected) ...[
+          Text('Your devices. Your control. Your network.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              )),
+          const SizedBox(height: 12),
+        ],
+        if (!connected) updateNotices(),
+        if (!connected) ...[
+          deviceDashboard(),
+          if (_showPairForm) ...[
+          const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('For first-time pairing, enter the token and TLS SHA-256 fingerprint from your computer. Verified devices are saved securely on this phone.'),
+          const SizedBox(height: 12),
+          TextField(controller: host, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Computer LAN IP (e.g. 192.168.1.10)', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: token, obscureText: true, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Agent pairing token', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: pin, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Certificate SHA-256 fingerprint', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          FilledButton.icon(onPressed: () async { await connect(); }, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
+          ],
+        ] else ...[
+          _connectedControls(),
+        ],
+        const SizedBox(height: 16),
+        if (!connected) ...[
+          Text(status, style: TextStyle(fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 12),
+          Center(child: Text('TapTether v$installedVersion',
+            style: TextStyle(fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        ],
+      ])),
+    );
+  }
+}
+).hasMatch(macAddress)) {
+          _reportedMacAddress = macAddress.toUpperCase();
+        }
+        final platform = body['platform'];
+        if (platform == 'linux' || platform == 'darwin' ||
+            platform == 'windows') {
+          _reportedPlatform = platform as String;
+        }
+        return body['version'] as String;
+      }
+    } catch (_) {
+      // Older agent versions and offline connections still work normally.
+    }
+    return null;
+  }
+
+  void disconnect() {
+    _client?.close(force: true);
+    _client = null;
+    _base = null;
+    _token = null;
+    _identity = null;
+    _deviceId = null;
+    _session = null;
+    _sessionExpires = null;
+    _shutdownEnabled = false;
+    _reportedHostname = null;
+    _reportedPlatform = null;
+  }
+}
+
+class RemoteScreen extends StatefulWidget {
+  const RemoteScreen({super.key});
+  @override
+  State<RemoteScreen> createState() => _RemoteScreenState();
+}
+
+class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver {
+  final agent = LocalAgent();
+  final deviceStore = ComputerStore();
+  final remoteLayoutStore = RemoteLayoutStore();
+  final networkLocationStore = NetworkLocationStore();
+  Timer? _heartbeatTimer;
+  DetectedLanRange? _wifiRange;
+  String? _detectedLocation;
+  String _locationFilter = 'automatic';
+  bool _showOffline = false;
+  bool _checkingHeartbeat = false;
+  String? _lastNetworkId;
+  final Map<String, bool> _online = {};
+  RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
+  String? _connectedPlatform;
+  bool _connectionLost = false;
+  String? _connectionTechnical;
+  bool _retryingConnection = false;
+  List<SavedComputer> savedComputers = [];
+  List<DiscoveredDevice> nearbyComputers = [];
+  bool searching = false;
+  bool installingAgent = false;
+  bool _showPairForm = false;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  String? discoveredName;
+  final host = TextEditingController();
+  final token = TextEditingController();
+  final pin = TextEditingController();
+  final typing = TextEditingController();
+  String status = 'Not connected';
+  String installedVersion = '…';
+  String? availableAppVersion;
+  String? availableAgentVersion;
+  String? connectedAgentVersion;
+  String? _latestReleaseVersion;
+  bool _macShortcuts = false;
+  bool _haptics = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(loadInstalledVersion());
+    unawaited(checkForUpdates());
+    unawaited(loadComputers());
+    unawaited(_refreshNetworkLocation());
+    WidgetsBinding.instance.addObserver(this);
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed) {
+        unawaited(_refreshNetworkLocation());
+        unawaited(_refreshHeartbeats());
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshNetworkLocation());
+      unawaited(_refreshHeartbeats());
+    }
+  }
+
+  Future<void> _refreshNetworkLocation() async {
+    final current = await detectLanRange();
+    final label = await networkLocationStore.locationFor(current);
+    final identity = networkLocationStore.identifier(current);
+    if (mounted) {
+      setState(() {
+        if (_lastNetworkId != identity) _online.clear();
+        _lastNetworkId = identity;
+        _wifiRange = current;
+        _detectedLocation = label;
+      });
+    }
+  }
+
+  Future<bool> _pingSavedDevice(
+      SavedComputer device, PhoneIdentity? phone) async {
+    final connection = LocalAgent();
+    try {
+      connection.configure(device.host, device.token, device.fingerprint,
+          identity: device.deviceId.isNotEmpty ? phone : null,
+          deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
+      await connection.send('ping');
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      connection.disconnect();
+    }
+  }
+
+  Future<void> _refreshHeartbeats() async {
+    if (_checkingHeartbeat || savedComputers.isEmpty) return;
+    _checkingHeartbeat = true;
+    if (mounted) setState(() {});
+    try {
+      PhoneIdentity? phone;
+      try {
+        if (savedComputers.any((d) => d.deviceId.isNotEmpty)) {
+          phone = await PhoneIdentity.loadOrCreate();
+        }
+      } catch (_) {}
+      final snapshot = savedComputers.toList();
+      // Up to four TLS-pinned, authenticated pings at a time, once per
+      // minute while foregrounded. No local-network sweep or cloud traffic.
+      for (var start = 0; start < snapshot.length; start += 4) {
+        final chunk = snapshot.skip(start).take(4).toList();
+        final values = await Future.wait(
+          chunk.map((device) => _pingSavedDevice(device, phone)),
+        );
+        if (!mounted) break;
+        setState(() {
+          for (var i = 0; i < chunk.length; i++) {
+            _online[chunk[i].id] = values[i];
+          }
+        });
+      }
+    } finally {
+      _checkingHeartbeat = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _labelCurrentNetwork() async {
+    final network = _wifiRange;
+    if (network == null) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialog) => SimpleDialog(
+        title: const Text('This Wi-Fi network belongs to'),
+        children: [
+          for (final item in deviceLocations.entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialog, item.key),
+              child: Text(item.value),
+            ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await networkLocationStore.assign(network, choice);
+    // Assign existing uncategorized devices inside this subnet to the
+    // chosen location. Never override an explicitly selected category.
+    for (final device in savedComputers.toList()) {
+      if (device.location == 'other' &&
+          lanRangeContains(network, device.host)) {
+        await deviceStore.upsert(SavedComputer(
+          id: device.id, name: device.name, host: device.host,
+          token: device.token, fingerprint: device.fingerprint,
+          platform: device.platform, deviceId: device.deviceId,
+          customName: device.customName, location: choice,
+        ));
+      }
+    }
+    await loadComputers();
+    await _refreshNetworkLocation();
+  }
+
+  Future<void> scanQrPairing() async {
+    final scanned = await Navigator.of(context).push<PairingQR>(
+      MaterialPageRoute(builder: (_) => const PairingScanner()),
+    );
+    if (scanned == null || !mounted) return;
+    host.text = scanned.host;
+    token.text = scanned.token;
+    pin.text = scanned.fingerprint;
+    discoveredName = scanned.host;
+    await connect();
+  }
+
+  Future<void> openAgentInstaller() => _launchAgentInstaller();
+
+  Future<void> _launchAgentInstaller({
+    SavedComputer? device,
+    bool updateOnly = false,
+  }) async {
+    if (installingAgent) return;
+    setState(() => installingAgent = true);
+    try {
+      final address = device?.host ?? host.text.trim();
+      final known = savedComputers.where((d) => d.host == address);
+      final platform = device?.platform ?? agent.reportedPlatform ??
+          (known.isNotEmpty ? known.first.platform : _connectedPlatform);
+      await Navigator.of(context).push<void>(MaterialPageRoute(
+        builder: (_) => InstallAgentScreen(
+          initialHost: address,
+          knownPlatform: platform,
+          updateOnly: updateOnly,
+          onInstalled: (installed, installedPlatform) async {
+            host.text = installed.host;
+            token.text = installed.token;
+            pin.text = installed.fingerprint;
+            discoveredName = device?.name ?? installed.host;
+            _connectedPlatform = installedPlatform;
+            return connect();
+          },
+        ),
+      ));
+    } finally {
+      if (mounted) setState(() => installingAgent = false);
+    }
+  }
+
+  Future<void> loadComputers() async {
+    try {
+      final devices = await deviceStore.read();
+      if (mounted) setState(() => savedComputers = devices);
+      unawaited(_refreshHeartbeats());
+    } catch (_) {
+      if (mounted) {
+        setState(() =>
+            status = 'Saved devices could not be loaded. Check secure storage permissions.');
+      }
+    }
+  }
+
+  Future<void> scanNetwork() async {
+    final selected = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) =>
+          LanScanScreen(initialIp: host.text.trim())),
+    );
+    if (selected == null || !mounted) return;
+    agent.disconnect();
+    setState(() {
+      host.text = selected;
+      discoveredName = selected;
+      _showPairForm = true;
+      status = 'Selected $selected from LAN scan. Pairing credentials are still required.';
+    });
+  }
+
+  Future<void> searchNearby() async {
+    if (searching) return;
+    setState(() {
+      searching = true;
+      nearbyComputers = [];
+      status = 'Looking for TapTether agents on the local network…';
+    });
+    try {
+      final result = await findNearbyDevices();
+      if (!mounted) return;
+      setState(() {
+        nearbyComputers = result;
+        status = result.isEmpty
+            ? 'No agents found. Check Wi-Fi, firewall UDP 48322, or enter the address manually.'
+            : 'Found ${result.length} local computer(s). Select one to pair.';
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() =>
+            status = 'Discovery unavailable: $error. Enter the IP manually.');
+      }
+    } finally {
+      if (mounted) setState(() => searching = false);
+    }
+  }
+
+  void selectDiscovered(DiscoveredDevice device) {
+    setState(() {
+      discoveredName = device.name;
+      _connectedPlatform = device.platform;
+      _macShortcuts = device.platform == 'darwin';
+      _showPairForm = true;
+      host.text = device.host;
+      token.clear();
+      pin.clear();
+      status = 'Discovered ${device.name}. Enter its token and certificate fingerprint to verify ownership.';
+    });
+  }
+
+  Future<void> connectSaved(SavedComputer device) async {
+    host.text = device.host;
+    token.text = device.token;
+    pin.text = device.fingerprint;
+    discoveredName = device.name;
+    _connectedPlatform = device.platform;
+    _macShortcuts = device.platform == 'darwin';
+    await connect(existingId: device.id, deviceId: device.deviceId);
+  }
+
+  Future<void> forgetComputer(SavedComputer device) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text('Forget ${device.name}?'),
+        content: const Text('Its saved token and certificate fingerprint will be erased from this phone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Forget')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final updated = await deviceStore.remove(device.id);
+      if (mounted) setState(() => savedComputers = updated);
+    } catch (_) {
+      if (mounted) setState(() => status = 'Cannot erase saved pairing from secure storage.');
+    }
+  }
+
+  Future<void> openDeviceManager() async {
+    final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => DeviceManagerScreen(
+        store: deviceStore,
+        onConnect: connectSaved,
+        onUpdate: (device) => _launchAgentInstaller(
+            device: device, updateOnly: true),
+      ),
+    ));
+    if (!mounted) return;
+    await loadComputers();
+    if (addNew == true && mounted) setState(() => _showPairForm = true);
+  }
+
+  Future<void> openSshKeys() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const SshKeyScreen(),
+    ));
+  }
+
+  Future<void> openSecuritySettings() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const SecuritySettingsScreen(),
+    ));
+  }
+
+  void showPairForm() {
+    if (agent.configured) agent.disconnect();
+    setState(() {
+      _showPairForm = true;
+      status = 'Enter verified computer pairing details.';
+    });
+  }
+
+  Widget appDrawer() => Drawer(
+    child: SafeArea(child: ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.asset('assets/branding/taptether.png',
+                  width: 54, height: 54),
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('TapTether',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const Text('Your network. Your control.'),
+              ],
+            )),
+          ]),
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.devices_outlined),
+          title: const Text('My Devices'),
+          onTap: () {
+            Navigator.pop(context);
+            if (agent.configured) {
+              agent.disconnect();
+              setState(() => status = 'Select a device to connect.');
+            }
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.key_outlined),
+          title: const Text('SSH Keys'),
+          onTap: () {
+            Navigator.pop(context);
+            openSshKeys();
+          },
+        ),
+        ExpansionTile(
+          leading: const Icon(Icons.add_circle_outline),
+          title: const Text('Add & Discover'),
+          childrenPadding: const EdgeInsets.only(left: 16),
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Pair computer'),
+              onTap: () {
+                Navigator.pop(context);
+                showPairForm();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code_scanner),
+              title: const Text('Scan QR'),
+              onTap: () {
+                Navigator.pop(context);
+                scanQrPairing();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.radar),
+              title: const Text('Discover computers'),
+              onTap: () {
+                Navigator.pop(context);
+                if (agent.configured) agent.disconnect();
+                searchNearby();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.network_check),
+              title: const Text('Scan local IP network'),
+              onTap: () {
+                Navigator.pop(context);
+                scanNetwork();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.install_desktop),
+              title: const Text('Install Agent'),
+              onTap: installingAgent ? null : () {
+                Navigator.pop(context);
+                openAgentInstaller();
+              },
+            ),
+          ],
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.shield_outlined),
+          title: const Text('Security & Appearance'),
+          onTap: () {
+            Navigator.pop(context);
+            openSecuritySettings();
+          },
+        ),
+        AboutListTile(
+          icon: const Icon(Icons.info_outline),
+          applicationName: 'TapTether',
+          applicationVersion: installedVersion,
+          child: const Text('About'),
+        ),
+      ],
+    )),
+  );
+
+  Widget deviceDashboard() {
+    final visibleDevices = visibleSavedDevices(
+      savedComputers,
+      online: _online,
+      locationFilter: _locationFilter,
+      currentLocation: _detectedLocation,
+      currentNetwork: _wifiRange,
+      showOffline: _showOffline,
+    );
+    return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(children: [
+        Expanded(child: Text('My Devices',
+          style: Theme.of(context).textTheme.headlineSmall)),
+        TextButton.icon(
+          onPressed: openDeviceManager,
+          icon: const Icon(Icons.settings_outlined),
+          label: const Text('Manage'),
+        ),
+      ]),
+      const SizedBox(height: 8),
+      if (savedComputers.isNotEmpty) ...[
+        Row(children: [
+          Expanded(child: DropdownButtonFormField<String>(
+            key: const ValueKey('device-location-filter'),
+            initialValue: _locationFilter,
+            decoration: const InputDecoration(
+              isDense: true, labelText: 'Location'),
+            items: [
+              DropdownMenuItem(value: 'automatic',
+                child: Text(_detectedLocation == null
+                    ? 'Current network'
+                     : 'Current · ${deviceLocations[_detectedLocation]!}')),
+              const DropdownMenuItem(
+                value: 'all', child: Text('All locations')),
+              for (final category in deviceLocations.entries)
+                DropdownMenuItem(value: category.key, child: Text(category.value)),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _locationFilter = value);
+            },
+          )),
+          IconButton(
+            tooltip: 'Check online computers',
+            onPressed: _checkingHeartbeat ? null : _refreshHeartbeats,
+            icon: const Icon(Icons.refresh),
+          ),
+        ]),
+        Row(children: [
+          Checkbox(
+            key: const ValueKey('show-offline-devices'),
+            value: _showOffline,
+            onChanged: (value) => setState(() => _showOffline = value ?? false),
+          ),
+          const Text('Show offline'),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _wifiRange == null ? null : _labelCurrentNetwork,
+            icon: const Icon(Icons.location_on_outlined, size: 17),
+            label: const Text('Label network'),
+          ),
+        ]),
+        if (_wifiRange != null)
+          Text('Wi-Fi: ${_wifiRange!.cidr}'
+              '${_detectedLocation == null ? ' · Unassigned' : ' · ${deviceLocations[_detectedLocation]!}'}',
+              style: Theme.of(context).textTheme.bodySmall),
+        if (_checkingHeartbeat)
+          const LinearProgressIndicator(),
+        const SizedBox(height: 8),
+        if (visibleDevices.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Text(_checkingHeartbeat
+                ? 'Checking which computers are online…'
+                : 'No online computers for this location. Select Show offline '
+                  'to see saved devices or change the location filter.'),
+          ),
+      ],
+      if (savedComputers.isEmpty)
+        Card(child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.devices_other_outlined, size: 36),
+              const SizedBox(height: 12),
+              Text('No computers paired yet',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 6),
+              const Text('Pair a computer on your local network '
+                  'to reconnect with a single tap.'),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: showPairForm,
+                icon: const Icon(Icons.add),
+                label: const Text('Pair computer'),
+              ),
+            ],
+          ),
+        ))
+      else
+        for (final device in visibleDevices)
+          Card(child: ListTile(
+            leading: Icon(device.platform == 'darwin'
+                ? Icons.laptop_mac : Icons.computer),
+            title: Text(device.name, maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
+                ' · ${_online[device.id] == true ? 'Online' : _online[device.id] == false ? 'Offline' : 'Checking…'}',
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+            trailing: Icon(Icons.circle, size: 13,
+                color: _online[device.id] == true
+                    ? Colors.green : Theme.of(context)
+                        .colorScheme.outline),
+            onTap: () => connectSaved(device),
+          )),
+      for (final nearby in nearbyComputers)
+        Card(child: ListTile(
+          leading: const Icon(Icons.radar),
+          title: Text(nearby.name),
+          subtitle: Text('${nearby.host} · ${nearby.platform}'),
+          trailing: const Icon(Icons.add_link),
+          onTap: () => selectDiscovered(nearby),
+        )),
+      const SizedBox(height: 20),
+      Text('Quick actions', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 6),
+      Wrap(spacing: 8, runSpacing: 4, children: [
+        ActionChip(
+          avatar: const Icon(Icons.add, size: 18),
+          label: const Text('Pair'),
+          onPressed: showPairForm,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.qr_code_scanner, size: 18),
+          label: const Text('Scan QR'),
+          onPressed: scanQrPairing,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.radar, size: 18),
+          label: Text(searching ? 'Searching…' : 'Discover'),
+          onPressed: searching ? null : searchNearby,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.network_check, size: 18),
+          label: const Text('Scan IPs'),
+          onPressed: scanNetwork,
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.install_desktop, size: 18),
+          label: const Text('Install agent'),
+          onPressed: installingAgent ? null : openAgentInstaller,
+        ),
+      ]),
+      const SizedBox(height: 14),
+    ],
+   );
+  }
+
+  bool newerThan(String latest, String installed) {
+    final pattern = RegExp(r'^([0-9]+)[.]([0-9]+)[.]([0-9]+)(?:[+]([0-9]+))?');
+    final a = pattern.firstMatch(latest);
+    final b = pattern.firstMatch(installed);
+    if (a == null || b == null) return false;
+    for (var i = 1; i <= 4; i++) {
+      final left = int.parse(a.group(i) ?? '0');
+      final right = int.parse(b.group(i) ?? '0');
+      if (left != right) return left > right;
+    }
+    return false;
+  }
+
+  Future<void> loadInstalledVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() =>
+          installedVersion = '${info.version}+${info.buildNumber}');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => installedVersion = 'unavailable');
+      }
+    }
+  }
+
+  Future<void> checkForUpdates() async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 4);
+    try {
+      // The only startup internet request checks public release metadata.
+      final request = await client.getUrl(Uri.parse(
+        'https://raw.githubusercontent.com/ssnanda/taptether.com/main/altstore.json'));
+      request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+      final response = await request.close().timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) return;
+      final data = jsonDecode(await utf8.decoder.bind(response).join());
+      if (data is! Map || data['apps'] is! List) return;
+      final apps = data['apps'] as List;
+      if (apps.isEmpty || apps.first is! Map) return;
+      final app = apps.first as Map;
+      if (app['version'] is! String) return;
+      final latest = "${app['version']}+${app['buildVersion']}";
+      final local = await PackageInfo.fromPlatform();
+      final current = '${local.version}+${local.buildNumber}';
+      if (!mounted) return;
+      setState(() {
+        _latestReleaseVersion = latest;
+        availableAppVersion = newerThan(latest, current) ? latest : null;
+        availableAgentVersion = connectedAgentVersion != null &&
+                newerThan(latest, connectedAgentVersion!)
+            ? latest : null;
+      });
+    } catch (_) {
+      // LAN control remains usable without internet access.
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Widget updateNotices() => Column(children: [
+    if (availableAppVersion != null) Card(child: ListTile(
+      leading: const Icon(Icons.system_update),
+      title: Text('TapTether ${availableAppVersion!} available'),
+      subtitle: const Text('View the new IPA in AltStore / GitHub Releases.'),
+      trailing: const Icon(Icons.open_in_new),
+      onTap: () => launchUrl(
+        Uri.parse('https://github.com/ssnanda/taptether.com/releases/tag/current'),
+        mode: LaunchMode.externalApplication),
+    )),
+    if (availableAgentVersion != null) Card(child: ListTile(
+      leading: const Icon(Icons.computer),
+      title: Text('Computer agent update: ${availableAgentVersion!}'),
+      subtitle: const Text('On the computer, run taptetherctl check-update and update.'),
+    )),
+  ]);
+
+  Future<void> confirmShutdown() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Shut down this computer?'),
+        content: const Text('Open applications will close and unsaved work may be lost.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Shut down')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await agent.send('shutdown');
+      if (mounted) setState(() => status = 'Shutdown requested.');
+    } catch (e) {
+      _handleRemoteFailure(e);
+    }
+  }
+
+
+  final Map<int, Offset> _touches = {};
+  double? _pinchStart;
+  bool _pinching = false;
+  double _swipeX = 0;
+  bool _swipeSent = false;
+  bool _multiTouchGesture = false;
+  double _scrollRemainder = 0;
+  int _pendingScroll = 0;
+  Timer? _scrollTimer;
+  bool _scrollInFlight = false;
+  double mouseSensitivity = 3.8;
+
+  void _touchDown(PointerDownEvent e) {
+    if (_touches.isEmpty) _multiTouchGesture = false;
+    _touches[e.pointer] = e.localPosition;
+    if (_touches.length > 1) _multiTouchGesture = true;
+    _pinchStart = _touches.length == 2
+        ? (_touches.values.first - _touches.values.last).distance : null;
+    _pinching = false;
+    if (_touches.length == 3) {
+      _swipeX = 0;
+      _swipeSent = false;
+    }
+  }
+
+  void _touchMove(PointerMoveEvent e) {
+    final before = _touches[e.pointer];
+    if (before == null) return;
+    _touches[e.pointer] = e.localPosition;
+    final delta = e.localPosition - before;
+    if (_touches.length == 1) {
+      queueMovement(delta);
+    } else if (_touches.length == 2) {
+      final distance = (_touches.values.first - _touches.values.last).distance;
+      _pinchStart ??= distance;
+      if ((distance - _pinchStart!).abs() >= 40) {
+        _pinching = true;
+        unawaited(command('key', {'key': _shortcut(
+            distance > _pinchStart! ? 'equal' : 'minus')}));
+        _pinchStart = distance;
+      }
+      if (!_pinching) {
+        _scrollRemainder += delta.dy / 15;
+        final ticks = _scrollRemainder.truncate();
+        if (ticks != 0) {
+          _scrollRemainder -= ticks;
+          _pendingScroll += ticks;
+          _scheduleScroll();
+        }
+      }
+    } else if (_touches.length >= 3 && !_swipeSent) {
+      _swipeX += delta.dx;
+      if (_swipeX.abs() >= 115) {
+        _swipeSent = true;
+        unawaited(command('key', {'key': _macShortcuts
+            ? (_swipeX > 0 ? 'cmd+tab' : 'shift+cmd+tab')
+            : (_swipeX > 0 ? 'alt+tab' : 'shift+alt+tab')}));
+      }
+    }
+  }
+
+  void _touchUp(PointerEvent e) {
+    _touches.remove(e.pointer);
+    if (_touches.length < 2) {
+      _pinchStart = null;
+      _pinching = false;
+      _scrollRemainder = 0;
+    }
+    if (_touches.length < 3) _swipeX = 0;
+  }
+
+  String _shortcut(String key) =>
+      '${_macShortcuts ? 'cmd' : 'ctrl'}+$key';
+
+  void _scheduleScroll() {
+    if (_scrollTimer != null || _scrollInFlight || !agent.configured) return;
+    _scrollTimer = Timer(const Duration(milliseconds: 20), _flushScroll);
+  }
+
+  Future<void> _flushScroll() async {
+    _scrollTimer = null;
+    if (!agent.configured || _scrollInFlight) return;
+    final ticks = _pendingScroll.clamp(-8, 8).toInt();
+    if (ticks == 0) return;
+    _pendingScroll -= ticks;
+    _scrollInFlight = true;
+    try {
+      await command('scroll', {'dy': ticks});
+    } finally {
+      _scrollInFlight = false;
+      if (_pendingScroll != 0) _scheduleScroll();
+    }
+  }
+
+  // Only by explicit tap; sends text into the focused desktop app, not the OS clipboard.
+  Future<void> typePhoneClipboard() async {
+    try {
+      final value = (await Clipboard.getData('text/plain'))?.text;
+      if (value == null || value.isEmpty) {
+        if (mounted) setState(() => status = 'Phone clipboard has no text.');
+        return;
+      }
+      for (final chunk in clipboardChunks(value)) {
+        await agent.send('text', {'text': chunk});
+      }
+      if (mounted) {
+        setState(() =>
+            status = 'Typed phone clipboard into the active computer window.');
+      }
+    } catch (error) {
+      _handleRemoteFailure(error);
+    }
+  }
+  double _pendingMoveX = 0;
+  double _pendingMoveY = 0;
+  bool _movementInFlight = false;
+  Timer? _movementTimer;
+
+  // Preserve all touch motion while sending only one network movement at a time.
+  void queueMovement(Offset delta) {
+    _pendingMoveX += delta.dx * mouseSensitivity;
+    _pendingMoveY += delta.dy * mouseSensitivity;
+    _scheduleMovement();
+  }
+
+  void _scheduleMovement() {
+    if (_movementTimer != null || _movementInFlight || !agent.configured) return;
+    _movementTimer = Timer(const Duration(milliseconds: 12), _flushMovement);
+  }
+
+  Future<void> _flushMovement() async {
+    _movementTimer = null;
+    if (!agent.configured || _movementInFlight) return;
+    final dx = _pendingMoveX.truncate().clamp(-300, 300);
+    final dy = _pendingMoveY.truncate().clamp(-300, 300);
+    if (dx == 0 && dy == 0) return;
+    _pendingMoveX -= dx;
+    _pendingMoveY -= dy;
+    _movementInFlight = true;
+    try {
+      await command('move', {'dx': dx, 'dy': dy});
+    } finally {
+      _movementInFlight = false;
+      if (_pendingMoveX.abs() >= 1 || _pendingMoveY.abs() >= 1) {
+        _scheduleMovement();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _heartbeatTimer?.cancel();
+    host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
+    _movementTimer?.cancel();
+    _scrollTimer?.cancel();
+    agent.disconnect();
+    super.dispose();
+  }
+
+  Future<void> command(String type, [Map<String, Object> data = const {}]) async {
+    try {
+      await agent.send(type, data);
+      if (_connectionLost && mounted) {
+        setState(() {
+          _connectionLost = false;
+          _connectionTechnical = null;
+          status = 'Connected to ${host.text.trim()}';
+        });
+      }
+      if (_haptics && (type == 'click' || type == 'key')) {
+        unawaited(HapticFeedback.selectionClick());
+      }
+    } catch (e) {
+      _handleRemoteFailure(e);
+    }
+  }
+
+  Future<bool> connect({String? existingId, String? deviceId}) async {
+    try {
+      if (mounted) {
+        setState(() => _remoteLayout = const RemoteLayoutSettings());
+      }
+      final phone = await PhoneIdentity.loadOrCreate();
+      agent.configure(host.text, token.text, pin.text,
+        identity: deviceId != null && deviceId.isNotEmpty ? phone : null,
+        deviceId: deviceId != null && deviceId.isNotEmpty ? deviceId : null);
+      await agent.send('ping');
+      // Upgrade legacy token pairing to a device-specific signed identity.
+      var enrolledId = deviceId ?? '';
+      if (enrolledId.isEmpty) {
+        try {
+          enrolledId = await agent.enrollPhone(phone, 'Phone');
+          agent.usePhoneKey(phone, enrolledId);
+          await agent.send('ping');
+        } catch (_) {
+          // Older agents still accept legacy token pairing until upgraded.
+          agent.configure(host.text, token.text, pin.text);
+          await agent.send('ping');
+          enrolledId = '';
+        }
+      }
+      final currentAgent = await agent.agentVersion();
+      String? verifiedName = agent.reportedHostname;
+      // Older agents do not yet report hostname; reverse DNS is only a
+      // display hint after a successful authenticated, TLS-pinned ping.
+      if (verifiedName == null) {
+        try {
+          final ip = InternetAddress(host.text.trim());
+          final reverse = await ip.reverse()
+              .timeout(const Duration(milliseconds: 750));
+          if (reverse.host != host.text.trim() &&
+              RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$')
+                  .hasMatch(reverse.host)) {
+            verifiedName = reverse.host;
+          }
+        } catch (_) {}
+      }
+      _connectedPlatform = agent.reportedPlatform ?? _connectedPlatform;
+      if (verifiedName != null) discoveredName = verifiedName;
+      if (mounted) {
+        setState(() {
+        status = 'Connected to ${host.text.trim()}';
+        _connectionLost = false;
+        _connectionTechnical = null;
+        connectedAgentVersion = currentAgent;
+        availableAgentVersion = currentAgent != null &&
+                _latestReleaseVersion != null &&
+                newerThan(_latestReleaseVersion!, currentAgent)
+            ? _latestReleaseVersion : null;
+        });
+      }
+      // Persist only after certificate pin verification and authenticated ping.
+      try {
+        final matches = savedComputers.where((d) => d.host == host.text.trim());
+        final existing = matches.isEmpty ? null : matches.first;
+        final discovered = nearbyComputers.where((d) => d.host == host.text.trim());
+        final location = _detectedLocation ?? existing?.location ?? 'other';
+        final device = SavedComputer(
+          id: existingId ?? existing?.id ?? SavedComputer.newId(),
+          name: existing?.customName == true
+              ? existing!.name
+              : verifiedName ?? discoveredName ?? existing?.name ?? host.text.trim(),
+          host: host.text.trim(),
+          token: enrolledId.isEmpty ? token.text.trim() : '',
+          deviceId: enrolledId,
+          fingerprint: pin.text.replaceAll(RegExp(r'[^a-fA-F0-9]'), '').toUpperCase(),
+          platform: agent.reportedPlatform ?? (discovered.isEmpty
+              ? (_connectedPlatform ?? existing?.platform ?? 'computer')
+              : discovered.first.platform),
+          location: location,
+          customName: existing?.customName ?? false,
+        );
+        final updated = await deviceStore.upsert(device);
+        if (mounted) {
+          setState(() {
+            savedComputers = updated;
+            _online[device.id] = true;
+          });
+        }
+        unawaited(_loadLayoutForHost(host.text.trim()));
+        return true;
+      } catch (_) {
+        if (mounted) {
+          setState(() =>
+              status = 'Connected, but secure storage could not save this pairing.');
+        }
+        return false;
+      }
+    } catch (e) {
+      agent.disconnect();
+      if (mounted) setState(() => status = '$e');
+      return false;
+    }
+  }
+
+  Widget keyButton(String label, String key, {double? width}) =>
+      SizedBox(width: width, child: OutlinedButton(
+        onPressed: agent.configured && !_connectionLost
+            ? () => command('key', {'key': key}) : null,
+        child: Text(label, textAlign: TextAlign.center),
+      ));
+
+
+  Future<void> _loadLayoutForHost(String expectedHost) async {
+    final loaded = await remoteLayoutStore.read(expectedHost);
+    if (mounted && agent.configured && host.text.trim() == expectedHost) {
+      setState(() => _remoteLayout = loaded);
+    }
+  }
+
+  void _setLayout(RemoteLayoutSettings next) {
+    setState(() => _remoteLayout = next);
+    unawaited(_persistLayout(host.text.trim(), next));
+  }
+
+  Future<void> _persistLayout(
+      String computer, RemoteLayoutSettings value) async {
+    if (computer.isEmpty) return;
+    try {
+      await remoteLayoutStore.write(computer, value);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Unable to save control preferences on this phone.'),
+        ));
+      }
+    }
+  }
+
+  RemoteLayoutSettings _changedLayout({
+    bool? trackpad,
+    bool? arrows,
+    bool? more,
+    bool? presenting,
+    String? presentationApp,
+    List<String>? sections,
+    List<String>? quick,
+  }) => RemoteLayoutSettings(
+    trackpadExpanded: trackpad ?? _remoteLayout.trackpadExpanded,
+    arrowsExpanded: arrows ?? _remoteLayout.arrowsExpanded,
+    moreExpanded: more ?? _remoteLayout.moreExpanded,
+    presentationMode: presenting ?? _remoteLayout.presentationMode,
+    presentationApp: presentationApp ?? _remoteLayout.presentationApp,
+    expandedSections: sections ?? _remoteLayout.expandedSections,
+    quickKeys: quick ?? _remoteLayout.quickKeys,
+  );
+
+  void _toggleMoreSection(String id) {
+    final enabled = _remoteLayout.expandedSections.toSet();
+    if (!enabled.add(id)) enabled.remove(id);
+    _setLayout(_changedLayout(sections: enabled.toList()));
+  }
+
+  void _handleRemoteFailure(Object error) {
+    if (!mounted) return;
+    final disconnected = error is SocketException ||
+        error is TimeoutException ||
+        error is HandshakeException ||
+        error is HttpException;
+    setState(() {
+      if (disconnected) {
+        _connectionLost = true;
+        _connectionTechnical = error.toString();
+        status = 'Connection lost';
+        _pendingMoveX = 0;
+        _pendingMoveY = 0;
+        _pendingScroll = 0;
+        _touches.clear();
+      } else {
+        status = 'Remote command failed. Check the computer connection.';
+      }
+    });
+  }
+
+  Future<void> _retryRemoteConnection() async {
+    if (_retryingConnection || !agent.configured) return;
+    setState(() => _retryingConnection = true);
+    try {
+      await agent.send('ping');
+      if (mounted) {
+        setState(() {
+          _connectionLost = false;
+          _connectionTechnical = null;
+          status = 'Connected to ${host.text.trim()}';
+        });
+      }
+    } catch (error) {
+      _handleRemoteFailure(error);
+    } finally {
+      if (mounted) setState(() => _retryingConnection = false);
+    }
+  }
+
+  String _quickKeyCommand(String id) {
+    if (RegExp(r'^f(?:[1-9]|1[0-2])$').hasMatch(id)) return id;
+    switch (id) {
+      case 'escape': return 'Escape';
+      case 'tab': return 'Tab';
+      case 'enter': return 'Return';
+      case 'backspace': return 'BackSpace';
+      case 'up': return 'Up';
+      case 'down': return 'Down';
+      case 'left': return 'Left';
+      case 'right': return 'Right';
+      case 'copy': return _shortcut('c');
+      case 'paste': return _shortcut('v');
+      case 'selectAll': return _shortcut('a');
+      case 'undo': return _shortcut('z');
+      case 'find': return _shortcut('f');
+      case 'newTab': return _shortcut('t');
+      case 'switchApp': return _macShortcuts ? 'cmd+tab' : 'alt+tab';
+      case 'home': return 'home';
+      case 'end': return 'end';
+      case 'pageUp': return 'pageup';
+      case 'pageDown': return 'pagedown';
+      case 'volumeDown': return 'XF86AudioLowerVolume';
+      case 'mute': return 'XF86AudioMute';
+      case 'volumeUp': return 'XF86AudioRaiseVolume';
+      default: throw ArgumentError.value(id, 'id', 'Unknown remote control');
+    }
+  }
+
+  Widget _quickKeyButton(String id) =>
+      keyButton(remoteQuickKeyLabels[id]!, _quickKeyCommand(id));
+
+  Future<void> _customizeQuickKeys() async {
+    final chosen = _remoteLayout.quickKeys.toList();
+    final result = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, updateSheet) => SafeArea(child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.75,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(children: [
+              Row(children: [
+                Expanded(child: Text('Customize quick keys',
+                    style: Theme.of(context).textTheme.titleLarge)),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, chosen),
+                  child: const Text('Save'),
+                ),
+              ]),
+              const Text('Choose visible buttons and move them up or down '
+                  'to set the order. These settings are saved per computer.'),
+              const SizedBox(height: 8),
+              Expanded(child: ListView(children: [
+                if (chosen.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text('No quick keys selected. Add buttons below.'),
+                  ),
+                for (var i = 0; i < chosen.length; i++)
+                  ListTile(
+                    key: ValueKey('quick-${chosen[i]}'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(remoteQuickKeyLabels[chosen[i]]!),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                        tooltip: 'Move up',
+                        icon: const Icon(Icons.arrow_upward),
+                        onPressed: i == 0 ? null : () => updateSheet(() {
+                          final key = chosen.removeAt(i);
+                          chosen.insert(i - 1, key);
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Move down',
+                        icon: const Icon(Icons.arrow_downward),
+                        onPressed: i == chosen.length - 1 ? null
+                            : () => updateSheet(() {
+                          final key = chosen.removeAt(i);
+                          chosen.insert(i + 1, key);
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => updateSheet(() => chosen.removeAt(i)),
+                      ),
+                    ]),
+                  ),
+                const Divider(),
+                Text('Available controls',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 4, children: [
+                  for (final entry in remoteQuickKeyLabels.entries)
+                    if (!chosen.contains(entry.key))
+                      ActionChip(
+                        avatar: const Icon(Icons.add, size: 18),
+                        label: Text(entry.value),
+                        onPressed: () => updateSheet(() => chosen.add(entry.key)),
+                      ),
+                ]),
+              ])),
+            ]),
+          ),
+        )),
+      ),
+    );
+    if (result != null && mounted) {
+      _setLayout(_changedLayout(quick: result));
+    }
+  }
+
+
+  Widget _advancedSection(String id, String title, IconData icon,
+      Widget content) {
+    final open = _remoteLayout.expandedSections.contains(id);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon),
+        title: Text(title),
+        trailing: Icon(open ? Icons.expand_less : Icons.expand_more),
+        onTap: () => _toggleMoreSection(id),
+      ),
+      if (open) Padding(padding: const EdgeInsets.only(bottom: 12),
+          child: content),
+      const Divider(height: 1),
+    ]);
+  }
+
+  Widget _arrowPad() => Column(children: [
+    Center(child: _quickKeyButton('up')),
+    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      _quickKeyButton('left'),
+      const SizedBox(width: 8),
+      _quickKeyButton('down'),
+      const SizedBox(width: 8),
+      _quickKeyButton('right'),
+    ]),
+  ]);
+
+  Widget _trackpadSurface({double height = 224}) => GestureDetector(
+    // Win the gesture arena against the enclosing ListView. A Listener
+    // receives raw multi-touch pointer events but cannot stop parent scroll.
+    // Pointer tracking below continues to handle movement and two-finger
+    // gestures; these pan handlers deliberately do not send duplicate input.
+    behavior: HitTestBehavior.opaque,
+    onPanStart: (_) {},
+    onPanUpdate: (_) {},
+    onTap: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'left'}));
+    },
+    onDoubleTap: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'double'}));
+    },
+    onLongPress: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'right'}));
+    },
+    child: Listener(
+      onPointerDown: _connectionLost ? null : _touchDown,
+      onPointerUp: _connectionLost ? null : _touchUp,
+      onPointerCancel: _connectionLost ? null : _touchUp,
+      onPointerMove: _connectionLost ? null : _touchMove,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.primary
+                .withValues(alpha: 0.25))),
+        child: Center(child: Icon(Icons.touch_app, size: 36,
+            color: Theme.of(context).colorScheme.onPrimaryContainer
+                .withValues(alpha: 0.5))),
+      ),
+    ),
+  );
+
+  Widget _connectionBanner() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.wifi_off_outlined),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Connection lost',
+              style: Theme.of(context).textTheme.titleMedium)),
+          TextButton.icon(
+            onPressed: _retryingConnection ? null : _retryRemoteConnection,
+            icon: const Icon(Icons.refresh),
+            label: Text(_retryingConnection ? 'Retrying…' : 'Retry'),
+          ),
+        ]),
+        const Text('The computer agent is not responding. Check that it '
+            'is running and retry.'),
+        if (_connectionTechnical != null)
+          ExpansionTile(
+            title: const Text('Technical details'),
+            tilePadding: EdgeInsets.zero,
+            children: [SelectableText(_connectionTechnical!,
+                style: Theme.of(context).textTheme.bodySmall)],
+          ),
+      ]),
+    ),
+  );
+
+  List<Widget> _moreControlSections() => [
+        _advancedSection('editing', 'Editing & shortcuts',
+          Icons.edit_outlined, Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(spacing: 8, runSpacing: 4, children: [
+                for (final id in [
+                  'copy', 'paste', 'selectAll', 'undo', 'find', 'newTab',
+                  'switchApp',
+                ]) _quickKeyButton(id),
+              ]),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _connectionLost ? null : typePhoneClipboard,
+                icon: const Icon(Icons.content_paste_go),
+                label: const Text('Type phone clipboard'),
+              ),
+              Text('Explicit action only · up to 4 KB · no clipboard sync',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+        _advancedSection('extended', 'Extended keyboard',
+          Icons.keyboard_alt_outlined, Wrap(
+            spacing: 8, runSpacing: 4, children: [
+              for (final id in ['home', 'end', 'pageUp', 'pageDown'])
+                _quickKeyButton(id),
+              for (var f = 1; f <= 12; f++) keyButton('F$f', 'f$f'),
+            ],
+          ),
+        ),
+        _advancedSection('volume', 'Volume & media',
+          Icons.volume_up_outlined, Wrap(
+            spacing: 8, runSpacing: 4, children: [
+              for (final id in ['volumeDown', 'mute', 'volumeUp'])
+                _quickKeyButton(id),
+            ],
+          ),
+        ),
+        _advancedSection('power', 'Power',
+          Icons.power_settings_new_outlined, Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              OutlinedButton.icon(
+                onPressed: agent.shutdownEnabled ? confirmShutdown : null,
+                icon: const Icon(Icons.power_settings_new),
+                label: const Text('Shut down computer'),
+              ),
+              if (!agent.shutdownEnabled)
+                const Text('Remote shutdown is disabled. Enable it on '
+                    'Ubuntu with taptetherctl enable-shutdown.'),
+            ],
+          ),
+        ),
+        _advancedSection('preferences', 'Remote preferences',
+          Icons.settings_outlined, Column(children: [
+            Row(children: [
+              Text('Pointer: ${mouseSensitivity.toStringAsFixed(1)}×'),
+              Expanded(child: Slider(
+                value: mouseSensitivity, min: 1.0, max: 8.0, divisions: 28,
+                onChanged: (value) =>
+                    setState(() => mouseSensitivity = value),
+              )),
+            ]),
+            if (_connectedPlatform != 'linux')
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Mac shortcuts (⌘)'),
+                value: _macShortcuts,
+                onChanged: (value) => setState(() => _macShortcuts = value),
+              ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Haptic feedback'),
+              value: _haptics,
+              onChanged: (value) => setState(() => _haptics = value),
+            ),
+          ]),
+        ),
+  ];
+
+
+  Widget _modeSwitcher() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: SegmentedButton<bool>(
+      key: const ValueKey('remote-mode-switcher'),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment<bool>(
+          value: false,
+          label: Text('Remote'),
+          icon: Icon(Icons.mouse_outlined),
+        ),
+        ButtonSegment<bool>(
+          value: true,
+          label: Text('Presentation'),
+          icon: Icon(Icons.slideshow_outlined),
+        ),
+      ],
+      selected: {_remoteLayout.presentationMode},
+      onSelectionChanged: (selection) => _setLayout(
+        _changedLayout(presenting: selection.first),
+      ),
+    ),
+  );
+
+  Widget _presentationView(bool landscape) {
+    final isMac = _connectedPlatform == 'darwin' ||
+        (_connectedPlatform == null && _macShortcuts);
+    final selected = PresentationApp.values.firstWhere(
+      (candidate) => candidate.name == _remoteLayout.presentationApp,
+      orElse: () => PresentationApp.powerPoint,
+    );
+    final app = !isMac && selected == PresentationApp.keynote
+        ? PresentationApp.powerPoint : selected;
+    return PresentationControls(
+      key: const ValueKey('presentation-remote'),
+      app: app,
+      isMac: isMac,
+      enabled: agent.configured && !_connectionLost,
+      landscape: landscape,
+      onAppChanged: (selection) => _setLayout(
+        _changedLayout(presentationApp: selection.name),
+      ),
+      onKey: (key) => unawaited(command('key', {'key': key})),
+    );
+  }
+
+  Widget _landscapeRemote() {
+    final screen = MediaQuery.sizeOf(context);
+    final safe = MediaQuery.paddingOf(context);
+    final available = (screen.height - safe.vertical -
+        kToolbarHeight - 132.0).clamp(185.0, 390.0).toDouble();
+    return SizedBox(
+      key: const ValueKey('landscape-remote'),
+      height: available,
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(
+          flex: 6,
+          child: Column(children: [
+            Row(children: [
+              Expanded(child: TextButton.icon(
+                key: const ValueKey('landscape-trackpad-toggle'),
+                onPressed: () => _setLayout(_changedLayout(
+                  trackpad: !_remoteLayout.trackpadExpanded,
+                )),
+                icon: Icon(_remoteLayout.trackpadExpanded
+                    ? Icons.expand_less : Icons.expand_more),
+                label: Text(_remoteLayout.trackpadExpanded
+                    ? 'Hide trackpad' : 'Show trackpad'),
+              )),
+            ]),
+            if (_remoteLayout.trackpadExpanded) ...[
+              Expanded(child: LayoutBuilder(
+                builder: (context, limits) => _trackpadSurface(
+                  height: limits.maxHeight,
+                ),
+              )),
+              const SizedBox(height: 4),
+              Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: _connectionLost ? null :
+                      () => command('click', {'button': 'left'}),
+                  child: const Text('Left click'),
+                )),
+                const SizedBox(width: 6),
+                Expanded(child: OutlinedButton(
+                  onPressed: _connectionLost ? null :
+                      () => command('click', {'button': 'right'}),
+                  child: const Text('Right click'),
+                )),
+              ]),
+            ] else
+              const Expanded(child: Center(
+                child: Text('Trackpad hidden. Tap Show trackpad to open.'),
+              )),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 5,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _landscapeTyping(),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: Text('Quick keys',
+                    style: Theme.of(context).textTheme.titleSmall)),
+                  TextButton(
+                    onPressed: _customizeQuickKeys,
+                    child: const Text('Customize'),
+                  ),
+                ]),
+                if (_remoteLayout.quickKeys.isEmpty)
+                  const Text('Add quick keys using Customize.')
+                else
+                  Wrap(spacing: 4, runSpacing: 3, children: [
+                    for (final id in _remoteLayout.quickKeys)
+                      _quickKeyButton(id),
+                  ]),
+                TextButton.icon(
+                  onPressed: () => _setLayout(_changedLayout(
+                    arrows: !_remoteLayout.arrowsExpanded,
+                  )),
+                  icon: Icon(_remoteLayout.arrowsExpanded
+                      ? Icons.expand_less : Icons.expand_more),
+                  label: const Text('Arrow pad'),
+                ),
+                if (_remoteLayout.arrowsExpanded) _arrowPad(),
+                OutlinedButton.icon(
+                  onPressed: () => _setLayout(_changedLayout(
+                    more: !_remoteLayout.moreExpanded,
+                  )),
+                  icon: Icon(_remoteLayout.moreExpanded
+                      ? Icons.expand_less : Icons.expand_more),
+                  label: const Text('More controls'),
+                ),
+                if (_remoteLayout.moreExpanded) ..._moreControlSections(),
+              ],
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _landscapeTyping() => TextField(
+    controller: typing,
+    enabled: !_connectionLost,
+    autocorrect: false,
+    enableSuggestions: false,
+    decoration: const InputDecoration(
+      isDense: true,
+      prefixIcon: Icon(Icons.keyboard_outlined),
+      labelText: 'Type on computer',
+    ),
+    onChanged: (text) {
+      if (text.isNotEmpty) {
+        unawaited(command('text', {'text': text}));
+        typing.clear();
+      }
+    },
+  );
+
+  Widget _connectedControls() {
+    final colors = Theme.of(context).colorScheme;
+    final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Icon(Icons.circle, color: _connectionLost ? colors.error
+            : colors.primary, size: 11),
+        const SizedBox(width: 8),
+        Expanded(child: Text(discoveredName ?? host.text.trim(),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium)),
+        IconButton(
+          tooltip: 'Switch computer',
+          onPressed: () {
+            agent.disconnect();
+            setState(() {
+              _connectionLost = false;
+              _connectionTechnical = null;
+              status = 'Select a device to connect.';
+            });
+          },
+          icon: const Icon(Icons.swap_horiz, size: 20),
+        ),
+      ]),
+      if (_connectionLost) _connectionBanner(),
+      _modeSwitcher(),
+      if (_remoteLayout.presentationMode) _presentationView(landscape),
+      if (!_remoteLayout.presentationMode && landscape) _landscapeRemote(),
+      if (!_remoteLayout.presentationMode && !landscape) ...[
+      ListTile(
+        key: const ValueKey('trackpad-toggle'),
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        contentPadding: EdgeInsets.zero,
+        title: Text('Trackpad',
+            style: Theme.of(context).textTheme.titleMedium),
+        trailing: Icon(_remoteLayout.trackpadExpanded
+            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+        onTap: () => _setLayout(_changedLayout(
+          trackpad: !_remoteLayout.trackpadExpanded)),
+      ),
+      if (_remoteLayout.trackpadExpanded) ...[
+        _trackpadSurface(),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: OutlinedButton(
+            onPressed: _connectionLost ? null :
+                () => command('click', {'button': 'left'}),
+            child: const Text('Left click'),
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: OutlinedButton(
+            onPressed: _connectionLost ? null :
+                () => command('click', {'button': 'right'}),
+            child: const Text('Right click'),
+          )),
+        ]),
+        const SizedBox(height: 8),
+      ],
+      TextField(
+        controller: typing,
+        enabled: !_connectionLost,
+        autocorrect: false,
+        enableSuggestions: false,
+        decoration: const InputDecoration(
+          isDense: true,
+          prefixIcon: Icon(Icons.keyboard_outlined),
+          labelText: 'Type on computer',
+        ),
+        onChanged: (text) {
+          if (text.isNotEmpty) {
+            unawaited(command('text', {'text': text}));
+            typing.clear();
+          }
+        },
+      ),
+      const SizedBox(height: 10),
+      Row(children: [
+        Expanded(child: Text('Shortcuts',
+            style: Theme.of(context).textTheme.titleSmall)),
+        TextButton.icon(
+          onPressed: _customizeQuickKeys,
+          icon: const Icon(Icons.tune, size: 18),
+          label: const Text('Customize'),
+        ),
+      ]),
+      if (_remoteLayout.quickKeys.isEmpty)
+        const Text('Choose shortcuts using Customize.')
+      else
+        Wrap(spacing: 8, runSpacing: 4, children: [
+          for (final id in _remoteLayout.quickKeys) _quickKeyButton(id),
+        ]),
+      TextButton.icon(
+        key: const ValueKey('arrow-keys-toggle'),
+        onPressed: () => _setLayout(_changedLayout(
+          arrows: !_remoteLayout.arrowsExpanded)),
+        icon: Icon(_remoteLayout.arrowsExpanded
+            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+        label: Text(_remoteLayout.arrowsExpanded
+            ? 'Hide arrow keys' : 'Show arrow keys'),
+      ),
+      if (_remoteLayout.arrowsExpanded) _arrowPad(),
+      const Divider(),
+      OutlinedButton.icon(
+        key: const ValueKey('more-controls-toggle'),
+        onPressed: () => _setLayout(_changedLayout(
+          more: !_remoteLayout.moreExpanded)),
+        icon: Icon(_remoteLayout.moreExpanded
+            ? Icons.expand_less : Icons.expand_more),
+        label: Text(_remoteLayout.moreExpanded
+            ? 'Hide more controls' : 'More controls'),
+      ),
+      if (_remoteLayout.moreExpanded) ..._moreControlSections(),
+      ],
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = agent.configured;
+    return Scaffold(
+      key: _scaffoldKey,
+      drawer: appDrawer(),
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Open navigation',
+          icon: const Icon(Icons.menu),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+        title: const Text('TapTether'), actions: [
+        IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
+          agent.disconnect(); setState(() => status = 'Disconnected');
+        } : null, icon: const Icon(Icons.link_off)),
+      ]),
+      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
+        if (!connected) ...[
+          Text('Your devices. Your control. Your network.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              )),
+          const SizedBox(height: 12),
+        ],
+        updateNotices(),
+        if (!connected) ...[
+          deviceDashboard(),
+          if (_showPairForm) ...[
+          const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('For first-time pairing, enter the token and TLS SHA-256 fingerprint from your computer. Verified devices are saved securely on this phone.'),
+          const SizedBox(height: 12),
+          TextField(controller: host, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Computer LAN IP (e.g. 192.168.1.10)', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: token, obscureText: true, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Agent pairing token', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: pin, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Certificate SHA-256 fingerprint', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          FilledButton.icon(onPressed: () async { await connect(); }, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
+          ],
+        ] else ...[
+          _connectedControls(),
+        ],
+        const SizedBox(height: 16),
+        if (!connected) ...[
+          Text(status, style: TextStyle(fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 12),
+          Center(child: Text('TapTether v$installedVersion',
+            style: TextStyle(fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        ],
+      ])),
+    );
+  }
+}
+,
+        ).hasMatch(mac)) result[ip] = mac.toUpperCase();
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
   /// The paired agent performs its own explicit, verified update.
   /// A 501 means this OS/version still requires the existing SSH GUI.
   Future<bool> requestUpdate() async {
