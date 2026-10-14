@@ -7,6 +7,7 @@ import 'remote_layout_settings.dart';
 import 'presentation_mode.dart';
 import 'lan_scan.dart';
 import 'network_location.dart';
+import 'device_visibility.dart';
 import 'clipboard_chunks.dart';
 import 'appearance.dart';
 import 'app_security.dart';
@@ -16,7 +17,6 @@ import 'discovery.dart';
 import 'phone_identity.dart';
 import 'qr_pairing.dart';
 import 'ssh_key_screen.dart';
-import 'ubuntu_install_screen.dart';
 import 'install_agent_screen.dart';
 import 'lan_scan_screen.dart';
 import 'package:flutter/material.dart';
@@ -707,17 +707,14 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   );
 
   Widget deviceDashboard() {
-    final currentLocation = _locationFilter == 'automatic'
-        ? _detectedLocation
-        : (_locationFilter == 'all' ? null : _locationFilter);
-    final visibleDevices = savedComputers.where((device) {
-      final matchesLocation = currentLocation != null
-          ? device.location == currentLocation
-          : (_locationFilter == 'automatic' && _wifiRange != null
-              ? lanRangeContains(_wifiRange!, device.host)
-              : true);
-      return matchesLocation && (_showOffline || _online[device.id] == true);
-    }).toList();
+    final visibleDevices = visibleSavedDevices(
+      savedComputers,
+      online: _online,
+      locationFilter: _locationFilter,
+      currentLocation: _detectedLocation,
+      currentNetwork: _wifiRange,
+      showOffline: _showOffline,
+    );
     return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
