@@ -4,25 +4,36 @@ import 'package:taptether/ubuntu_install_error.dart';
 void main() {
   test('classifies missing X11 fallback and generic dependency failures', () {
     expect(ubuntuPackageFailureMessage(
-        'Depends: xdotool but it is not installable'), contains('[APT-XDOTOOL]'));
+        'Depends: xdotool but it is not installable'), contains('[PKG-XDOTOOL]'));
     expect(ubuntuPackageFailureMessage(
-        'Unmet dependencies: broken-package'), contains('[APT-DEPENDENCIES]'));
+        'Unmet dependencies: broken-package'), contains('[PKG-DEPENDENCIES]'));
   });
 
   test('classifies locks, repository failure and disk exhaustion', () {
     expect(ubuntuPackageFailureMessage(
-        'Could not get lock /var/lib/dpkg/lock'), contains('[APT-LOCK]'));
+        'Could not get lock /var/lib/dpkg/lock'), contains('[PKG-LOCK]'));
     expect(ubuntuPackageFailureMessage(
-        'Temporary failure resolving archive.ubuntu.com'), contains('[APT-NETWORK]'));
+        'Temporary failure resolving archive.ubuntu.com'), contains('[PKG-NETWORK]'));
     expect(ubuntuPackageFailureMessage(
-        'No space left on device'), contains('[APT-SPACE]'));
+        'No space left on device'), contains('[PKG-SPACE]'));
   });
 
-  test('classifies corrupt archives and sudo permission failures', () {
+  test('classifies corrupt archives and package permission failures', () {
     expect(ubuntuPackageFailureMessage(
-        'not a Debian format archive'), contains('[APT-DEB]'));
+        'not a Debian format archive'), contains('[PKG-DEB]'));
     expect(ubuntuPackageFailureMessage(
-        'Could not open lock file: Permission denied'), contains('[APT-PERMISSION]'));
+        'Could not open lock file: Permission denied'), contains('[PKG-PERMISSION]'));
+  });
+
+  test('recognizes legacy _apt sandbox warnings without blaming sudo', () {
+    final message = ubuntuPackageFailureMessage(
+      "N: Download is performed unsandboxed as root as file "
+      "'/tmp/taptether-phone.12345678/pkg.deb' couldn't be accessed "
+      "by user '_apt'. - pkgAcquire::Run (13: Permission denied)",
+    );
+    expect(message, contains('[PKG-APT-SANDBOX]'));
+    expect(message, contains('private SSH staging folder'));
+    expect(message, isNot(contains('/tmp/taptether-phone.')));
   });
 
   test('does not include raw logs, repo URLs or credentials', () {
@@ -30,7 +41,7 @@ void main() {
         'https://myusername:password123@example.org/private/repo\n'
         'Pairing token: 00112233445566778899';
     final message = ubuntuPackageFailureMessage(raw);
-    expect(message, contains('[APT-UNKNOWN]'));
+    expect(message, contains('[PKG-UNKNOWN]'));
     expect(message, isNot(contains('password123')));
     expect(message, isNot(contains('Pairing token:')));
     expect(message, isNot(contains('example.org')));
