@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static checks for TapTether's *single* manual GitHub Actions workflow."""
+"""Static checks for TapTether's single gated automatic/manual workflow."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,12 +18,18 @@ assert "schedule:" in workflow
 assert "task:" in workflow
 assert all(f"- {mode}" in workflow for mode in ("release", "build", "validate"))
 assert "          - cleanup" not in workflow
-assert "\n  push:" not in workflow, "Ordinary pushes must not trigger builds"
+assert "  push:\n    branches: [main]" in workflow, (
+    "Auto-release only from main"
+)
+assert "    paths:\n      - VERSION" in workflow, (
+    "Automatically run releases only for explicit VERSION changes"
+)
+assert "github.event_name == 'push' || inputs.task == 'release'" in workflow
 
 assert "  validate:" in workflow
 assert "  build-ubuntu:" in workflow
 assert "    needs: validate" in workflow
-assert "inputs.task == 'release' || inputs.task == 'build'" in workflow
+assert "github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build'" in workflow
 assert "  build-and-publish:" in workflow
 assert "    needs: build-ubuntu" in workflow
 # All scripts invoked directly by a release build must have an executable
@@ -66,7 +72,7 @@ assert "run: bash bin/2b-tt-macos.sh" in workflow
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
 assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
 assert "run: bash bin/6-tt-publish-latest.sh" in workflow
-assert "if: ${{ inputs.task == 'release' }}" in workflow
+assert "if: ${{ github.event_name == 'push' || inputs.task == 'release' }}" in workflow
 assert "if: ${{ inputs.task == 'build' }}" in workflow
 assert "TapTether-complete-build-" in workflow
 assert "retention-days: 1" in workflow
@@ -87,6 +93,25 @@ assert "always() && (github.event_name == 'schedule'" in workflow
 assert "inputs.task == 'cleanup'" not in workflow
 assert "needs.build-and-publish.result == 'success'" in workflow
 
-print("PASS: one Actions workflow, three choices: Release, Build, Validate")
+# Regression guards: the Mac Finder installer must report and recover from
+# launchd failures without copying raw pairing details or logs.
+mac_setup = (ROOT / "bin" / "4-macos-agent-setup.sh").read_text(encoding="utf-8")
+mac_tray = (ROOT / "desktop" / "macos" / "TapTetherTray.swift").read_text(
+    encoding="utf-8")
+assert "diagnostics) diagnostics" in mac_setup
+assert "restart) start_agent" in mac_setup
+assert "launchctl bootstrap" in mac_setup
+assert "Privacy: no passwords, pairing tokens" in mac_setup
+assert "Copy diagnostics" in mac_tray
+assert "Open Accessibility settings" in mac_tray
+
+# Guard against regressing the broken 0.6.7 remote class and F-key parser.
+remote = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
+assert remote.count("Widget _connectedControls()") == 1
+assert remote.count("Widget build(BuildContext context)") == 2
+assert "if (RegExp(r'^f(?:[1-9]|1[0-2])$').hasMatch(id)) return id;" in remote
+assert "}).hasMatch(id)) return id;" not in remote
+
+print("PASS: one Actions workflow, auto Release on VERSION, three manual choices")
 print("PASS: validate -> native agents -> IPA/APK -> publish, with same-run artifacts")
 print("PASS: weekly cleanup and immutable version-tagged Latest releases")

@@ -1,7 +1,7 @@
 name: 'TapTether - Build, Release & Maintenance'
 
-# One workflow, one manual Run workflow control. No automatic builds on pushes.
-# Choose Release, Build or Validate. Cleanup is automatic after release / weekly.
+# One workflow: version bumps on main publish automatically after all checks.
+# Manual Release/Build/Validate remain available; weekly cleanup has no build.
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +14,11 @@ on:
           - release
           - build
           - validate
+  push:
+    branches: [main]
+    # Auto-release only on a deliberate VERSION update.
+    paths:
+      - VERSION
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
     - cron: '37 4 * * 0'
@@ -22,18 +27,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: taptether-one-workflow-${{ github.event_name }}-${{ github.ref }}
+  group: taptether-one-workflow-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   validate:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - name: Release preflight (only before publishing)
-        if: ${{ inputs.task == 'release' }}
+        if: ${{ github.event_name == 'push' || inputs.task == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -102,7 +107,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ inputs.task == 'release' || inputs.task == 'build' }}
+    if: ${{ github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -138,7 +143,7 @@ jobs:
 
   build-and-publish:
     needs: build-ubuntu
-    if: ${{ inputs.task == 'release' || inputs.task == 'build' }}
+    if: ${{ github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build' }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -249,16 +254,15 @@ jobs:
           retention-days: 1
 
       - name: Publish current IPA, APK and agents to GitHub Releases
-        if: ${{ inputs.task == 'release' }}
+        if: ${{ github.event_name == 'push' || inputs.task == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash bin/6-tt-publish-latest.sh
 
   cleanup-history:
     needs: build-and-publish
-    # Weekly cleanup or after a successful release; never erase Build-mode assets.
-    # always() lets maintenance run when build jobs were intentionally skipped.
-    if: ${{ always() && (github.event_name == 'schedule' || (inputs.task == 'release' && needs.build-and-publish.result == 'success')) }}
+    # Weekly or after successful automatic/manual releases; keep Build-mode artifacts.
+    if: ${{ always() && (github.event_name == 'schedule' || ((github.event_name == 'push' || inputs.task == 'release') && needs.build-and-publish.result == 'success')) }}
     continue-on-error: true
     permissions:
       contents: read
