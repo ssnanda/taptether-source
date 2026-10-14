@@ -68,7 +68,7 @@ void main() {
       openPorts: [22],
     );
     expect(ssh.displayName, 'SSH-enabled computer / server');
-    expect(ssh.scanSubtitle, 'IP: 192.168.68.86\\nTCP: 22');
+    expect(ssh.scanSubtitle, 'IP: 192.168.68.86\nTCP: 22');
 
     const named = LanHost(
       ip: '192.168.68.77', hostname: 'Sandips-MacBook.local',
