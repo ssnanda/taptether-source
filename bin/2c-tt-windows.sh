@@ -11,6 +11,7 @@ for arch in amd64 arm64; do
     -o "$temp/TapTetherAgent.exe" ./cmd/taptether-agent)
   cp "$ROOT/desktop/windows/"*.ps1 "$ROOT/desktop/windows/"*.cmd \
     "$ROOT/desktop/windows/README-Windows.txt" "$temp/"
+  cp "$ROOT/VERSION" "$temp/version.txt"
   archive="$ROOT/dist/windows/TapTetherAgent-Windows-$arch-$version.zip"
   python3 - "$temp" "$archive" <<'PY'
 from pathlib import Path
@@ -20,7 +21,7 @@ with zipfile.ZipFile(dest, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=
     for item in sorted(source.iterdir()):
         f.write(item, item.name)
 with zipfile.ZipFile(dest) as f:
-    assert len(f.namelist()) == 7
+    assert len(f.namelist()) == 9
     assert f.testzip() is None
 print("Windows installer package:", dest)
 PY
