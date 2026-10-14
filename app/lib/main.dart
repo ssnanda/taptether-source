@@ -1499,6 +1499,13 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   ]);
 
   Widget _trackpadSurface({double height = 224}) => GestureDetector(
+    // Win the gesture arena against the enclosing ListView. A Listener
+    // receives raw multi-touch pointer events but cannot stop parent scroll.
+    // Pointer tracking below continues to handle movement and two-finger
+    // gestures; these pan handlers deliberately do not send duplicate input.
+    behavior: HitTestBehavior.opaque,
+    onPanStart: (_) {},
+    onPanUpdate: (_) {},
     onTap: _connectionLost ? null : () {
       if (!_multiTouchGesture) unawaited(command('click', {'button': 'left'}));
     },
@@ -1812,7 +1819,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         Expanded(child: Text(discoveredName ?? host.text.trim(),
             maxLines: 1, overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium)),
-        TextButton.icon(
+        IconButton(
+          tooltip: 'Switch computer',
           onPressed: () {
             agent.disconnect();
             setState(() {
@@ -1821,8 +1829,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
               status = 'Select a device to connect.';
             });
           },
-          icon: const Icon(Icons.swap_horiz, size: 18),
-          label: const Text('Switch'),
+          icon: const Icon(Icons.swap_horiz, size: 20),
         ),
       ]),
       if (_connectionLost) _connectionBanner(),
@@ -1832,11 +1839,11 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       if (!_remoteLayout.presentationMode && !landscape) ...[
       ListTile(
         key: const ValueKey('trackpad-toggle'),
+        dense: true,
+        visualDensity: VisualDensity.compact,
         contentPadding: EdgeInsets.zero,
         title: Text('Trackpad',
-            style: Theme.of(context).textTheme.titleLarge),
-        subtitle: Text(_remoteLayout.trackpadExpanded
-            ? 'Tap to collapse' : 'Tap to expand'),
+            style: Theme.of(context).textTheme.titleMedium),
         trailing: Icon(_remoteLayout.trackpadExpanded
             ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
         onTap: () => _setLayout(_changedLayout(
@@ -1866,6 +1873,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         autocorrect: false,
         enableSuggestions: false,
         decoration: const InputDecoration(
+          isDense: true,
           prefixIcon: Icon(Icons.keyboard_outlined),
           labelText: 'Type on computer',
         ),
@@ -1878,8 +1886,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       ),
       const SizedBox(height: 10),
       Row(children: [
-        Expanded(child: Text('Quick keys',
-            style: Theme.of(context).textTheme.titleMedium)),
+        Expanded(child: Text('Shortcuts',
+            style: Theme.of(context).textTheme.titleSmall)),
         TextButton.icon(
           onPressed: _customizeQuickKeys,
           icon: const Icon(Icons.tune, size: 18),
@@ -1887,7 +1895,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ),
       ]),
       if (_remoteLayout.quickKeys.isEmpty)
-        const Text('Add your favorite keys using Customize.')
+        const Text('Choose shortcuts using Customize.')
       else
         Wrap(spacing: 8, runSpacing: 4, children: [
           for (final id in _remoteLayout.quickKeys) _quickKeyButton(id),
@@ -1966,13 +1974,14 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           _connectedControls(),
         ],
         const SizedBox(height: 16),
-        if (!connected || !_connectionLost)
+        if (!connected) ...[
           Text(status, style: TextStyle(fontSize: 12,
             color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 12),
-        Center(child: Text('TapTether v$installedVersion',
-          style: TextStyle(fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant))),
+          const SizedBox(height: 12),
+          Center(child: Text('TapTether v$installedVersion',
+            style: TextStyle(fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        ],
       ])),
     );
   }
