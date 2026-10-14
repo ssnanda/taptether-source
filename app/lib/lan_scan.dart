@@ -223,6 +223,57 @@ List<LanHost> mergeDiscoveredAgents(
     });
 }
 
+/// User-requested one-IP check for computers like a Mac with firewall-
+/// protected ports. A non-responding host is *not* represented as online.
+Future<LanHost?> checkPrivateLanIp(
+  String ip, {
+  Duration timeout = const Duration(milliseconds: 550),
+}) async {
+  if (!isPrivateIPv4(ip)) {
+    throw const FormatException('Enter an address on a private LAN');
+  }
+  Future<bool> accepting(int port) async {
+    try {
+      final socket = await Socket.connect(ip, port, timeout: timeout);
+      socket.destroy();
+      return true;
+    } on SocketException {
+      return false;
+    } on TimeoutException {
+      return false;
+    }
+  }
+
+  final discovery = findNearbyDevices(
+    targetIp: ip,
+    duration: const Duration(milliseconds: 1100),
+  ).catchError((Object _) => <DiscoveredDevice>[]);
+  final listening = await Future.wait(lanScanPorts.map(accepting));
+  final ports = <int>[
+    for (var index = 0; index < lanScanPorts.length; index++)
+      if (listening[index]) lanScanPorts[index],
+  ];
+  final announcements = await discovery;
+  var hostname = ip;
+  if (ports.isNotEmpty) {
+    try {
+      final resolved = await InternetAddress(ip)
+          .reverse().timeout(const Duration(milliseconds: 650));
+      if (resolved.host != ip) hostname = resolved.host;
+    } catch (_) {
+      // Reverse DNS isn't required to probe a LAN address.
+    }
+  }
+  final matches = mergeDiscoveredAgents(
+    ports.isEmpty ? const <LanHost>[] : [
+      LanHost(ip: ip, hostname: hostname, openPorts: ports),
+    ],
+    announcements,
+    prefixFromIp(ip)!,
+  );
+  return matches.isEmpty ? null : matches.first;
+}
+
 /// Reports only hosts accepting at least one tested TCP port; this is
 /// not a complete inventory of devices behind firewalls or with no open ports.
 Future<List<LanHost>> scanPrivate24(
