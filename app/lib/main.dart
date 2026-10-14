@@ -594,9 +594,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       ),
     );
     if (approved != true || !mounted) return;
-    // Only use the installed agent endpoint where supported. Linux package
-    // upgrades require local elevated authorization; retain the SSH GUI.
-    if (device.platform == 'darwin') {
+    // Existing installed agents own the update action and verify the release.
+    // Ubuntu requires the user to have separately enabled noninteractive sudo.
+    // Older agents or machines without it retain the SSH GUI fallback.
+    if (device.platform == 'darwin' || device.platform == 'linux') {
       final client = LocalAgent();
       try {
         final phone = device.deviceId.isEmpty
