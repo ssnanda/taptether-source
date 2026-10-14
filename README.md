@@ -510,3 +510,28 @@ The existing native dpkg install gate remains in place. The version stays
 
 TapTether version is incremented to 0.6.7+25. The user triggers the
 single GitHub Release workflow after merging; no build on push.
+
+## 0.6.8+26 — corrected remote screen and macOS agent recovery
+
+- Fix Dart's function-key matcher and remove a duplicated `main.dart`
+  class body that caused Flutter static analysis to report hundreds of
+  cascading errors in the first 0.6.7+25 release attempt.
+- Keep the compact remote, collapsible trackpad and configurable quick
+  controls; improve pointer-speed label formatting.
+- macOS Finder agent: try a safe background Start when the installed
+  launchd service is unexpectedly stopped, and repair unloaded services
+  with `taptetherctl-mac start/restart`.
+- Add **Agent diagnostics → Copy diagnostics** to the macOS menu-bar app.
+  Report safe agent version, launchd state/exit code, listening port and
+  categorized local hints; never include raw logs or private pairing data.
+  Add one-tap access to macOS Accessibility settings.
+- **Release automation:** merging a deliberate `VERSION` update into
+  `main` now runs the existing single gated GitHub Actions workflow:
+  Validate → Ubuntu/macOS Build → IPA/APK → Publish → Cleanup.
+  Ordinary source/documentation pushes do not trigger a build. The manual
+  Release/Build/Validate choices remain available.
+- Update `VERSION` and `app/pubspec.yaml` to 0.6.8+26. The first
+  0.6.7+25 release failed before publication, so there is no 0.6.7 package.
+
+macOS service startup still requires physical-device testing and macOS
+Accessibility permission; no code can automatically bypass that OS prompt.
