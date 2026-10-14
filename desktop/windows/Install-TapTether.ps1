@@ -13,6 +13,12 @@ Get-CimInstance Win32_Process -Filter "Name='TapTetherAgent.exe'" |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 400
 Copy-Item $source $destination -Force
+foreach ($file in @('Update-TapTether.ps1', 'Show-Pairing.ps1',
+        'Install-TapTether.ps1', 'Allow-TapTether.ps1',
+        'Show-Pairing.cmd', 'Install-TapTether.cmd',
+        'README-Windows.txt', 'version.txt')) {
+    Copy-Item (Join-Path $PSScriptRoot $file) (Join-Path $destinationDir $file) -Force
+}
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 New-ItemProperty -Path $runKey -Name 'TapTetherAgent' -Value ('"' + $destination + '"') -PropertyType String -Force | Out-Null
 Start-Process -FilePath $destination -WindowStyle Hidden
