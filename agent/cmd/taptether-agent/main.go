@@ -31,6 +31,7 @@ import (
 	"github.com/ssnanda/taptether.com/agent/internal/identity"
 	"github.com/ssnanda/taptether.com/agent/internal/power"
     "github.com/ssnanda/taptether.com/agent/internal/updater"
+    "github.com/ssnanda/taptether.com/agent/internal/neighbors"
 )
 
 var version = "dev"
@@ -83,6 +84,28 @@ func main() {
 	access.Register(mux)
     // Upgrades require a previously paired, TLS-pinned phone. The server
     // chooses its own fixed updater; clients never supply commands or URLs.
+    mux.HandleFunc("/api/neighbors", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Cache-Control", "no-store")
+        if r.Method != http.MethodGet {
+            http.Error(w, "GET required", http.StatusMethodNotAllowed)
+            return
+        }
+        if r.TLS == nil || !privateRemote(r.RemoteAddr) {
+            http.Error(w, "LAN TLS required", http.StatusForbidden)
+            return
+        }
+        if !access.authorized(r) {
+            http.Error(w, "not paired", http.StatusUnauthorized)
+            return
+        }
+        entries, err := neighbors.Read()
+        if err != nil {
+            http.Error(w, "neighbor inventory unavailable", http.StatusServiceUnavailable)
+            return
+        }
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(entries)
+    })
     mux.HandleFunc("/api/update", func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Cache-Control", "no-store")
         if r.Method != http.MethodPost {
