@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'phone_ssh_keys.dart';
 import 'ssh_provisioner.dart';
+import 'macos_ssh_provisioner.dart';
 import 'ubuntu_install_validation.dart';
 import 'lan_scan.dart';
 
@@ -16,9 +17,13 @@ class UbuntuInstallScreen extends StatefulWidget {
     super.key,
     required this.initialHost,
     required this.onInstalled,
+    this.isMac = false,
+    this.updateOnly = false,
   });
 
   final String initialHost;
+  final bool isMac;
+  final bool updateOnly;
   final Future<bool> Function(InstalledAgent installed) onInstalled;
 
   @override
@@ -43,6 +48,8 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
   String _appVersion = 'unavailable';
   final List<String> _installSteps = [];
   InstalledAgent? _installed;
+  String get _osLabel => widget.isMac ? 'macOS' : 'Ubuntu';
+  String get _actionLabel => widget.updateOnly ? 'Update' : 'Install';
 
   @override
   void initState() {
@@ -112,9 +119,13 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
           ? null : 'Enter four dot-separated numbers (e.g. 192.168.68.81). '
               'Use a private LAN address.';
 
-  String? _validateUsername(String? value) =>
-      RegExp(r'^[a-z_][a-z0-9_-]{0,30}$').hasMatch((value ?? '').trim())
-          ? null : 'Enter a valid Ubuntu username.';
+  String? _validateUsername(String? value) {
+    final username = (value ?? '').trim();
+    final valid = widget.isMac
+        ? RegExp(r'^[a-zA-Z_][a-zA-Z0-9_.-]{0,63}$').hasMatch(username)
+        : RegExp(r'^[a-z_][a-z0-9_-]{0,30}$').hasMatch(username);
+    return valid ? null : 'Enter a valid $_osLabel account username.';
+  }
 
   void _report(String stage) {
     if (mounted) {
@@ -130,11 +141,12 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
   /// Explicitly shareable report, built only from local UI selections and
   /// fixed safe diagnostics. Never include SSH command output or secrets.
   String _diagnosticsReport() => [
-        'TapTether Ubuntu installer diagnostics (v$_appVersion)',
+        'TapTether $_osLabel $_actionLabel diagnostics (v$_appVersion)',
         'Computer: ${_host.text.trim()}',
-        'Ubuntu username: ${_username.text.trim()}',
+        '$_osLabel username: ${_username.text.trim()}',
         'SSH method: ${_login == SshLoginMethod.phoneKey ? 'saved phone key' : 'password'}',
-        'Sudo password entered: ${_sudoPassword.text.isNotEmpty ? 'yes' : 'no'}',
+        if (!widget.isMac)
+          'Sudo password entered: ${_sudoPassword.text.isNotEmpty ? 'yes' : 'no'}',
         'Failed stage: ${_failureStage ?? _stage}',
         if (_installSteps.isNotEmpty)
           'Stages reached: ${_installSteps.join(' > ')}',
@@ -161,19 +173,19 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
         _busy = false;
         _success = paired;
         _error = paired ? null
-            : 'Ubuntu installation completed, but TapTether could not '
+            : '$_osLabel $_actionLabel completed, but TapTether could not '
               'verify and save the phone pairing. You can retry pairing.';
-        _stage = paired ? 'Installed and paired successfully'
-            : 'Installed, but not paired';
+        _stage = paired ? '${widget.updateOnly ? 'Updated' : 'Installed'} and connected'
+            : '${widget.updateOnly ? 'Updated' : 'Installed'}, but not connected';
         _failureStage = paired ? null : 'Pairing and saving computer';
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Ubuntu installation completed, but pairing failed. '
+        _error = '$_osLabel $_actionLabel completed, but reconnecting failed. '
             'Check the device connection and retry pairing.';
-        _stage = 'Installed, but not paired';
+        _stage = '${widget.updateOnly ? 'Updated' : 'Installed'}, but not connected';
         _failureStage = 'Pairing and saving computer';
       });
     }
@@ -205,8 +217,11 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
       authorizePhoneKey: _login == SshLoginMethod.password && _authorizeKey,
     );
     try {
-      _installed = await UbuntuSshProvisioner.install(request,
-          onProgress: _report);
+      _installed = widget.isMac
+          ? await MacSshProvisioner.install(request,
+              updateOnly: widget.updateOnly, onProgress: _report)
+          : await UbuntuSshProvisioner.install(request,
+              updateOnly: widget.updateOnly, onProgress: _report);
       if (!mounted) return;
       await _pairInstalled();
     } on FormatException catch (error) {
@@ -225,8 +240,9 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
         _failureStage = _stage;
         // Never include SSH command output or credentials in a status view.
         _error = error is StateError ? error.message.toString() :
-            'SSH installation failed at: $_stage. '
-            'Check your SSH login, network connection and sudo permissions.';
+            'SSH $_actionLabel failed at: $_stage. '
+            'Check your SSH credentials, network connection and '
+            '${widget.isMac ? 'Remote Login on the Mac.' : 'Ubuntu sudo permissions.'}';
         _stage = 'Installation failed';
       });
     }
@@ -248,7 +264,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
     return PopScope(
       canPop: !_busy,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Install Ubuntu agent')),
+        appBar: AppBar(title: Text('$_actionLabel $_osLabel agent')),
         body: SafeArea(child: Column(children: [
           Expanded(child: ListView(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -258,7 +274,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                 Text('Computer connection',
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
-                Text('Install and pair a computer over your local network. '
+                Text('$_actionLabel the $_osLabel agent over your local network. '
                     'You do not need to visit the computer to retrieve a fingerprint.',
                     style: TextStyle(color: scheme.onSurfaceVariant)),
                 const SizedBox(height: 18),
@@ -271,7 +287,7 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                     TextFormField(
                       controller: _host,
                       decoration: const InputDecoration(
-                          labelText: 'Ubuntu IP address',
+                          labelText: '$_osLabel IP address',
                           hintText: 'Enter the final host number'),
                       // iOS number pads have no dot key. URL layout reliably
                       // exposes '.', while the formatter permits only IP chars.
@@ -351,24 +367,31 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                       ),
                       const SizedBox(height: 14),
                       Text('This phone’s SSH public key must be authorized '
-                          'for the selected Ubuntu username. If key login '
+                          'for the selected $_osLabel username. If key login '
                           'fails, try SSH password for first-time setup.',
                           style: Theme.of(context).textTheme.bodySmall),
                     ],
                     const Divider(height: 30),
-                    Text('Ubuntu administrator access',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _sudoPassword,
-                      decoration: const InputDecoration(
-                        labelText: 'Sudo password (optional)',
-                        helperText: 'Blank only if the Ubuntu account allows passwordless sudo. SSH key login does not grant sudo access.',
-                        helperMaxLines: 3),
-                      obscureText: true,
-                      enableSuggestions: false,
-                      autocorrect: false,
-                    ),
+                    if (!widget.isMac) ...[
+                      Text('Ubuntu administrator access',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _sudoPassword,
+                        decoration: const InputDecoration(
+                          labelText: 'Sudo password (optional)',
+                          helperText: 'Blank only with passwordless sudo. '
+                              'SSH key access does not grant sudo.',
+                          helperMaxLines: 3),
+                        obscureText: true,
+                        enableSuggestions: false,
+                        autocorrect: false,
+                      ),
+                    ] else
+                      const Text('macOS installs through your user LaunchAgent '
+                          'without sudo. Enable Remote Login before connecting. '
+                          'Grant Accessibility permission on the Mac for '
+                          'remote keyboard and mouse control.'),
                     const SizedBox(height: 18),
                     Text('On first connection, TapTether remembers the '
                         'SSH server identity after successful login. If it '
@@ -451,13 +474,13 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
                     ? FilledButton.icon(
                         onPressed: _retryPairing,
                         icon: const Icon(Icons.refresh),
-                        label: const Text('Retry pairing'),
+                        label: const Text('Retry connection'),
                       )
                     : FilledButton.icon(
                         onPressed: validUbuntuLanIp(_host.text.trim())
                             ? _install : null,
                         icon: const Icon(Icons.install_desktop),
-                        label: const Text('Install & pair'),
+                        label: Text(widget.updateOnly ? 'Update & reconnect' : 'Install & pair'),
                       ),
             ),
           ),
