@@ -159,7 +159,7 @@ class MacSshProvisioner {
       final expectedSha = entry['sha256'];
       if (filename is! String || asset is! String ||
           expectedSha is! String ||
-          !RegExp(r'^TapTetherAgent-macos-(amd64|arm64)-[0-9A-Za-z.+_-]+\.tar\.gz$')
+          !RegExp('^TapTetherAgent-macos-$arch-[0-9A-Za-z.+_-]+\\.tar\\.gz\$')
               .hasMatch(filename) ||
           asset != 'assets/agents/$filename' ||
           !RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(expectedSha)) {
