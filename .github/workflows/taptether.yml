@@ -167,8 +167,9 @@ jobs:
                   assert set(z.namelist()) == {
                       'TapTetherAgent.exe', 'Install-TapTether.ps1',
                       'Allow-TapTether.ps1', 'Show-Pairing.ps1',
+                      'Update-TapTether.ps1',
                       'Install-TapTether.cmd', 'Show-Pairing.cmd',
-                      'README-Windows.txt'}
+                      'README-Windows.txt', 'version.txt'}
                   assert z.getinfo('TapTetherAgent.exe').file_size > 100000
           PY
       - uses: actions/upload-artifact@v4
