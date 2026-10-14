@@ -36,6 +36,35 @@ void main() {
     expect(message, isNot(contains('/tmp/taptether-phone.')));
   });
 
+  test('isolated dpkg output identifies package conflicts safely', () {
+    final result = ubuntuPackageFailureMessage(
+      'sudo password: something-not-for-export\n'
+      'TAPTETHER_DPKG_BEGIN\r\n'
+      'dpkg: error processing archive /tmp/taptether-phone.1234/agent.deb (--install):\n'
+      ' trying to overwrite /usr/local/bin/taptether-agent which is also in package\n'
+      'TAPTETHER_DPKG_END\n'
+      'TAPTETHER_DPKG_STATUS:1\n',
+    );
+    expect(result, contains('[PKG-CONFLICT]'));
+    expect(result, contains('dpkg exit: 1'));
+    expect(result, contains('Sanitized dpkg detail:'));
+    expect(result, isNot(contains('/tmp/taptether-phone.')));
+    expect(result, isNot(contains('something-not-for-export')));
+  });
+
+  test('unknown package error shows sanitized dpkg line only', () {
+    final result = ubuntuPackageFailureMessage(
+      'sudo pass-sample-abc\n'
+      'TAPTETHER_DPKG_BEGIN\n'
+      'dpkg: error: unexpected problem with /home/test-user/secret.txt\n'
+      'TAPTETHER_DPKG_END\n',
+    );
+    expect(result, contains('[PKG-UNKNOWN]'));
+    expect(result, contains('[path]'));
+    expect(result, isNot(contains('/home/test-user/')));
+    expect(result, isNot(contains('pass-sample-abc')));
+  });
+
   test('does not include raw logs, repo URLs or credentials', () {
     const raw = 'Unexpected apt error\n'
         'https://myusername:password123@example.org/private/repo\n'
