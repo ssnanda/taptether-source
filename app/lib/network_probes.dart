@@ -89,14 +89,14 @@ LanProbeHost? parseSsdpHost(String sourceIp, List<int> payload) {
   final raw = latin1.decode(payload, allowInvalid: true);
   if (!raw.startsWith('HTTP/1.1 200') &&
       !raw.startsWith('NOTIFY * HTTP/1.1')) return null;
-  final server = RegExp(r'^SERVER:\\s*(.+)$',
+  final server = RegExp(r'^SERVER:\s*(.+)$',
           caseSensitive: false, multiLine: true)
       .firstMatch(raw)?.group(1)?.trim();
-  final usn = RegExp(r'^USN:\\s*(.+)$', caseSensitive: false, multiLine: true)
+  final usn = RegExp(r'^USN:\s*(.+)$', caseSensitive: false, multiLine: true)
       .firstMatch(raw)?.group(1)?.trim();
   final label = server ?? usn ?? 'UPnP device';
   // No attacker-controlled markup, line breaks or oversized labels.
-  final safe = label.replaceAll(RegExp(r'[^\\w .()\\/-]'), '').trim();
+  final safe = label.replaceAll(RegExp(r'[^\w .()\/-]'), '').trim();
   return LanProbeHost(sourceIp,
       safe.isEmpty ? 'UPnP device' : safe.substring(0, safe.length.clamp(0, 60)),
       'SSDP');
@@ -109,7 +109,7 @@ List<int> _mdnsQuestion(String name) {
     out.addAll(ascii.encode(part));
   }
   // QU bit requests an answer to the probe's ephemeral UDP port.
-  out.addAll([0, 0, 12, 0, 1, 0x80, 0x01]);
+  out.addAll([0, 0, 12, 0x80, 0x01]);
   return out;
 }
 
@@ -159,11 +159,11 @@ Future<List<LanProbeHost>> discoverLanNeighbors(
       // Some networks disallow multicast sends.
     }
     try {
-      final request = ascii.encode('M-SEARCH * HTTP/1.1\\r\\n'
-          'HOST: 239.255.255.250:1900\\r\\n'
-          'MAN: "ssdp:discover"\\r\\n'
-          'MX: 1\\r\\n'
-          'ST: ssdp:all\\r\\n\\r\\n');
+      final request = ascii.encode('M-SEARCH * HTTP/1.1\r\n'
+          'HOST: 239.255.255.250:1900\r\n'
+          'MAN: "ssdp:discover"\r\n'
+          'MX: 1\r\n'
+          'ST: ssdp:all\r\n\r\n');
       ssdp.send(request, InternetAddress('239.255.255.250'), 1900);
     } on SocketException {
       // TCP and TapTether UDP discovery remain available.
