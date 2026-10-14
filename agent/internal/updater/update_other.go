@@ -1,10 +1,10 @@
-//go:build !darwin
+//go:build !darwin && !linux
 
 package updater
 
 import "errors"
 
-// Ubuntu needs privileged package installation and Windows requires its own
+// Windows requires its own
 // signed updater. Neither silently elevates through a remote control service.
 func Supported() bool { return false }
 
