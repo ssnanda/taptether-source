@@ -48,6 +48,12 @@ class LanHost {
   String get displayName => hostname.trim().isNotEmpty && hostname != ip
       ? hostname : deviceType;
 
+  String get scanSubtitle {
+    final extra = displayName == deviceType ? '' : ' · $deviceType';
+    final tcp = openPorts.isEmpty ? '' : '\nTCP: ${openPorts.join(", ")}';
+    return 'IP: $ip$extra$tcp';
+  }
+
   String get deviceHint {
     if (openPorts.contains(48321)) return 'TapTether agent (likely)';
     if (openPorts.contains(3389)) return 'Remote Desktop device';
