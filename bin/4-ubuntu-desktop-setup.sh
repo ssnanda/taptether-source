@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TapTether Ubuntu installer: restricted uinput access, boot service, dock launcher, SSH management.
+# TapTether Ubuntu installer: restricted uinput, background service and system tray.
 # Installs a systemd SYSTEM service running as this ordinary desktop user (never root).
 set -euo pipefail
 
@@ -56,6 +56,28 @@ PY
   then
     note 'Pin it manually: Show Applications → TapTether → Add to Favorites.'
   fi
+}
+unpin_legacy_launcher() {
+  command -v gsettings >/dev/null 2>&1 || return 0
+  user_bus
+  python3 - <<'PY' || true
+import ast
+import subprocess
+try:
+    raw = subprocess.check_output(
+        ['gsettings', 'get', 'org.gnome.shell', 'favorite-apps'],
+        text=True, stderr=subprocess.DEVNULL).strip()
+    if raw.startswith('@as '):
+        raw = raw[4:]
+    apps = ast.literal_eval(raw)
+    if isinstance(apps, list) and 'taptether.desktop' in apps:
+        apps = [app for app in apps if app != 'taptether.desktop']
+        subprocess.run(['gsettings', 'set', 'org.gnome.shell',
+                        'favorite-apps', str(apps)],
+                       check=True, stderr=subprocess.DEVNULL)
+except (OSError, ValueError, SyntaxError, subprocess.CalledProcessError):
+    pass
+PY
 }
 setup_permissions() {
   # Only the daemon receives the privileged input group through systemd.
@@ -168,7 +190,7 @@ Comment=$launcher_comment
 Exec=$launcher_exec
 Icon=taptether
 Terminal=false
-StartupNotify=true
+StartupNotify=false
 Categories=Network;Utility;
 DESKTOP
   if [[ -s "$TRAY" ]]; then
@@ -181,6 +203,8 @@ Exec=/usr/bin/python3 $TRAY
 Icon=taptether
 Terminal=false
 X-GNOME-Autostart-enabled=true
+StartupNotify=false
+NoDisplay=true
 DESKTOP
     chmod 0644 "$TRAY_AUTOSTART"
   fi
@@ -222,9 +246,11 @@ SYSTEMD
   sudo systemctl enable "$UNIT"
   sudo systemctl restart "$UNIT"
   ensure_running
-  pin
+  # Earlier builds pinned the launcher to GNOME Favorites. Remove only
+  # that legacy auto-pin; the tray remains available without a taskbar icon.
+  unpin_legacy_launcher
   note 'Agent running in the background and enabled at boot (even before login).'
-  note 'Tray starts at next graphical login; use the TapTether dock launcher for its splash screen.'
+  note 'The TapTether tray icon starts at the next graphical login.'
   note 'You can retrieve credentials later with: ~/.local/bin/taptetherctl pairing'
   printf '\n====== TapTether pairing details ======\n'
   pairing
