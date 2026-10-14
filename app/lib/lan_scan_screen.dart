@@ -172,7 +172,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
     final mac = device.macAddress ??
         (matches.isNotEmpty ? matches.first.macAddress : null);
     return '${device.scanSubtitle}'
-        '${mac == null || mac.isEmpty ? '' : '\\nMAC: $mac'}';
+        '${mac == null || mac.isEmpty ? '' : '\nMAC: $mac'}';
   }
 
   @override
