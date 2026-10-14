@@ -75,7 +75,7 @@ assert "run: bash bin/2b-tt-macos.sh" in workflow
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
 assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
 assert "run: bash bin/6-tt-publish-latest.sh" in workflow
-assert "if: ${{ github.event_name == 'push' || inputs.task == 'release' }}" in workflow
+assert "if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' }}" in workflow
 assert "if: ${{ inputs.task == 'build' }}" in workflow
 assert "TapTether-complete-build-" in workflow
 assert "retention-days: 1" in workflow
