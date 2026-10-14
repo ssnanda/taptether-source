@@ -1380,8 +1380,174 @@ class _RemoteScreenState extends State<RemoteScreen> {
         ),
   ];
 
+
+  Widget _modeSwitcher() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: SegmentedButton<bool>(
+      key: const ValueKey('remote-mode-switcher'),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment<bool>(
+          value: false,
+          label: Text('Mouse & keyboard'),
+          icon: Icon(Icons.mouse_outlined),
+        ),
+        ButtonSegment<bool>(
+          value: true,
+          label: Text('Presentation'),
+          icon: Icon(Icons.slideshow_outlined),
+        ),
+      ],
+      selected: {_remoteLayout.presentationMode},
+      onSelectionChanged: (selection) => _setLayout(
+        _changedLayout(presenting: selection.first),
+      ),
+    ),
+  );
+
+  Widget _presentationView(bool landscape) {
+    final isMac = _connectedPlatform == 'darwin' ||
+        (_connectedPlatform == null && _macShortcuts);
+    final selected = PresentationApp.values.firstWhere(
+      (candidate) => candidate.name == _remoteLayout.presentationApp,
+      orElse: () => PresentationApp.powerPoint,
+    );
+    final app = !isMac && selected == PresentationApp.keynote
+        ? PresentationApp.powerPoint : selected;
+    return PresentationControls(
+      key: const ValueKey('presentation-remote'),
+      app: app,
+      isMac: isMac,
+      enabled: agent.configured && !_connectionLost,
+      landscape: landscape,
+      onAppChanged: (selection) => _setLayout(
+        _changedLayout(presentationApp: selection.name),
+      ),
+      onKey: (key) => unawaited(command('key', {'key': key})),
+    );
+  }
+
+  Widget _landscapeRemote() {
+    final screen = MediaQuery.sizeOf(context);
+    final safe = MediaQuery.paddingOf(context);
+    final available = (screen.height - safe.vertical -
+        kToolbarHeight - 132.0).clamp(185.0, 390.0).toDouble();
+    return SizedBox(
+      key: const ValueKey('landscape-remote'),
+      height: available,
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(
+          flex: 6,
+          child: Column(children: [
+            Row(children: [
+              Expanded(child: TextButton.icon(
+                key: const ValueKey('landscape-trackpad-toggle'),
+                onPressed: () => _setLayout(_changedLayout(
+                  trackpad: !_remoteLayout.trackpadExpanded,
+                )),
+                icon: Icon(_remoteLayout.trackpadExpanded
+                    ? Icons.expand_less : Icons.expand_more),
+                label: Text(_remoteLayout.trackpadExpanded
+                    ? 'Hide trackpad' : 'Show trackpad'),
+              )),
+            ]),
+            if (_remoteLayout.trackpadExpanded) ...[
+              Expanded(child: LayoutBuilder(
+                builder: (context, limits) => _trackpadSurface(
+                  height: limits.maxHeight,
+                ),
+              )),
+              const SizedBox(height: 4),
+              Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: _connectionLost ? null :
+                      () => command('click', {'button': 'left'}),
+                  child: const Text('Left click'),
+                )),
+                const SizedBox(width: 6),
+                Expanded(child: OutlinedButton(
+                  onPressed: _connectionLost ? null :
+                      () => command('click', {'button': 'right'}),
+                  child: const Text('Right click'),
+                )),
+              ]),
+            ] else
+              const Expanded(child: Center(
+                child: Text('Trackpad hidden. Tap Show trackpad to open.'),
+              )),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 5,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _landscapeTyping(),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: Text('Quick keys',
+                    style: Theme.of(context).textTheme.titleSmall)),
+                  TextButton(
+                    onPressed: _customizeQuickKeys,
+                    child: const Text('Customize'),
+                  ),
+                ]),
+                if (_remoteLayout.quickKeys.isEmpty)
+                  const Text('Add quick keys using Customize.')
+                else
+                  Wrap(spacing: 4, runSpacing: 3, children: [
+                    for (final id in _remoteLayout.quickKeys)
+                      _quickKeyButton(id),
+                  ]),
+                TextButton.icon(
+                  onPressed: () => _setLayout(_changedLayout(
+                    arrows: !_remoteLayout.arrowsExpanded,
+                  )),
+                  icon: Icon(_remoteLayout.arrowsExpanded
+                      ? Icons.expand_less : Icons.expand_more),
+                  label: const Text('Arrow pad'),
+                ),
+                if (_remoteLayout.arrowsExpanded) _arrowPad(),
+                OutlinedButton.icon(
+                  onPressed: () => _setLayout(_changedLayout(
+                    more: !_remoteLayout.moreExpanded,
+                  )),
+                  icon: Icon(_remoteLayout.moreExpanded
+                      ? Icons.expand_less : Icons.expand_more),
+                  label: const Text('More controls'),
+                ),
+                if (_remoteLayout.moreExpanded) ..._moreControlSections(),
+              ],
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _landscapeTyping() => TextField(
+    controller: typing,
+    enabled: !_connectionLost,
+    autocorrect: false,
+    enableSuggestions: false,
+    decoration: const InputDecoration(
+      isDense: true,
+      prefixIcon: Icon(Icons.keyboard_outlined),
+      labelText: 'Type on computer',
+    ),
+    onChanged: (text) {
+      if (text.isNotEmpty) {
+        unawaited(command('text', {'text': text}));
+        typing.clear();
+      }
+    },
+  );
+
   Widget _connectedControls() {
     final colors = Theme.of(context).colorScheme;
+    final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
         Icon(Icons.circle, color: _connectionLost ? colors.error
@@ -1404,6 +1570,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
         ),
       ]),
       if (_connectionLost) _connectionBanner(),
+      _modeSwitcher(),
+      if (_remoteLayout.presentationMode) _presentationView(landscape),
+      if (!_remoteLayout.presentationMode && landscape) _landscapeRemote(),
+      if (!_remoteLayout.presentationMode && !landscape) ...[
       ListTile(
         key: const ValueKey('trackpad-toggle'),
         contentPadding: EdgeInsets.zero,
@@ -1487,6 +1657,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
             ? 'Hide more controls' : 'More controls'),
       ),
       if (_remoteLayout.moreExpanded) ..._moreControlSections(),
+      ],
     ]);
   }
 
