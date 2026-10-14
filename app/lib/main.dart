@@ -1092,6 +1092,457 @@ class _RemoteScreenState extends State<RemoteScreen> {
   }
 
   String _quickKeyCommand(String id) {
+    if (RegExp(r'^f(?:[1-9]|1[0-2])
+      case 'escape': return 'Escape';
+      case 'tab': return 'Tab';
+      case 'enter': return 'Return';
+      case 'backspace': return 'BackSpace';
+      case 'up': return 'Up';
+      case 'down': return 'Down';
+      case 'left': return 'Left';
+      case 'right': return 'Right';
+      case 'copy': return _shortcut('c');
+      case 'paste': return _shortcut('v');
+      case 'selectAll': return _shortcut('a');
+      case 'undo': return _shortcut('z');
+      case 'find': return _shortcut('f');
+      case 'newTab': return _shortcut('t');
+      case 'switchApp': return _macShortcuts ? 'cmd+tab' : 'alt+tab';
+      case 'home': return 'home';
+      case 'end': return 'end';
+      case 'pageUp': return 'pageup';
+      case 'pageDown': return 'pagedown';
+      case 'volumeDown': return 'XF86AudioLowerVolume';
+      case 'mute': return 'XF86AudioMute';
+      case 'volumeUp': return 'XF86AudioRaiseVolume';
+      default: throw ArgumentError.value(id, 'id', 'Unknown remote control');
+    }
+  }
+
+  Widget _quickKeyButton(String id) =>
+      keyButton(remoteQuickKeyLabels[id]!, _quickKeyCommand(id));
+
+  Future<void> _customizeQuickKeys() async {
+    final chosen = _remoteLayout.quickKeys.toList();
+    final result = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, updateSheet) => SafeArea(child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.75,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(children: [
+              Row(children: [
+                Expanded(child: Text('Customize quick keys',
+                    style: Theme.of(context).textTheme.titleLarge)),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, chosen),
+                  child: const Text('Save'),
+                ),
+              ]),
+              const Text('Choose visible buttons and move them up or down '
+                  'to set the order. These settings are saved per computer.'),
+              const SizedBox(height: 8),
+              Expanded(child: ListView(children: [
+                if (chosen.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text('No quick keys selected. Add buttons below.'),
+                  ),
+                for (var i = 0; i < chosen.length; i++)
+                  ListTile(
+                    key: ValueKey('quick-${chosen[i]}'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(remoteQuickKeyLabels[chosen[i]]!),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                        tooltip: 'Move up',
+                        icon: const Icon(Icons.arrow_upward),
+                        onPressed: i == 0 ? null : () => updateSheet(() {
+                          final key = chosen.removeAt(i);
+                          chosen.insert(i - 1, key);
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Move down',
+                        icon: const Icon(Icons.arrow_downward),
+                        onPressed: i == chosen.length - 1 ? null
+                            : () => updateSheet(() {
+                          final key = chosen.removeAt(i);
+                          chosen.insert(i + 1, key);
+                        }),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => updateSheet(() => chosen.removeAt(i)),
+                      ),
+                    ]),
+                  ),
+                const Divider(),
+                Text('Available controls',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 4, children: [
+                  for (final entry in remoteQuickKeyLabels.entries)
+                    if (!chosen.contains(entry.key))
+                      ActionChip(
+                        avatar: const Icon(Icons.add, size: 18),
+                        label: Text(entry.value),
+                        onPressed: () => updateSheet(() => chosen.add(entry.key)),
+                      ),
+                ]),
+              ])),
+            ]),
+          ),
+        )),
+      ),
+    );
+    if (result != null && mounted) {
+      _setLayout(_changedLayout(quick: result));
+    }
+  }
+
+
+  Widget _advancedSection(String id, String title, IconData icon,
+      Widget content) {
+    final open = _remoteLayout.expandedSections.contains(id);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon),
+        title: Text(title),
+        trailing: Icon(open ? Icons.expand_less : Icons.expand_more),
+        onTap: () => _toggleMoreSection(id),
+      ),
+      if (open) Padding(padding: const EdgeInsets.only(bottom: 12),
+          child: content),
+      const Divider(height: 1),
+    ]);
+  }
+
+  Widget _arrowPad() => Column(children: [
+    Center(child: _quickKeyButton('up')),
+    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      _quickKeyButton('left'),
+      const SizedBox(width: 8),
+      _quickKeyButton('down'),
+      const SizedBox(width: 8),
+      _quickKeyButton('right'),
+    ]),
+  ]);
+
+  Widget _trackpadSurface() => GestureDetector(
+    onTap: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'left'}));
+    },
+    onDoubleTap: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'double'}));
+    },
+    onLongPress: _connectionLost ? null : () {
+      if (!_multiTouchGesture) unawaited(command('click', {'button': 'right'}));
+    },
+    child: Listener(
+      onPointerDown: _connectionLost ? null : _touchDown,
+      onPointerUp: _connectionLost ? null : _touchUp,
+      onPointerCancel: _connectionLost ? null : _touchUp,
+      onPointerMove: _connectionLost ? null : _touchMove,
+      child: Container(
+        height: 224,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.primary
+                .withValues(alpha: 0.25))),
+        child: Center(child: Icon(Icons.touch_app, size: 36,
+            color: Theme.of(context).colorScheme.onPrimaryContainer
+                .withValues(alpha: 0.5))),
+      ),
+    ),
+  );
+
+  Widget _connectionBanner() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.wifi_off_outlined),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Connection lost',
+              style: Theme.of(context).textTheme.titleMedium)),
+          TextButton.icon(
+            onPressed: _retryingConnection ? null : _retryRemoteConnection,
+            icon: const Icon(Icons.refresh),
+            label: Text(_retryingConnection ? 'Retrying…' : 'Retry'),
+          ),
+        ]),
+        const Text('The computer agent is not responding. Check that it '
+            'is running and retry.'),
+        if (_connectionTechnical != null)
+          ExpansionTile(
+            title: const Text('Technical details'),
+            tilePadding: EdgeInsets.zero,
+            children: [SelectableText(_connectionTechnical!,
+                style: Theme.of(context).textTheme.bodySmall)],
+          ),
+      ]),
+    ),
+  );
+
+  Widget _connectedControls() {
+    final colors = Theme.of(context).colorScheme;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Icon(Icons.circle, color: _connectionLost ? colors.error
+            : colors.primary, size: 11),
+        const SizedBox(width: 8),
+        Expanded(child: Text(discoveredName ?? host.text.trim(),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium)),
+        TextButton.icon(
+          onPressed: () {
+            agent.disconnect();
+            setState(() {
+              _connectionLost = false;
+              _connectionTechnical = null;
+              status = 'Select a device to connect.';
+            });
+          },
+          icon: const Icon(Icons.swap_horiz, size: 18),
+          label: const Text('Switch'),
+        ),
+      ]),
+      if (_connectionLost) _connectionBanner(),
+      ListTile(
+        key: const ValueKey('trackpad-toggle'),
+        contentPadding: EdgeInsets.zero,
+        title: Text('Trackpad',
+            style: Theme.of(context).textTheme.titleLarge),
+        subtitle: Text(_remoteLayout.trackpadExpanded
+            ? 'Tap to collapse' : 'Tap to expand'),
+        trailing: Icon(_remoteLayout.trackpadExpanded
+            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+        onTap: () => _setLayout(_changedLayout(
+          trackpad: !_remoteLayout.trackpadExpanded)),
+      ),
+      if (_remoteLayout.trackpadExpanded) ...[
+        _trackpadSurface(),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: OutlinedButton(
+            onPressed: _connectionLost ? null :
+                () => command('click', {'button': 'left'}),
+            child: const Text('Left click'),
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: OutlinedButton(
+            onPressed: _connectionLost ? null :
+                () => command('click', {'button': 'right'}),
+            child: const Text('Right click'),
+          )),
+        ]),
+        const SizedBox(height: 8),
+      ],
+      TextField(
+        controller: typing,
+        enabled: !_connectionLost,
+        autocorrect: false,
+        enableSuggestions: false,
+        decoration: const InputDecoration(
+          prefixIcon: Icon(Icons.keyboard_outlined),
+          labelText: 'Type on computer',
+        ),
+        onChanged: (text) {
+          if (text.isNotEmpty) {
+            unawaited(command('text', {'text': text}));
+            typing.clear();
+          }
+        },
+      ),
+      const SizedBox(height: 10),
+      Row(children: [
+        Expanded(child: Text('Quick keys',
+            style: Theme.of(context).textTheme.titleMedium)),
+        TextButton.icon(
+          onPressed: _customizeQuickKeys,
+          icon: const Icon(Icons.tune, size: 18),
+          label: const Text('Customize'),
+        ),
+      ]),
+      if (_remoteLayout.quickKeys.isEmpty)
+        const Text('Add your favorite keys using Customize.')
+      else
+        Wrap(spacing: 8, runSpacing: 4, children: [
+          for (final id in _remoteLayout.quickKeys) _quickKeyButton(id),
+        ]),
+      TextButton.icon(
+        key: const ValueKey('arrow-keys-toggle'),
+        onPressed: () => _setLayout(_changedLayout(
+          arrows: !_remoteLayout.arrowsExpanded)),
+        icon: Icon(_remoteLayout.arrowsExpanded
+            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+        label: Text(_remoteLayout.arrowsExpanded
+            ? 'Hide arrow keys' : 'Show arrow keys'),
+      ),
+      if (_remoteLayout.arrowsExpanded) _arrowPad(),
+      const Divider(),
+      OutlinedButton.icon(
+        key: const ValueKey('more-controls-toggle'),
+        onPressed: () => _setLayout(_changedLayout(
+          more: !_remoteLayout.moreExpanded)),
+        icon: Icon(_remoteLayout.moreExpanded
+            ? Icons.expand_less : Icons.expand_more),
+        label: Text(_remoteLayout.moreExpanded
+            ? 'Hide more controls' : 'More controls'),
+      ),
+      if (_remoteLayout.moreExpanded) ...[
+        _advancedSection('editing', 'Editing & shortcuts',
+          Icons.edit_outlined, Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(spacing: 8, runSpacing: 4, children: [
+                for (final id in [
+                  'copy', 'paste', 'selectAll', 'undo', 'find', 'newTab',
+                  'switchApp',
+                ]) _quickKeyButton(id),
+              ]),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _connectionLost ? null : typePhoneClipboard,
+                icon: const Icon(Icons.content_paste_go),
+                label: const Text('Type phone clipboard'),
+              ),
+              Text('Explicit action only · up to 4 KB · no clipboard sync',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+        _advancedSection('extended', 'Extended keyboard',
+          Icons.keyboard_alt_outlined, Wrap(
+            spacing: 8, runSpacing: 4, children: [
+              for (final id in ['home', 'end', 'pageUp', 'pageDown'])
+                _quickKeyButton(id),
+              for (var f = 1; f <= 12; f++) keyButton('F$f', 'f$f'),
+            ],
+          ),
+        ),
+        _advancedSection('volume', 'Volume & media',
+          Icons.volume_up_outlined, Wrap(
+            spacing: 8, runSpacing: 4, children: [
+              for (final id in ['volumeDown', 'mute', 'volumeUp'])
+                _quickKeyButton(id),
+            ],
+          ),
+        ),
+        _advancedSection('power', 'Power',
+          Icons.power_settings_new_outlined, Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              OutlinedButton.icon(
+                onPressed: agent.shutdownEnabled ? confirmShutdown : null,
+                icon: const Icon(Icons.power_settings_new),
+                label: const Text('Shut down computer'),
+              ),
+              if (!agent.shutdownEnabled)
+                const Text('Remote shutdown is disabled. Enable it on '
+                    'Ubuntu with taptetherctl enable-shutdown.'),
+            ],
+          ),
+        ),
+        _advancedSection('preferences', 'Remote preferences',
+          Icons.settings_outlined, Column(children: [
+            Row(children: [
+              Text('Pointer: ' + mouseSensitivity.toStringAsFixed(1) + '×'),
+              Expanded(child: Slider(
+                value: mouseSensitivity, min: 1.0, max: 8.0, divisions: 28,
+                onChanged: (value) =>
+                    setState(() => mouseSensitivity = value),
+              )),
+            ]),
+            if (_connectedPlatform != 'linux')
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Mac shortcuts (⌘)'),
+                value: _macShortcuts,
+                onChanged: (value) => setState(() => _macShortcuts = value),
+              ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Haptic feedback'),
+              value: _haptics,
+              onChanged: (value) => setState(() => _haptics = value),
+            ),
+          ]),
+        ),
+      ],
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = agent.configured;
+    return Scaffold(
+      key: _scaffoldKey,
+      drawer: appDrawer(),
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Open navigation',
+          icon: const Icon(Icons.menu),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+        title: const Text('TapTether'), actions: [
+        IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
+          agent.disconnect(); setState(() => status = 'Disconnected');
+        } : null, icon: const Icon(Icons.link_off)),
+      ]),
+      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
+        if (!connected) ...[
+          Text('Your devices. Your control. Your network.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              )),
+          const SizedBox(height: 12),
+        ],
+        updateNotices(),
+        if (!connected) ...[
+          deviceDashboard(),
+          if (_showPairForm) ...[
+          const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('For first-time pairing, enter the token and TLS SHA-256 fingerprint from your computer. Verified devices are saved securely on this phone.'),
+          const SizedBox(height: 12),
+          TextField(controller: host, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Computer LAN IP (e.g. 192.168.1.10)', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: token, obscureText: true, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Agent pairing token', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: pin, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Certificate SHA-256 fingerprint', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          FilledButton.icon(onPressed: () async { await connect(); }, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
+          ],
+        ] else ...[
+          _connectedControls(),
+        ],
+        const SizedBox(height: 16),
+        if (!connected || !_connectionLost)
+          Text(status, style: TextStyle(fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 12),
+        Center(child: Text('TapTether v$installedVersion',
+          style: TextStyle(fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant))),
+      ])),
+    );
+  }
+}
+).hasMatch(id)) return id;
     switch (id) {
       case 'escape': return 'Escape';
       case 'tab': return 'Tab';
