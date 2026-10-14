@@ -201,9 +201,9 @@ set -e
 cd '$stage'
 tar -tzf '$filename' > archive-list.txt
 for f in taptether-agent taptetherctl-mac taptether-agent-update-mac TapTether.icns TapTetherTray; do
-  grep -Fxq "\\$f" archive-list.txt || exit 52
+  grep -Fxq "\$f" archive-list.txt || exit 52
 done
-test "\\$(wc -l < archive-list.txt | tr -d ' ')" -eq 5 || exit 52
+test "\$(wc -l < archive-list.txt | tr -d ' ')" -eq 5 || exit 52
 tar -xzf '$filename'
 chmod 755 taptether-agent taptetherctl-mac taptether-agent-update-mac TapTetherTray
 bash taptetherctl-mac install > install.log 2>&1 || exit 53
