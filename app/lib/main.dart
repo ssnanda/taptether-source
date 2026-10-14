@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'remote_layout_settings.dart';
+import 'presentation_mode.dart';
 import 'clipboard_chunks.dart';
 import 'appearance.dart';
 import 'app_security.dart';
@@ -1035,12 +1036,16 @@ class _RemoteScreenState extends State<RemoteScreen> {
     bool? trackpad,
     bool? arrows,
     bool? more,
+    bool? presenting,
+    String? presentationApp,
     List<String>? sections,
     List<String>? quick,
   }) => RemoteLayoutSettings(
     trackpadExpanded: trackpad ?? _remoteLayout.trackpadExpanded,
     arrowsExpanded: arrows ?? _remoteLayout.arrowsExpanded,
     moreExpanded: more ?? _remoteLayout.moreExpanded,
+    presentationMode: presenting ?? _remoteLayout.presentationMode,
+    presentationApp: presentationApp ?? _remoteLayout.presentationApp,
     expandedSections: sections ?? _remoteLayout.expandedSections,
     quickKeys: quick ?? _remoteLayout.quickKeys,
   );
@@ -1237,7 +1242,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     ]),
   ]);
 
-  Widget _trackpadSurface() => GestureDetector(
+  Widget _trackpadSurface({double height = 224}) => GestureDetector(
     onTap: _connectionLost ? null : () {
       if (!_multiTouchGesture) unawaited(command('click', {'button': 'left'}));
     },
@@ -1253,7 +1258,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
       onPointerCancel: _connectionLost ? null : _touchUp,
       onPointerMove: _connectionLost ? null : _touchMove,
       child: Container(
-        height: 224,
+        height: height,
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.primaryContainer,
           borderRadius: BorderRadius.circular(16),
