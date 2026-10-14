@@ -185,16 +185,33 @@ class UbuntuSshProvisioner {
       final sudoCheck = input.sudoPassword.isEmpty
           ? 'sudo -n -v'
           : 'sudo -k && sudo -S -p "" -v';
-      // The SSH staging folder is intentionally 0700, so apt's _apt user
-      // cannot traverse it. dpkg runs with elevated privileges and does not
-      // require exposing the uploaded package to other local users.
-      // This verified .deb has no required external Debian dependencies.
-      // Keep distinct exit codes for sudo (41), install (42), setup (43).
-      // Never show unfiltered remote logs or private pairing credentials.
+      // Keep staging private; isolate the dpkg output from sudo-password
+      // authentication and pairing logs. Only a sanitized package diagnostic
+      // may appear in the iPhone failure report.
       final command = '''
 if ! ( $sudoCheck ); then exit 41; fi
 if ! sudo -n -v; then exit 41; fi
-if ! sudo -n env DEBIAN_FRONTEND=noninteractive dpkg --install '$stage/$filename'; then exit 42; fi
+if ! command -v dpkg-deb >/dev/null 2>&1; then
+  printf 'TAPTETHER_DPKG_BEGIN\n'
+  printf 'dpkg-deb: error: package inspection utility is unavailable\n'
+  printf 'TAPTETHER_DPKG_END\n'
+  exit 42
+fi
+if ! dpkg-deb --info '$stage/$filename' >/dev/null 2>&1; then
+  printf 'TAPTETHER_DPKG_BEGIN\n'
+  printf 'dpkg-deb: error: package archive failed preflight inspection\n'
+  printf 'TAPTETHER_DPKG_END\n'
+  exit 42
+fi
+if sudo -n env DEBIAN_FRONTEND=noninteractive dpkg --install '$stage/$filename' > '$stage/dpkg-install.log' 2>&1; then
+  :
+else
+  dpkg_exit=\$?
+  printf 'TAPTETHER_DPKG_BEGIN\n'
+  tail -c 6000 '$stage/dpkg-install.log'
+  printf '\nTAPTETHER_DPKG_END\nTAPTETHER_DPKG_STATUS:%s\n' "\$dpkg_exit"
+  exit 42
+fi
 if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
 ''';
       final session = await client.execute(command, pty: const SSHPtyConfig());
