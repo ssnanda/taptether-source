@@ -141,6 +141,12 @@ agent_main = (ROOT / "agent" / "cmd" / "taptether-agent" / "main.go").read_text(
 assert "rangeFromWifi(" in lan and "getWifiSubmask()" in lan
 assert "lanRangeContains(" in lan
 assert "_network!.scanPrefixes" in scan_screen
+assert "mergeDiscoveredAgents(" in lan
+assert "checkPrivateLanIp(" in lan
+assert "device.scanSubtitle" in scan_screen
+assert "Check a specific computer" in scan_screen
+assert "targetIp" in (ROOT / "app" / "lib" / "discovery.dart").read_text(
+    encoding="utf-8")
 assert "InstallAgentScreen" in installer and "Computer OS" in installer
 assert "knownPlatform" in installer and "Windows agent support" in installer
 assert "visibleSavedDevices(" in devices and "showOffline" in devices
