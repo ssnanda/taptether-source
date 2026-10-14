@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'phone_ssh_keys.dart';
 import 'ssh_host_trust.dart';
 import 'ubuntu_install_validation.dart';
+import 'ubuntu_install_error.dart';
 
 enum SshLoginMethod { password, phoneKey }
 
@@ -188,7 +189,7 @@ class UbuntuSshProvisioner {
       // stderr verbatim: the setup script prints private pairing credentials.
       final command = '''
 if ! ( $sudoCheck ); then exit 41; fi
-if ! sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y '$stage/$filename'; then exit 42; fi
+if ! sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends '$stage/$filename'; then exit 42; fi
 if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
 ''';
       final session = await client.execute(command, pty: const SSHPtyConfig());
@@ -206,15 +207,16 @@ if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
         // Never display raw installer output; it contains pairing secrets.
         switch (code) {
           case 41:
-            throw StateError('Ubuntu sudo authorization failed. Enter the '
+            throw StateError('[SUDO-AUTH] Ubuntu sudo authorization failed. Enter the '
                 'Ubuntu sudo password (separate from your SSH key), or '
                 'enable passwordless sudo for the account.');
           case 42:
-            throw StateError('Ubuntu package installation failed. Check '
-                'available disk space, apt/dpkg locks and package-manager '
-                'health on the target computer.');
+            // Classify apt errors locally but never show unfiltered output.
+            // Setup logs may include sensitive pairing credentials.
+            throw StateError(ubuntuPackageFailureMessage(
+                utf8.decode(bytes, allowMalformed: true)));
           case 43:
-            throw StateError('The Ubuntu agent setup failed after package '
+            throw StateError('[SETUP-SERVICE] The Ubuntu agent setup failed after package '
                 'installation. Check systemd and /dev/uinput permissions '
                 'using: sudo systemctl status taptether-agent --no-pager');
           default:

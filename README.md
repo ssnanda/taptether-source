@@ -426,3 +426,19 @@ These changes do not grant extra OS privileges, disable SSH host identity
 pinning, or bypass Ubuntu sudo. They require Flutter tests and validation
 before a new mobile release; they cannot confirm any particular Ubuntu
 machine's current permission configuration without device access.
+
+## v0.6.4+22 — on-phone Ubuntu installation diagnostics
+
+- Remove the mandatory `xdotool` package dependency: native `/dev/uinput`
+  works without it; `xdotool` is optional for the X11 fallback.
+- `apt-get install --no-install-recommends` avoids unrelated packages.
+- The iPhone and Android installer reports safe, actionable APT status codes
+  (dependencies, apt lock, network, disk space, corrupt package, permissions).
+- Failed installations offer **Installation diagnostics → Copy diagnostics**
+  directly on the phone, including connection method, failure stage and
+  sanitized error code. No Mac, SSH terminal, raw server logs, private keys,
+  passwords or pairing tokens are required or included in the report.
+- Sudo helper text fits on smaller screens.
+
+These fixes address a likely dependency failure but must still be tested on
+the actual Ubuntu hosts. The user triggers Release only after merge.

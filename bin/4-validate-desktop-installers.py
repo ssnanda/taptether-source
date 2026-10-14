@@ -40,6 +40,12 @@ def check_deb(root: Path, version: str, arch: str) -> None:
         control = tf.extractfile('control').read().decode('utf-8')
     for line in ('Package: taptether-agent', f'Version: {version}', f'Architecture: {arch}'):
         require(line in control.splitlines(), f'{archive}: incorrect package metadata: {line}')
+    # xdotool is only a legacy X11 fallback, never a required dependency.
+    require('Suggests: xdotool' in control.splitlines(),
+            f'{archive}: expected optional xdotool suggestion')
+    require(not any(line.startswith(('Depends: xdotool', 'Pre-Depends: xdotool'))
+                    for line in control.splitlines()),
+            f'{archive}: optional xdotool must not block installation')
     sources = {
         'usr/share/taptether/4-ubuntu-desktop-setup.sh': root / 'bin' / '4-ubuntu-desktop-setup.sh',
         'usr/share/taptether/7-tt-update-ubuntu.sh': root / 'bin' / '7-tt-update-ubuntu.sh',
