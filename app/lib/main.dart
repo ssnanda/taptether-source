@@ -1674,8 +1674,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                 icon: const Icon(Icons.content_paste_go),
                 label: const Text('Type phone clipboard'),
               ),
-              Text('Explicit action only · up to 4 KB · no clipboard sync',
-                  style: Theme.of(context).textTheme.bodySmall),
+              // Clipboard action is intentionally explicit. Technical detail
+              // belongs in Help, not the main remote-control surface.
             ],
           ),
         ),
@@ -1705,8 +1705,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                 label: const Text('Shut down computer'),
               ),
               if (!agent.shutdownEnabled)
-                const Text('Remote shutdown is disabled. Enable it on '
-                    'Ubuntu with taptetherctl enable-shutdown.'),
+                const Text('Shutdown is not enabled on this computer.'),
             ],
           ),
         ),
@@ -2045,7 +2044,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
               )),
           const SizedBox(height: 12),
         ],
-        updateNotices(),
+        if (!connected) updateNotices(),
         if (!connected) ...[
           deviceDashboard(),
           if (_showPairForm) ...[
