@@ -112,6 +112,24 @@ assert remote.count("Widget build(BuildContext context)") == 2
 assert "if (RegExp(r'^f(?:[1-9]|1[0-2])$').hasMatch(id)) return id;" in remote
 assert "}).hasMatch(id)) return id;" not in remote
 
+# Presentation mode shares only authenticated LAN keyboard commands; no
+# screen-reading or note capture is part of the 0.6.9 feature.
+presentation = (ROOT / "app" / "lib" / "presentation_mode.dart").read_text(
+    encoding="utf-8")
+layout = (ROOT / "app" / "lib" / "remote_layout_settings.dart").read_text(
+    encoding="utf-8")
+assert 'Widget _landscapeRemote()' in remote
+assert 'MediaQuery.orientationOf(context) == Orientation.landscape' in remote
+assert 'Widget _presentationView(bool landscape)' in remote
+assert 'SegmentedButton<bool>' in remote
+assert 'PresentationShortcuts.start' in presentation
+assert "static const next = 'Right';" in presentation
+assert "static const previous = 'Left';" in presentation
+assert "static const stop = 'Escape';" in presentation
+assert "static const blankToggle = 'b';" in presentation
+assert "this.presentationMode = false" in layout
+assert "this.presentationApp = 'powerPoint'" in layout
+
 print("PASS: one Actions workflow, auto Release on VERSION, three manual choices")
 print("PASS: validate -> native agents -> IPA/APK -> publish, with same-run artifacts")
 print("PASS: weekly cleanup and immutable version-tagged Latest releases")
