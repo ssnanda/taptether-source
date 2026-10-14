@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'remote_layout_settings.dart';
 import 'presentation_mode.dart';
+import 'lan_scan.dart';
+import 'network_location.dart';
 import 'clipboard_chunks.dart';
 import 'appearance.dart';
 import 'app_security.dart';
@@ -64,7 +66,11 @@ class LocalAgent {
   String? _session;
   DateTime? _sessionExpires;
   bool _shutdownEnabled = false;
+  String? _reportedHostname;
+  String? _reportedPlatform;
   bool get shutdownEnabled => _shutdownEnabled;
+  String? get reportedHostname => _reportedHostname;
+  String? get reportedPlatform => _reportedPlatform;
 
   bool get configured => _base != null && _client != null;
 
@@ -216,6 +222,16 @@ class LocalAgent {
       final body = jsonDecode(await utf8.decoder.bind(response).join());
       if (body is Map && body['version'] is String) {
         _shutdownEnabled = body['shutdownEnabled'] == true;
+        final name = body['hostname'];
+        if (name is String &&
+            RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$').hasMatch(name)) {
+          _reportedHostname = name;
+        }
+        final platform = body['platform'];
+        if (platform == 'linux' || platform == 'darwin' ||
+            platform == 'windows') {
+          _reportedPlatform = platform as String;
+        }
         return body['version'] as String;
       }
     } catch (_) {
@@ -234,6 +250,8 @@ class LocalAgent {
     _session = null;
     _sessionExpires = null;
     _shutdownEnabled = false;
+    _reportedHostname = null;
+    _reportedPlatform = null;
   }
 }
 
@@ -952,6 +970,23 @@ class _RemoteScreenState extends State<RemoteScreen> {
         }
       }
       final currentAgent = await agent.agentVersion();
+      String? verifiedName = agent.reportedHostname;
+      // Older agents do not yet report hostname; reverse DNS is only a
+      // display hint after a successful authenticated, TLS-pinned ping.
+      if (verifiedName == null) {
+        try {
+          final ip = InternetAddress(host.text.trim());
+          final reverse = await ip.reverse()
+              .timeout(const Duration(milliseconds: 750));
+          if (reverse.host != host.text.trim() &&
+              RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$')
+                  .hasMatch(reverse.host)) {
+            verifiedName = reverse.host;
+          }
+        } catch (_) {}
+      }
+      _connectedPlatform = agent.reportedPlatform ?? _connectedPlatform;
+      if (verifiedName != null) discoveredName = verifiedName;
       if (mounted) {
         setState(() {
         status = 'Connected to ${host.text.trim()}';
@@ -969,16 +1004,21 @@ class _RemoteScreenState extends State<RemoteScreen> {
         final matches = savedComputers.where((d) => d.host == host.text.trim());
         final existing = matches.isEmpty ? null : matches.first;
         final discovered = nearbyComputers.where((d) => d.host == host.text.trim());
+        final location = _detectedLocation ?? existing?.location ?? 'other';
         final device = SavedComputer(
           id: existingId ?? existing?.id ?? SavedComputer.newId(),
-          name: discoveredName ?? existing?.name ?? host.text.trim(),
+          name: existing?.customName == true
+              ? existing!.name
+              : verifiedName ?? discoveredName ?? existing?.name ?? host.text.trim(),
           host: host.text.trim(),
           token: enrolledId.isEmpty ? token.text.trim() : '',
           deviceId: enrolledId,
           fingerprint: pin.text.replaceAll(RegExp(r'[^a-fA-F0-9]'), '').toUpperCase(),
-          platform: discovered.isEmpty
+          platform: agent.reportedPlatform ?? (discovered.isEmpty
               ? (_connectedPlatform ?? existing?.platform ?? 'computer')
-              : discovered.first.platform,
+              : discovered.first.platform),
+          location: location,
+          customName: existing?.customName ?? false,
         );
         final updated = await deviceStore.upsert(device);
         if (mounted) setState(() => savedComputers = updated);
