@@ -55,7 +55,11 @@ bool isPrivateIPv4(String input) {
 /// Some corporate and guest Wi-Fi networks block broadcast packets.
 Future<List<DiscoveredDevice>> findNearbyDevices({
   Duration duration = const Duration(seconds: 2),
+  String? scanPrefix,
 }) async {
+  if (scanPrefix != null && !isPrivateIPv4('$scanPrefix.1')) {
+    throw const FormatException('Discovery requires a private /24 prefix');
+  }
   final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
   socket.broadcastEnabled = true;
   final devices = <String, DiscoveredDevice>{};
@@ -76,20 +80,25 @@ Future<List<DiscoveredDevice>> findNearbyDevices({
     } on SocketException {
       // Try on-link unicast next.
     }
-    final interfaces = await NetworkInterface.list(
-      type: InternetAddressType.IPv4, includeLoopback: false,
-    );
     final prefixes = <String>{};
-    for (final interface in interfaces) {
-      for (final address in interface.addresses) {
-        final ip = address.address;
-        if (!isPrivateIPv4(ip)) continue;
-        final octets = ip.split('.');
-        prefixes.add('${octets[0]}.${octets[1]}.${octets[2]}');
-        // At most two /24 networks (512 UDP probes) during a user-initiated scan.
+    if (scanPrefix != null) {
+      // Scan only the selected LAN range rather than an unrelated adapter.
+      prefixes.add(scanPrefix);
+    } else {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4, includeLoopback: false,
+      );
+      for (final interface in interfaces) {
+        for (final address in interface.addresses) {
+          final ip = address.address;
+          if (!isPrivateIPv4(ip)) continue;
+          final octets = ip.split('.');
+          prefixes.add('${octets[0]}.${octets[1]}.${octets[2]}');
+          // At most two /24s (512 probes) for user-initiated discovery.
+          if (prefixes.length >= 2) break;
+        }
         if (prefixes.length >= 2) break;
       }
-      if (prefixes.length >= 2) break;
     }
     for (final prefix in prefixes) {
       for (var last = 1; last <= 254; last++) {
