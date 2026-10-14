@@ -76,7 +76,7 @@ func main() {
 	for _, a := range privateAddresses() {
 		fmt.Printf("iPhone host: %s\n", a)
 	}
-	fmt.Println("Linux Wayland/X11 native uinput and macOS CoreGraphics are supported; macOS requires Accessibility permission. Windows input remains unimplemented.")
+	fmt.Println("Linux Wayland/X11 native uinput and macOS CoreGraphics are supported; macOS requires Accessibility permission. Windows uses SendInput in the signed-in user desktop.")
 	fmt.Println("No telemetry or cloud connections are implemented. UDP 48322 answers local discovery probes. Restrict control port 48321 to trusted LAN devices.")
 	mux := http.NewServeMux()
 	access := &identityAPI{devices: registry, legacyToken: token}
