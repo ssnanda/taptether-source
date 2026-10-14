@@ -15,8 +15,9 @@ on:
           - build
           - validate
   push:
-    branches: [main]
-    # Auto-release only on a deliberate VERSION update.
+    branches: [main, fix/v0.6-remote-scan-mac-details]
+    # Branch VERSION bumps validate/build Windows without publishing.
+    # Only main can publish a release.
     paths:
       - VERSION
   schedule:
@@ -38,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Release preflight (only before publishing)
-        if: ${{ github.event_name == 'push' || inputs.task == 'release' }}
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -107,7 +108,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build' }}
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -181,7 +182,7 @@ jobs:
 
   build-and-publish:
     needs: [build-ubuntu, build-windows]
-    if: ${{ github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build' }}
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build' }}
     permissions:
       contents: write
     runs-on: macos-latest
