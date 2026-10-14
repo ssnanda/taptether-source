@@ -588,6 +588,20 @@ Accessibility permission; no code can automatically bypass that OS prompt.
   location selector overrides the detected category. If iOS does not
   permit SSID access, only the current CIDR is available, and overlapping
   Wi-Fi networks can need manual selection.
+- **Scan results:** A device name (when available) or inferred device type
+  is the title, with the IP shown only once on the second line. TCP service
+  hints remain available. The scanner also requests existing TapTether UDP
+  announcements on the chosen /24 and merges them by IP, so agents that
+  answer discovery can appear even with all scanned TCP ports closed.
+  Announcements are marked *unverified* until proper TLS-pinned pairing.
+- **Check a specific computer:** manually enter an IP (for example a Mac with
+  firewall-protected TCP ports) and probe it directly. If none of the six
+  ports or TapTether discovery responds, the app says **not detected**, not
+  **offline**, and still offers **Use this IP for pairing anyway**.
+- Apple iOS and standard Android apps cannot reliably retrieve a LAN-wide
+  neighbor MAC-address inventory, so TapTether does **not** invent MAC/vendor
+  values. Type labels come from platform-specific agent announcements
+  (unverified until paired), observed open services or reverse DNS.
 - Windows agent installation, presentation speaker notes and future
   screen sharing remain outside this 0.6.9 release.
 
