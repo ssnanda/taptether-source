@@ -206,7 +206,9 @@ List<LanHost> mergeDiscoveredAgents(
   final byIp = <String, LanHost>{for (final host in tcpHosts) host.ip: host};
   for (final device in announcements) {
     if (!isPrivateIPv4(device.host) ||
-        prefixFromIp(device.host) != prefix) continue;
+        prefixFromIp(device.host) != prefix) {
+      continue;
+    }
     final existing = byIp[device.host];
     byIp[device.host] = LanHost(
       ip: device.host,
