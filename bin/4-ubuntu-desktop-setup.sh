@@ -79,6 +79,50 @@ except (OSError, ValueError, SyntaxError, subprocess.CalledProcessError):
     pass
 PY
 }
+setup_update_service() {
+  local username="$1" homedir="$2" tmp rule
+  local source='/usr/share/taptether/9-tt-system-update-ubuntu.sh'
+  [[ -s "$source" ]] || {
+    note 'Optional privileged update service not bundled yet; the mobile SSH updater remains available.'
+    return 0
+  }
+  sudo install -D -m 0755 "$source"     /usr/local/libexec/taptether-update-ubuntu.sh
+  tmp="$(mktemp)"
+  cat > "$tmp" <<SYSTEMD
+[Unit]
+Description=TapTether user-approved verified agent update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment="TAPTETHER_OWNER=$username"
+Environment="TAPTETHER_HOME=$homedir"
+ExecStart=/usr/local/libexec/taptether-update-ubuntu.sh
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStartSec=300
+UMask=0077
+SYSTEMD
+  sudo install -m 0644 "$tmp"     /etc/systemd/system/taptether-update.service
+  rm -f "$tmp"
+  # Narrow permission: one named unit, one named verb, this desktop user.
+  # It does not grant passwordless sudo or access to other system services.
+  tmp="$(mktemp)"
+  cat > "$tmp" <<POLKIT
+polkit.addRule(function(action, subject) {
+  if (action.id === "org.freedesktop.systemd1.manage-units" &&
+      action.lookup("unit") === "taptether-update.service" &&
+      action.lookup("verb") === "start" &&
+      subject.user === "$username") {
+    return polkit.Result.YES;
+  }
+});
+POLKIT
+  sudo install -D -m 0644 "$tmp"     /etc/polkit-1/rules.d/80-taptether-update.rules
+  rm -f "$tmp"
+  sudo systemctl daemon-reload
+}
 setup_permissions() {
   # Only the daemon receives the privileged input group through systemd.
   # The interactive user is NOT added to this group.
@@ -147,6 +191,7 @@ install() {
   [[ "$homedir" == /* && "$homedir" != *$'\n'* ]] || fail 'Invalid home directory.'
   note 'Configuring /dev/uinput permissions for the service only.'
   setup_permissions
+  setup_update_service "$username" "$homedir"
   mkdir -p "${CTL%/*}" "${APP%/*}" "$CONFIG" "${TRAY%/*}" "${TRAY_AUTOSTART%/*}"
   chmod 700 "$CONFIG"
   if [[ "$(realpath "${BASH_SOURCE[0]}")" != "$(realpath -m "$CTL")" ]]; then
