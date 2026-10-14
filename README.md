@@ -489,3 +489,24 @@ before writing files. Package auditing rejects incomplete directory
 structures, and a fast offline regression test runs in the validation job.
 The existing native dpkg install gate remains in place. The version stays
 0.6.6+24 because the failed attempt did not publish a release.
+
+## 0.6.7+25 — compact customizable phone remote
+
+- The connected remote now starts with a slim device header, **collapsible
+  trackpad**, type field and just **Esc, Tab, Enter and Backspace**.
+- Hide advanced controls by default. Expand **Arrow keys** for a compact
+  D-pad; **More controls** reveals editing/shortcuts, extended F1–F12 keys,
+  volume, power and settings in individually collapsible sections.
+- **Customize quick keys** adds/removes buttons and moves favorites up/down.
+  Layout, visible sections and button order are saved locally and separately
+  for each computer. No cloud or agent-side preferences.
+- Move sensitivity, Mac shortcut and haptic settings to More controls.
+  Don't display the Mac shortcut setting for known Ubuntu hosts.
+- Replace raw connection-refused status with **Connection lost → Retry** and
+  optional expandable technical details; preserve local pairing credentials.
+- Restore each computer's previous layout when reconnecting. Ubuntu and
+  macOS control protocols are unchanged; no clipboard synchronization or
+  file transfer added.
+
+TapTether version is incremented to 0.6.7+25. The user triggers the
+single GitHub Release workflow after merging; no build on push.
