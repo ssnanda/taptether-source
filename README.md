@@ -651,3 +651,14 @@ this patch corrects the final stale test and retries the gated release.
 ### 0.6.10+31 validation hotfix
 
 The first 0.6.10+30 automatic release failed at Flutter analysis without publishing. This revision escapes the remote macOS shell's `$HOME` so Dart does not try to interpolate a nonexistent variable, and encloses the LAN scanner's conditional `continue` in braces to satisfy the Flutter lint. No device, pairing, or installer behavior changed.
+
+### 0.6.10+32 validation retry
+
+The initial v0.6.10+31 auto-release stopped in Flutter widget tests because
+the macOS installation screen's optional download button is below the visible
+fold in a lazily rendered scrolling list. The production button was present.
+The regression test now scrolls to that optional control before asserting it
+exists, preserving the Mac SSH installation default and Windows separation.
+Only the widget test and build metadata changed; no agent protocol or installer
+behavior changed. Version build number advances to +32 to trigger the automatic
+main-branch validation and release workflow again after merge.

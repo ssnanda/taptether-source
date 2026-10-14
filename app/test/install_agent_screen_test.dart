@@ -14,6 +14,13 @@ void main() {
     await tester.pump();
     expect(find.text('Install Agent'), findsOneWidget);
     expect(find.text('Install Mac over SSH'), findsOneWidget);
+    // ListView builds its children lazily; the optional link sits below the
+    // fold on a normal phone. Scroll to it before checking visibility.
+    await tester.scrollUntilVisible(
+      find.text('Manual macOS download (optional)'),
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Manual macOS download (optional)'), findsOneWidget);
     expect(find.text('Install over SSH'), findsNothing);
   });
