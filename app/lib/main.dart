@@ -1389,7 +1389,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
       segments: const [
         ButtonSegment<bool>(
           value: false,
-          label: Text('Mouse & keyboard'),
+          label: Text('Remote'),
           icon: Icon(Icons.mouse_outlined),
         ),
         ButtonSegment<bool>(
