@@ -110,6 +110,17 @@ DetectedLanRange? rangeFromWifi(String ip, String mask, {String? ssid}) {
   );
 }
 
+/// True only for a private IP on the detected subnet, including /22.
+/// Used for current-network device grouping, not authentication.
+bool lanRangeContains(DetectedLanRange range, String ip) {
+  if (!isPrivateIPv4(ip)) return false;
+  final addr = _ipv4Number(ip);
+  final local = _ipv4Number(range.ip);
+  final mask = _ipv4Number(range.subnetMask);
+  return addr != null && local != null && mask != null &&
+      (addr & mask) == (local & mask);
+}
+
 /// Return the current phone Wi-Fi CIDR, not a remembered host's old IP.
 /// SSID is optional because iOS may withhold it without Wi-Fi entitlements.
 Future<DetectedLanRange?> detectLanRange() async {
