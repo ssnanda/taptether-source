@@ -31,7 +31,8 @@ void main() {
     await tester.tap(find.text('Add & Discover'));
     await tester.pumpAndSettle();
     expect(find.text('Discover computers'), findsOneWidget);
-    expect(find.text('Install Ubuntu agent'), findsOneWidget);
+    expect(find.text('Install Agent'), findsOneWidget);
+    expect(find.text('Install Ubuntu agent'), findsNothing);
   });
 
   testWidgets('Light appearance is used by default',
