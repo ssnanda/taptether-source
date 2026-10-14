@@ -437,24 +437,30 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     await connect();
   }
 
-  Future<void> openAgentInstaller() async {
+  Future<void> openAgentInstaller() async => _launchAgentInstaller();
+
+  Future<void> _launchAgentInstaller({
+    SavedComputer? device,
+    bool updateOnly = false,
+  }) async {
     if (installingAgent) return;
     setState(() => installingAgent = true);
     try {
-      final address = host.text.trim();
+      final address = device?.host ?? host.text.trim();
       final known = savedComputers.where((d) => d.host == address);
-      final knownPlatform = agent.reportedPlatform ??
+      final platform = device?.platform ?? agent.reportedPlatform ??
           (known.isNotEmpty ? known.first.platform : _connectedPlatform);
       await Navigator.of(context).push<void>(MaterialPageRoute(
         builder: (_) => InstallAgentScreen(
           initialHost: address,
-          knownPlatform: knownPlatform,
-          onUbuntuInstalled: (installed) async {
+          knownPlatform: platform,
+          updateOnly: updateOnly,
+          onInstalled: (installed, installedPlatform) async {
             host.text = installed.host;
             token.text = installed.token;
             pin.text = installed.fingerprint;
-            discoveredName = installed.host;
-            _connectedPlatform = 'linux';
+            discoveredName = device?.name ?? installed.host;
+            _connectedPlatform = installedPlatform;
             return connect();
           },
         ),
@@ -569,6 +575,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       builder: (_) => DeviceManagerScreen(
         store: deviceStore,
         onConnect: connectSaved,
+        onUpdate: (device) => _launchAgentInstaller(
+            device: device, updateOnly: true),
       ),
     ));
     if (!mounted) return;
