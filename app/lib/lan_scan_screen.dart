@@ -92,8 +92,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
               'This runs on your phone and never uploads network information.'),
           const SizedBox(height: 12),
           if (_network != null) ...[
-            Text('Phone Wi-Fi: ' + _network!.ip +
-                ' · Network: ' + _network!.cidr,
+            Text('Phone Wi-Fi: ${_network!.ip} · Network: ${_network!.cidr}',
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
             if (_network!.scanPrefixes.length > 1)
@@ -107,7 +106,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
                 ),
                 items: [
                   for (final value in _network!.scanPrefixes)
-                    DropdownMenuItem(value: value, child: Text(value + '.0/24')),
+                    DropdownMenuItem(value: value, child: Text('$value.0/24')),
                 ],
                 onChanged: _busy ? null : (selected) {
                   if (selected != null) {

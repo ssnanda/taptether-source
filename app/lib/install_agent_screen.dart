@@ -45,7 +45,7 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
     final local = await detectLanRange();
     if (mounted && local != null && !isPrivateIPv4(_address.text.trim())) {
       setState(() {
-        _address.text = local.activePrefix + '.';
+        _address.text = '${local.activePrefix}.';
         _address.selection = TextSelection.collapsed(
           offset: _address.text.length);
       });

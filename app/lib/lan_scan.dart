@@ -103,7 +103,7 @@ DetectedLanRange? rangeFromWifi(String ip, String mask, {String? ssid}) {
   return DetectedLanRange(
     ip: ip,
     subnetMask: mask,
-    cidr: _formatIpv4(network) + '/' + (32 - hostBits.bitLength).toString(),
+    cidr: '${_formatIpv4(network)}/${32 - hostBits.bitLength}',
     activePrefix: active,
     scanPrefixes: prefixes,
     ssid: ssid,

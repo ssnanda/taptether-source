@@ -738,8 +738,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
             items: [
               DropdownMenuItem(value: 'automatic',
                 child: Text(_detectedLocation == null
-                    ? 'Current network' : 'Current · ' +
-                        deviceLocations[_detectedLocation]!)),
+                    ? 'Current network'
+                     : 'Current · ${deviceLocations[_detectedLocation]!}')),
               const DropdownMenuItem(
                 value: 'all', child: Text('All locations')),
               for (final category in deviceLocations.entries)
@@ -770,9 +770,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           ),
         ]),
         if (_wifiRange != null)
-          Text('Wi-Fi: ' + _wifiRange!.cidr +
-              (_detectedLocation == null ? ' · Unassigned'
-                  : ' · ' + deviceLocations[_detectedLocation]!),
+          Text('Wi-Fi: ${_wifiRange!.cidr}'
+              '${_detectedLocation == null ? ' · Unassigned' : ' · ${deviceLocations[_detectedLocation]!}'}',
               style: Theme.of(context).textTheme.bodySmall),
         if (_checkingHeartbeat)
           const LinearProgressIndicator(),
@@ -815,11 +814,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                 ? Icons.laptop_mac : Icons.computer),
             title: Text(device.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            subtitle: Text(device.host + ' · ' +
-                deviceLocations[device.location]! +
-                ' · ' + (_online[device.id] == true
-                    ? 'Online' : _online[device.id] == false
-                        ? 'Offline' : 'Checking…'),
+            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
+                ' · ${_online[device.id] == true ? 'Online' : _online[device.id] == false ? 'Offline' : 'Checking…'}',
                 maxLines: 2, overflow: TextOverflow.ellipsis),
             trailing: Icon(Icons.circle, size: 13,
                 color: _online[device.id] == true
@@ -1228,10 +1224,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           customName: existing?.customName ?? false,
         );
         final updated = await deviceStore.upsert(device);
-        if (mounted) setState(() {
-          savedComputers = updated;
-          _online[device.id] = true;
-        });
+        if (mounted) {
+          setState(() {
+            savedComputers = updated;
+            _online[device.id] = true;
+          });
+        }
         unawaited(_loadLayoutForHost(host.text.trim()));
         return true;
       } catch (_) {

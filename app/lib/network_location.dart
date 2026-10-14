@@ -21,9 +21,9 @@ class NetworkLocationStore {
     if (range == null) return null;
     final ssid = range.ssid?.replaceAll('"', '').trim();
     if (ssid != null && ssid.isNotEmpty && ssid != '<unknown ssid>') {
-      return 'wifi:' + ssid + ':' + range.cidr;
+      return 'wifi:$ssid:${range.cidr}';
     }
-    return 'cidr:' + range.cidr;
+    return 'cidr:${range.cidr}';
   }
 
   Future<Map<String, String>> _read() async {
