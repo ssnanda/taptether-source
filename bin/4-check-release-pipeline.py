@@ -43,6 +43,17 @@ assert 'bash "$ROOT/bin/2b-tt-deb.sh"' in ubuntu_builder, (
     "Invoke the Debian package builder via bash to avoid exit 126"
 )
 
+provisioner = (ROOT / "app" / "lib" / "ssh_provisioner.dart").read_text(encoding="utf-8")
+deb_builder = (ROOT / "bin" / "2b-tt-deb.sh").read_text(encoding="utf-8")
+assert 'dpkg --install' in provisioner, (
+    "Install private-mode staged Ubuntu packages directly with dpkg"
+)
+assert 'apt-get install -y --no-install-recommends' not in provisioner, (
+    "Never hand inaccessible private-mode staged packages to _apt"
+)
+assert "'Suggests: xdotool" in deb_builder
+assert "'Depends: xdotool" not in deb_builder
+
 assert "run: bash bin/2b-tt-ubuntu.sh" in workflow
 assert "run: bash bin/2b-tt-macos.sh" in workflow
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
