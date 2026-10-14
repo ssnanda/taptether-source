@@ -34,6 +34,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         add(menu, "Stop agent", #selector(stopAgent))
         add(menu, "Check for updates", #selector(checkUpdate))
         add(menu, "Agent diagnostics", #selector(showAgentDiagnostics))
+        add(menu, "Open Accessibility settings", #selector(openAccessibilitySettings))
         menu.addItem(.separator())
         add(menu, "Show pairing details", #selector(pairingInstructions))
         add(menu, "Quit menu (agent stays running)", #selector(quitMenu))
@@ -206,12 +207,34 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     @objc private func stopAgent() { runControl("stop") }
     @objc private func checkUpdate() { runControl("check-update") }
     @objc private func showAgentDiagnostics() {
-        let path = NSHomeDirectory() + "/Library/Logs/TapTether/agent.stderr.log"
-        let log = (try? String(contentsOfFile: path, encoding: .utf8))
-            ?? "No agent errors have been logged."
-        showNotice("TapTether agent diagnostics",
-            String(log.suffix(1800)) + "\n\nIf the agent is stopped, use Install / Repair agent.")
+        // Read a fixed-format, privacy-safe status report. Do not copy raw
+        // log lines or launchctl dumps (which might include pairing material).
+        let report = output(controller, ["diagnostics"])
+        let message = report.isEmpty
+            ? "Agent diagnostics unavailable. Select Install / Repair agent, then retry."
+            : report
+        let alert = NSAlert()
+        alert.messageText = "TapTether Agent Diagnostics"
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Copy diagnostics")
+        alert.addButton(withTitle: "Close")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            let clipboard = NSPasteboard.general
+            clipboard.clearContents()
+            clipboard.setString(message, forType: .string)
+            showNotice("Diagnostics copied",
+                "Paste the report into ChatGPT to troubleshoot this Mac without Terminal.")
+        }
     }
+    @objc private func openAccessibilitySettings() {
+        guard let url = URL(string:
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     @objc private func quitMenu() { NSApp.terminate(nil) }
     @objc private func pairingInstructions() {
         guard FileManager.default.isExecutableFile(atPath: controller) else {
