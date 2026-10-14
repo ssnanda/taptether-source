@@ -56,9 +56,11 @@ class _UbuntuInstallScreenState extends State<UbuntuInstallScreen> {
     if (validUbuntuLanIp(_host.text.trim())) return;
     final detected = await detectLanRange();
     if (!mounted || detected == null ||
-        validUbuntuLanIp(_host.text.trim())) return;
+        validUbuntuLanIp(_host.text.trim())) {
+      return;
+    }
     setState(() {
-      _host.text = detected.activePrefix + '.';
+      _host.text = '${detected.activePrefix}.';
       _host.selection = TextSelection.collapsed(offset: _host.text.length);
     });
   }
