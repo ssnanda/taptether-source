@@ -67,6 +67,9 @@ asset_count="$(find "$STAGE" -maxdepth 1 -type f -name 'TapTether*' | wc -l | tr
   echo "Expected exactly ${#expected_assets[@]} TapTether release assets; found $asset_count." >&2
   exit 1
 }
+# Validation has completed before this release job runs. Remove any extracted
+# project-local review bundles so Spotlight sees only the canonical install.
+bash "$ROOT/bin/4-clean-macos-review-apps.sh"
 VERSION_TAG="v$VERSION"
 if gh release view "$VERSION_TAG" -R "$REPO" >/dev/null 2>&1; then
   echo "$VERSION_TAG is already published; bump VERSION to publish another build." >&2

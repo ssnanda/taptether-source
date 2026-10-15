@@ -6,6 +6,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 version="$(cat "$ROOT/VERSION")"
 core_version="$(cat "$ROOT/INPUT_CORE_VERSION")"
 signing_identity="${TAPTETHER_CODESIGN_IDENTITY:--}"
+trash_build_temp() {
+  local path="$1" trash destination
+  [[ -d "$path" ]] || return 0
+  if /usr/bin/osascript -e 'on run argv' \
+      -e 'tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)' \
+      -e 'end run' -- "$path" >/dev/null 2>&1; then
+    return 0
+  fi
+  # Finder can be unavailable in a headless Actions runner.
+  trash="$HOME/.Trash"
+  mkdir -p "$trash"
+  destination="$trash/taptether-macos-package.$$.${RANDOM}"
+  mv "$path" "$destination"
+}
 python3 "$ROOT/bin/9-tt-brand-icons.py"
 mkdir -p "$ROOT/dist/macos"
 for arch in amd64 arm64; do
@@ -68,7 +82,9 @@ EOF
   # Separate Finder-friendly artifact: unzip and open the .app, no Terminal.
   app_zip="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.zip"
   ditto -c -k --sequesterRsrc --keepParent "$bundle" "$app_zip"
-  rm -rf "$temp"
+  # Keep generated .app bundles out of Spotlight after packaging. Build
+  # scratch remains recoverable in Trash rather than being permanently deleted.
+  trash_build_temp "$temp"
   echo "Compatible macOS agent archive: $out"
   echo "Versioned macOS Input Core archive: $core_out"
   echo "Double-clickable macOS app ZIP: $app_zip"

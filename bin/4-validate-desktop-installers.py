@@ -9,6 +9,7 @@ import zipfile
 from pathlib import PurePosixPath
 from pathlib import Path
 import tarfile
+import subprocess
 
 
 def require(condition: bool, message: str) -> None:
@@ -165,6 +166,11 @@ def main() -> None:
             check_deb(root, version, arch)
         if args.platform in ('macos', 'all'):
             check_macos(root, version, arch)
+    if args.platform in ('macos', 'all'):
+        subprocess.run(
+            ['bash', str(root / 'bin' / '4-clean-macos-review-apps.sh')],
+            check=True,
+        )
 
 
 if __name__ == '__main__':
