@@ -55,7 +55,12 @@ void main() {
     )));
     expect(find.text('Installed version'), findsOneWidget);
     expect(find.text('Latest published version'), findsOneWidget);
-    expect(find.text('0.6.12+55'), findsNWidgets(2));
+    expect(tester.widget<SelectableText>(
+        find.byKey(const ValueKey('agent-installed-version'))).data,
+        '0.6.12+55');
+    expect(tester.widget<SelectableText>(
+        find.byKey(const ValueKey('agent-published-version'))).data,
+        '0.6.12+55');
     expect(find.text('Close'), findsOneWidget);
     expect(find.byKey(const ValueKey('confirm-agent-update')), findsNothing);
   });
@@ -71,8 +76,12 @@ void main() {
         ),
       ),
     )));
-    expect(find.text('0.6.12+53'), findsOneWidget);
-    expect(find.text('0.6.12+56'), findsOneWidget);
+    expect(tester.widget<SelectableText>(
+        find.byKey(const ValueKey('agent-installed-version'))).data,
+        '0.6.12+53');
+    expect(tester.widget<SelectableText>(
+        find.byKey(const ValueKey('agent-published-version'))).data,
+        '0.6.12+56');
     expect(find.byKey(const ValueKey('confirm-agent-update')), findsOneWidget);
   });
 }
