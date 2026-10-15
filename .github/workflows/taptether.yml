@@ -155,6 +155,21 @@ jobs:
           cache: false
       - name: Cross-compile native Windows agents and installers
         run: bash bin/2c-tt-windows.sh
+      - name: Validate Windows tray and installer PowerShell syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($script in (Get-ChildItem desktop/windows -Filter '*.ps1')) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $script.FullName, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell syntax failed: $($script.Name)"
+            }
+          }
+
       - name: Verify Windows ZIP installation payloads
         run: |
           python3 - <<'PY'
