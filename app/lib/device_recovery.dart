@@ -111,6 +111,7 @@ Future<List<String>> probeAgentControlPorts(
   int parallelism = 48,
   int maxHits = 24,
   Duration timeout = const Duration(milliseconds: 320),
+  void Function(String ip, bool accepts)? onProbe,
 }) async {
   final addresses = agentTcpProbeAddresses(network);
   final found = <String>[];
@@ -128,6 +129,9 @@ Future<List<String>> probeAgentControlPorts(
         return null;
       }
     }));
+    for (var i = 0; i < batch.length; i++) {
+      onProbe?.call(batch[i], hits[i] != null);
+    }
     found.addAll(hits.whereType<String>());
     if (found.length >= maxHits) break;
   }
