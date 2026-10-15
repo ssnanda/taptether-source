@@ -29,5 +29,5 @@ TapTether also installs an icon in the Windows notification area. Right-click
 it, select Update Agent..., approve the prompt, and wait for completion.
 The installed updater downloads the current GitHub Release, verifies SHA-256,
 and replaces only the user's agent binaries. No command line is required.
-The tray and agent start automatically on user sign-in. Older Windows agents
+The branded tray and agent start automatically on user sign-in. Older Windows agents
 must be installed once from the current ZIP before the new tray menu appears.
