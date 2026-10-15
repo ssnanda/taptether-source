@@ -424,7 +424,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
 
   Future<void> _refreshHeartbeats({bool forceRecovery = false}) async {
     if (_checkingHeartbeat || _scanningToReconcile ||
-        savedComputers.isEmpty) return;
+        savedComputers.isEmpty) {
+      return;
+    }
     _checkingHeartbeat = true;
     if (mounted) setState(() {});
     try {
@@ -764,7 +766,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     if (!mounted) return;
     agent.disconnect();
     setState(() {
-      host.text = selected;
+      host.text = selected!;
       discoveredName = selected;
       _showPairForm = true;
       status = 'Selected $selected from LAN scan. Pairing credentials are still required.';
