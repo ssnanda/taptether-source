@@ -17,15 +17,22 @@ foreach ($file in @('Update-TapTether.ps1', 'Show-Pairing.ps1',
         'Install-TapTether.ps1', 'Allow-TapTether.ps1',
         'Show-Pairing.cmd', 'Install-TapTether.cmd',
         'Configure-Shutdown.ps1', 'Configure-Shutdown.cmd',
+        'TapTetherTray.ps1',
         'README-Windows.txt', 'version.txt')) {
     Copy-Item (Join-Path $PSScriptRoot $file) (Join-Path $destinationDir $file) -Force
 }
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 New-ItemProperty -Path $runKey -Name 'TapTetherAgent' -Value ('"' + $destination + '"') -PropertyType String -Force | Out-Null
+# Native notification-area control: no console window and no admin account.
+$trayScript = Join-Path $destinationDir 'TapTetherTray.ps1'
+$trayArgs = '-NoProfile -NonInteractive -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $trayScript + '"'
+$trayStartup = '"powershell.exe" ' + $trayArgs
+New-ItemProperty -Path $runKey -Name 'TapTetherTray' -Value $trayStartup -PropertyType String -Force | Out-Null
+Start-Process -FilePath 'powershell.exe' -ArgumentList $trayArgs -WindowStyle Hidden
 Start-Process -FilePath $destination -WindowStyle Hidden
 Start-Sleep -Seconds 2
 Write-Host 'TapTether Agent installed for this Windows user.'
-Write-Host 'It starts at login. No Windows SSH server is needed.'
+Write-Host 'The agent and tray start at sign-in. No Windows SSH server is needed.'
 Write-Host 'Run Show-Pairing.cmd to see the private pairing credentials.'
 Write-Host 'Windows may require you to allow TapTether through the Private network firewall.'
 $firewallScript = Join-Path $PSScriptRoot 'Allow-TapTether.ps1'
