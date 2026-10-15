@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'lan_scan.dart';
 import 'computer_store.dart';
+import 'scan_report.dart';
 
 /// Injecting a scanner permits deterministic tests of authenticated
 /// scan-to-paired-device reconciliation without touching real network hosts.
@@ -11,7 +12,10 @@ typedef LanRangeScanner = Future<List<LanHost>> Function(
   String prefix, {
   void Function(int completed, int total)? onProgress,
   void Function(LanHost candidate)? onAgentFound,
+  void Function(String ip, List<int> respondingPorts)? onProbe,
   bool Function()? cancelled,
+  required int startHost,
+  int? endHost,
 });
 
 /// Manual on-device /24 scan. No internet API, cloud account or analytics.
@@ -49,6 +53,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
   final Map<String, String> _verifiedAgents = {};
   final Set<String> _startedVerification = {};
   final List<Future<void>> _pendingVerifications = [];
+  final ScanReport _report = ScanReport();
   bool _busy = false;
   bool _cancel = false;
   int _completed = 0;
@@ -99,11 +104,15 @@ class _LanScanScreenState extends State<LanScanScreen> {
   Future<void> _authenticateCandidate(String ip) async {
     try {
       final name = await widget.verifyPairedAgent!(ip);
-      if (mounted && !_cancel && name != null) {
-        setState(() => _verifiedAgents[ip] = name);
+      if (mounted && !_cancel) {
+        _report.add(name == null
+            ? '$ip: no matching authenticated saved pairing'
+            : '$ip: existing paired computer verified');
+        if (name != null) setState(() => _verifiedAgents[ip] = name);
       }
     } catch (_) {
       // A foreign service or an unpaired agent must never interrupt IP Scan.
+      _report.add('$ip: authentication check did not complete');
     }
   }
 
@@ -135,13 +144,29 @@ class _LanScanScreenState extends State<LanScanScreen> {
       setState(() => _error = 'Enter a private IPv4 /24 prefix (e.g. 192.168.1).');
       return;
     }
-    // Whole-network mode follows the detected Wi-Fi CIDR (e.g. both
-    // 192.168.20 and 192.168.21 for a /23). Only an explicit custom /24
-    // prefix overrides that network-wide choice.
-    final targets = _scanWholeNetwork && _network != null &&
-            !_editedPrefix && _network!.scanPrefixes.length <= 8
-        ? _network!.scanPrefixes
-        : [prefix];
+    // Full-network mode uses the detected CIDR, including the .0/.255
+    // addresses that are usable inside a /23 or /22. A custom prefix is
+    // always a single /24; selecting one disables full-network mode.
+    final wholeNetwork = _scanWholeNetwork && _network != null &&
+        _network!.scanPrefixes.length <= 8;
+    final targets = wholeNetwork ? _network!.scanPrefixes : [prefix];
+    final bounds = <({int startHost, int endHost})>[
+      for (final target in targets)
+        wholeNetwork
+            ? scanPrefixBounds(_network!, target)
+            : (startHost: 1, endHost: 254),
+    ];
+    final total = bounds.fold<int>(0,
+        (count, b) => count + b.endHost - b.startHost + 1);
+    _report.clear();
+    _report.add('Scan IPs started · Wi-Fi: ${_network?.ip ?? "unknown"} · '
+        'Detected CIDR: ${_network?.cidr ?? "unknown"}');
+    _report.add('Mode: ${wholeNetwork ? "entire Wi-Fi CIDR" : "single /24"} · '
+        'TCP ports: ${lanScanPorts.join(", ")} · Timeout per probe: 450ms');
+    for (var i = 0; i < targets.length; i++) {
+      _report.add('Planned range: ${targets[i]}.${bounds[i].startHost} - '
+          '${targets[i]}.${bounds[i].endHost}');
+    }
     setState(() {
       _error = null;
       _hosts = [];
@@ -150,23 +175,37 @@ class _LanScanScreenState extends State<LanScanScreen> {
       _startedVerification.clear();
       _pendingVerifications.clear();
       _completed = 0;
-      _total = targets.length * 254;
+      _total = total;
       _cancel = false;
       _busy = true;
     });
     try {
       final found = <String, LanHost>{};
+      var scannedBefore = 0;
       for (var index = 0; index < targets.length && !_cancel; index++) {
-        final scannedBefore = index * 254;
-        final group = await (widget.scanRange ?? scanPrivate24)(targets[index],
+        final target = targets[index];
+        final bound = bounds[index];
+        _report.add('Scanning $target.0/24 '
+            '(host suffixes ${bound.startHost}-${bound.endHost})');
+        final group = await (widget.scanRange ?? scanPrivate24)(target,
+          startHost: bound.startHost,
+          endHost: bound.endHost,
           cancelled: () => _cancel,
           onAgentFound: _showAgentCandidate,
+          onProbe: (ip, ports) {
+            _report.add('$ip: ${ports.isEmpty
+                ? "no tested TCP port accepted (not proof of offline)"
+                : "TCP open ${ports.join(", ")}"}');
+          },
           onProgress: (done, _) {
             if (mounted) {
               setState(() => _completed = scannedBefore + done);
             }
           },
         );
+        _report.add('Range $target.0/24 finished: '
+            '${group.length} responsive/announced device(s)');
+        scannedBefore += bound.endHost - bound.startHost + 1;
         for (final computer in group) {
           found[computer.ip] = computer;
           _verifyCandidate(computer);
@@ -190,6 +229,11 @@ class _LanScanScreenState extends State<LanScanScreen> {
       if (!_cancel) {
         await Future.wait(_pendingVerifications);
       }
+      _report.add(_cancel
+          ? 'Scan stopped early: $_completed of $_total addresses checked'
+          : 'IP scan completed: $_completed of $_total addresses checked · '
+              '${found.length} discovered device(s) · '
+              '${_verifiedAgents.length} paired computer(s) authenticated');
       // A paired, authenticated desktop can read its own ARP cache;
       // mobile iOS cannot directly inspect other devices' MAC addresses.
       if (!_cancel && widget.macResolver != null) {
@@ -197,6 +241,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
         if (mounted) setState(() => _cachedMacs = neighbors);
       }
     } catch (_) {
+      _report.add('Scan error: scan did not finish (details withheld)');
       if (mounted) {
         setState(() => _error =
             'The scan could not finish. Check Wi-Fi or local-network permission.');
@@ -213,6 +258,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
       setState(() => _error = 'Enter a private IPv4 address, e.g. 192.168.1.77');
       return;
     }
+    _report.add('Manual IP check: $ip · TCP ports ${lanScanPorts.join(", ")}');
     setState(() {
       _checkingSpecificIp = true;
       _notRespondingIp = null;
@@ -221,6 +267,10 @@ class _LanScanScreenState extends State<LanScanScreen> {
     try {
       final found = await checkPrivateLanIp(ip);
       if (!mounted) return;
+      _report.add(found == null
+          ? '$ip: no tested service responded'
+          : '$ip: TCP open ${found.openPorts.join(", ")}'
+              '${found.agentAnnounced ? " · agent UDP reply" : ""}');
       _verifyCandidate(found ??
           LanHost(ip: ip, hostname: ip, openPorts: const []));
       setState(() {
@@ -243,6 +293,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
         }
       });
     } catch (_) {
+      _report.add('$ip: manual check failed');
       if (mounted) {
         setState(() => _error = 'Unable to check that LAN IP. '
             'Verify Wi-Fi and local-network permissions.');
@@ -284,8 +335,13 @@ class _LanScanScreenState extends State<LanScanScreen> {
                 subtitle: Text('${_network!.cidr} · '
                     '${_network!.scanPrefixes.length} ranges'),
                 value: _scanWholeNetwork,
-                onChanged: _busy ? null :
-                    (value) => setState(() => _scanWholeNetwork = value),
+                onChanged: _busy ? null : (value) => setState(() {
+                  _scanWholeNetwork = value;
+                  if (value) {
+                    _editedPrefix = false;
+                    _prefix.text = _network!.activePrefix;
+                  }
+                }),
               ),
             if (_network!.scanPrefixes.length > 1)
               DropdownButtonFormField<String>(
@@ -304,6 +360,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
                   if (selected != null) {
                     setState(() {
                       _editedPrefix = true;
+                      _scanWholeNetwork = false;
                       _prefix.text = selected;
                     });
                   }
@@ -315,7 +372,10 @@ class _LanScanScreenState extends State<LanScanScreen> {
             controller: _prefix,
             enabled: !_busy,
             keyboardType: TextInputType.url,
-            onChanged: (_) => _editedPrefix = true,
+            onChanged: (_) => setState(() {
+              _editedPrefix = true;
+              _scanWholeNetwork = false;
+            }),
             decoration: const InputDecoration(
               labelText: 'Network prefix',
               hintText: '192.168.1',
@@ -415,6 +475,11 @@ class _LanScanScreenState extends State<LanScanScreen> {
               onTap: () => Navigator.pop(context, device.ip),
             )),
           const SizedBox(height: 16),
+          ScanReportPanel(
+            title: 'Full Scan Output',
+            report: _report,
+          ),
+          const SizedBox(height: 12),
           Text('MAC addresses come from paired agents or their LAN '
               'neighbor caches when available. They may be missing '
               'or stale, and do not prove a device is online.',

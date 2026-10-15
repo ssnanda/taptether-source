@@ -157,6 +157,24 @@ bool lanRangeContains(DetectedLanRange range, String ip) {
       (addr & mask) == (local & mask);
 }
 
+/// A full CIDR scan must include addresses at internal /24 boundaries.
+/// For example, 192.168.20.255 and 192.168.21.0 are valid on /23.
+/// Only the actual CIDR network and broadcast addresses are excluded.
+({int startHost, int endHost}) scanPrefixBounds(
+    DetectedLanRange network, String prefix) {
+  final ipParts = network.ip.split('.').map(int.parse).toList();
+  final maskParts = network.subnetMask.split('.').map(int.parse).toList();
+  final broadcast = <int>[
+    for (var i = 0; i < 4; i++)
+      ipParts[i] | (255 ^ maskParts[i]),
+  ].join('.');
+  final networkAddress = network.cidr.split('/').first;
+  return (
+    startHost: networkAddress == '$prefix.0' ? 1 : 0,
+    endHost: broadcast == '$prefix.255' ? 254 : 255,
+  );
+}
+
 /// Return the current phone Wi-Fi CIDR, not a remembered host's old IP.
 /// SSID is optional because iOS may withhold it without Wi-Fi entitlements.
 Future<DetectedLanRange?> detectLanRange() async {
@@ -319,18 +337,25 @@ Future<List<LanHost>> scanPrivate24(
   String prefix, {
   void Function(int completed, int total)? onProgress,
   void Function(LanHost candidate)? onAgentFound,
+  void Function(String ip, List<int> respondingPorts)? onProbe,
   bool Function()? cancelled,
   int parallelism = 24,
   int hostCount = 254,
+  int startHost = 1,
+  int? endHost,
   Duration timeout = const Duration(milliseconds: 450),
 }) async {
   prefix = prefix.trim();
   if (!validPrivate24Prefix(prefix)) {
     throw const FormatException('Enter a private IPv4 /24 prefix, e.g. 192.168.1');
   }
-  if (parallelism < 1 || parallelism > 32 || hostCount < 1 || hostCount > 254) {
+  final lastHost = endHost ?? hostCount;
+  if (parallelism < 1 || parallelism > 32 || hostCount < 1 ||
+      hostCount > 254 || startHost < 0 || startHost > 255 ||
+      lastHost < startHost || lastHost > 255) {
     throw const FormatException('Invalid scan bounds.');
   }
+  final scanTotal = lastHost - startHost + 1;
   final results = <LanHost>[];
   // Probe the agent's local UDP discovery protocol alongside TCP. If UDP
   // broadcast is blocked by iOS or a firewall the TCP scan still works.
@@ -340,7 +365,7 @@ Future<List<LanHost>> scanPrivate24(
   ).catchError((Object _) => <DiscoveredDevice>[]);
   final neighborDiscovery = discoverLanNeighbors(prefix)
       .catchError((Object _) => <LanProbeHost>[]);
-  var next = 1;
+  var next = startHost;
   var done = 0;
   Future<bool> listening(String host, int port) async {
     try {
@@ -355,7 +380,7 @@ Future<List<LanHost>> scanPrivate24(
   }
 
   Future<void> worker() async {
-    while (next <= hostCount && !(cancelled?.call() ?? false)) {
+    while (next <= lastHost && !(cancelled?.call() ?? false)) {
       final last = next++;
       final host = '$prefix.$last';
       final checked = await Future.wait(
@@ -365,6 +390,7 @@ Future<List<LanHost>> scanPrivate24(
         for (var i = 0; i < lanScanPorts.length; i++)
           if (checked[i]) lanScanPorts[i],
       ];
+      onProbe?.call(host, ports);
       if (ports.isNotEmpty) {
         var name = host;
         try {
@@ -386,11 +412,13 @@ Future<List<LanHost>> scanPrivate24(
         if (ports.contains(48321)) onAgentFound?.call(candidate);
       }
       done++;
-      if (done % 8 == 0 || done == hostCount) onProgress?.call(done, hostCount);
+      if (done % 8 == 0 || done == scanTotal) {
+        onProgress?.call(done, scanTotal);
+      }
     }
   }
   await Future.wait(List.generate(
-    parallelism < hostCount ? parallelism : hostCount,
+    parallelism < scanTotal ? parallelism : scanTotal,
     (_) => worker(),
   ));
   if (cancelled?.call() ?? false) {
