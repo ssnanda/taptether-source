@@ -147,6 +147,20 @@ assert "Socket.connect(ip, 48321" in recovery
 assert "_pingSavedDevice(device, phone, atHost: ip)" in mobile
 assert "forceRecovery: true" in mobile
 
+# Explicit Scan IPs/Discover must reconcile saved computers immediately.
+# Background agents never need to poll the phone.
+scan_screen = (ROOT / "app" / "lib" / "lan_scan_screen.dart").read_text(encoding="utf-8")
+scan_logic = (ROOT / "app" / "lib" / "lan_scan.dart").read_text(encoding="utf-8")
+mobile = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
+assert "verifyPairedAgent: _reconcileScannedAgent" in mobile
+assert "Future<String?> _reconcileScannedAgent" in mobile
+assert "await _pingSavedDevice(saved, phone, atHost: ip)" in mobile
+assert "await deviceStore.upsert(verified)" in mobile
+assert "_reconcileDiscoveredAgents(result)" in mobile
+assert "onAgentFound: _showAgentCandidate" in scan_screen
+assert "await Future.wait(_pendingVerifications)" in scan_screen
+assert "onAgentFound?.call(candidate)" in scan_logic
+
 # Guard against regressing the broken 0.6.7 remote class and F-key parser.
 remote = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
 assert remote.count("Widget _connectedControls()") == 1
