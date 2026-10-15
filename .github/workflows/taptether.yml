@@ -15,7 +15,7 @@ on:
           - build
           - validate
   push:
-    branches: [main, fix/v0.6-remote-scan-mac-details, fix/v0.6-macos-atomic-self-update]
+    branches: [main, fix/v0.6-remote-scan-mac-details]
     # Branch VERSION bumps validate/build Windows without publishing.
     # Only main can publish a release.
     paths:
