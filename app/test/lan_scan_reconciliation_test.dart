@@ -40,7 +40,11 @@ void main() {
     ));
 
     await tester.pumpAndSettle();
+    expect(network.scanPrefixes, ['192.168.20', '192.168.21']);
     expect(find.textContaining('192.168.20.0/23'), findsWidgets);
+    final allSubnets = tester.widget<SwitchListTile>(
+        find.byKey(const ValueKey('scan-whole-network')));
+    expect(allSubnets.value, isTrue);
     await tester.tap(find.text('Start IP scan'));
     await tester.pump();
     await tester.pump();
