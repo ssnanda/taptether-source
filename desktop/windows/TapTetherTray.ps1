@@ -31,7 +31,7 @@ $versionItem = $menu.Items.Add('TapTether Agent')
 $versionItem.Enabled = $false
 $statusItem = $menu.Items.Add('Status: Checking')
 $statusItem.Enabled = $false
-[void]$menu.Items.Add('-')
+[void]$menu.Items.Add([System.Windows.Forms.ToolStripSeparator]::new())
 
 $startItem = $menu.Items.Add('Start Agent')
 $startItem.Add_Click({
@@ -55,7 +55,7 @@ $restartItem.Add_Click({
         Start-Process -FilePath $agentExe -WindowStyle Hidden
     }
 })
-[void]$menu.Items.Add('-')
+[void]$menu.Items.Add([System.Windows.Forms.ToolStripSeparator]::new())
 $updateItem = $menu.Items.Add('Update Agent...')
 $updateItem.Add_Click({
     if ($script:updating) { return }
@@ -107,7 +107,7 @@ $shutdownItem.Add_CheckedChanged({
     }
 })
 [void]$menu.Items.Add($shutdownItem)
-[void]$menu.Items.Add('-')
+[void]$menu.Items.Add([System.Windows.Forms.ToolStripSeparator]::new())
 $pairingItem = $menu.Items.Add('Show pairing details...')
 $pairingItem.Add_Click({
     $cmd = Join-Path $folder 'Show-Pairing.cmd'
