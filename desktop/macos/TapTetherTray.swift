@@ -48,9 +48,11 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         remoteShutdownItem.state = .off
         menu.addItem(remoteShutdownItem)
         add(menu, "Agent diagnostics", #selector(showAgentDiagnostics))
+        add(menu, "Repair Accessibility…", #selector(repairAccessibility))
         add(menu, "Open Accessibility settings", #selector(openAccessibilitySettings))
         menu.addItem(.separator())
         add(menu, "Show pairing details", #selector(pairingInstructions))
+        add(menu, "Uninstall TapTether…", #selector(uninstallTapTether))
         add(menu, "Quit menu (agent stays running)", #selector(quitMenu))
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -227,11 +229,21 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 self.refreshStatus()
                 if ok {
                     self.activeVersion = self.versionFromAgent()
-                    self.showNotice("TapTether installed",
-                        "The background agent has been installed. "
-                        + "Check that its status is Running, then open "
-                        + "System Settings → Privacy & Security → Accessibility "
-                        + "and allow TapTether. Use Show pairing details to pair.")
+                    // A repair can leave stale macOS TCC permissions even if
+                    // Accessibility shows a checked entry. Offer the actual
+                    // remove/re-add workflow rather than claiming success.
+                    let alert = NSAlert()
+                    alert.messageText = "TapTether installed / repaired"
+                    alert.informativeText = "Agent is running. If mouse or keyboard "
+                        + "control still fails, the old macOS Accessibility "
+                        + "entry may be stale. Choose Repair Accessibility to "
+                        + "remove and re-add the agent. Pairing is preserved."
+                    alert.addButton(withTitle: "Repair Accessibility…")
+                    alert.addButton(withTitle: "Later")
+                    NSApp.activate(ignoringOtherApps: true)
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        self.repairAccessibility()
+                    }
                 } else {
                     self.showNotice("Installation needs attention",
                         "The agent could not be installed or started. "
@@ -333,6 +345,91 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 "Paste the report into ChatGPT to troubleshoot this Mac without Terminal.")
         }
     }
+    @objc private func repairAccessibility() {
+        let agentPath = NSHomeDirectory() + "/.local/bin/taptether-agent"
+        guard FileManager.default.isExecutableFile(atPath: agentPath) else {
+            showNotice("TapTether agent not installed",
+                "Install / Repair agent first, then repair Accessibility.")
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Repair mouse & keyboard permission"
+        alert.informativeText = "macOS may keep a stale Accessibility grant "
+            + "even when the checkbox is on. Reinstalling or restarting "
+            + "the agent cannot reset it automatically.\n\n"
+            + "1. In System Settings → Privacy & Security → Accessibility, "
+            + "select the existing taptether-agent and remove it with −.\n"
+            + "2. Click + to add the executable again. Press "
+            + "Command-Shift-G in the file chooser, then paste:\n"
+            + agentPath + "\n"
+            + "3. Enable the new entry. Return to the TapTether tray "
+            + "and choose Restart agent.\n\n"
+            + "This does not erase phone pairings."
+        alert.addButton(withTitle: "Copy path & open settings")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(agentPath, forType: .string)
+        openAccessibilitySettings()
+    }
+
+    @objc private func uninstallTapTether() {
+        guard FileManager.default.isExecutableFile(atPath: controller) else {
+            showNotice("Uninstaller unavailable",
+                "TapTether controller is missing. Install / Repair agent to "
+                + "restore it before uninstalling.")
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Uninstall TapTether from this Mac?"
+        alert.alertStyle = .warning
+        alert.informativeText = "This stops and removes the background agent, "
+            + "menu-bar app, launch-at-login items, helper executables and logs. "
+            + "It does not change any other apps.\n\n"
+            + "Keep pairings: preserve device keys and trusted phone list "
+            + "for a future reinstall.\n"
+            + "Erase everything: permanently delete TapTether's local "
+            + "pairing token, certificates, authorized phones and settings. "
+            + "Your iPhone will need to pair again.\n\n"
+            + "macOS Accessibility entries must still be removed manually "
+            + "in System Settings."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Uninstall · Keep Pairings")
+        alert.addButton(withTitle: "Uninstall & Erase Everything")
+        NSApp.activate(ignoringOtherApps: true)
+        let selection = alert.runModal()
+        if selection == .alertFirstButtonReturn { return }
+        let erase = selection == .alertThirdButtonReturn
+        if erase {
+            let confirm = NSAlert()
+            confirm.messageText = "Permanently erase TapTether pairing data?"
+            confirm.alertStyle = .critical
+            confirm.informativeText = "Authorized phones, private keys, "
+                + "TLS certificates and settings will be deleted. "
+                + "This cannot be undone. Existing phones must pair again."
+            confirm.addButton(withTitle: "Erase & Uninstall")
+            confirm.addButton(withTitle: "Cancel")
+            if confirm.runModal() != .alertFirstButtonReturn { return }
+        }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = [controller, "uninstall",
+                          erase ? "--erase-pairing" : "--keep-pairing"]
+        // Do not surface installer output or secrets in the menu UI.
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            // The uninstaller stops the tray's LaunchAgent (this app),
+            // so don't await its completion on the UI thread.
+            NSApp.terminate(nil)
+        } catch {
+            showNotice("Uninstall could not start",
+                "The agent is still installed. Try again from the tray.")
+        }
+    }
+
     @objc private func openAccessibilitySettings() {
         guard let url = URL(string:
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
