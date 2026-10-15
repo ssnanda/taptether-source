@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'speaker_notes_panel.dart';
 
 /// Keystroke-only presentation remote. No slide inspection, screenshots,
 /// speaker notes, internet access, or integration with presentation files.
@@ -37,9 +38,9 @@ class PresentationShortcuts {
   }
 }
 
-/// A dedicated, large-touch-target slideshow remote. The computer's active
-/// presentation application must be in the foreground to receive commands.
-class PresentationControls extends StatelessWidget {
+/// Presentation buttons also track the speaker notes' approximate slide.
+/// Slides changed on the computer can be aligned using the notes +/- buttons.
+class PresentationControls extends StatefulWidget {
   const PresentationControls({
     super.key,
     required this.app,
@@ -57,6 +58,31 @@ class PresentationControls extends StatelessWidget {
   final ValueChanged<PresentationApp> onAppChanged;
   final ValueChanged<String> onKey;
 
+  @override
+  State<PresentationControls> createState() => _PresentationControlsState();
+}
+
+class _PresentationControlsState extends State<PresentationControls> {
+  int _slide = 1;
+
+  PresentationApp get app => widget.app;
+  bool get isMac => widget.isMac;
+  bool get enabled => widget.enabled;
+  bool get landscape => widget.landscape;
+  ValueChanged<PresentationApp> get onAppChanged => widget.onAppChanged;
+  ValueChanged<String> get onKey => widget.onKey;
+
+  void _sendPresentationKey(String key) {
+    if (key == PresentationShortcuts.next) {
+      setState(() => _slide++);
+    } else if (key == PresentationShortcuts.previous) {
+      setState(() => _slide = (_slide - 1).clamp(1, 9999));
+    } else if (key == PresentationShortcuts.start(app, isMac: isMac)) {
+      setState(() => _slide = 1);
+    }
+    onKey(key);
+  }
+
   Widget _sendButton({
     required String label,
     required IconData icon,
@@ -64,7 +90,8 @@ class PresentationControls extends StatelessWidget {
     bool prominent = false,
     Key? widgetKey,
   }) {
-    final action = enabled && key != null ? () => onKey(key) : null;
+    final action = enabled && key != null
+        ? () => _sendPresentationKey(key) : null;
     final content = Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -151,12 +178,10 @@ class PresentationControls extends StatelessWidget {
           )),
         ]),
         const SizedBox(height: 10),
-        Text(
-          'Keep the slideshow app in the foreground. Commands control '
-          'the computer keyboard; TapTether cannot read its current slide '
-          'or speaker notes.',
-          style: Theme.of(context).textTheme.bodySmall,
-          textAlign: TextAlign.center,
+        SpeakerNotesPanel(
+          slide: _slide,
+          onSlideChanged: (value) => setState(() => _slide = value),
+          landscape: landscape,
         ),
       ],
     );
