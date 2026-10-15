@@ -7,6 +7,7 @@ import Darwin
 
 private let splashNotice = Notification.Name("com.taptether.agent.showSplash")
 private let agentLabel = "com.taptether.agent"
+private let coreLabel = "com.taptether.input-core"
 private let controller = NSHomeDirectory() + "/.local/bin/taptetherctl-mac"
 
 final class TapTetherMenu: NSObject, NSApplicationDelegate {
@@ -193,7 +194,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         prompt.messageText = "Install TapTether Agent?"
         prompt.informativeText = "This installs a background agent that starts at login, "
             + "and keeps the menu-bar app available without a Terminal window. "
-            + "You'll need to allow Accessibility access in macOS settings."
+            + "You'll need to allow the stable Input Core in Accessibility once."
         prompt.addButton(withTitle: "Install & Start")
         prompt.addButton(withTitle: "Not now")
         NSApp.activate(ignoringOtherApps: true)
@@ -229,20 +230,16 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 self.refreshStatus()
                 if ok {
                     self.activeVersion = self.versionFromAgent()
-                    // A repair can leave stale macOS TCC permissions even if
-                    // Accessibility shows a checked entry. Offer the actual
-                    // remove/re-add workflow rather than claiming success.
                     let alert = NSAlert()
                     alert.messageText = "TapTether installed / repaired"
-                    alert.informativeText = "Agent is running. If mouse or keyboard "
-                        + "control still fails, the old macOS Accessibility "
-                        + "entry may be stale. Choose Repair Accessibility to "
-                        + "remove and re-add the agent. Pairing is preserved."
-                    alert.addButton(withTitle: "Repair Accessibility…")
+                    alert.informativeText = "Agent and Input Core are running. "
+                        + "For this one-time migration, allow taptether-input-core "
+                        + "in Accessibility. Future agent updates preserve the core."
+                    alert.addButton(withTitle: "Open Accessibility…")
                     alert.addButton(withTitle: "Later")
                     NSApp.activate(ignoringOtherApps: true)
                     if alert.runModal() == .alertFirstButtonReturn {
-                        self.repairAccessibility()
+                        self.openAccessibilitySettings()
                     }
                 } else {
                     self.showNotice("Installation needs attention",
@@ -346,31 +343,31 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         }
     }
     @objc private func repairAccessibility() {
-        let agentPath = NSHomeDirectory() + "/.local/bin/taptether-agent"
-        guard FileManager.default.isExecutableFile(atPath: agentPath) else {
-            showNotice("TapTether agent not installed",
+        let corePath = NSHomeDirectory() + "/.local/bin/taptether-input-core"
+        guard FileManager.default.isExecutableFile(atPath: corePath) else {
+            showNotice("TapTether Input Core not installed",
                 "Install / Repair agent first, then repair Accessibility.")
             return
         }
         let alert = NSAlert()
         alert.messageText = "Repair mouse & keyboard permission"
-        alert.informativeText = "macOS may keep a stale Accessibility grant "
-            + "even when the checkbox is on. Reinstalling or restarting "
-            + "the agent cannot reset it automatically.\n\n"
+        alert.informativeText = "TapTether now keeps input permission in a stable "
+            + "Input Core that routine agent updates do not replace.\n\n"
             + "1. In System Settings → Privacy & Security → Accessibility, "
-            + "select the existing taptether-agent and remove it with −.\n"
-            + "2. Click + to add the executable again. Press "
+            + "remove any old taptether-agent entry.\n"
+            + "2. Click + to add the Input Core. Press "
             + "Command-Shift-G in the file chooser, then paste:\n"
-            + agentPath + "\n"
+            + corePath + "\n"
             + "3. Enable the new entry. Return to the TapTether tray "
-            + "and choose Restart agent.\n\n"
+            + "and choose Restart agent. This approval should only be needed "
+            + "again after an explicitly authorized Input Core upgrade.\n\n"
             + "This does not erase phone pairings."
         alert.addButton(withTitle: "Copy path & open settings")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(agentPath, forType: .string)
+        NSPasteboard.general.setString(corePath, forType: .string)
         openAccessibilitySettings()
     }
 
@@ -443,8 +440,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         let target = "gui/" + String(getuid()) + "/" + agentLabel
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            task.arguments = ["bootout", target]
+            task.executableURL = URL(fileURLWithPath: "/bin/bash")
+            task.arguments = [controller, "stop"]
             task.standardOutput = FileHandle.nullDevice
             task.standardError = FileHandle.nullDevice
             var stopped = false
@@ -458,9 +455,10 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             if !stopped {
                 // Already stopped/unloaded is fine; never claim a complete
                 // quit if the managed agent is still registered with launchd.
-                let remaining = self?.output("/bin/launchctl",
-                                             ["print", target]) ?? ""
-                stopped = remaining.isEmpty
+                let agentRemaining = self?.output("/bin/launchctl", ["print", target]) ?? ""
+                let coreTarget = "gui/" + String(getuid()) + "/" + coreLabel
+                let coreRemaining = self?.output("/bin/launchctl", ["print", coreTarget]) ?? ""
+                stopped = agentRemaining.isEmpty && coreRemaining.isEmpty
             }
             DispatchQueue.main.async {
                 if stopped {
@@ -484,9 +482,48 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 "Start or repair the agent, then try showing pairing details.")
             return
         }
-        showNotice("Private pairing details",
-            details + "\n\nKeep the pairing token private. "
-            + "Enter these values in TapTether on your phone.")
+        let token = value(after: "Pairing token (PRIVATE):", in: details)
+        let fingerprint = value(after: "TLS SHA-256 fingerprint:", in: details)
+        let alert = NSAlert()
+        alert.messageText = "Private pairing details"
+        alert.informativeText = "Select any text below, or use a copy button. Keep the token private."
+        alert.alertStyle = .informational
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 190))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let text = NSTextView(frame: scroll.bounds)
+        text.string = details
+        text.isEditable = false
+        text.isSelectable = true
+        text.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        text.textContainerInset = NSSize(width: 8, height: 8)
+        scroll.documentView = text
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "Copy token")
+        alert.addButton(withTitle: "Copy fingerprint")
+        alert.addButton(withTitle: "Copy all")
+        alert.addButton(withTitle: "Close")
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        let copied: String?
+        switch response {
+        case .alertFirstButtonReturn: copied = token
+        case .alertSecondButtonReturn: copied = fingerprint
+        case .alertThirdButtonReturn: copied = details
+        default: copied = nil
+        }
+        if let copied = copied, !copied.isEmpty {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(copied, forType: .string)
+        }
+    }
+
+    private func value(after prefix: String, in details: String) -> String {
+        for line in details.components(separatedBy: .newlines) where line.hasPrefix(prefix) {
+            return String(line.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ""
     }
 
     @objc private func receiveSplash(_ notification: Notification) {

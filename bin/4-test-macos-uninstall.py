@@ -18,9 +18,11 @@ def test_uninstall(mode: str, erase: bool) -> None:
         bundle = home / "Applications" / "TapTether Agent.app"
         files = [
             bin_dir / "taptether-agent",
+            bin_dir / "taptether-input-core",
             bin_dir / "taptetherctl-mac",
             bin_dir / "taptether-agent-update-mac",
             agents / "com.taptether.agent.plist",
+            agents / "com.taptether.input-core.plist",
             agents / "com.taptether.tray.plist",
             logs / "agent.stderr.log",
             bundle / "Contents" / "Info.plist",
@@ -35,7 +37,9 @@ def test_uninstall(mode: str, erase: bool) -> None:
             path.write_text("fixture-only", encoding="utf-8")
         unrelated = home / "Library" / "LaunchAgents" / "com.some.other.app.plist"
         unrelated.write_text("leave alone", encoding="utf-8")
-        env = {**os.environ, "HOME": str(home)}
+        trash = home / "test-trash"
+        env = {**os.environ, "HOME": str(home),
+               "TAPTETHER_TEST_TRASH_DIR": str(trash)}
         # No mode means no deletion, even if user has triggered the script.
         invalid = subprocess.run(
             ["bash", str(SETUP), "uninstall"],
@@ -51,6 +55,7 @@ def test_uninstall(mode: str, erase: bool) -> None:
         assert result.returncode == 0, result.stderr
         assert unrelated.read_text(encoding="utf-8") == "leave alone"
         assert not (bin_dir / "taptether-agent").exists()
+        assert not (bin_dir / "taptether-input-core").exists()
         assert not (bin_dir / "taptetherctl-mac").exists()
         assert not (bin_dir / "taptether-agent-update-mac").exists()
         assert not (agents / "com.taptether.agent.plist").exists()
@@ -63,4 +68,4 @@ if __name__ == "__main__":
     test_uninstall("--keep-pairing", False)
     test_uninstall("--erase-pairing", True)
     print("PASS: macOS uninstall requires explicit mode, is scoped to TapTether,")
-    print("      and retains or permanently removes pairing only as requested")
+    print("      and retains pairing or moves all TapTether data to Trash as requested")

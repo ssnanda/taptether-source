@@ -77,6 +77,7 @@ jobs:
           python3 bin/4-check-release-pipeline.py
           python3 bin/4-test-deb-packaging.py
           python3 bin/4-test-macos-uninstall.py
+          python3 bin/4-test-macos-input-core.py
       - name: Go agent tests and vet
         run: |
           cd agent
@@ -316,6 +317,7 @@ jobs:
             dist/ubuntu/*.deb
             dist/macos/*.tar.gz
             dist/macos/*.zip
+            dist/macos/TapTetherInputCore-*.tar.gz
             dist/windows/*.zip
           if-no-files-found: error
           retention-days: 1

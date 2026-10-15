@@ -4,18 +4,76 @@ set -euo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)"
 BIN="$HOME/.local/bin"
 APP="$BIN/taptether-agent"
+CORE="$BIN/taptether-input-core"
 CTL="$BIN/taptetherctl-mac"
 UPDATER="$BIN/taptether-agent-update-mac"
 PLIST="$HOME/Library/LaunchAgents/com.taptether.agent.plist"
+CORE_PLIST="$HOME/Library/LaunchAgents/com.taptether.input-core.plist"
 LOGDIR="$HOME/Library/Logs/TapTether"
 CONF="$HOME/Library/Application Support/taptether"
 SHUTDOWN_DISABLED="$HOME/Library/Application Support/taptether/remote-shutdown-disabled"
 LABEL=com.taptether.agent
+CORE_LABEL=com.taptether.input-core
 TRAY_LABEL=com.taptether.tray
 TRAY_PLIST="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
 TRAY_BUNDLE="$HOME/Applications/TapTether Agent.app"
 TARGET="gui/$(id -u)"
 notice() { printf 'TapTether: %s\n' "$*"; }
+trash_path() {
+  local path="$1"
+  [[ -e "$path" || -L "$path" ]] || return 0
+  if [[ -n "${TAPTETHER_TEST_TRASH_DIR:-}" ]]; then
+    mkdir -p "$TAPTETHER_TEST_TRASH_DIR"
+    mv "$path" "$TAPTETHER_TEST_TRASH_DIR/$(basename "$path").$$.$RANDOM"
+  else
+    /usr/bin/osascript -e 'on run argv' \
+      -e 'tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)' \
+      -e 'end run' -- "$path" >/dev/null
+  fi
+}
+install_core() {
+  local source="$1" requested="${2:-}"
+  [[ -x "$source" ]] || { notice 'Input Core payload missing.' >&2; return 1; }
+  local incoming installed
+  incoming="$("$source" --version)"
+  installed="$($CORE --version 2>/dev/null || true)"
+  if [[ -x "$CORE" && -z "$requested" ]]; then
+    notice "Preserved TapTether Input Core $installed (routine agent update)."
+    return 0
+  fi
+  if [[ -n "$requested" && "$requested" != "$incoming" ]]; then
+    notice 'Explicit Input Core version authorization did not match payload.' >&2
+    return 1
+  fi
+  cp "$source" "$CORE.new"
+  chmod 755 "$CORE.new"
+  mv -f "$CORE.new" "$CORE"
+  notice "Installed TapTether Input Core $incoming."
+}
+ensure_core_payload() {
+  [[ -x "$CORE" ]] && return 0
+  [[ -x "$SELF/taptether-input-core" ]] && { install_core "$SELF/taptether-input-core"; return; }
+  command -v curl >/dev/null 2>&1 || { notice 'Install the current TapTether Agent.app once to migrate Input Core.' >&2; return 1; }
+  local arch tmp info digest url archive
+  arch="$(uname -m)"; [[ "$arch" == x86_64 ]] && arch=amd64
+  tmp="$(mktemp -d)"; archive="$tmp/core.tar.gz"
+  info="$(python3 - "$arch" <<'PY'
+import json,re,sys,urllib.request
+arch=sys.argv[1]
+r=urllib.request.Request('https://api.github.com/repos/ssnanda/taptether.com/releases/tags/current',headers={'Accept':'application/vnd.github+json','User-Agent':'TapTether-Core-Migration'})
+with urllib.request.urlopen(r,timeout=12) as response: data=json.load(response)
+a=next((x for x in data.get('assets',[]) if x.get('name')==f'TapTetherInputCore-macOS-{arch}.tar.gz'),None)
+if not a or not re.fullmatch(r'sha256:[0-9a-f]{64}',a.get('digest','')): raise SystemExit('verified Input Core asset unavailable')
+print(a['digest'][7:]+'\t'+a['browser_download_url'])
+PY
+)" || { notice 'Verified Input Core migration download unavailable.' >&2; return 1; }
+  IFS=$'\t' read -r digest url <<<"$info"
+  curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' "$url" -o "$archive"
+  [[ "$(shasum -a 256 "$archive" | awk '{print $1}')" == "$digest" ]] || { notice 'Input Core SHA-256 mismatch.' >&2; return 1; }
+  [[ "$(tar -tzf "$archive")" == taptether-input-core ]] || { notice 'Unexpected Input Core archive.' >&2; return 1; }
+  tar -xzf "$archive" -C "$tmp"
+  install_core "$tmp/taptether-input-core"
+}
 # Never truncate a currently executing shell script during self-update.
 # Older taptetherctl-mac/update helper processes can still be reading the
 # original inode. Install in the same directory and rename atomically.
@@ -62,6 +120,14 @@ install_agent() {
   [[ -f "$SHUTDOWN_DISABLED" ]] && shutdown_enabled=0
   mkdir -p "$BIN" "$(dirname "$PLIST")" "$LOGDIR"
   chmod 700 "$LOGDIR"
+  mkdir -p "$CONF/input-core"
+  chmod 700 "$CONF" "$CONF/input-core"
+  if [[ ! -s "$CONF/input-core/ipc.token" ]]; then
+    umask 077
+    openssl rand -hex 32 > "$CONF/input-core/ipc.token"
+  fi
+  chmod 600 "$CONF/input-core/ipc.token"
+  ensure_core_payload
   if [[ "$SELF/taptether-agent" != "$APP" ]]; then
     [[ -x "$SELF/taptether-agent" ]] || { notice 'Run setup from extracted agent archive' >&2; exit 1; }
     cp "$SELF/taptether-agent" "$APP"
@@ -98,7 +164,7 @@ install_agent() {
     [[ "$icon_source" == "$icon_target" ]] || cp "$SELF/TapTether.icns" "$icon_target"
     [[ "$binary_source" == "$binary_target" ]] || cp "$tray_source" "$binary_target"
     # Include self-install resources for future repairs and direct Finder launch.
-    for resource in taptether-agent taptetherctl-mac taptether-agent-update-mac; do
+    for resource in taptether-agent taptether-input-core taptetherctl-mac taptether-agent-update-mac; do
       local src="$SELF/$resource" dest="$bundle/Contents/Resources/$resource"
       [[ -s "$src" ]] || continue
       [[ "$(cd "$(dirname "$src")" && pwd -P)/$(basename "$src")" == \
@@ -156,10 +222,25 @@ EOF
 <key>StandardErrorPath</key><string>$LOGDIR/agent.stderr.log</string>
 </dict></plist>
 EOF
+  cat > "$CORE_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>$CORE_LABEL</string>
+<key>ProgramArguments</key><array><string>$CORE</string></array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>StandardOutPath</key><string>/dev/null</string>
+<key>StandardErrorPath</key><string>$LOGDIR/input-core.stderr.log</string>
+</dict></plist>
+EOF
   if [[ "$shutdown_enabled" -eq 1 ]]; then
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN string 1" "$PLIST"
   fi
+  launchctl bootout "$TARGET/$CORE_LABEL" >/dev/null 2>&1 || true
+  launchctl bootstrap "$TARGET" "$CORE_PLIST"
+  launchctl kickstart -k "$TARGET/$CORE_LABEL"
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
   launchctl kickstart -k "$TARGET/$LABEL"
@@ -177,7 +258,7 @@ EOF
   fi
   notice 'Background agent installed, running and enabled at login.'
   notice 'TapTether Agent.app displays the splash on demand; the menu bar tray starts silently at login.'
-  notice 'Allow TapTether in macOS System Settings > Privacy & Security > Accessibility to enable mouse/keyboard.'
+  notice 'Migration only: allow taptether-input-core in macOS Accessibility once. Routine agent updates preserve it.'
   # Never print pairing tokens in routine install/update logs. The owner can
   # deliberately reveal them from the menu bar or the pairing subcommand.
   notice 'To pair your phone, use the menu-bar Show pairing details command.'
@@ -230,6 +311,12 @@ diagnostics() {
   else
     printf 'Agent binary: missing or not executable\n'
   fi
+  if [[ -x "$CORE" ]]; then
+    printf 'Input Core version: %s\n' "$("$CORE" --version 2>/dev/null || echo unavailable)"
+    "$CORE" --diagnose 2>/dev/null || printf 'Accessibility: diagnostic unavailable\n'
+  else
+    printf 'Input Core: missing (choose Install / Repair agent)\n'
+  fi
   if [[ -f "$PLIST" ]]; then
     printf 'LaunchAgent plist: installed\n'
   else
@@ -275,6 +362,10 @@ diagnostics() {
 
 start_agent() {
   [[ -f "$PLIST" ]] || { notice 'Agent not installed. Choose Install / Repair agent first.' >&2; return 1; }
+  if ! launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
+    launchctl bootstrap "$TARGET" "$CORE_PLIST" || return 1
+  fi
+  launchctl kickstart -k "$TARGET/$CORE_LABEL"
   if ! launchctl print "$TARGET/$LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$PLIST" || {
       notice 'Could not load the LaunchAgent. Choose Agent diagnostics / Repair.' >&2
@@ -320,31 +411,42 @@ uninstall_agent() {
   # Do not remove any files until the user-owned service jobs have stopped.
   # The tray initiating this command may exit as its LaunchAgent is unloaded;
   # this helper completes independently of the UI process.
-  launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
+  if [[ -z "${TAPTETHER_TEST_TRASH_DIR:-}" ]]; then
+    launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
+    launchctl bootout "$TARGET/$CORE_LABEL" >/dev/null 2>&1 || true
+  fi
   # The uninstaller may be launched by the tray process. Unload that job
   # LAST or launchd could terminate its child helper mid-cleanup.
-  rm -f -- "$PLIST" "$TRAY_PLIST" "$APP" "$UPDATER"
-  rm -rf -- "$TRAY_BUNDLE" "$LOGDIR"
+  trash_path "$PLIST"
+  trash_path "$CORE_PLIST"
+  trash_path "$TRAY_PLIST"
+  trash_path "$APP"
+  trash_path "$CORE"
+  trash_path "$UPDATER"
+  trash_path "$TRAY_BUNDLE"
+  trash_path "$LOGDIR"
   if [[ "$mode" == "--erase-pairing" ]]; then
     # This deletes saved phone authorizations, the local pairing token,
     # TLS certificate/key and shutdown preferences. Phones must pair again.
-    rm -rf -- "$CONF"
+    trash_path "$CONF"
   fi
   # Remove the controller itself last, after all other cleanup is complete.
-  rm -f -- "$CTL"
-  notice 'TapTether agent, tray, launch agents, and logs uninstalled.'
+  trash_path "$CTL"
+  notice 'TapTether agent, Input Core, tray, launch agents, and logs moved to Trash.'
   if [[ "$mode" == "--erase-pairing" ]]; then
-    notice 'Local pairing identities, certificates and preferences erased.'
+    notice 'Local pairing identities, certificates and preferences moved to Trash.'
   else
     notice 'Local pairing identities retained for a future reinstall.'
   fi
   notice 'Remove any old TapTether Accessibility entry manually in System Settings.'
-  launchctl bootout "$TARGET/$TRAY_LABEL" >/dev/null 2>&1 || true
+  if [[ -z "${TAPTETHER_TEST_TRASH_DIR:-}" ]]; then
+    launchctl bootout "$TARGET/$TRAY_LABEL" >/dev/null 2>&1 || true
+  fi
 }
 case "${1:-}" in
   install) install_agent ;;
   start) start_agent ;;
-  stop) launchctl bootout "$TARGET/$LABEL" ;;
+  stop) launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true; launchctl bootout "$TARGET/$CORE_LABEL" ;;
   restart) start_agent ;;
   status) launchctl print "$TARGET/$LABEL" ;;
   pairing) pairing ;;
@@ -357,6 +459,7 @@ case "${1:-}" in
   update) update_agent ;;
   enable-shutdown) enable_shutdown ;;
   disable-shutdown) disable_shutdown ;;
+  upgrade-core) [[ "${2:-}" == --authorize && -n "${3:-}" ]] || { notice 'Usage: upgrade-core --authorize VERSION' >&2; exit 2; }; install_core "$SELF/taptether-input-core" "$3"; launchctl kickstart -k "$TARGET/$CORE_LABEL" ;;
   uninstall) uninstall_agent "${2:-}" ;;
-  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|diagnostics|pairing|pairing-qr|devices|revoke-device ID|logs|check-update|update|enable-shutdown|disable-shutdown|uninstall --keep-pairing|uninstall --erase-pairing}' >&2; exit 2 ;;
+  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|diagnostics|pairing|devices|update|upgrade-core --authorize VERSION|uninstall --keep-pairing|uninstall --erase-pairing}' >&2; exit 2 ;;
 esac

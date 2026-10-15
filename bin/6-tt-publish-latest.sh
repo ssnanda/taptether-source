@@ -30,9 +30,12 @@ for ARCH in amd64 arm64; do
   DEB="$(printf '%s/dist/ubuntu/taptether-agent_%s_%s.deb' "$ROOT" "$VERSION" "$ARCH")"
   MAC="$(printf '%s/dist/macos/TapTetherAgent-macos-%s-%s.tar.gz' "$ROOT" "$ARCH" "$VERSION")"
   MAC_APP="$(printf '%s/dist/macos/TapTetherAgent-macos-%s-%s.zip' "$ROOT" "$ARCH" "$VERSION")"
+  CORE_VERSION="$(cat "$ROOT/INPUT_CORE_VERSION")"
+  MAC_CORE="$(printf '%s/dist/macos/TapTetherInputCore-macos-%s-%s.tar.gz' "$ROOT" "$ARCH" "$CORE_VERSION")"
   if [[ -s "$DEB" ]]; then cp "$DEB" "$STAGE/TapTetherAgent-Ubuntu-$ARCH.deb"; fi
   if [[ -s "$MAC" ]]; then cp "$MAC" "$STAGE/TapTetherAgent-macOS-$ARCH.tar.gz"; fi
   if [[ -s "$MAC_APP" ]]; then cp "$MAC_APP" "$STAGE/TapTetherAgent-macOS-$ARCH.zip"; fi
+  if [[ -s "$MAC_CORE" ]]; then cp "$MAC_CORE" "$STAGE/TapTetherInputCore-macOS-$ARCH.tar.gz"; fi
   WIN="$ROOT/dist/windows/TapTetherAgent-Windows-$ARCH-$VERSION.zip"
   if [[ -s "$WIN" ]]; then cp "$WIN" "$STAGE/TapTetherAgent-Windows-$ARCH.zip"; fi
 done
@@ -50,6 +53,7 @@ expected_assets=(
   TapTetherAgent-Ubuntu-amd64.deb TapTetherAgent-Ubuntu-arm64.deb
   TapTetherAgent-macOS-amd64.tar.gz TapTetherAgent-macOS-arm64.tar.gz
   TapTetherAgent-macOS-amd64.zip TapTetherAgent-macOS-arm64.zip
+  TapTetherInputCore-macOS-amd64.tar.gz TapTetherInputCore-macOS-arm64.tar.gz
   TapTetherAgent-Windows-amd64.zip TapTetherAgent-Windows-arm64.zip
 )
 for asset in "${expected_assets[@]}"; do

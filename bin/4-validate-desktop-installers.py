@@ -89,8 +89,18 @@ def check_deb(root: Path, version: str, arch: str) -> None:
 def check_macos(root: Path, version: str, arch: str) -> None:
     archive = root / 'dist' / 'macos' / f'TapTetherAgent-macos-{arch}-{version}.tar.gz'
     bundle_zip = root / 'dist' / 'macos' / f'TapTetherAgent-macos-{arch}-{version}.zip'
+    core_version = (root / 'INPUT_CORE_VERSION').read_text(encoding='utf-8').strip()
+    core_archive = root / 'dist' / 'macos' / f'TapTetherInputCore-macos-{arch}-{core_version}.tar.gz'
     require(archive.is_file() and bundle_zip.is_file(),
             f'Missing macOS agent archive or Finder-friendly app ZIP: {arch}')
+    require(core_archive.is_file(), f'Missing macOS Input Core archive: {arch}')
+    with tarfile.open(core_archive, mode='r:gz') as tf:
+        entries = {m.name: m for m in tf.getmembers()}
+        require(entries.keys() == {'taptether-input-core'},
+                f'{core_archive}: unexpected Input Core payload')
+        require(entries['taptether-input-core'].isfile() and
+                entries['taptether-input-core'].mode & 0o111,
+                f'{core_archive}: Input Core is not executable')
     flat = {'taptether-agent', 'taptetherctl-mac',
             'taptether-agent-update-mac', 'TapTether.icns', 'TapTetherTray'}
     # Legacy 5-member format: existing installed agents require exactly this.
@@ -115,6 +125,7 @@ def check_macos(root: Path, version: str, arch: str) -> None:
     required = {app + 'Info.plist', app + 'MacOS/TapTetherTray',
                 app + 'Resources/TapTether.icns',
                 app + 'Resources/taptether-agent',
+                app + 'Resources/taptether-input-core',
                 app + 'Resources/taptetherctl-mac',
                 app + 'Resources/taptether-agent-update-mac',
                 app + 'Resources/version.txt'}
