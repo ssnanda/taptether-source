@@ -30,6 +30,7 @@ for module_name in ("AyatanaAppIndicator3", "AppIndicator3"):
 
 CTL = Path.home() / ".local" / "bin" / "taptetherctl"
 ICON = Path.home() / ".local" / "share" / "icons" / "hicolor" / "512x512" / "apps" / "taptether.png"
+SHUTDOWN_DISABLED = Path.home() / ".config" / "taptether" / "remote-shutdown-disabled"
 
 
 def agent_version():
@@ -147,6 +148,25 @@ def menu(version):
     add_menu_item(m, "Restart agent", lambda item: on_command(item, "restart"))
     add_menu_item(m, "Stop agent", lambda item: on_command(item, "stop"))
     add_menu_item(m, "Check for updates", lambda item: on_command(item, "update"))
+    # Locally stored owner-only opt-out, no passwordless sudo. Installed
+    # service/polkit policy is narrowly limited to the existing agent.
+    shutdown = Gtk.CheckMenuItem(label="Allow remote shutdown")
+    shutdown.set_active(not SHUTDOWN_DISABLED.exists())
+
+    def change_shutdown(item):
+        try:
+            if item.get_active():
+                SHUTDOWN_DISABLED.unlink(missing_ok=True)
+            else:
+                SHUTDOWN_DISABLED.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                SHUTDOWN_DISABLED.touch(mode=0o600, exist_ok=True)
+                SHUTDOWN_DISABLED.chmod(0o600)
+        except OSError as exc:
+            item.set_active(not item.get_active())
+            message("Remote shutdown", str(exc), error=True)
+
+    shutdown.connect("toggled", change_shutdown)
+    m.append(shutdown)
     m.append(Gtk.SeparatorMenuItem())
     add_menu_item(m, "Pairing instructions", lambda _: message(
         "Pair a phone", "Use a trusted terminal and run:\n"
