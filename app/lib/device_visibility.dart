@@ -15,11 +15,17 @@ List<SavedComputer> visibleSavedDevices(
       ? currentLocation
       : (locationFilter == 'all' ? null : locationFilter);
   return saved.where((device) {
-    final matchesLocation = selectedLocation != null
+    // A verified device can travel between Home and Office. In automatic
+    // mode its current, TLS-authenticated on-link status overrides a stale
+    // manually labeled location; explicit Home/Office filters stay strict.
+    final onCurrentNetwork = currentNetwork != null &&
+        lanRangeContains(currentNetwork, device.host);
+    final activeHere = locationFilter == 'automatic' &&
+        online[device.id] == true && onCurrentNetwork;
+    final matchesLocation = activeHere || (selectedLocation != null
         ? device.location == selectedLocation
         : (locationFilter == 'automatic' && currentNetwork != null
-            ? lanRangeContains(currentNetwork, device.host)
-            : true);
+            ? onCurrentNetwork : true));
     return matchesLocation && (showOffline || online[device.id] == true);
   }).toList();
 }
