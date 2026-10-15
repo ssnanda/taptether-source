@@ -84,6 +84,26 @@ install -D -o "$owner" -g "$group" -m 0644 \
 # Install the refreshed root helper for the next user-approved update.
 install -D -m 0755 "$bundle/9-tt-system-update-ubuntu.sh" \
   /usr/local/libexec/taptether-update-ubuntu.sh
+# Update-in-place also applies new per-agent defaults. This root-only, fixed
+# helper is invoked by the computer owner's installed systemd update service,
+# never by an arbitrary mobile command. A local opt-out marker remains intact.
+policy="/etc/polkit-1/rules.d/80-taptether-shutdown.rules"
+dropin="/etc/systemd/system/taptether-agent.service.d/40-shutdown.conf"
+install -d -m 0755 "$(dirname "$policy")" "$(dirname "$dropin")"
+cat >"$tmp/power.rules" <<POLKIT
+polkit.addRule(function(action, subject) {
+  if ((action.id === "org.freedesktop.login1.power-off" ||
+       action.id === "org.freedesktop.login1.power-off-multiple-sessions") &&
+      subject.user === "$owner" && subject.isInGroup("taptether")) {
+    return polkit.Result.YES;
+  }
+});
+POLKIT
+install -m 0644 "$tmp/power.rules" "$policy"
+printf '[Service]\\nEnvironment=TAPTETHER_ENABLE_SHUTDOWN=1\\n' \
+  >"$tmp/power.conf"
+install -m 0644 "$tmp/power.conf" "$dropin"
+systemctl daemon-reload
 systemctl restart taptether-agent.service
 systemctl is-active --quiet taptether-agent.service
 echo "TapTether agent upgraded and restarted to $latest"
