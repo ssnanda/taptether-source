@@ -108,7 +108,7 @@ class _SpeakerNotesPanelState extends State<SpeakerNotesPanel> {
                 onPressed: current <= 1 ? null :
                     () => widget.onSlideChanged(current - 1),
                 icon: const Icon(Icons.remove_circle_outline)),
-              Expanded(child: Text('Slide $current of ' + deck.slideCount.toString(),
+              Expanded(child: Text('Slide $current of ${deck.slideCount}',
                 key: const ValueKey('speaker-notes-position'),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium)),
