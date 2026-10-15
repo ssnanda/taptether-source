@@ -185,7 +185,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
       for (var index = 0; index < targets.length && !_cancel; index++) {
         final target = targets[index];
         final bound = bounds[index];
-        _report.add('Scanning ${target}.0/24 '
+        _report.add('Scanning $target.0/24 '
             '(host suffixes ${bound.startHost}-${bound.endHost})');
         final group = await (widget.scanRange ?? scanPrivate24)(target,
           startHost: bound.startHost,
@@ -203,7 +203,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
             }
           },
         );
-        _report.add('Range ${target}.0/24 finished: '
+        _report.add('Range $target.0/24 finished: '
             '${group.length} responsive/announced device(s)');
         scannedBefore += bound.endHost - bound.startHost + 1;
         for (final computer in group) {
