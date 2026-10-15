@@ -6,6 +6,8 @@ TapTether Windows Agent (0.6 test build)
 4. Double-click Show-Pairing.cmd. Keep its token and fingerprint private.
 5. In TapTether on your phone: Pair computer, enter its IP, token and TLS fingerprint.
 6. Use your phone to test mouse movement, clicks, scrolling and keyboard shortcuts.
+7. Remote shutdown is checked ON by default. Double-click Configure-Shutdown.cmd
+   to uncheck it at any time, then reconnect the phone to refresh the button.
 
 Works in an interactive signed-in Windows user session; no SSH needed.
 Does not control UAC secure desktops, lock screens, or elevated applications.
