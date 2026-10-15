@@ -321,7 +321,8 @@ uninstall_agent() {
   # The tray initiating this command may exit as its LaunchAgent is unloaded;
   # this helper completes independently of the UI process.
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
-  launchctl bootout "$TARGET/$TRAY_LABEL" >/dev/null 2>&1 || true
+  # The uninstaller may be launched by the tray process. Unload that job
+  # LAST or launchd could terminate its child helper mid-cleanup.
   rm -f -- "$PLIST" "$TRAY_PLIST" "$APP" "$UPDATER"
   rm -rf -- "$TRAY_BUNDLE" "$LOGDIR"
   if [[ "$mode" == "--erase-pairing" ]]; then
@@ -338,6 +339,7 @@ uninstall_agent() {
     notice 'Local pairing identities retained for a future reinstall.'
   fi
   notice 'Remove any old TapTether Accessibility entry manually in System Settings.'
+  launchctl bootout "$TARGET/$TRAY_LABEL" >/dev/null 2>&1 || true
 }
 case "${1:-}" in
   install) install_agent ;;
