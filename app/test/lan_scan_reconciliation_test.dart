@@ -40,7 +40,8 @@ void main() {
     ));
 
     await tester.pumpAndSettle();
-    expect(network.scanPrefixes, ['192.168.20', '192.168.21']);
+    expect(network.scanPrefixes.toSet(),
+        {'192.168.20', '192.168.21'});
     expect(find.textContaining('192.168.20.0/23'), findsWidgets);
     final allSubnets = tester.widget<SwitchListTile>(
         find.byKey(const ValueKey('scan-whole-network')));
@@ -48,7 +49,9 @@ void main() {
     await tester.tap(find.text('Start IP scan'));
     await tester.pump();
     await tester.pump();
-    expect(seenPrefixes, ['192.168.20', '192.168.21']);
+    // Active Wi-Fi /24 is intentionally scanned first; the verifier runs
+    // before that prefix finishes and before the second half is searched.
+    expect(seenPrefixes, ['192.168.21']);
     expect(verifiedIps, ['192.168.21.242']);
     expect(find.text('Sandips-MBP'), findsOneWidget);
     expect(find.byKey(const ValueKey('scan-verified-pairs')),
@@ -57,6 +60,7 @@ void main() {
 
     holdSecondRange.complete();
     await tester.pumpAndSettle();
+    expect(seenPrefixes.toSet(), {'192.168.20', '192.168.21'});
     expect(find.textContaining('paired computer(s) verified'), findsOneWidget);
   });
 
