@@ -76,7 +76,7 @@ class _PresentationControlsState extends State<PresentationControls> {
     if (key == PresentationShortcuts.next) {
       setState(() => _slide++);
     } else if (key == PresentationShortcuts.previous) {
-      setState(() => _slide = (_slide - 1).clamp(1, 9999));
+      setState(() => _slide = (_slide - 1).clamp(1, 9999).toInt());
     } else if (key == PresentationShortcuts.start(app, isMac: isMac)) {
       setState(() => _slide = 1);
     }
