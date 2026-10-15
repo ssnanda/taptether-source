@@ -105,6 +105,14 @@ assert "diagnostics) diagnostics" in mac_setup
 assert "restart) start_agent" in mac_setup
 assert "launchctl bootstrap" in mac_setup
 assert "Privacy: no passwords, pairing tokens" in mac_setup
+# Regression: a running macOS updater was truncated by the installer using
+# cp directly over its live script. Require same-directory rename instead.
+assert "atomic_install_helper" in mac_setup
+assert 'mv -f "$staged" "$destination"' in mac_setup
+assert 'atomic_install_helper "$0" "$CTL" 755' in mac_setup
+assert 'atomic_install_helper "$SELF/taptether-agent-update-mac" "$UPDATER" 700' in mac_setup
+assert 'then cp "$0" "$CTL"' not in mac_setup
+assert "  pairing\n}" not in mac_setup  # no private token printed on updates
 assert "Copy diagnostics" in mac_tray
 assert "Open Accessibility settings" in mac_tray
 
