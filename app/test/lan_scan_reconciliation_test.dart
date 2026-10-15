@@ -26,7 +26,7 @@ void main() {
         initialNetwork: network,
         scanRange: (prefix, {
           onProgress, onAgentFound, onProbe, cancelled,
-          startHost = 1, endHost,
+          required int startHost, endHost,
         }) async {
           seenPrefixes.add(prefix);
           visitedBounds.add('$prefix:$startHost-$endHost');
@@ -86,7 +86,7 @@ void main() {
         initialNetwork: network,
         scanRange: (prefix, {
           onProgress, onAgentFound, onProbe, cancelled,
-          startHost = 1, endHost,
+          required int startHost, endHost,
         }) async {
           if (prefix != '192.168.21') return [];
           const host = LanHost(
