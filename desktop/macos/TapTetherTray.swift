@@ -12,6 +12,7 @@ private let controller = NSHomeDirectory() + "/.local/bin/taptetherctl-mac"
 final class TapTetherMenu: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var statusLabel: NSMenuItem!
+    private var remoteShutdownItem: NSMenuItem!
     private var splashWindow: NSPanel?
     private var activeVersion = "unknown"
 
@@ -33,8 +34,12 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         add(menu, "Restart agent", #selector(restartAgent))
         add(menu, "Stop agent", #selector(stopAgent))
         add(menu, "Check for updates", #selector(checkUpdate))
-        add(menu, "Enable remote shutdown…", #selector(enableRemoteShutdown))
-        add(menu, "Disable remote shutdown", #selector(disableRemoteShutdown))
+        remoteShutdownItem = NSMenuItem(
+            title: "Allow remote shutdown", action: #selector(toggleRemoteShutdown),
+            keyEquivalent: "")
+        remoteShutdownItem.target = self
+        remoteShutdownItem.state = .off
+        menu.addItem(remoteShutdownItem)
         add(menu, "Agent diagnostics", #selector(showAgentDiagnostics))
         add(menu, "Open Accessibility settings", #selector(openAccessibilitySettings))
         menu.addItem(.separator())
@@ -124,7 +129,19 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             ?? "unknown"
     }
 
+    private func remoteShutdownEnabled() -> Bool {
+        let plistPath = NSHomeDirectory()
+            + "/Library/LaunchAgents/com.taptether.agent.plist"
+        guard let data = FileManager.default.contents(atPath: plistPath),
+              let plist = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil) as? [String: Any],
+              let vars = plist["EnvironmentVariables"] as? [String: Any]
+        else { return false }
+        return vars["TAPTETHER_ENABLE_SHUTDOWN"] as? String == "1"
+    }
+
     private func refreshStatus() {
+        remoteShutdownItem?.state = remoteShutdownEnabled() ? .on : .off
         let target = "gui/" + String(getuid()) + "/" + agentLabel
         let state = output("/bin/launchctl", ["print", target])
         let installed = FileManager.default.isExecutableFile(atPath: controller)
@@ -223,21 +240,11 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     @objc private func stopAgent() { runControl("stop") }
     @objc private func checkUpdate() { runControl("check-update") }
 
-    @objc private func enableRemoteShutdown() {
-        let alert = NSAlert()
-        alert.messageText = "Allow shutdown from your paired phone?"
-        alert.informativeText = "TapTether will accept an authenticated shutdown request on your trusted local network. Unsaved work may be lost. You can disable this later from this menu."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Enable shutdown")
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            runControl("enable-shutdown")
-        }
-    }
-
-    @objc private func disableRemoteShutdown() {
-        runControl("disable-shutdown")
+    @objc private func toggleRemoteShutdown() {
+        // Persist via the local controller. The installed agent has its own
+        // opt-out marker, so disabling survives repair and auto-update.
+        let enabled = remoteShutdownEnabled()
+        runControl(enabled ? "disable-shutdown" : "enable-shutdown")
     }
     @objc private func showAgentDiagnostics() {
         // Read a fixed-format, privacy-safe status report. Do not copy raw

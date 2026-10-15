@@ -51,7 +51,8 @@ try {
     if ($payloadVersion -cne $latest) { throw 'Archive version does not match release.' }
     foreach ($name in @('TapTetherAgent.exe','Install-TapTether.ps1',
             'Allow-TapTether.ps1','Show-Pairing.ps1','Update-TapTether.ps1',
-            'Install-TapTether.cmd','Show-Pairing.cmd','README-Windows.txt',
+            'Install-TapTether.cmd','Show-Pairing.cmd',
+            'Configure-Shutdown.ps1','Configure-Shutdown.cmd','README-Windows.txt',
             'version.txt')) {
         if (!(Test-Path (Join-Path $unpacked $name) -PathType Leaf)) {
             throw ('Required ZIP file missing: ' + $name)
@@ -67,6 +68,7 @@ try {
     foreach ($name in @('Install-TapTether.ps1','Allow-TapTether.ps1',
             'Show-Pairing.ps1','Update-TapTether.ps1',
             'Install-TapTether.cmd','Show-Pairing.cmd',
+            'Configure-Shutdown.ps1','Configure-Shutdown.cmd',
             'README-Windows.txt','version.txt')) {
         Copy-Item (Join-Path $unpacked $name) (Join-Path $agentDir $name) -Force
     }

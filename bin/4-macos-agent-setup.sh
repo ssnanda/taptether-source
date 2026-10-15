@@ -9,6 +9,7 @@ UPDATER="$BIN/taptether-agent-update-mac"
 PLIST="$HOME/Library/LaunchAgents/com.taptether.agent.plist"
 LOGDIR="$HOME/Library/Logs/TapTether"
 CONF="$HOME/Library/Application Support/taptether"
+SHUTDOWN_DISABLED="$HOME/Library/Application Support/taptether/remote-shutdown-disabled"
 LABEL=com.taptether.agent
 TRAY_LABEL=com.taptether.tray
 TRAY_PLIST="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
@@ -29,10 +30,10 @@ pairing() {
 }
 install_agent() {
   [[ "$(id -u)" -ne 0 ]] || { notice 'Run as normal macOS user, never with sudo' >&2; exit 1; }
-  local shutdown_enabled=0
-  if [[ -f "$PLIST" ]] && /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN" "$PLIST" 2>/dev/null | grep -qx 1; then
-    shutdown_enabled=1
-  fi
+  # Enabled by default for macOS as requested, including upgrades.
+  # Persist an explicit OFF toggle across reinstall and agent updates.
+  local shutdown_enabled=1
+  [[ -f "$SHUTDOWN_DISABLED" ]] && shutdown_enabled=0
   mkdir -p "$BIN" "$(dirname "$PLIST")" "$LOGDIR"
   chmod 700 "$LOGDIR"
   if [[ "$SELF/taptether-agent" != "$APP" ]]; then
@@ -169,11 +170,17 @@ enable_shutdown() {
   /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST" >/dev/null 2>&1 || true
   /usr/libexec/PlistBuddy -c "Delete :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN" "$PLIST" >/dev/null 2>&1 || true
   /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN string 1" "$PLIST"
+  mkdir -p "$CONF"
+  rm -f "$SHUTDOWN_DISABLED"
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
   notice 'Remote shutdown enabled; macOS may still request System Events automation approval.'
 }
 disable_shutdown() {
+  [[ -f "$PLIST" ]] || { notice 'Install the macOS agent first.' >&2; return 1; }
+  mkdir -p "$CONF"
+  touch "$SHUTDOWN_DISABLED"
+  chmod 600 "$SHUTDOWN_DISABLED"
   /usr/libexec/PlistBuddy -c "Delete :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN" "$PLIST" >/dev/null 2>&1 || true
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
