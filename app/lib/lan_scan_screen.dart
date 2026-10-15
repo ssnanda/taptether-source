@@ -94,6 +94,26 @@ class _LanScanScreenState extends State<LanScanScreen> {
     }
   }
 
+  void _showAgentCandidate(LanHost host) {
+    _verifyCandidate(host);
+    if (!mounted || _cancel || _hosts.any((item) => item.ip == host.ip)) {
+      return;
+    }
+    // A listening TapTether port can appear while other IPs are still being
+    // scanned. Show the candidate immediately while verification runs.
+    setState(() {
+      _hosts = [..._hosts, host]..sort((a, b) {
+        final left = a.ip.split('.').map(int.parse).toList();
+        final right = b.ip.split('.').map(int.parse).toList();
+        for (var i = 0; i < 4; i++) {
+          final diff = left[i].compareTo(right[i]);
+          if (diff != 0) return diff;
+        }
+        return 0;
+      });
+    });
+  }
+
   Future<void> _startScan() async {
     if (_busy) return;
     FocusScope.of(context).unfocus();
@@ -125,7 +145,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
         final scannedBefore = index * 254;
         final group = await scanPrivate24(targets[index],
           cancelled: () => _cancel,
-          onAgentFound: _verifyCandidate,
+          onAgentFound: _showAgentCandidate,
           onProgress: (done, _) {
             if (mounted) {
               setState(() => _completed = scannedBefore + done);
@@ -354,7 +374,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
           const SizedBox(height: 20),
           if (_verifiedAgents.isNotEmpty) ...[
             Text(
-              '${_verifiedAgents.length} paired computer(s) recognized and updated',
+              '${_verifiedAgents.length} existing paired computer(s) verified',
               key: const ValueKey('scan-verified-pairs'),
               style: TextStyle(color: Theme.of(context).colorScheme.primary),
             ),
@@ -373,7 +393,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
                   : device.agentAnnounced || device.openPorts.contains(48321)
                       ? Icons.desktop_windows_outlined
                       : Icons.devices_other_outlined),
-              title: Text(device.displayName),
+              title: Text(_verifiedAgents[device.ip] ?? device.displayName),
               subtitle: Text(_subtitle(device)),
               isThreeLine: true,
               trailing: const Icon(Icons.chevron_right),
