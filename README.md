@@ -726,3 +726,29 @@ paired phone and an explicit confirmation in TapTether. Reconnect the phone to
 refresh the shutdown button. macOS may request System Events Automation
 permission; Ubuntu requires the installer to configure a limited polkit rule.
 Existing agents must be upgraded before new default settings apply.
+
+### v0.6.12+46 — DHCP-roaming and multi-interface Mac discovery
+
+- **My Devices follows the computer, not a static IP:** When a saved computer
+  moves between home/office networks, TapTether probes the phone's current Wi-Fi
+  subnet (up to eight /24 ranges), tries Bonjour hostname resolution, and
+  verifies the computer's *saved TLS certificate pin and pairing credentials*
+  before updating the existing device's DHCP address. Untrusted broadcast
+  names and shared IPs never establish identity.
+- **Wi-Fi /23 support:** A phone at 192.168.21.252 with mask 255.255.254.0
+  correctly scans both 192.168.20.x and 192.168.21.x; the CIDR network address
+  is 192.168.20.0/23. The .20 and .21 ranges are one subnet, not two networks.
+- **Two Mac interfaces:** Pairing details list all private IPv4 addresses from
+  wired and wireless interfaces. A Mac might have 192.168.21.x on Wi-Fi and
+  192.168.1.x on Ethernet, but only an address routable from the phone is used.
+  MAC addresses/hostnames may help discovery but do not replace TLS identity.
+- **No duplicate records:** On verified moves the original phone identity,
+  encrypted stored pairing, user display name and preferences are preserved.
+  Automatic Home/Office views no longer hide an authenticated online computer
+  only because a historic location label is stale.
+- **Manual recovery:** Selecting an already paired computer in IP Scan or
+  Nearby Computers also verifies its existing pairing before updating its IP.
+  Authentication failures never overwrite saved credentials or IP addresses.
+
+Discovery remains local, best-effort, and may be blocked by client isolation,
+VLAN firewalls, VPN routing, corporate Wi-Fi policies or multicast filtering.
