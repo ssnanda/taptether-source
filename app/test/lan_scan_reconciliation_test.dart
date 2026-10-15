@@ -53,6 +53,10 @@ void main() {
     // before that prefix finishes and before the second half is searched.
     expect(seenPrefixes, ['192.168.21']);
     expect(verifiedIps, ['192.168.21.242']);
+    // The result cards are below the fold on Flutter's test-sized phone.
+    // Scroll while the scan is still waiting for the rest of the subnet.
+    await tester.drag(find.byType(ListView), const Offset(0, -520));
+    await tester.pumpAndSettle();
     expect(find.text('Sandips-MBP'), findsOneWidget);
     expect(find.byKey(const ValueKey('scan-verified-pairs')),
         findsOneWidget);
