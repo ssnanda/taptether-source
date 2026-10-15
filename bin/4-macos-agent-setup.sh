@@ -16,6 +16,18 @@ TRAY_PLIST="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
 TRAY_BUNDLE="$HOME/Applications/TapTether Agent.app"
 TARGET="gui/$(id -u)"
 notice() { printf 'TapTether: %s\n' "$*"; }
+# Never truncate a currently executing shell script during self-update.
+# Older taptetherctl-mac/update helper processes can still be reading the
+# original inode. Install in the same directory and rename atomically.
+atomic_install_helper() {
+  local source="$1" destination="$2" mode="$3" staged
+  staged="$(mktemp "$BIN/.taptether-helper.XXXXXXXX")" || return 1
+  if ! cp "$source" "$staged" || ! chmod "$mode" "$staged" ||
+      ! mv -f "$staged" "$destination"; then
+    rm -f "$staged"
+    return 1
+  fi
+}
 pairing() {
   if [[ ! -r "$CONF/pairing.token" || ! -r "$CONF/server.crt" ]]; then
     notice 'Agent identity not ready. Start agent and retry.' >&2
@@ -40,10 +52,11 @@ install_agent() {
     [[ -x "$SELF/taptether-agent" ]] || { notice 'Run setup from extracted agent archive' >&2; exit 1; }
     cp "$SELF/taptether-agent" "$APP"
   fi
-  if [[ "$0" != "$CTL" ]]; then cp "$0" "$CTL"; fi
+  if [[ "$0" != "$CTL" ]]; then
+    atomic_install_helper "$0" "$CTL" 755
+  fi
   if [[ -f "$SELF/taptether-agent-update-mac" && "$SELF/taptether-agent-update-mac" != "$UPDATER" ]]; then
-    cp "$SELF/taptether-agent-update-mac" "$UPDATER"
-    chmod 700 "$UPDATER"
+    atomic_install_helper "$SELF/taptether-agent-update-mac" "$UPDATER" 700
   fi
   chmod 755 "$APP" "$CTL"
   if command -v codesign >/dev/null 2>&1; then
@@ -146,7 +159,9 @@ EOF
   notice 'Background agent installed, running and enabled at login.'
   notice 'TapTether Agent.app displays the splash on demand; the menu bar tray starts silently at login.'
   notice 'Allow TapTether in macOS System Settings > Privacy & Security > Accessibility to enable mouse/keyboard.'
-  pairing
+  # Never print pairing tokens in routine install/update logs. The owner can
+  # deliberately reveal them from the menu bar or the pairing subcommand.
+  notice 'To pair your phone, use the menu-bar Show pairing details command.'
 }
 pairing_qr() {
   command -v qrencode >/dev/null 2>&1 || { notice 'Install qrencode: brew install qrencode' >&2; exit 1; }
