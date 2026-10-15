@@ -10,6 +10,7 @@ CTL="$HOME/.local/bin/taptetherctl"
 UPDATER="$HOME/.local/bin/taptether-agent-update"
 POWER_RULE="/etc/polkit-1/rules.d/80-taptether-shutdown.rules"
 POWER_DROPIN="/etc/systemd/system/taptether-agent.service.d/40-shutdown.conf"
+POWER_DISABLED="$HOME/.config/taptether/remote-shutdown-disabled"
 APP="$HOME/.local/share/applications/taptether.desktop"
 TRAY="$HOME/.local/share/taptether/taptether_tray.py"
 TRAY_AUTOSTART="$HOME/.config/autostart/taptether-tray.desktop"
@@ -259,6 +260,11 @@ SYSTEMD
   sudo systemctl enable "$UNIT"
   sudo systemctl restart "$UNIT"
   ensure_running
+  # Computer owner requested default ON for all agents. Existing explicit
+  # disable marker must survive repair and updates.
+  if [[ ! -f "$POWER_DISABLED" ]]; then
+    enable_shutdown
+  fi
   # Earlier builds pinned the launcher to GNOME Favorites. Remove only
   # that legacy auto-pin; the tray remains available without a taskbar icon.
   unpin_legacy_launcher
@@ -314,10 +320,15 @@ EOF
   sudo install -m 0644 "$temp" "$POWER_DROPIN"
   rm -f "$temp"
   sudo systemctl daemon-reload
+  mkdir -p "$CONFIG"
+  rm -f "$POWER_DISABLED"
   sudo systemctl restart "$UNIT"
-  note 'Remote shutdown enabled. Any phone with the correct pairing token can shut down this computer.'
+  note 'Remote shutdown enabled for paired computers; phone confirmation remains mandatory.'
 }
 disable_shutdown() {
+  mkdir -p "$CONFIG"
+  touch "$POWER_DISABLED"
+  chmod 600 "$POWER_DISABLED"
   sudo rm -f "$POWER_RULE" "$POWER_DROPIN"
   sudo systemctl daemon-reload
   sudo systemctl restart "$UNIT"
