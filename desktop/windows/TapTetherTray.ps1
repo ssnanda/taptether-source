@@ -19,6 +19,12 @@ $script:updating = $false
 $script:updateProcess = $null
 $script:tray = [System.Windows.Forms.NotifyIcon]::new()
 $script:tray.Icon = [System.Drawing.SystemIcons]::Application
+$brandIcon = Join-Path $folder 'TapTether.ico'
+if (Test-Path $brandIcon) {
+    try {
+        $script:tray.Icon = [System.Drawing.Icon]::new($brandIcon)
+    } catch { }
+}
 $script:tray.Text = 'TapTether Agent'
 $menu = [System.Windows.Forms.ContextMenuStrip]::new()
 $versionItem = $menu.Items.Add('TapTether Agent')
