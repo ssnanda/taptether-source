@@ -687,7 +687,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     final snapshots = savedComputers.toList()..sort((a, b) =>
         (a.host == ip ? 0 : 1).compareTo(b.host == ip ? 0 : 1));
     for (final saved in snapshots) {
-      if (!mounted || !await _pingSavedDevice(saved, phone, atHost: ip)) {
+      if (!mounted || !(await _pingSavedDevice(saved, phone, atHost: ip))) {
         continue;
       }
       if (_scanVerifiedDeviceIds.contains(saved.id)) {
