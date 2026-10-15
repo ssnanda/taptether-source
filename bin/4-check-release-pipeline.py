@@ -112,7 +112,7 @@ assert 'trash_path "$CONF"' in mac_setup
 assert 'codesign --verify "$APP"' in mac_setup
 assert "Repair Accessibility…" in mac_tray
 assert "Uninstall TapTether…" in mac_tray
-assert "Quit TapTether (stop agent & menu)" in mac_tray
+assert 'add(menu, "Quit TapTether", #selector(quitMenu))' in mac_tray
 assert 'task.arguments = [controller, "stop"]' in mac_tray
 assert 'coreRemaining' in mac_tray
 assert "Quit menu (agent stays running)" not in mac_tray
@@ -140,17 +140,32 @@ win_installer = (ROOT / "desktop" / "windows" / "Install-TapTether.ps1").read_te
     encoding="utf-8")
 win_updater = (ROOT / "desktop" / "windows" / "Update-TapTether.ps1").read_text(
     encoding="utf-8")
-assert 'title: "Update Agent…"' in mac_tray
+assert 'title: "Check for Updates…"' in mac_tray
 assert 'task.arguments = [controller, "update"]' in mac_tray
 assert 'task.standardOutput = FileHandle.nullDevice' in mac_tray
 assert "update_from_tray" in ubuntu_tray
-assert 'add_menu_item(m, "Update Agent…", update_from_tray)' in ubuntu_tray
+assert 'add_menu_item(m, "Check for Updates…", update_from_tray)' in ubuntu_tray
 assert 'taptether-update.service' in ubuntu_tray
-assert "Update Agent..." in win_tray
+assert "Check for Updates..." in win_tray
 assert "Update-TapTether.ps1" in win_tray
 assert "TapTetherTray.ps1" in win_installer and "TapTetherTray.ps1" in win_updater
 assert "TapTetherTray.ps1" in workflow
 assert "PowerShell syntax" in workflow
+# Every desktop has one dynamic Start/Stop, Pair, Update, Settings and Quit.
+assert 'startStopItem?.title = isRunning ? "Stop TapTether" : "Start TapTether"' in mac_tray
+assert 'add(menu, "Pair Device", #selector(pairingInstructions))' in mac_tray
+assert 'let settingsMenu = NSMenu(title: "Settings")' in mac_tray
+assert 'add(menu, "Quit TapTether", #selector(quitMenu))' in mac_tray
+assert 'start_stop.set_label("Stop TapTether" if active else "Start TapTether")' in ubuntu_tray
+assert 'add_menu_item(m, "Pair Device", pair_device)' in ubuntu_tray
+assert 'settings_item.set_submenu(settings)' in ubuntu_tray
+assert 'add_menu_item(m, "Quit TapTether", quit_taptether)' in ubuntu_tray
+assert 'if service_control("stop"):' in ubuntu_tray
+assert '$startStopItem.Text = if ($isRunning)' in win_tray
+assert "$pairingItem = $menu.Items.Add('Pair Device')" in win_tray
+assert "$settingsItem = [System.Windows.Forms.ToolStripMenuItem]::new('Settings')" in win_tray
+assert "$quitItem = $menu.Items.Add('Quit TapTether')" in win_tray
+assert 'if (Stop-ManagedAgent)' in win_tray
 
 # DHCP recovery must not depend only on UDP discovery or Bonjour. An
 # untrusted open port is authenticated using the stored pinned phone pairing.

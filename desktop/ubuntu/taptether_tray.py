@@ -106,21 +106,21 @@ def run_command(args, title):
         message(title, str(exc), error=True)
 
 
-def on_command(item, *args):
-    # Running sudo commands in a background menu without a TTY would stall or fail.
-    # Use a graphical polkit authorization prompt where supported.
-    command = args[0]
-    if command in ("start", "restart", "stop"):
-        try:
-            result = subprocess.run(
-                ["pkexec", "/usr/bin/systemctl", command, "taptether-agent.service"],
-                capture_output=True, text=True, timeout=60, check=False)
-            if result.returncode:
-                message("Service control", result.stderr.strip()[:1000] or
-                        "Authorization was declined or unavailable.", error=True)
-        except (OSError, subprocess.SubprocessError) as exc:
-            message("Service control", str(exc), error=True)
-
+def service_control(action):
+    """Ask polkit to control only the named TapTether system service."""
+    try:
+        result = subprocess.run(
+            ["pkexec", "/usr/bin/systemctl", action, "taptether-agent.service"],
+            capture_output=True, text=True, timeout=60, check=False)
+        if result.returncode:
+            message("Service control", "Authorization was declined or unavailable.",
+                    error=True)
+            return False
+        return True
+    except (OSError, subprocess.SubprocessError):
+        message("Service control", "Could not change TapTether service status.",
+                error=True)
+        return False
 
 
 def update_from_tray(item):
@@ -147,7 +147,7 @@ def update_from_tray(item):
 
     def finished(ok, details):
         item.set_sensitive(True)
-        item.set_label("Update Agent…")
+        item.set_label("Check for Updates…")
         message("TapTether update complete" if ok else "Update needs attention",
                 details, error=not ok)
         return False
@@ -198,28 +198,70 @@ def add_menu_item(menu, text, callback):
     return item
 
 
+def pair_device(_item):
+    """Reveal local pairing credentials only after a direct tray click."""
+    try:
+        result = subprocess.run([str(CTL), "pairing"], capture_output=True,
+                                text=True, timeout=8, check=False)
+    except (OSError, subprocess.SubprocessError):
+        message("Pair Device", "Unable to read local pairing details.", error=True)
+        return
+    if result.returncode or not result.stdout.strip():
+        message("Pair Device", "Start TapTether and finish setup before pairing.",
+                error=True)
+        return
+    dialog = Gtk.Dialog(title="Private TapTether pairing details",
+                        flags=Gtk.DialogFlags.MODAL)
+    dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+    heading = Gtk.Label(label="Copy these credentials into your own TapTether phone app. Keep them private.")
+    heading.set_xalign(0)
+    dialog.get_content_area().pack_start(heading, False, False, 8)
+    scroller = Gtk.ScrolledWindow()
+    scroller.set_size_request(580, 210)
+    display = Gtk.TextView()
+    display.set_editable(False)
+    display.set_cursor_visible(True)
+    display.set_monospace(True)
+    display.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+    display.get_buffer().set_text(result.stdout.strip())
+    scroller.add(display)
+    dialog.get_content_area().pack_start(scroller, True, True, 8)
+    dialog.show_all()
+    dialog.run()
+    dialog.destroy()
+
+
 def menu(version):
     m = Gtk.Menu()
-    status_item = add_menu_item(m, "TapTether Agent v" + version, lambda _: show_splash(agent_version()))
-    status_item.set_sensitive(True)
+    version_item = add_menu_item(m, "TapTether Agent v" + version,
+                                 lambda _: show_splash(agent_version()))
     status = add_menu_item(m, "", lambda _: None)
     status.set_sensitive(False)
-
-    def refresh():
-        status_item.set_label("TapTether Agent v" + agent_version())
-        status.set_label("Status: " + ("Running" if running() else "Stopped"))
-        return True
-
-    refresh()
-    GLib.timeout_add_seconds(10, refresh)
     m.append(Gtk.SeparatorMenuItem())
-    add_menu_item(m, "Show TapTether", lambda _: show_splash(version))
-    add_menu_item(m, "Start agent", lambda item: on_command(item, "start"))
-    add_menu_item(m, "Restart agent", lambda item: on_command(item, "restart"))
-    add_menu_item(m, "Stop agent", lambda item: on_command(item, "stop"))
-    add_menu_item(m, "Update Agent…", update_from_tray)
-    # Locally stored owner-only opt-out, no passwordless sudo. Installed
-    # service/polkit policy is narrowly limited to the existing agent.
+
+    def toggle(item):
+        action = "stop" if running() else "start"
+        if service_control(action):
+            refresh()
+
+    start_stop = add_menu_item(m, "Start TapTether", toggle)
+    add_menu_item(m, "Pair Device", pair_device)
+    add_menu_item(m, "Check for Updates…", update_from_tray)
+
+    settings_item = Gtk.MenuItem(label="Settings")
+    settings = Gtk.Menu()
+    add_menu_item(settings, "Show TapTether",
+                  lambda _: show_splash(agent_version()))
+    add_menu_item(settings, "Restart agent",
+                  lambda _: (service_control("restart"), refresh()))
+    add_menu_item(settings, "Agent status",
+                  lambda _: message("TapTether Agent",
+                                    "Version: " + agent_version() + "\\nStatus: " +
+                                    ("Running" if running() else "Stopped")))
+    add_menu_item(settings, "Install / Repair agent…",
+                  lambda _: message("Install / Repair TapTether",
+                                    "Run ~/.local/bin/taptetherctl install in a trusted terminal. "
+                                    "Administrator authorization may be required."))
     shutdown = Gtk.CheckMenuItem(label="Allow remote shutdown")
     shutdown.set_active(not SHUTDOWN_DISABLED.exists())
 
@@ -231,18 +273,35 @@ def menu(version):
                 SHUTDOWN_DISABLED.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 SHUTDOWN_DISABLED.touch(mode=0o600, exist_ok=True)
                 SHUTDOWN_DISABLED.chmod(0o600)
-        except OSError as exc:
+        except OSError:
+            item.handler_block_by_func(change_shutdown)
             item.set_active(not item.get_active())
-            message("Remote shutdown", str(exc), error=True)
+            item.handler_unblock_by_func(change_shutdown)
+            message("Remote shutdown", "Could not change local shutdown preference.",
+                    error=True)
 
     shutdown.connect("toggled", change_shutdown)
-    m.append(shutdown)
+    settings.append(shutdown)
+    settings_item.set_submenu(settings)
+    m.append(settings_item)
     m.append(Gtk.SeparatorMenuItem())
-    add_menu_item(m, "Pairing instructions", lambda _: message(
-        "Pair a phone", "Use a trusted terminal and run:\n"
-        "~/.local/bin/taptetherctl pairing-qr\n\n"
-        "Pairing tokens are never displayed in this tray menu."))
-    add_menu_item(m, "Quit tray (agent stays running)", lambda _: Gtk.main_quit())
+
+    def quit_taptether(_item):
+        # Never exit the tray while leaving a managed agent running.
+        if service_control("stop"):
+            Gtk.main_quit()
+
+    add_menu_item(m, "Quit TapTether", quit_taptether)
+
+    def refresh():
+        version_item.set_label("TapTether Agent v" + agent_version())
+        active = running()
+        status.set_label("Status: " + ("Running" if active else "Stopped"))
+        start_stop.set_label("Stop TapTether" if active else "Start TapTether")
+        return True
+
+    refresh()
+    GLib.timeout_add_seconds(10, refresh)
     m.show_all()
     return m
 

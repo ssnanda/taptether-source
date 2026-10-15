@@ -13,6 +13,7 @@ private let controller = NSHomeDirectory() + "/.local/bin/taptetherctl-mac"
 final class TapTetherMenu: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var statusLabel: NSMenuItem!
+    private var startStopItem: NSMenuItem!
     private var versionMenuItem: NSMenuItem!
     private var updateMenuItem: NSMenuItem!
     private var updateInProgress = false
@@ -33,28 +34,37 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         statusLabel.isEnabled = false
         menu.addItem(statusLabel)
         menu.addItem(.separator())
-        add(menu, "Show TapTether", #selector(showSplash))
-        add(menu, "Install / Repair agent…", #selector(installAgent))
-        add(menu, "Start agent", #selector(startAgent))
-        add(menu, "Restart agent", #selector(restartAgent))
-        add(menu, "Stop agent", #selector(stopAgent))
-        updateMenuItem = NSMenuItem(title: "Update Agent…",
-                                  action: #selector(updateAgent), keyEquivalent: "")
+
+        startStopItem = NSMenuItem(title: "Start TapTether",
+                                   action: #selector(toggleAgent), keyEquivalent: "")
+        startStopItem.target = self
+        menu.addItem(startStopItem)
+        add(menu, "Pair Device", #selector(pairingInstructions))
+        updateMenuItem = NSMenuItem(title: "Check for Updates…",
+                                    action: #selector(updateAgent), keyEquivalent: "")
         updateMenuItem.target = self
         menu.addItem(updateMenuItem)
+
+        let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+        let settingsMenu = NSMenu(title: "Settings")
+        add(settingsMenu, "Show TapTether", #selector(showSplash))
+        add(settingsMenu, "Install / Repair agent…", #selector(installAgent))
+        add(settingsMenu, "Restart agent", #selector(restartAgent))
         remoteShutdownItem = NSMenuItem(
             title: "Allow remote shutdown", action: #selector(toggleRemoteShutdown),
             keyEquivalent: "")
         remoteShutdownItem.target = self
         remoteShutdownItem.state = .off
-        menu.addItem(remoteShutdownItem)
-        add(menu, "Agent diagnostics", #selector(showAgentDiagnostics))
-        add(menu, "Repair Accessibility…", #selector(repairAccessibility))
-        add(menu, "Open Accessibility settings", #selector(openAccessibilitySettings))
+        settingsMenu.addItem(remoteShutdownItem)
+        add(settingsMenu, "Agent diagnostics", #selector(showAgentDiagnostics))
+        add(settingsMenu, "Repair Accessibility…", #selector(repairAccessibility))
+        add(settingsMenu, "Open Accessibility settings", #selector(openAccessibilitySettings))
+        settingsMenu.addItem(.separator())
+        add(settingsMenu, "Uninstall TapTether…", #selector(uninstallTapTether))
+        settingsItem.submenu = settingsMenu
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
-        add(menu, "Show pairing details", #selector(pairingInstructions))
-        add(menu, "Uninstall TapTether…", #selector(uninstallTapTether))
-        add(menu, "Quit TapTether (stop agent & menu)", #selector(quitMenu))
+        add(menu, "Quit TapTether", #selector(quitMenu))
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             if let path = Bundle.main.path(forResource: "TapTether", ofType: "icns"),
@@ -162,6 +172,9 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         let state = output("/bin/launchctl", ["print", target])
         let installed = FileManager.default.isExecutableFile(atPath: controller)
         let isRunning = state.contains("state = running")
+        startStopItem?.title = isRunning ? "Stop TapTether" : "Start TapTether"
+        statusItem?.button?.toolTip = "TapTether Agent v" + activeVersion
+            + (isRunning ? " — Running" : " — Stopped")
         statusLabel?.title = "Status: " + (isRunning ? "Running" :
             (installed ? "Stopped — use Start / Repair" : "Not installed"))
     }
@@ -249,6 +262,12 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    @objc private func toggleAgent() {
+        let target = "gui/" + String(getuid()) + "/" + agentLabel
+        let isRunning = output("/bin/launchctl", ["print", target]).contains("state = running")
+        if isRunning { stopAgent() } else { startAgent() }
     }
 
     @objc private func startAgent() {
@@ -466,7 +485,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 } else {
                     self?.showNotice("Could not stop TapTether agent",
                         "The menu remains open because the background agent "
-                        + "could not be stopped. Choose Stop agent and retry.")
+                        + "could not be stopped. Choose Stop TapTether and retry.")
                 }
             }
         }
