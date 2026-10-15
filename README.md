@@ -791,7 +791,7 @@ the throttle. **An open port or matching hostname alone is never trusted**:
 TapTether verifies the original TLS pin and authenticated pairing before
 updating My Devices. No secret or device identity is sent to unverified hosts.
 
-### v0.6.12+51 — explicit scan verifies existing paired agents immediately
+### v0.6.12+53 — explicit scan verifies existing paired agents immediately
 
 - The computer agent remains passive: it listens on its local network and
   responds to client requests. There is no new agent-to-phone polling.
