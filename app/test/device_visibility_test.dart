@@ -37,6 +37,22 @@ void main() {
     expect(visible.map((d) => d.id), ['home']);
   });
 
+  test('verified roaming computer shows in automatic Office even if labeled Home', () {
+    final mac = host('mac', '192.168.21.242', 'home');
+    final network = rangeFromWifi(
+        '192.168.21.252', '255.255.254.0')!;
+    final current = visibleSavedDevices([mac],
+      online: {'mac': true}, locationFilter: 'automatic',
+      currentLocation: 'office', currentNetwork: network,
+      showOffline: false);
+    expect(current.map((d) => d.id), ['mac']);
+    final manual = visibleSavedDevices([mac],
+      online: {'mac': true}, locationFilter: 'office',
+      currentLocation: 'office', currentNetwork: network,
+      showOffline: true);
+    expect(manual, isEmpty);
+  });
+
   test('unlabeled Wi-Fi networks filter to actual subnet', () {
     final devices = [
       host('here', '192.168.71.15', 'other'),
