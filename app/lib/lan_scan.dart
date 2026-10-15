@@ -318,6 +318,7 @@ Future<LanHost?> checkPrivateLanIp(
 Future<List<LanHost>> scanPrivate24(
   String prefix, {
   void Function(int completed, int total)? onProgress,
+  void Function(LanHost candidate)? onAgentFound,
   bool Function()? cancelled,
   int parallelism = 24,
   int hostCount = 254,
@@ -376,7 +377,13 @@ Future<List<LanHost>> scanPrivate24(
         } on TimeoutException {
           // Keep the discovered IP without blocking the scan.
         }
-        results.add(LanHost(ip: host, hostname: name, openPorts: ports));
+        final candidate = LanHost(ip: host, hostname: name, openPorts: ports);
+        results.add(candidate);
+        // Tell the UI as soon as the TapTether port responds; do not wait
+        // until all 254 addresses have completed their unrelated port tests.
+        // The caller must authenticate the TLS pin and paired phone before
+        // trusting this unverified TCP candidate.
+        if (ports.contains(48321)) onAgentFound?.call(candidate);
       }
       done++;
       if (done % 8 == 0 || done == hostCount) onProgress?.call(done, hostCount);

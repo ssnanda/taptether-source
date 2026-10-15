@@ -5,15 +5,33 @@ import 'package:flutter/material.dart';
 import 'lan_scan.dart';
 import 'computer_store.dart';
 
+/// Injecting a scanner permits deterministic tests of authenticated
+/// scan-to-paired-device reconciliation without touching real network hosts.
+typedef LanRangeScanner = Future<List<LanHost>> Function(
+  String prefix, {
+  void Function(int completed, int total)? onProgress,
+  void Function(LanHost candidate)? onAgentFound,
+  bool Function()? cancelled,
+});
+
 /// Manual on-device /24 scan. No internet API, cloud account or analytics.
 class LanScanScreen extends StatefulWidget {
   const LanScanScreen({
     super.key, this.initialIp, this.knownComputers = const [],
     this.macResolver,
+    this.verifyPairedAgent,
+    this.scanRange,
+    this.initialNetwork,
   });
   final String? initialIp;
   final List<SavedComputer> knownComputers;
   final Future<Map<String, String>> Function()? macResolver;
+  /// Triggered only on explicit user scan. The caller authenticates this IP
+  /// with a saved TLS certificate pin AND paired-phone credentials before
+  /// returning the matching computer name or changing a saved record.
+  final Future<String?> Function(String ip)? verifyPairedAgent;
+  final LanRangeScanner? scanRange;
+  final DetectedLanRange? initialNetwork;
 
   @override
   State<LanScanScreen> createState() => _LanScanScreenState();
@@ -28,6 +46,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
   bool _editedPrefix = false;
   List<LanHost> _hosts = [];
   Map<String, String> _cachedMacs = {};
+  final Map<String, String> _verifiedAgents = {};
+  final Set<String> _startedVerification = {};
+  final List<Future<void>> _pendingVerifications = [];
   bool _busy = false;
   bool _cancel = false;
   int _completed = 0;
@@ -42,7 +63,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
   }
 
   Future<void> _loadDefault() async {
-    final range = await detectLanRange();
+    final range = widget.initialNetwork ?? await detectLanRange();
     if (!mounted) return;
     setState(() {
       _network = range;
@@ -65,6 +86,47 @@ class _LanScanScreenState extends State<LanScanScreen> {
     super.dispose();
   }
 
+  void _verifyCandidate(LanHost candidate) {
+    if (_cancel || !mounted || widget.verifyPairedAgent == null) return;
+    if (!candidate.openPorts.contains(48321) && !candidate.agentAnnounced) {
+      return;
+    }
+    if (!_startedVerification.add(candidate.ip)) return;
+    final task = _authenticateCandidate(candidate.ip);
+    _pendingVerifications.add(task);
+  }
+
+  Future<void> _authenticateCandidate(String ip) async {
+    try {
+      final name = await widget.verifyPairedAgent!(ip);
+      if (mounted && !_cancel && name != null) {
+        setState(() => _verifiedAgents[ip] = name);
+      }
+    } catch (_) {
+      // A foreign service or an unpaired agent must never interrupt IP Scan.
+    }
+  }
+
+  void _showAgentCandidate(LanHost host) {
+    _verifyCandidate(host);
+    if (!mounted || _cancel || _hosts.any((item) => item.ip == host.ip)) {
+      return;
+    }
+    // A listening TapTether port can appear while other IPs are still being
+    // scanned. Show the candidate immediately while verification runs.
+    setState(() {
+      _hosts = [..._hosts, host]..sort((a, b) {
+        final left = a.ip.split('.').map(int.parse).toList();
+        final right = b.ip.split('.').map(int.parse).toList();
+        for (var i = 0; i < 4; i++) {
+          final diff = left[i].compareTo(right[i]);
+          if (diff != 0) return diff;
+        }
+        return 0;
+      });
+    });
+  }
+
   Future<void> _startScan() async {
     if (_busy) return;
     FocusScope.of(context).unfocus();
@@ -73,15 +135,20 @@ class _LanScanScreenState extends State<LanScanScreen> {
       setState(() => _error = 'Enter a private IPv4 /24 prefix (e.g. 192.168.1).');
       return;
     }
+    // Whole-network mode follows the detected Wi-Fi CIDR (e.g. both
+    // 192.168.20 and 192.168.21 for a /23). Only an explicit custom /24
+    // prefix overrides that network-wide choice.
     final targets = _scanWholeNetwork && _network != null &&
-            _network!.scanPrefixes.contains(prefix) &&
-            _network!.scanPrefixes.length <= 8
+            !_editedPrefix && _network!.scanPrefixes.length <= 8
         ? _network!.scanPrefixes
         : [prefix];
     setState(() {
       _error = null;
       _hosts = [];
       _cachedMacs = {};
+      _verifiedAgents.clear();
+      _startedVerification.clear();
+      _pendingVerifications.clear();
       _completed = 0;
       _total = targets.length * 254;
       _cancel = false;
@@ -91,8 +158,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
       final found = <String, LanHost>{};
       for (var index = 0; index < targets.length && !_cancel; index++) {
         final scannedBefore = index * 254;
-        final group = await scanPrivate24(targets[index],
+        final group = await (widget.scanRange ?? scanPrivate24)(targets[index],
           cancelled: () => _cancel,
+          onAgentFound: _showAgentCandidate,
           onProgress: (done, _) {
             if (mounted) {
               setState(() => _completed = scannedBefore + done);
@@ -101,6 +169,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
         );
         for (final computer in group) {
           found[computer.ip] = computer;
+          _verifyCandidate(computer);
         }
         if (mounted) {
           setState(() {
@@ -115,6 +184,11 @@ class _LanScanScreenState extends State<LanScanScreen> {
             });
           });
         }
+      }
+      // Do not declare the scan finished while identity checks are in
+      // flight. Results are saved as soon as each individual match succeeds.
+      if (!_cancel) {
+        await Future.wait(_pendingVerifications);
       }
       // A paired, authenticated desktop can read its own ARP cache;
       // mobile iOS cannot directly inspect other devices' MAC addresses.
@@ -147,6 +221,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
     try {
       final found = await checkPrivateLanIp(ip);
       if (!mounted) return;
+      _verifyCandidate(found ??
+          LanHost(ip: ip, hostname: ip, openPorts: const []));
       setState(() {
         if (found == null) {
           _notRespondingIp = ip;
@@ -181,7 +257,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
         e.host == device.ip && e.macAddress.isNotEmpty);
     final mac = device.macAddress ?? _cachedMacs[device.ip] ??
         (matches.isNotEmpty ? matches.first.macAddress : null);
-    return '${device.scanSubtitle}'
+    final verified = _verifiedAgents[device.ip];
+    return '${verified == null ? device.scanSubtitle : 'Paired: $verified · Verified agent'}'
         '${mac == null || mac.isEmpty ? '' : '\nMAC: $mac'}';
   }
 
@@ -310,6 +387,14 @@ class _LanScanScreenState extends State<LanScanScreen> {
               ),
             ),
           const SizedBox(height: 20),
+          if (_verifiedAgents.isNotEmpty) ...[
+            Text(
+              '${_verifiedAgents.length} existing paired computer(s) verified',
+              key: const ValueKey('scan-verified-pairs'),
+              style: TextStyle(color: Theme.of(context).colorScheme.primary),
+            ),
+            const SizedBox(height: 8),
+          ],
           Text('Devices found: ${_hosts.length}',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -323,7 +408,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
                   : device.agentAnnounced || device.openPorts.contains(48321)
                       ? Icons.desktop_windows_outlined
                       : Icons.devices_other_outlined),
-              title: Text(device.displayName),
+              title: Text(_verifiedAgents[device.ip] ?? device.displayName),
               subtitle: Text(_subtitle(device)),
               isThreeLine: true,
               trailing: const Icon(Icons.chevron_right),

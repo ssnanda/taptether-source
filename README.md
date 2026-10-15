@@ -790,3 +790,25 @@ once per four minutes during automatic heartbeats; tapping Refresh overrides
 the throttle. **An open port or matching hostname alone is never trusted**:
 TapTether verifies the original TLS pin and authenticated pairing before
 updating My Devices. No secret or device identity is sent to unverified hosts.
+
+### v0.6.12+53 — explicit scan verifies existing paired agents immediately
+
+- The computer agent remains passive: it listens on its local network and
+  responds to client requests. There is no new agent-to-phone polling.
+- On **Scan IPs**, detecting a TapTether TCP 48321 endpoint or UDP announcement
+  now triggers saved-pairing verification while the scan is running. A match
+  authenticated with the saved TLS certificate pin and phone signing key/token
+  automatically updates the existing My Devices entry, IP, and online status.
+  Previously this happened only if the user tapped a discovered IP.
+- On **Discover**, all announced agents are similarly correlated to existing
+  trusted pairings. If UDP is blocked, the explicit action can use the bounded
+  Wi-Fi-subnet TCP 48321 fallback introduced in v0.6.12+48.
+- Known agent names and verified state appear directly in IP Scan. Scanning an
+  unknown or unrelated computer never reuses saved credentials or claims it
+  is paired.
+- A /23 scans both /24 ranges by default unless the user explicitly enters a
+  different /24 prefix. This covers a phone on 192.168.21.252 with network
+  192.168.20.0/23 and a computer at 192.168.21.242.
+- Client isolation, AP firewall rules, or inaccessible ports still prevent
+  control regardless of saved pairing. Certificate identity is never inferred
+  from a hostname, MAC address, or DHCP IP alone.

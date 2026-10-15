@@ -331,6 +331,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   String _locationFilter = 'automatic';
   bool _showOffline = false;
   bool _checkingHeartbeat = false;
+  bool _scanningToReconcile = false;
+  final Set<String> _scanVerifiedDeviceIds = {};
   DateTime? _lastTcpRecoveryAt;
   String? _lastTcpRecoveryNetwork;
   String? _lastNetworkId;
@@ -421,7 +423,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   }
 
   Future<void> _refreshHeartbeats({bool forceRecovery = false}) async {
-    if (_checkingHeartbeat || savedComputers.isEmpty) return;
+    if (_checkingHeartbeat || _scanningToReconcile ||
+        savedComputers.isEmpty) {
+      return;
+    }
     _checkingHeartbeat = true;
     if (mounted) setState(() {});
     try {
@@ -668,13 +673,80 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     return combined;
   }
 
+  /// A scan discovers IP addresses, never trusted identities. This verifies
+  /// each candidate against the original saved certificate and authenticated
+  /// pairing before immediately replacing an outdated DHCP address.
+  Future<String?> _reconcileScannedAgent(String ip) async {
+    if (!mounted || !isPrivateIPv4(ip) || savedComputers.isEmpty) {
+      return null;
+    }
+    PhoneIdentity? phone;
+    try {
+      if (savedComputers.any((d) => d.deviceId.isNotEmpty)) {
+        phone = await PhoneIdentity.loadOrCreate();
+      }
+    } catch (_) {}
+    final snapshots = savedComputers.toList()..sort((a, b) =>
+        (a.host == ip ? 0 : 1).compareTo(b.host == ip ? 0 : 1));
+    for (final saved in snapshots) {
+      if (!mounted || !(await _pingSavedDevice(saved, phone, atHost: ip))) {
+        continue;
+      }
+      if (_scanVerifiedDeviceIds.contains(saved.id)) {
+        return saved.name;
+      }
+      _scanVerifiedDeviceIds.add(saved.id);
+      if (saved.host == ip) {
+        if (mounted) setState(() => _online[saved.id] = true);
+        return saved.name;
+      }
+      try {
+        final verified = movedDevice(saved, ip,
+            currentLocation: _detectedLocation);
+        final refreshed = await deviceStore.upsert(verified);
+        if (!mounted) return null;
+        setState(() {
+          savedComputers = refreshed;
+          _online[saved.id] = true;
+        });
+        // Leave the user in the scan screen; the matching My Devices entry
+        // is already updated and will open the correct IP when selected.
+        return verified.name;
+      } catch (_) {
+        _scanVerifiedDeviceIds.remove(saved.id);
+        return null;
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, String>> _reconcileDiscoveredAgents(
+      List<DiscoveredDevice> results) async {
+    final recognized = <String, String>{};
+    for (final result in results) {
+      final name = await _reconcileScannedAgent(result.host);
+      if (name != null) recognized[result.host] = name;
+    }
+    return recognized;
+  }
+
   Future<void> scanNetwork() async {
-    final selected = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) =>
-          LanScanScreen(initialIp: host.text.trim(),
-              knownComputers: savedComputers,
-              macResolver: _trustedMacDiscovery)),
-    );
+    if (_scanningToReconcile) return;
+    _scanningToReconcile = true;
+    _scanVerifiedDeviceIds.clear();
+    String? selected;
+    try {
+      selected = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) =>
+            LanScanScreen(initialIp: host.text.trim(),
+                knownComputers: savedComputers,
+                macResolver: _trustedMacDiscovery,
+                verifyPairedAgent: _reconcileScannedAgent)),
+      );
+    } finally {
+      _scanningToReconcile = false;
+      _scanVerifiedDeviceIds.clear();
+    }
     if (selected == null || !mounted) return;
     PhoneIdentity? phone;
     try {
@@ -694,7 +766,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     if (!mounted) return;
     agent.disconnect();
     setState(() {
-      host.text = selected;
+      host.text = selected!;
       discoveredName = selected;
       _showPairForm = true;
       status = 'Selected $selected from LAN scan. Pairing credentials are still required.';
@@ -702,7 +774,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   }
 
   Future<void> searchNearby() async {
-    if (searching) return;
+    if (searching || _scanningToReconcile) return;
+    _scanningToReconcile = true;
+    _scanVerifiedDeviceIds.clear();
     setState(() {
       searching = true;
       nearbyComputers = [];
@@ -712,11 +786,33 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       final result = await findNearbyDevices(
           scanPrefixes: _wifiRange?.scanPrefixes.take(8).toList());
       if (!mounted) return;
+      final verified = await _reconcileDiscoveredAgents(result);
+      if (!mounted) return;
+      // "Discover" is also an explicit phone-initiated scan. Where UDP
+      // broadcasts are blocked, fall back to the current Wi-Fi's agent TCP
+      // port and verify all candidates with the same pinned saved pairing.
+      if (verified.isEmpty && savedComputers.isNotEmpty) {
+        final wifi = _wifiRange ?? await detectLanRange();
+        if (wifi != null) {
+          final ips = await probeAgentControlPorts(wifi);
+          for (final ip in ips) {
+            if (!mounted) break;
+            final name = await _reconcileScannedAgent(ip);
+            if (name != null) verified[ip] = name;
+          }
+        }
+      }
+      if (!mounted) return;
       setState(() {
-        nearbyComputers = result;
-        status = result.isEmpty
-            ? 'No agents found. Check Wi-Fi, firewall UDP 48322, or enter the address manually.'
-            : 'Found ${result.length} local computer(s). Select one to pair.';
+        // Already paired devices belong in My Devices, not duplicate
+        // unverified rows in Nearby Computers.
+        nearbyComputers = result.where((candidate) =>
+            !verified.containsKey(candidate.host)).toList();
+        status = verified.isNotEmpty
+            ? 'Recognized ${verified.length} paired computer(s). My Devices is updated.'
+            : result.isEmpty
+                ? 'No agents found. Check Wi-Fi or IP Scan.'
+                : 'Found ${result.length} agent(s). Unpaired devices require pairing.';
       });
     } catch (error) {
       if (mounted) {
@@ -724,6 +820,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
             status = 'Discovery unavailable: $error. Enter the IP manually.');
       }
     } finally {
+      _scanningToReconcile = false;
+      _scanVerifiedDeviceIds.clear();
       if (mounted) setState(() => searching = false);
     }
   }
