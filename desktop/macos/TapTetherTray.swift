@@ -421,9 +421,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         task.standardError = FileHandle.nullDevice
         do {
             try task.run()
-            // The uninstaller stops the tray's LaunchAgent (this app),
-            // so don't await its completion on the UI thread.
-            NSApp.terminate(nil)
+            // The uninstaller itself bootouts this tray after stopping the
+            // agent. Do not exit first and risk aborting the cleanup process.
         } catch {
             showNotice("Uninstall could not start",
                 "The agent is still installed. Try again from the tray.")
