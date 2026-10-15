@@ -135,9 +135,11 @@ class _LanScanScreenState extends State<LanScanScreen> {
       setState(() => _error = 'Enter a private IPv4 /24 prefix (e.g. 192.168.1).');
       return;
     }
+    // Whole-network mode follows the detected Wi-Fi CIDR (e.g. both
+    // 192.168.20 and 192.168.21 for a /23). Only an explicit custom /24
+    // prefix overrides that network-wide choice.
     final targets = _scanWholeNetwork && _network != null &&
-            _network!.scanPrefixes.contains(prefix) &&
-            _network!.scanPrefixes.length <= 8
+            !_editedPrefix && _network!.scanPrefixes.length <= 8
         ? _network!.scanPrefixes
         : [prefix];
     setState(() {
