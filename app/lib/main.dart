@@ -20,6 +20,7 @@ import 'qr_pairing.dart';
 import 'ssh_key_screen.dart';
 import 'install_agent_screen.dart';
 import 'lan_scan_screen.dart';
+import 'scan_report.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -333,6 +334,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   bool _checkingHeartbeat = false;
   bool _scanningToReconcile = false;
   final Set<String> _scanVerifiedDeviceIds = {};
+  final ScanReport _discoveryReport = ScanReport();
   DateTime? _lastTcpRecoveryAt;
   String? _lastTcpRecoveryNetwork;
   String? _lastNetworkId;
@@ -777,47 +779,91 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     if (searching || _scanningToReconcile) return;
     _scanningToReconcile = true;
     _scanVerifiedDeviceIds.clear();
+    _discoveryReport.clear();
+    _discoveryReport.add('Discover initiated by phone (no background scan)');
     setState(() {
       searching = true;
       nearbyComputers = [];
       status = 'Looking for TapTether agents on the local network…';
     });
     try {
-      final result = await findNearbyDevices(
-          scanPrefixes: _wifiRange?.scanPrefixes.take(8).toList());
+      // Read the Wi-Fi again so a recent SSID switch does not reuse a
+      // stale subnet from the preceding heartbeat refresh.
+      final wifi = await detectLanRange() ?? _wifiRange;
+      _discoveryReport.add('Wi-Fi: ${wifi?.ip ?? "unknown"} · '
+          'CIDR: ${wifi?.cidr ?? "unknown"}');
+      final prefixes = wifi?.scanPrefixes.take(8).toList();
+      _discoveryReport.add('UDP discovery: broadcast + unicast on port 48322 · '
+          'ranges ${prefixes?.map((p) => "$p.0/24").join(", ") ?? "system detected"}');
+      final result = await findNearbyDevices(scanPrefixes: prefixes);
       if (!mounted) return;
+      _discoveryReport.add('UDP responses: ${result.length}');
+      for (final found in result) {
+        _discoveryReport.add('${found.host}: UDP announcement '
+            '(unverified, platform ${found.platform})');
+      }
       final verified = await _reconcileDiscoveredAgents(result);
       if (!mounted) return;
-      // "Discover" is also an explicit phone-initiated scan. Where UDP
-      // broadcasts are blocked, fall back to the current Wi-Fi's agent TCP
-      // port and verify all candidates with the same pinned saved pairing.
-      if (verified.isEmpty && savedComputers.isNotEmpty) {
-        final wifi = _wifiRange ?? await detectLanRange();
-        if (wifi != null) {
-          final ips = await probeAgentControlPorts(wifi);
-          for (final ip in ips) {
-            if (!mounted) break;
-            final name = await _reconcileScannedAgent(ip);
-            if (name != null) verified[ip] = name;
+      final allCandidates = <String, DiscoveredDevice>{
+        for (final found in result) found.host: found,
+      };
+      // A user-requested Discover also probes the agent TCP port on all
+      // on-link /24 slices of up to a /22, even with no saved pairing.
+      // This gives unpaired agents a chance to appear when UDP is blocked.
+      // Open ports remain UNTRUSTED until pairing/TLS authentication.
+      if (verified.isEmpty && wifi != null) {
+        _discoveryReport.add('TCP fallback: probe port 48321 on Wi-Fi CIDR '
+            '(320ms per host, up to 1024 addresses; max 24 results)');
+        var attempted = 0;
+        final ips = await probeAgentControlPorts(wifi,
+          onProbe: (ip, accepts) {
+            attempted++;
+            _discoveryReport.add('$ip: TCP 48321 '
+                '${accepts ? "accepted (unverified)" : "no connection"}');
+          },
+        );
+        _discoveryReport.add('TCP fallback complete: $attempted addresses '
+            'checked; ${ips.length} TCP responder(s)');
+        for (final ip in ips) {
+          if (!mounted) break;
+          final name = await _reconcileScannedAgent(ip);
+          if (name != null) {
+            verified[ip] = name;
+            _discoveryReport.add('$ip: saved pairing authenticated');
+          } else {
+            _discoveryReport.add('$ip: not authenticated as saved pairing');
+            allCandidates.putIfAbsent(ip, () => DiscoveredDevice(
+              name: 'Possible TapTether agent (unverified)',
+              host: ip,
+              platform: 'TCP 48321',
+              version: 'unknown',
+            ));
           }
         }
+      } else if (verified.isNotEmpty) {
+        _discoveryReport.add('TCP fallback skipped: paired computer found '
+            'through UDP and authenticated');
+      } else {
+        _discoveryReport.add('TCP fallback unavailable: no Wi-Fi CIDR');
       }
       if (!mounted) return;
+      _discoveryReport.add('Discover finished: '
+          '${verified.length} existing paired computer(s) verified; '
+          '${allCandidates.length - verified.length} unverified candidate(s)');
       setState(() {
-        // Already paired devices belong in My Devices, not duplicate
-        // unverified rows in Nearby Computers.
-        nearbyComputers = result.where((candidate) =>
+        nearbyComputers = allCandidates.values.where((candidate) =>
             !verified.containsKey(candidate.host)).toList();
         status = verified.isNotEmpty
             ? 'Recognized ${verified.length} paired computer(s). My Devices is updated.'
-            : result.isEmpty
-                ? 'No agents found. Check Wi-Fi or IP Scan.'
-                : 'Found ${result.length} agent(s). Unpaired devices require pairing.';
+            : nearbyComputers.isEmpty
+                ? 'No agents found. See Full Discover Output below.'
+                : 'Found ${nearbyComputers.length} unverified candidate(s). Pair to confirm.';
       });
-    } catch (error) {
+    } catch (_) {
+      _discoveryReport.add('Discover failed: network scan could not finish');
       if (mounted) {
         setState(() =>
-            status = 'Discovery unavailable: $error. Enter the IP manually.');
+            status = 'Discovery unavailable. See Full Discover Output.');
       }
     } finally {
       _scanningToReconcile = false;
@@ -1257,6 +1303,11 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           onPressed: installingAgent ? null : openAgentInstaller,
         ),
       ]),
+      const SizedBox(height: 14),
+      ScanReportPanel(
+        title: 'Full Discover Output',
+        report: _discoveryReport,
+      ),
       const SizedBox(height: 14),
     ],
    );
