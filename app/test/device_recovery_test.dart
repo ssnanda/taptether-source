@@ -9,7 +9,7 @@ void main() {
       'ABCDEF0123456789ABCDEF0123456789';
   SavedComputer saved(String id, String ip, {String name = 'Sandips-MBP'}) =>
       SavedComputer(
-        id: id, name: name, host: ip, deviceId: 'a' * 32,
+        id: id, name: name, host: ip, deviceId: List.filled(32, 'a').join(),
         token: '', fingerprint: fingerprint,
         platform: 'darwin', location: 'home',
         customName: true,
@@ -50,7 +50,7 @@ void main() {
     final mac = saved('mac', '192.168.21.242');
     final imposter = SavedComputer(
       id: 'other', name: mac.name, host: mac.host,
-      token: 'different', fingerprint: 'F' * 64,
+      token: 'different', fingerprint: List.filled(64, 'F').join(),
     );
     expect(samePairedAgent(mac, imposter), isFalse);
     expect(samePairedAgent(mac, saved('roamed', '192.168.1.86')), isTrue);
