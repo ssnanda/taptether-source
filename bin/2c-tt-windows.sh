@@ -21,7 +21,7 @@ with zipfile.ZipFile(dest, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=
     for item in sorted(source.iterdir()):
         f.write(item, item.name)
 with zipfile.ZipFile(dest) as f:
-    assert len(f.namelist()) == 11
+    assert len(f.namelist()) == 12
     assert f.testzip() is None
 print("Windows installer package:", dest)
 PY
