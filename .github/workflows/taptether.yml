@@ -153,6 +153,8 @@ jobs:
         with:
           go-version: '1.27.x'
           cache: false
+      - name: Prepare Windows icon assets
+        run: python3 -m pip install --disable-pip-version-check Pillow
       - name: Cross-compile native Windows agents and installers
         run: bash bin/2c-tt-windows.sh
       - name: Validate Windows tray and installer PowerShell syntax
@@ -187,6 +189,7 @@ jobs:
                       'Install-TapTether.cmd', 'Show-Pairing.cmd',
                       'Configure-Shutdown.ps1', 'Configure-Shutdown.cmd',
                       'TapTetherTray.ps1',
+                      'TapTether.ico',
                       'README-Windows.txt', 'version.txt'}
                   assert z.getinfo('TapTetherAgent.exe').file_size > 100000
           PY
