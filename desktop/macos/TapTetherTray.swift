@@ -53,7 +53,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         add(menu, "Show pairing details", #selector(pairingInstructions))
         add(menu, "Uninstall TapTether…", #selector(uninstallTapTether))
-        add(menu, "Quit menu (agent stays running)", #selector(quitMenu))
+        add(menu, "Quit TapTether (stop agent & menu)", #selector(quitMenu))
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             if let path = Bundle.main.path(forResource: "TapTether", ofType: "icns"),
@@ -436,7 +436,43 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(url)
     }
 
-    @objc private func quitMenu() { NSApp.terminate(nil) }
+    @objc private func quitMenu() {
+        // Quit means the background agent must stop too, not merely hide
+        // the tray. launchctl bootout unloads the KeepAlive LaunchAgent,
+        // preventing the process from immediately restarting.
+        let target = "gui/" + String(getuid()) + "/" + agentLabel
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            task.arguments = ["bootout", target]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            var stopped = false
+            do {
+                try task.run()
+                task.waitUntilExit()
+                stopped = task.terminationStatus == 0
+            } catch {
+                stopped = false
+            }
+            if !stopped {
+                // Already stopped/unloaded is fine; never claim a complete
+                // quit if the managed agent is still registered with launchd.
+                let remaining = self?.output("/bin/launchctl",
+                                             ["print", target]) ?? ""
+                stopped = remaining.isEmpty
+            }
+            DispatchQueue.main.async {
+                if stopped {
+                    NSApp.terminate(nil)
+                } else {
+                    self?.showNotice("Could not stop TapTether agent",
+                        "The menu remains open because the background agent "
+                        + "could not be stopped. Choose Stop agent and retry.")
+                }
+            }
+        }
+    }
     @objc private func pairingInstructions() {
         guard FileManager.default.isExecutableFile(atPath: controller) else {
             promptSetup()
