@@ -52,7 +52,8 @@ try {
     foreach ($name in @('TapTetherAgent.exe','Install-TapTether.ps1',
             'Allow-TapTether.ps1','Show-Pairing.ps1','Update-TapTether.ps1',
             'Install-TapTether.cmd','Show-Pairing.cmd',
-            'Configure-Shutdown.ps1','Configure-Shutdown.cmd','README-Windows.txt',
+            'Configure-Shutdown.ps1','Configure-Shutdown.cmd',
+            'TapTetherTray.ps1','README-Windows.txt',
             'version.txt')) {
         if (!(Test-Path (Join-Path $unpacked $name) -PathType Leaf)) {
             throw ('Required ZIP file missing: ' + $name)
@@ -69,10 +70,15 @@ try {
             'Show-Pairing.ps1','Update-TapTether.ps1',
             'Install-TapTether.cmd','Show-Pairing.cmd',
             'Configure-Shutdown.ps1','Configure-Shutdown.cmd',
-            'README-Windows.txt','version.txt')) {
+            'TapTetherTray.ps1','README-Windows.txt','version.txt')) {
         Copy-Item (Join-Path $unpacked $name) (Join-Path $agentDir $name) -Force
     }
     Start-Process -FilePath $currentExe -WindowStyle Hidden
+    $trayPath = Join-Path $agentDir 'TapTetherTray.ps1'
+    $trayArgs = '-NoProfile -NonInteractive -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $trayPath + '"'
+    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    New-ItemProperty -Path $runKey -Name 'TapTetherTray' -Value ('"powershell.exe" ' + $trayArgs) -PropertyType String -Force | Out-Null
+    Start-Process -FilePath 'powershell.exe' -ArgumentList $trayArgs -WindowStyle Hidden
 } finally {
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }
