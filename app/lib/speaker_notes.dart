@@ -107,10 +107,14 @@ class SpeakerNotesParser {
     // Only the relationship ID maps to ppt/_rels/presentation.xml.rels.
     for (final attribute in element.attributes) {
       if (attribute.name.local == local &&
-          attribute.name.prefix == 'r') return attribute.value;
+          attribute.name.prefix == 'r') {
+        return attribute.value;
+      }
     }
     for (final attribute in element.attributes.reversed) {
-      if (attribute.name.local == local) return attribute.value;
+      if (attribute.name.local == local) {
+        return attribute.value;
+      }
     }
     return null;
   }
