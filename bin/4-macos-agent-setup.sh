@@ -73,7 +73,12 @@ install_agent() {
     atomic_install_helper "$SELF/taptether-agent-update-mac" "$UPDATER" 700
   fi
   chmod 755 "$APP" "$CTL"
-  if command -v codesign >/dev/null 2>&1; then
+  # Keep the release binary's existing signature intact. Re-signing every
+  # install/repair changes its code identity and can invalidate macOS TCC
+  # Accessibility approval even when the agent path stays the same.
+  # Only sign genuinely unsigned legacy binaries.
+  if command -v codesign >/dev/null 2>&1 &&
+      ! codesign --verify "$APP" >/dev/null 2>&1; then
     codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1 ||
       notice 'Agent binary signing requires manual macOS approval.'
   fi
@@ -298,7 +303,45 @@ update_agent() {
   [[ -f "$UPDATER" ]] || { notice 'Update helper missing; install the newest macOS agent archive.' >&2; exit 1; }
   bash "$UPDATER" update
 }
-case "$1" in
+
+# Restricted to the current user's standard TapTether install locations.
+# Uninstall deliberately does NOT edit macOS TCC/Accessibility (protected by
+# the OS). A user must remove that entry in System Settings themselves.
+uninstall_agent() {
+  [[ "$(id -u)" -ne 0 ]] || {
+    notice 'Run uninstall as your normal macOS user, never with sudo.' >&2
+    return 1
+  }
+  local mode="${1:-}"
+  if [[ "$mode" != "--keep-pairing" && "$mode" != "--erase-pairing" ]]; then
+    notice 'Specify --keep-pairing or --erase-pairing explicitly.' >&2
+    return 2
+  fi
+  # Do not remove any files until the user-owned service jobs have stopped.
+  # The tray initiating this command may exit as its LaunchAgent is unloaded;
+  # this helper completes independently of the UI process.
+  launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
+  # The uninstaller may be launched by the tray process. Unload that job
+  # LAST or launchd could terminate its child helper mid-cleanup.
+  rm -f -- "$PLIST" "$TRAY_PLIST" "$APP" "$UPDATER"
+  rm -rf -- "$TRAY_BUNDLE" "$LOGDIR"
+  if [[ "$mode" == "--erase-pairing" ]]; then
+    # This deletes saved phone authorizations, the local pairing token,
+    # TLS certificate/key and shutdown preferences. Phones must pair again.
+    rm -rf -- "$CONF"
+  fi
+  # Remove the controller itself last, after all other cleanup is complete.
+  rm -f -- "$CTL"
+  notice 'TapTether agent, tray, launch agents, and logs uninstalled.'
+  if [[ "$mode" == "--erase-pairing" ]]; then
+    notice 'Local pairing identities, certificates and preferences erased.'
+  else
+    notice 'Local pairing identities retained for a future reinstall.'
+  fi
+  notice 'Remove any old TapTether Accessibility entry manually in System Settings.'
+  launchctl bootout "$TARGET/$TRAY_LABEL" >/dev/null 2>&1 || true
+}
+case "${1:-}" in
   install) install_agent ;;
   start) start_agent ;;
   stop) launchctl bootout "$TARGET/$LABEL" ;;
@@ -314,5 +357,6 @@ case "$1" in
   update) update_agent ;;
   enable-shutdown) enable_shutdown ;;
   disable-shutdown) disable_shutdown ;;
-  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|diagnostics|pairing|pairing-qr|devices|revoke-device ID|logs|check-update|update|enable-shutdown|disable-shutdown}' >&2; exit 2 ;;
+  uninstall) uninstall_agent "${2:-}" ;;
+  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|diagnostics|pairing|pairing-qr|devices|revoke-device ID|logs|check-update|update|enable-shutdown|disable-shutdown|uninstall --keep-pairing|uninstall --erase-pairing}' >&2; exit 2 ;;
 esac
