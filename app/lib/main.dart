@@ -849,7 +849,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       if (!mounted) return;
       _discoveryReport.add('Discover finished: '
           '${verified.length} existing paired computer(s) verified; '
-          '${allCandidates.length - verified.length} unverified candidate(s)');
+          '${allCandidates.values.where((candidate) => !verified.containsKey(candidate.host)).length} unverified candidate(s)');
       setState(() {
         nearbyComputers = allCandidates.values.where((candidate) =>
             !verified.containsKey(candidate.host)).toList();
