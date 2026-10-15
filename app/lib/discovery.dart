@@ -57,9 +57,15 @@ Future<List<DiscoveredDevice>> findNearbyDevices({
   Duration duration = const Duration(seconds: 2),
   String? scanPrefix,
   String? targetIp,
+  List<String>? scanPrefixes,
 }) async {
   if (scanPrefix != null && !isPrivateIPv4('$scanPrefix.1')) {
     throw const FormatException('Discovery requires a private /24 prefix');
+  }
+  if (scanPrefixes != null &&
+      (scanPrefixes.isEmpty || scanPrefixes.length > 8 ||
+       scanPrefixes.any((prefix) => !isPrivateIPv4('$prefix.1')))) {
+    throw const FormatException('Discovery supports up to eight private /24 ranges');
   }
   if (targetIp != null && !isPrivateIPv4(targetIp)) {
     throw const FormatException('Discovery target must be a private IPv4');
@@ -98,7 +104,9 @@ Future<List<DiscoveredDevice>> findNearbyDevices({
       // Try on-link unicast next.
     }
     final prefixes = <String>{};
-    if (scanPrefix != null) {
+    if (scanPrefixes != null) {
+      prefixes.addAll(scanPrefixes);
+    } else if (scanPrefix != null) {
       // Scan only the selected LAN range rather than an unrelated adapter.
       prefixes.add(scanPrefix);
     } else {
@@ -111,7 +119,8 @@ Future<List<DiscoveredDevice>> findNearbyDevices({
           if (!isPrivateIPv4(ip)) continue;
           final octets = ip.split('.');
           prefixes.add('${octets[0]}.${octets[1]}.${octets[2]}');
-          // At most two /24s (512 probes) for user-initiated discovery.
+          // Default discovery stays small; explicit Wi-Fi subnet scanning
+          // passes scanPrefixes so /23 and /22 networks are included.
           if (prefixes.length >= 2) break;
         }
         if (prefixes.length >= 2) break;
