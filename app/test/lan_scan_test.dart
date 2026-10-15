@@ -26,6 +26,24 @@ void main() {
     expect(lanRangeContains(range, '192.168.72.2'), isFalse);
   });
 
+  test('full /23 scan includes internal .0 and .255 endpoints', () {
+    final range = rangeFromWifi(
+        '192.168.21.252', '255.255.254.0')!;
+    final first = scanPrefixBounds(range, '192.168.20');
+    final second = scanPrefixBounds(range, '192.168.21');
+    expect(first.startHost, 1); // 192.168.20.0 is network
+    expect(first.endHost, 255); // 192.168.20.255 is a valid host
+    expect(second.startHost, 0); // 192.168.21.0 is a valid host
+    expect(second.endHost, 254); // 192.168.21.255 is broadcast
+    expect(first.endHost - first.startHost + 1 +
+        second.endHost - second.startHost + 1, 510);
+
+    final single = rangeFromWifi('192.168.1.86', '255.255.255.0')!;
+    final bounds = scanPrefixBounds(single, '192.168.1');
+    expect(bounds.startHost, 1);
+    expect(bounds.endHost, 254);
+  });
+
   test('subnet detection accepts private office IPs but rejects bad masks', () {
     final office = rangeFromWifi('10.20.30.13', '255.255.255.0')!;
     expect(office.cidr, '10.20.30.0/24');
