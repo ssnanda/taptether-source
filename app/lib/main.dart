@@ -220,11 +220,11 @@ class LocalAgent {
     if (!configured) return null;
     try {
       final request = await _client!.getUrl(_base!.resolve('/api/info'));
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ' + await _bearer());
       final response = await request.close().timeout(const Duration(seconds: 4));
       if (response.statusCode != 200) {
         await response.drain<void>();
-        return null; // Compatibility with older Ubuntu agents.
+        return null;
       }
       final body = jsonDecode(await utf8.decoder.bind(response).join());
       if (body is Map && body['version'] is String) {
@@ -235,30 +235,29 @@ class LocalAgent {
           _reportedHostname = name;
         }
         final macAddress = body['macAddress'];
-        if (macAddress is String && RegExp(
-            r'^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}
-        if (platform == 'linux' || platform == 'darwin' ||
-            platform == 'windows') {
+        if (macAddress is String &&
+            RegExp(r'^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$').hasMatch(macAddress)) {
+          _reportedMacAddress = macAddress.toUpperCase();
+        }
+        final platform = body['platform'];
+        if (platform == 'linux' || platform == 'darwin' || platform == 'windows') {
           _reportedPlatform = platform as String;
         }
         return body['version'] as String;
       }
     } catch (_) {
-      // Older agent versions and offline connections still work normally.
+      // Older agents without this endpoint remain compatible.
     }
     return null;
   }
 
-  /// Optional locally cached ARP neighbors from a TLS-verified, paired agent.
-  /// Older agents may not support this endpoint and return an empty map.
+  /// Best-effort ARP neighbor inventory from the authenticated agent.
   Future<Map<String, String>> trustedLanNeighbors() async {
     if (!configured) return {};
     try {
       final request = await _client!.getUrl(_base!.resolve('/api/neighbors'));
-      request.headers.set(HttpHeaders.authorizationHeader,
-          'Bearer ${await _bearer()}');
-      final response = await request.close().timeout(
-          const Duration(seconds: 5));
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ' + await _bearer());
+      final response = await request.close().timeout(const Duration(seconds: 5));
       if (response.statusCode != 200) {
         await response.drain<void>();
         return {};
@@ -267,14 +266,24 @@ class LocalAgent {
       if (decoded is! List || decoded.length > 1024) return {};
       final result = <String, String>{};
       for (final item in decoded) {
-        if (item is! Map || item['ip'] is! String ||
-            item['mac'] is! String) continue;
+        if (item is! Map || item['ip'] is! String || item['mac'] is! String) {
+          continue;
+        }
         final ip = item['ip'] as String;
         final mac = item['mac'] as String;
-        if (isPrivateIPv4(ip) && RegExp(
-          r'^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}
-  /// A 501 means this OS/version still requires the existing SSH GUI.
-  Future<bool> requestUpdate() async {
+        if (isPrivateIPv4(ip) &&
+            RegExp(r'^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$').hasMatch(mac)) {
+          result[ip] = mac.toUpperCase();
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Existing agents that lack this endpoint still use the SSH/local updater.
+    Future<bool> requestUpdate() async {
     if (!configured) throw StateError('Connect to a paired computer first.');
     final req = await _client!.postUrl(_base!.resolve('/api/update'));
     req.headers.contentType = ContentType.json;
