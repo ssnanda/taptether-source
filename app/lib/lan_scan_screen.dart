@@ -14,7 +14,7 @@ typedef LanRangeScanner = Future<List<LanHost>> Function(
   void Function(LanHost candidate)? onAgentFound,
   void Function(String ip, List<int> respondingPorts)? onProbe,
   bool Function()? cancelled,
-  int startHost = 1,
+  required int startHost,
   int? endHost,
 });
 
