@@ -85,8 +85,13 @@ class ComputerStore {
 
   Future<List<SavedComputer>> upsert(SavedComputer device) async {
     final devices = await read();
+    // DHCP can reuse an IP address for another machine. Address alone is
+    // not a stable device identity; deduplicate by saved record ID or the
+    // pinned certificate of the same authenticated agent.
+    final pin = device.fingerprint.toUpperCase();
     devices.removeWhere((existing) =>
-        existing.id == device.id || existing.host == device.host);
+        existing.id == device.id ||
+        (pin.length == 64 && existing.fingerprint.toUpperCase() == pin));
     devices.insert(0, device);
     if (devices.length > 25) devices.removeRange(25, devices.length);
     await _storage.write(
