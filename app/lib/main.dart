@@ -331,6 +331,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   String _locationFilter = 'automatic';
   bool _showOffline = false;
   bool _checkingHeartbeat = false;
+  DateTime? _lastTcpRecoveryAt;
+  String? _lastTcpRecoveryNetwork;
   String? _lastNetworkId;
   String? _activeDeviceId;
   final Map<String, bool> _online = {};
@@ -418,7 +420,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     }
   }
 
-  Future<void> _refreshHeartbeats() async {
+  Future<void> _refreshHeartbeats({bool forceRecovery = false}) async {
     if (_checkingHeartbeat || savedComputers.isEmpty) return;
     _checkingHeartbeat = true;
     if (mounted) setState(() {});
@@ -447,6 +449,14 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
 
       final wifi = _wifiRange ?? await detectLanRange();
       if (wifi != null && missing.isNotEmpty && mounted) {
+        final thisNetwork = wifi.cidr;
+        final now = DateTime.now();
+        final eligibleForTcp = forceRecovery ||
+            _lastTcpRecoveryNetwork != thisNetwork ||
+            _lastTcpRecoveryAt == null ||
+            now.difference(_lastTcpRecoveryAt!) >
+                const Duration(minutes: 4);
+        List<String>? tcpHints;
         List<DiscoveredDevice> replies = [];
         try {
           replies = await findNearbyDevices(
@@ -485,6 +495,33 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
               if (result[i]) { verified = batch[i]; break; }
             }
             if (verified != null) break;
+          }
+          // UDP and Bonjour can be blocked by local-network policy. Probe
+          // only TCP 48321 on this Wi-Fi CIDR, at most once per four minutes
+          // unless the user explicitly taps Refresh. An open port remains an
+          // untrusted candidate until the saved TLS pin AND authenticated
+          // phone pairing succeed.
+          if (verified == null && eligibleForTcp) {
+            if (tcpHints == null) {
+              _lastTcpRecoveryNetwork = thisNetwork;
+              _lastTcpRecoveryAt = now;
+              tcpHints = await probeAgentControlPorts(wifi);
+            }
+            final tried = candidates.toSet();
+            final extra = tcpHints.where((ip) =>
+                ip != device.host && !tried.contains(ip)).toList();
+            for (var index = 0; index < extra.length; index += 4) {
+              final batch = extra.skip(index).take(4).toList();
+              final results = await Future.wait(batch.map((ip) =>
+                  _pingSavedDevice(device, phone, atHost: ip)));
+              for (var i = 0; i < batch.length; i++) {
+                if (results[i]) {
+                  verified = batch[i];
+                  break;
+                }
+              }
+              if (verified != null) break;
+            }
           }
           if (verified == null || !mounted) continue;
           // Reuse the previously paired computer, never create an extra row.
@@ -1001,7 +1038,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           )),
           IconButton(
             tooltip: 'Check online computers',
-            onPressed: _checkingHeartbeat ? null : _refreshHeartbeats,
+            onPressed: _checkingHeartbeat ? null : () =>
+                _refreshHeartbeats(forceRecovery: true),
             icon: const Icon(Icons.refresh),
           ),
         ]),
