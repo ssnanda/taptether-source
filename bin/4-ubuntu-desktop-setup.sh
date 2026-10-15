@@ -326,13 +326,13 @@ EOF
   note 'Remote shutdown enabled for paired computers; phone confirmation remains mandatory.'
 }
 disable_shutdown() {
+  # Leave the already-granted narrowly scoped systemd/polkit authorization
+  # intact so the ordinary desktop user's tray can re-enable without sudo.
+  # Every authenticated shutdown request checks this local opt-out marker.
   mkdir -p "$CONFIG"
   touch "$POWER_DISABLED"
   chmod 600 "$POWER_DISABLED"
-  sudo rm -f "$POWER_RULE" "$POWER_DROPIN"
-  sudo systemctl daemon-reload
-  sudo systemctl restart "$UNIT"
-  note 'Remote shutdown disabled.'
+  note 'Remote shutdown disabled until re-enabled on this computer.'
 }
 check_update() {
   [[ -f "$UPDATER" ]] || fail 'Updater missing. Re-run current Ubuntu installer from your Mac.'
