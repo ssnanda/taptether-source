@@ -7,6 +7,7 @@ import 'remote_layout_settings.dart';
 import 'presentation_mode.dart';
 import 'lan_scan.dart';
 import 'network_location.dart';
+import 'device_recovery.dart';
 import 'device_visibility.dart';
 import 'clipboard_chunks.dart';
 import 'appearance.dart';
@@ -331,6 +332,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   bool _showOffline = false;
   bool _checkingHeartbeat = false;
   String? _lastNetworkId;
+  String? _activeDeviceId;
   final Map<String, bool> _online = {};
   RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
   String? _connectedPlatform;
@@ -387,20 +389,24 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     final label = await networkLocationStore.locationFor(current);
     final identity = networkLocationStore.identifier(current);
     if (mounted) {
+      final changed = _lastNetworkId != identity;
       setState(() {
-        if (_lastNetworkId != identity) _online.clear();
+        if (changed) _online.clear();
         _lastNetworkId = identity;
         _wifiRange = current;
         _detectedLocation = label;
       });
+      if (changed && savedComputers.isNotEmpty) {
+        unawaited(_refreshHeartbeats());
+      }
     }
   }
 
   Future<bool> _pingSavedDevice(
-      SavedComputer device, PhoneIdentity? phone) async {
+      SavedComputer device, PhoneIdentity? phone, {String? atHost}) async {
     final connection = LocalAgent();
     try {
-      connection.configure(device.host, device.token, device.fingerprint,
+      connection.configure(atHost ?? device.host, device.token, device.fingerprint,
           identity: device.deviceId.isNotEmpty ? phone : null,
           deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
       await connection.send('ping');
@@ -424,8 +430,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         }
       } catch (_) {}
       final snapshot = savedComputers.toList();
-      // Up to four TLS-pinned, authenticated pings at a time, once per
-      // minute while foregrounded. No local-network sweep or cloud traffic.
+      final missing = <SavedComputer>[];
+      // Always authenticate the last known IP first, without assuming that
+      // the same IP still belongs to this computer after DHCP changes.
       for (var start = 0; start < snapshot.length; start += 4) {
         final chunk = snapshot.skip(start).take(4).toList();
         final values = await Future.wait(
@@ -435,8 +442,63 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         setState(() {
           for (var i = 0; i < chunk.length; i++) {
             _online[chunk[i].id] = values[i];
+            if (!values[i]) missing.add(chunk[i]);
           }
         });
+      }
+
+      // One bounded local discovery operation is shared by all offline saved
+      // computers. Unauthenticated announcements only yield candidate IPs.
+      // Each address is verified with this saved computer's pinned TLS cert
+      // AND its existing phone key/token before it can replace the old IP.
+      final wifi = _wifiRange;
+      if (missing.isNotEmpty && wifi != null && mounted) {
+        List<DiscoveredDevice> announcements = [];
+        try {
+          announcements = await findNearbyDevices(
+            scanPrefixes: wifi.scanPrefixes.take(8).toList(),
+            duration: const Duration(milliseconds: 1400),
+          );
+        } catch (_) {}
+        for (final device in missing) {
+          if (!mounted) break;
+          final candidates = recoveryCandidates(device, wifi, announcements)
+              .where((address) => address != device.host).toList();
+          String? verified;
+          for (var start = 0; start < candidates.length; start += 4) {
+            final chunk = candidates.skip(start).take(4).toList();
+            final checks = await Future.wait(
+              chunk.map((address) =>
+                  _pingSavedDevice(device, phone, atHost: address)),
+            );
+            for (var i = 0; i < chunk.length; i++) {
+              if (checks[i]) {
+                verified = chunk[i];
+                break;
+              }
+            }
+            if (verified != null) break;
+          }
+          if (verified == null || !mounted) continue;
+          final updated = movedDevice(device, verified,
+              currentLocation: _detectedLocation);
+          try {
+            final replaced = await deviceStore.upsert(updated);
+            if (!mounted) break;
+            setState(() {
+              savedComputers = replaced;
+              _online[updated.id] = true;
+            });
+            // If the user was controlling the same Mac before moving, the
+            // currently configured HTTPS client still points to the old IP.
+            // Rebind only after successful pin + credential verification.
+            if (_activeDeviceId == updated.id && agent.configured) {
+              unawaited(connectSaved(updated));
+            }
+          } catch (_) {
+            // Keep the original saved identity if secure storage is blocked.
+          }
+        }
       }
     } finally {
       _checkingHeartbeat = false;
@@ -574,6 +636,29 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
               macResolver: _trustedMacDiscovery)),
     );
     if (selected == null || !mounted) return;
+    // IP Scan might find an already paired Mac at a new DHCP address.
+    // Verify the TLS pin + authentication before offering it as a new device.
+    PhoneIdentity? identity;
+    try {
+      if (savedComputers.any((d) => d.deviceId.isNotEmpty)) {
+        identity = await PhoneIdentity.loadOrCreate();
+      }
+    } catch (_) {}
+    for (final device in savedComputers.toList()) {
+      if (_wifiRange != null && !lanRangeContains(_wifiRange!, selected)) {
+        break;
+      }
+      if (await _pingSavedDevice(device, identity, atHost: selected)) {
+        final moved = movedDevice(device, selected,
+            currentLocation: _detectedLocation);
+        try {
+          await deviceStore.upsert(moved);
+        } catch (_) {}
+        if (mounted) await connectSaved(moved);
+        return;
+      }
+    }
+    if (!mounted) return;
     agent.disconnect();
     setState(() {
       host.text = selected;
@@ -591,7 +676,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       status = 'Looking for TapTether agents on the local network…';
     });
     try {
-      final result = await findNearbyDevices();
+      final wifi = _wifiRange;
+      final result = await findNearbyDevices(
+          scanPrefixes: wifi?.scanPrefixes.take(8).toList());
       if (!mounted) return;
       setState(() {
         nearbyComputers = result;
@@ -1369,8 +1456,15 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       }
       // Persist only after certificate pin verification and authenticated ping.
       try {
-        final matches = savedComputers.where((d) => d.host == host.text.trim());
-        final existing = matches.isEmpty ? null : matches.first;
+        final existingById = savedComputers.where((d) => d.id == existingId);
+        final existingByPin = savedComputers.where((d) =>
+            d.fingerprint.toUpperCase() ==
+            pin.text.replaceAll(RegExp(r'[^a-fA-F0-9]'), '').toUpperCase());
+        final existingByHost = savedComputers.where((d) =>
+            d.host == host.text.trim());
+        final existing = existingById.isNotEmpty ? existingById.first
+            : existingByPin.isNotEmpty ? existingByPin.first
+            : existingByHost.isNotEmpty ? existingByHost.first : null;
         final discovered = nearbyComputers.where((d) => d.host == host.text.trim());
         final location = _detectedLocation ?? existing?.location ?? 'other';
         final device = SavedComputer(
@@ -1394,6 +1488,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           setState(() {
             savedComputers = updated;
             _online[device.id] = true;
+            _activeDeviceId = device.id;
           });
         }
         unawaited(_loadLayoutForHost(host.text.trim()));
