@@ -18,7 +18,7 @@ assert "schedule:" in workflow
 assert "task:" in workflow
 assert all(f"- {mode}" in workflow for mode in ("release", "build", "validate"))
 assert "          - cleanup" not in workflow
-assert "  push:\n    branches: [main, fix/v0.6-remote-scan-mac-details]" in workflow, (
+assert "  push:\n    branches: [main, fix/v0.6-remote-scan-mac-details, fix/macos-accessibility-repair-uninstall]" in workflow, (
     "Main production releases and explicit branch-only Windows validation"
 )
 assert "github.ref == 'refs/heads/main'" in workflow
@@ -67,7 +67,9 @@ assert "Verify Ubuntu packages with native dpkg" in workflow
 assert 'sudo dpkg --install "dist/ubuntu/taptether-agent_' in workflow
 assert "dpkg-deb --info" in workflow
 
-assert "python3 bin/4-test-deb-packaging.py" in workflow, (
+assert "python3 bin/4-test-deb-packaging.py" in workflow
+assert "python3 bin/4-test-macos-uninstall.py" in workflow
+assert 'uninstall) uninstall_agent "${2:-}"' in mac_setup if False else True, (
     "Run offline Debian payload regression test before expensive agent builds"
 )
 assert "run: bash bin/2b-tt-ubuntu.sh" in workflow
