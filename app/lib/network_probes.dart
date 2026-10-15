@@ -85,7 +85,9 @@ Map<String, String> parseMdnsAddresses(List<int> bytes) {
 }
 
 LanProbeHost? parseSsdpHost(String sourceIp, List<int> payload) {
-  if (!isPrivateIPv4(sourceIp) || payload.length > 4096) return null;
+  if (!isPrivateIPv4(sourceIp) || payload.length > 4096) {
+    return null;
+  }
   final raw = latin1.decode(payload, allowInvalid: true);
   if (!raw.startsWith('HTTP/1.1 200') &&
       !raw.startsWith('NOTIFY * HTTP/1.1')) return null;
@@ -129,7 +131,9 @@ Future<List<LanProbeHost>> discoverLanNeighbors(
     final ssdp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
     sockets.addAll([mdns, ssdp]);
     subscriptions.add(mdns.listen((event) {
-      if (event != RawSocketEvent.read) return;
+      if (event != RawSocketEvent.read) {
+      return;
+    }
       Datagram? packet;
       while ((packet = mdns.receive()) != null) {
         final names = parseMdnsAddresses(packet!.data);
@@ -141,11 +145,15 @@ Future<List<LanProbeHost>> discoverLanNeighbors(
       }
     }));
     subscriptions.add(ssdp.listen((event) {
-      if (event != RawSocketEvent.read) return;
+      if (event != RawSocketEvent.read) {
+      return;
+    }
       Datagram? packet;
       while ((packet = ssdp.receive()) != null) {
         final ip = packet!.address.address;
-        if (!_onPrefix(ip, prefix)) continue;
+        if (!_onPrefix(ip, prefix)) {
+          continue;
+        }
         final item = parseSsdpHost(ip, packet.data);
         if (item != null) devices.putIfAbsent(ip, () => item);
       }
