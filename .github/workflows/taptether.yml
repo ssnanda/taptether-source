@@ -15,8 +15,9 @@ on:
           - build
           - validate
   push:
-    branches: [main]
-    # Auto-release only on a deliberate VERSION update.
+    branches: [main, fix/v0.6-remote-scan-mac-details]
+    # Branch VERSION bumps validate/build Windows without publishing.
+    # Only main can publish a release.
     paths:
       - VERSION
   schedule:
@@ -38,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Release preflight (only before publishing)
-        if: ${{ github.event_name == 'push' || inputs.task == 'release' }}
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -107,7 +108,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build' }}
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -141,9 +142,47 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  build-and-publish:
-    needs: build-ubuntu
+  build-windows:
+    needs: validate
     if: ${{ github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Cross-compile native Windows agents and installers
+        run: bash bin/2c-tt-windows.sh
+      - name: Verify Windows ZIP installation payloads
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          version=Path('VERSION').read_text().strip()
+          for arch in ('amd64','arm64'):
+              path=Path(f'dist/windows/TapTetherAgent-Windows-{arch}-{version}.zip')
+              with zipfile.ZipFile(path) as z:
+                  assert z.testzip() is None
+                  assert set(z.namelist()) == {
+                      'TapTetherAgent.exe', 'Install-TapTether.ps1',
+                      'Allow-TapTether.ps1', 'Show-Pairing.ps1',
+                      'Update-TapTether.ps1',
+                      'Install-TapTether.cmd', 'Show-Pairing.cmd',
+                      'README-Windows.txt', 'version.txt'}
+                  assert z.getinfo('TapTetherAgent.exe').file_size > 100000
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-Windows-installers
+          path: dist/windows/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  build-and-publish:
+    needs: [build-ubuntu, build-windows]
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build' }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -227,6 +266,12 @@ jobs:
           name: TapTether-Ubuntu-installers
           path: dist/ubuntu
 
+      - name: Retrieve verified Windows packages from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: TapTether-Windows-installers
+          path: dist/windows
+
       - name: Verify all native agent packages before app builds
         run: python3 bin/4-validate-desktop-installers.py --platform all
 
@@ -250,6 +295,7 @@ jobs:
             dist/ubuntu/*.deb
             dist/macos/*.tar.gz
             dist/macos/*.zip
+            dist/windows/*.zip
           if-no-files-found: error
           retention-days: 1
 

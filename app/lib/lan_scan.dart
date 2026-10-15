@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:network_info_plus/network_info_plus.dart';
 
 import 'discovery.dart';
+import 'network_probes.dart';
 
 /// Non-invasive, on-demand TCP discovery across one private /24 only.
 /// Mobile operating systems do not generally expose neighbor ARP/MAC records.
@@ -231,6 +232,36 @@ List<LanHost> mergeDiscoveredAgents(
     });
 }
 
+/// Merge unauthenticated discovery hints from SSDP and multicast DNS.
+List<LanHost> mergeLanNeighbors(
+    List<LanHost> current, List<LanProbeHost> neighbors, String prefix) {
+  final byIp = <String, LanHost>{for (final host in current) host.ip: host};
+  for (final entry in neighbors) {
+    if (prefixFromIp(entry.ip) != prefix) continue;
+    final known = byIp[entry.ip];
+    if (known == null) {
+      byIp[entry.ip] = LanHost(
+          ip: entry.ip, hostname: entry.name, openPorts: const []);
+    } else if (!known.agentAnnounced &&
+        (known.hostname.isEmpty || known.hostname == known.ip)) {
+      byIp[entry.ip] = LanHost(
+        ip: known.ip, hostname: entry.name,
+        openPorts: known.openPorts, macAddress: known.macAddress,
+        platform: known.platform, agentAnnounced: known.agentAnnounced,
+      );
+    }
+  }
+  return byIp.values.toList()..sort((a, b) {
+    final left = a.ip.split('.').map(int.parse).toList();
+    final right = b.ip.split('.').map(int.parse).toList();
+    for (var i = 0; i < 4; i++) {
+      final diff = left[i].compareTo(right[i]);
+      if (diff != 0) return diff;
+    }
+    return 0;
+  });
+}
+
 /// User-requested one-IP check for computers like a Mac with firewall-
 /// protected ports. A non-responding host is *not* represented as online.
 Future<LanHost?> checkPrivateLanIp(
@@ -306,6 +337,8 @@ Future<List<LanHost>> scanPrivate24(
     scanPrefix: prefix,
     duration: const Duration(seconds: 2),
   ).catchError((Object _) => <DiscoveredDevice>[]);
+  final neighborDiscovery = discoverLanNeighbors(prefix)
+      .catchError((Object _) => <LanProbeHost>[]);
   var next = 1;
   var done = 0;
   Future<bool> listening(String host, int port) async {
@@ -354,9 +387,10 @@ Future<List<LanHost>> scanPrivate24(
     (_) => worker(),
   ));
   if (cancelled?.call() ?? false) {
-    // Respect cancellation; do not add late discovery responses.
     return mergeDiscoveredAgents(results, const [], prefix);
   }
   final announced = await agentDiscovery;
-  return mergeDiscoveredAgents(results, announced, prefix);
+  final neighbors = await neighborDiscovery;
+  return mergeLanNeighbors(
+      mergeDiscoveredAgents(results, announced, prefix), neighbors, prefix);
 }

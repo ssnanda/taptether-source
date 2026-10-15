@@ -18,9 +18,10 @@ assert "schedule:" in workflow
 assert "task:" in workflow
 assert all(f"- {mode}" in workflow for mode in ("release", "build", "validate"))
 assert "          - cleanup" not in workflow
-assert "  push:\n    branches: [main]" in workflow, (
-    "Auto-release only from main"
+assert "  push:\n    branches: [main, fix/v0.6-remote-scan-mac-details]" in workflow, (
+    "Main production releases and explicit branch-only Windows validation"
 )
+assert "github.ref == 'refs/heads/main'" in workflow
 assert "    paths:\n      - VERSION" in workflow, (
     "Automatically run releases only for explicit VERSION changes"
 )
@@ -31,7 +32,9 @@ assert "  build-ubuntu:" in workflow
 assert "    needs: validate" in workflow
 assert "github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build'" in workflow
 assert "  build-and-publish:" in workflow
-assert "    needs: build-ubuntu" in workflow
+assert "    needs: [build-ubuntu, build-windows]" in workflow
+assert "  build-windows:" in workflow
+assert "run: bash bin/2c-tt-windows.sh" in workflow
 # All scripts invoked directly by a release build must have an executable
 # Git mode; bash-invoked scripts are permitted to be non-executable.
 for script in (
@@ -72,7 +75,7 @@ assert "run: bash bin/2b-tt-macos.sh" in workflow
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
 assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
 assert "run: bash bin/6-tt-publish-latest.sh" in workflow
-assert "if: ${{ github.event_name == 'push' || inputs.task == 'release' }}" in workflow
+assert "if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' }}" in workflow
 assert "if: ${{ inputs.task == 'build' }}" in workflow
 assert "TapTether-complete-build-" in workflow
 assert "retention-days: 1" in workflow
@@ -142,7 +145,7 @@ assert "rangeFromWifi(" in lan and "getWifiSubmask()" in lan
 assert "lanRangeContains(" in lan
 assert "_network!.scanPrefixes" in scan_screen
 assert "InstallAgentScreen" in installer and "Computer OS" in installer
-assert "knownPlatform" in installer and "Windows agent support" in installer
+assert "knownPlatform" in installer and "Download Windows agent" in installer
 assert "visibleSavedDevices(" in devices and "showOffline" in devices
 assert "Timer.periodic(const Duration(seconds: 60)" in remote
 assert "RefreshHeartbeats" not in remote or "_refreshHeartbeats()" in remote
@@ -165,8 +168,10 @@ assert "updateOnly" in mac_ssh and "updateOnly" in provisioner
 assert "macosPairingFromOutput" in mac_ssh
 assert "MacSshProvisioner.install" in ssh_ui
 assert "UbuntuSshProvisioner.install" in ssh_ui
-assert "Update Agent over SSH" in device_manager
-assert "onUpdate: (device)" in remote
+assert "Update Agent" in device_manager
+assert "onUpdate: updateSavedAgent" in remote
+assert "requestUpdate()" in remote
+assert "updateSavedAgent" in remote
 assert "macos" in stage and 'TapTetherAgent-macos-' in stage
 mac_test = (ROOT / "app" / "test" /
     "macos_ssh_provisioner_test.dart").read_text(encoding="utf-8")
@@ -179,5 +184,5 @@ assert "Check a specific computer" in scan_screen
 
 
 print("PASS: one Actions workflow, auto Release on VERSION, three manual choices")
-print("PASS: validate -> native agents -> IPA/APK -> publish, with same-run artifacts")
+print("PASS: validate -> Ubuntu/Windows/macOS agents -> IPA/APK -> publish")
 print("PASS: weekly cleanup and immutable version-tagged Latest releases")

@@ -662,3 +662,43 @@ exists, preserving the Mac SSH installation default and Windows separation.
 Only the widget test and build metadata changed; no agent protocol or installer
 behavior changed. Version build number advances to +32 to trigger the automatic
 main-branch validation and release workflow again after merge.
+
+
+## v0.6.11+34 — remote polish, LAN inventory, Windows test agent, and agent updates
+
+- **Remote UI:** gesture recognizer captures trackpad panning so the phone's
+  surrounding list does not scroll. Simplify the connected screen: remove the
+  duplicated connection/footer diagnostics, compact the top device header and
+  trackpad labels, keep presentation modes and advanced controls.
+- **IP Scan:** on Wi-Fi networks up to eight /24 slices, offer a whole-subnet
+  scan; a /22 like 192.168.68.0/22 includes all four /24 ranges. Combine TCP,
+  TapTether UDP, multicast DNS and SSDP discovery. These are best-effort,
+  not guarantees that firewalled or isolated hosts will appear.
+- **MAC addresses:** paired computers report their own LAN interface MAC
+  through authenticated metadata. New agents also expose a read-only OS
+  ARP cache exclusively to previously paired phones. IP Scan can enrich
+  discovered hosts with those cached entries; missing or stale entries are
+  never represented as verified online devices.
+- **Windows test agent:** add native Win32 SendInput mouse movement, clicks,
+  scrolling, keyboard shortcuts and Unicode text, with user-scoped startup.
+  Build x64/ARM64 ZIPs with double-click local installation, Private LAN
+  firewall rules, and a local pairing-credentials helper. Windows does not
+  require SSH. Protected UAC, elevated apps and lock screens are not supported.
+- **Update Agent from My Devices:** explicit confirmation sends a TLS-pinned,
+  authenticated request to an installed native updater. The Mac and Windows
+  updater use SHA-256-verified GitHub Release assets; Ubuntu uses a narrowly
+  authorized fixed root systemd service installed by the computer owner.
+  Older agents fall back to the existing in-app SSH/manual installation path.
+  Existing user pairing credentials and TLS keys remain intact.
+- **Ubuntu desktop:** launch a status-menu tray icon at login instead of a
+  taskbar window or automatically pinned GNOME dock favorite. The input agent
+  remains a background systemd service. GNOME Wayland needs AppIndicator
+  integration enabled by the desktop environment.
+- **Release pipeline:** gate publication on validated Ubuntu, native macOS,
+  Windows cross-compiled ZIPs, Flutter checks, and checksum/package audits.
+  Publishing version v0.6.11+34 requires merging to main; ordinary branch
+  changes do not launch the expensive production workflow.
+
+**Validation status:** code and regression tests are committed to a separate
+development branch; automated Go/Flutter CI and real-device tests must run
+before claiming any new Windows, Ubuntu or iOS behavior is production-ready.

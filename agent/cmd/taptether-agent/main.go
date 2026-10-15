@@ -30,6 +30,8 @@ import (
 	"github.com/ssnanda/taptether.com/agent/internal/input"
 	"github.com/ssnanda/taptether.com/agent/internal/identity"
 	"github.com/ssnanda/taptether.com/agent/internal/power"
+    "github.com/ssnanda/taptether.com/agent/internal/updater"
+    "github.com/ssnanda/taptether.com/agent/internal/neighbors"
 )
 
 var version = "dev"
@@ -75,11 +77,68 @@ func main() {
 	for _, a := range privateAddresses() {
 		fmt.Printf("iPhone host: %s\n", a)
 	}
-	fmt.Println("Linux Wayland/X11 native uinput and macOS CoreGraphics are supported; macOS requires Accessibility permission. Windows input remains unimplemented.")
+	fmt.Println("Linux Wayland/X11 native uinput and macOS CoreGraphics are supported; macOS requires Accessibility permission. Windows uses SendInput in the signed-in user desktop.")
 	fmt.Println("No telemetry or cloud connections are implemented. UDP 48322 answers local discovery probes. Restrict control port 48321 to trusted LAN devices.")
 	mux := http.NewServeMux()
 	access := &identityAPI{devices: registry, legacyToken: token}
 	access.Register(mux)
+    // Upgrades require a previously paired, TLS-pinned phone. The server
+    // chooses its own fixed updater; clients never supply commands or URLs.
+    mux.HandleFunc("/api/neighbors", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Cache-Control", "no-store")
+        if r.Method != http.MethodGet {
+            http.Error(w, "GET required", http.StatusMethodNotAllowed)
+            return
+        }
+        if r.TLS == nil || !privateRemote(r.RemoteAddr) {
+            http.Error(w, "LAN TLS required", http.StatusForbidden)
+            return
+        }
+        if !access.authorized(r) {
+            http.Error(w, "not paired", http.StatusUnauthorized)
+            return
+        }
+        entries, err := neighbors.Read()
+        if err != nil {
+            http.Error(w, "neighbor inventory unavailable", http.StatusServiceUnavailable)
+            return
+        }
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(entries)
+    })
+    mux.HandleFunc("/api/update", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Cache-Control", "no-store")
+        if r.Method != http.MethodPost {
+            http.Error(w, "POST required", http.StatusMethodNotAllowed)
+            return
+        }
+        if r.TLS == nil || !privateRemote(r.RemoteAddr) {
+            http.Error(w, "LAN TLS required", http.StatusForbidden)
+            return
+        }
+        if !access.authorized(r) {
+            http.Error(w, "not paired", http.StatusUnauthorized)
+            return
+        }
+        r.Body = http.MaxBytesReader(w, r.Body, 256)
+        defer r.Body.Close()
+        var req struct { Confirm bool `json:"confirm"` }
+        d := json.NewDecoder(r.Body)
+        d.DisallowUnknownFields()
+        if d.Decode(&req) != nil || d.Decode(new(any)) != io.EOF || !req.Confirm {
+            http.Error(w, "explicit confirmation required", http.StatusBadRequest)
+            return
+        }
+        if !updater.Supported() {
+            http.Error(w, "use the built-in SSH updater or local installer", http.StatusNotImplemented)
+            return
+        }
+        if err := updater.Start(); err != nil {
+            http.Error(w, "update could not be started", http.StatusServiceUnavailable)
+            return
+        }
+        w.WriteHeader(http.StatusAccepted)
+    })
     mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Cache-Control", "no-store")
         if r.Method != http.MethodGet {
@@ -101,6 +160,7 @@ func main() {
         _ = json.NewEncoder(w).Encode(map[string]any{
             "version": version, "shutdownEnabled": power.Enabled(),
             "hostname": hostname, "platform": runtime.GOOS,
+            "macAddress": localHardwareAddress(),
         })
     })
     var mu sync.Mutex
@@ -251,3 +311,26 @@ func ensureCertificate(crt, key string) error {
 
 // A CN is not required for cert pinning; the certificate is never publicly trusted.
 func pkixName() pkix.Name { return pkix.Name{CommonName: "TapTether Local Agent"} }
+
+ // localHardwareAddress is included only in authenticated /api/info.
+ // Prefer an active interface with an RFC1918 IPv4 address, ignoring VPN
+ // tunnel/loopback adapters and random virtual interfaces when possible.
+func localHardwareAddress() string {
+    interfaces, err := net.Interfaces()
+    if err != nil { return "" }
+    for _, network := range interfaces {
+        if network.Flags&net.FlagUp == 0 || network.Flags&net.FlagLoopback != 0 ||
+            len(network.HardwareAddr) != 6 { continue }
+        addresses, err := network.Addrs()
+        if err != nil { continue }
+        for _, address := range addresses {
+            ipv4, ok := address.(*net.IPNet)
+            if !ok { continue }
+            ip := ipv4.IP.To4()
+            if ip != nil && ip.IsPrivate() {
+                return strings.ToUpper(network.HardwareAddr.String())
+            }
+        }
+    }
+    return ""
+}

@@ -3,11 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'lan_scan.dart';
+import 'computer_store.dart';
 
 /// Manual on-device /24 scan. No internet API, cloud account or analytics.
 class LanScanScreen extends StatefulWidget {
-  const LanScanScreen({super.key, this.initialIp});
+  const LanScanScreen({
+    super.key, this.initialIp, this.knownComputers = const [],
+    this.macResolver,
+  });
   final String? initialIp;
+  final List<SavedComputer> knownComputers;
+  final Future<Map<String, String>> Function()? macResolver;
 
   @override
   State<LanScanScreen> createState() => _LanScanScreenState();
@@ -21,9 +27,12 @@ class _LanScanScreenState extends State<LanScanScreen> {
   String? _notRespondingIp;
   bool _editedPrefix = false;
   List<LanHost> _hosts = [];
+  Map<String, String> _cachedMacs = {};
   bool _busy = false;
   bool _cancel = false;
   int _completed = 0;
+  int _total = 254;
+  bool _scanWholeNetwork = true;
   String? _error;
 
   @override
@@ -64,21 +73,55 @@ class _LanScanScreenState extends State<LanScanScreen> {
       setState(() => _error = 'Enter a private IPv4 /24 prefix (e.g. 192.168.1).');
       return;
     }
+    final targets = _scanWholeNetwork && _network != null &&
+            _network!.scanPrefixes.contains(prefix) &&
+            _network!.scanPrefixes.length <= 8
+        ? _network!.scanPrefixes
+        : [prefix];
     setState(() {
       _error = null;
       _hosts = [];
+      _cachedMacs = {};
       _completed = 0;
+      _total = targets.length * 254;
       _cancel = false;
       _busy = true;
     });
     try {
-      final found = await scanPrivate24(prefix,
-        cancelled: () => _cancel,
-        onProgress: (done, _) {
-          if (mounted) setState(() => _completed = done);
-        },
-      );
-      if (mounted) setState(() => _hosts = found);
+      final found = <String, LanHost>{};
+      for (var index = 0; index < targets.length && !_cancel; index++) {
+        final scannedBefore = index * 254;
+        final group = await scanPrivate24(targets[index],
+          cancelled: () => _cancel,
+          onProgress: (done, _) {
+            if (mounted) {
+              setState(() => _completed = scannedBefore + done);
+            }
+          },
+        );
+        for (final computer in group) {
+          found[computer.ip] = computer;
+        }
+        if (mounted) {
+          setState(() {
+            _hosts = found.values.toList()..sort((a, b) {
+              final aa = a.ip.split('.').map(int.parse).toList();
+              final bb = b.ip.split('.').map(int.parse).toList();
+              for (var i = 0; i < 4; i++) {
+                final diff = aa[i].compareTo(bb[i]);
+                if (diff != 0) return diff;
+              }
+              return 0;
+            });
+          });
+        }
+      }
+      // A paired, authenticated desktop can read its own ARP cache;
+      // mobile iOS cannot directly inspect other devices' MAC addresses.
+      if (!_cancel && widget.macResolver != null) {
+        final neighbors = await widget.macResolver!();
+        if (mounted) setState(() => _cachedMacs = neighbors);
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _error =
@@ -133,6 +176,15 @@ class _LanScanScreenState extends State<LanScanScreen> {
     }
   }
 
+  String _subtitle(LanHost device) {
+    final matches = widget.knownComputers.where((e) =>
+        e.host == device.ip && e.macAddress.isNotEmpty);
+    final mac = device.macAddress ?? _cachedMacs[device.ip] ??
+        (matches.isNotEmpty ? matches.first.macAddress : null);
+    return '${device.scanSubtitle}'
+        '${mac == null || mac.isEmpty ? '' : '\nMAC: $mac'}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -140,13 +192,24 @@ class _LanScanScreenState extends State<LanScanScreen> {
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('Scan one local /24 subnet for common TCP services. '
-              'This runs on your phone and never uploads network information.'),
+          const Text('Discover nearby devices on your local Wi-Fi.'),
           const SizedBox(height: 12),
           if (_network != null) ...[
             Text('Phone Wi-Fi: ${_network!.ip} · Network: ${_network!.cidr}',
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
+            if (_network!.scanPrefixes.length > 1 &&
+                _network!.scanPrefixes.length <= 8)
+              SwitchListTile.adaptive(
+                key: const ValueKey('scan-whole-network'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Scan entire Wi-Fi network'),
+                subtitle: Text('${_network!.cidr} · '
+                    '${_network!.scanPrefixes.length} ranges'),
+                value: _scanWholeNetwork,
+                onChanged: _busy ? null :
+                    (value) => setState(() => _scanWholeNetwork = value),
+              ),
             if (_network!.scanPrefixes.length > 1)
               DropdownButtonFormField<String>(
                 key: const ValueKey('lan-range-picker'),
@@ -179,14 +242,14 @@ class _LanScanScreenState extends State<LanScanScreen> {
             decoration: const InputDecoration(
               labelText: 'Network prefix',
               hintText: '192.168.1',
-              helperText: 'Checks .1–.254 for the selected /24. Larger subnets offer more ranges above.',
+              helperText: 'Detects the Wi-Fi subnet; you can also choose a /24 range.',
             ),
           ),
           const SizedBox(height: 12),
           if (_busy) ...[
-            LinearProgressIndicator(value: _completed / 254),
+            LinearProgressIndicator(value: _completed / _total),
             const SizedBox(height: 10),
-            Text('Checking $_completed of 254 addresses…'),
+            Text('Checking $_completed of $_total addresses…'),
             const SizedBox(height: 8),
             OutlinedButton.icon(onPressed: () => _cancel = true,
                 icon: const Icon(Icons.stop_circle_outlined),
@@ -251,8 +314,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           if (!_busy && _hosts.isEmpty && _error == null)
-            const Text('Results appear after the scan. Devices with all '
-                'scanned ports closed may not appear.'),
+            const Text('No devices detected yet. Some networks block discovery '
+                'and devices with closed ports may not appear.'),
           for (final device in _hosts)
             Card(child: ListTile(
               leading: Icon(device.platform == 'darwin'
@@ -261,16 +324,15 @@ class _LanScanScreenState extends State<LanScanScreen> {
                       ? Icons.desktop_windows_outlined
                       : Icons.devices_other_outlined),
               title: Text(device.displayName),
-              subtitle: Text(device.scanSubtitle),
-              isThreeLine: device.openPorts.isNotEmpty,
+              subtitle: Text(_subtitle(device)),
+              isThreeLine: true,
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.pop(context, device.ip),
             )),
           const SizedBox(height: 16),
-          Text('iOS does not expose a reliable list of other devices’ '
-              'MAC addresses to TapTether. Device types are best-effort '
-              'from observed services or unverified agent announcements. '
-              'Pairing still requires authentication.',
+          Text('MAC addresses come from paired agents or their LAN '
+              'neighbor caches when available. They may be missing '
+              'or stale, and do not prove a device is online.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 6),
           const Text('Tap any result to use its IP in the computer pairing form. '

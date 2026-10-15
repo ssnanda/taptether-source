@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TapTether Ubuntu installer: restricted uinput access, boot service, dock launcher, SSH management.
+# TapTether Ubuntu installer: restricted uinput, background service and system tray.
 # Installs a systemd SYSTEM service running as this ordinary desktop user (never root).
 set -euo pipefail
 
@@ -25,37 +25,71 @@ user_bus() {
     export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
   fi
 }
-pin() {
-  if ! command -v gsettings >/dev/null 2>&1; then
-    note 'GNOME dock not available here. The launcher remains in Show Applications.'
-    return 0
-  fi
+unpin_legacy_launcher() {
+  command -v gsettings >/dev/null 2>&1 || return 0
   user_bus
-  if ! python3 - <<'PY'
+  python3 - <<'PY' || true
 import ast
 import subprocess
-import sys
 try:
-    value = subprocess.check_output(
+    raw = subprocess.check_output(
         ['gsettings', 'get', 'org.gnome.shell', 'favorite-apps'],
         text=True, stderr=subprocess.DEVNULL).strip()
-    if value.startswith('@as '):
-        value = value[4:]
-    entries = ast.literal_eval(value)
-    if not isinstance(entries, list):
-        raise ValueError('unexpected favorites setting')
-    if 'taptether.desktop' not in entries:
-        entries.append('taptether.desktop')
-        subprocess.run(['gsettings', 'set', 'org.gnome.shell', 'favorite-apps', str(entries)],
+    if raw.startswith('@as '):
+        raw = raw[4:]
+    apps = ast.literal_eval(raw)
+    if isinstance(apps, list) and 'taptether.desktop' in apps:
+        apps = [app for app in apps if app != 'taptether.desktop']
+        subprocess.run(['gsettings', 'set', 'org.gnome.shell',
+                        'favorite-apps', str(apps)],
                        check=True, stderr=subprocess.DEVNULL)
-    print('TapTether added to the GNOME dock.')
-except (OSError, ValueError, SyntaxError, subprocess.CalledProcessError) as exc:
-    print('Dock pinning was not possible over SSH:', exc, file=sys.stderr)
-    sys.exit(1)
+except (OSError, ValueError, SyntaxError, subprocess.CalledProcessError):
+    pass
 PY
-  then
-    note 'Pin it manually: Show Applications → TapTether → Add to Favorites.'
-  fi
+}
+setup_update_service() {
+  local username="$1" homedir="$2" tmp rule
+  local source='/usr/share/taptether/9-tt-system-update-ubuntu.sh'
+  [[ -s "$source" ]] || {
+    note 'Optional privileged update service not bundled yet; the mobile SSH updater remains available.'
+    return 0
+  }
+  sudo install -D -m 0755 "$source"     /usr/local/libexec/taptether-update-ubuntu.sh
+  tmp="$(mktemp)"
+  cat > "$tmp" <<SYSTEMD
+[Unit]
+Description=TapTether user-approved verified agent update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment="TAPTETHER_OWNER=$username"
+Environment="TAPTETHER_HOME=$homedir"
+ExecStart=/usr/local/libexec/taptether-update-ubuntu.sh
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStartSec=300
+UMask=0077
+SYSTEMD
+  sudo install -m 0644 "$tmp"     /etc/systemd/system/taptether-update.service
+  rm -f "$tmp"
+  # Narrow permission: one named unit, one named verb, this desktop user.
+  # It does not grant passwordless sudo or access to other system services.
+  tmp="$(mktemp)"
+  cat > "$tmp" <<POLKIT
+polkit.addRule(function(action, subject) {
+  if (action.id === "org.freedesktop.systemd1.manage-units" &&
+      action.lookup("unit") === "taptether-update.service" &&
+      action.lookup("verb") === "start" &&
+      subject.user === "$username") {
+    return polkit.Result.YES;
+  }
+});
+POLKIT
+  sudo install -D -m 0644 "$tmp"     /etc/polkit-1/rules.d/80-taptether-update.rules
+  rm -f "$tmp"
+  sudo systemctl daemon-reload
 }
 setup_permissions() {
   # Only the daemon receives the privileged input group through systemd.
@@ -125,6 +159,7 @@ install() {
   [[ "$homedir" == /* && "$homedir" != *$'\n'* ]] || fail 'Invalid home directory.'
   note 'Configuring /dev/uinput permissions for the service only.'
   setup_permissions
+  setup_update_service "$username" "$homedir"
   mkdir -p "${CTL%/*}" "${APP%/*}" "$CONFIG" "${TRAY%/*}" "${TRAY_AUTOSTART%/*}"
   chmod 700 "$CONFIG"
   if [[ "$(realpath "${BASH_SOURCE[0]}")" != "$(realpath -m "$CTL")" ]]; then
@@ -168,7 +203,7 @@ Comment=$launcher_comment
 Exec=$launcher_exec
 Icon=taptether
 Terminal=false
-StartupNotify=true
+StartupNotify=false
 Categories=Network;Utility;
 DESKTOP
   if [[ -s "$TRAY" ]]; then
@@ -181,6 +216,8 @@ Exec=/usr/bin/python3 $TRAY
 Icon=taptether
 Terminal=false
 X-GNOME-Autostart-enabled=true
+StartupNotify=false
+NoDisplay=true
 DESKTOP
     chmod 0644 "$TRAY_AUTOSTART"
   fi
@@ -222,9 +259,11 @@ SYSTEMD
   sudo systemctl enable "$UNIT"
   sudo systemctl restart "$UNIT"
   ensure_running
-  pin
+  # Earlier builds pinned the launcher to GNOME Favorites. Remove only
+  # that legacy auto-pin; the tray remains available without a taskbar icon.
+  unpin_legacy_launcher
   note 'Agent running in the background and enabled at boot (even before login).'
-  note 'Tray starts at next graphical login; use the TapTether dock launcher for its splash screen.'
+  note 'The TapTether tray icon starts at the next graphical login.'
   note 'You can retrieve credentials later with: ~/.local/bin/taptetherctl pairing'
   printf '\n====== TapTether pairing details ======\n'
   pairing

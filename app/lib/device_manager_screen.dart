@@ -84,6 +84,7 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
         token: device.token, fingerprint: device.fingerprint,
         platform: device.platform, deviceId: device.deviceId,
         customName: name == null ? device.customName : true,
+        macAddress: device.macAddress,
         location: location ?? device.location,
       ));
       await _refresh();
@@ -183,7 +184,8 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 ? Icons.laptop_mac : Icons.computer),
             title: Text(device.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}',
+            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
+                '${device.macAddress.isEmpty ? '' : ' · MAC: ${device.macAddress}'}',
                 maxLines: 2, overflow: TextOverflow.ellipsis),
             onTap: _busy ? null : () => _action(device, 'connect'),
             trailing: PopupMenuButton<String>(
@@ -191,13 +193,14 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
               onSelected: (action) => _action(device, action),
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'connect', child: Text('Connect')),
-                if (device.platform == 'linux' || device.platform == 'darwin')
+                if (device.platform == 'linux' || device.platform == 'darwin' ||
+                    device.platform == 'windows')
                   const PopupMenuItem(
                     value: 'update',
                     child: Row(children: [
                       Icon(Icons.system_update_alt),
                       SizedBox(width: 8),
-                      Text('Update Agent over SSH'),
+                      Text('Update Agent'),
                     ]),
                   ),
                 const PopupMenuItem(value: 'rename', child: Text('Rename')),

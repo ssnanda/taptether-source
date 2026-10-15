@@ -16,6 +16,7 @@ class SavedComputer {
     this.deviceId = '',
     this.location = 'other',
     this.customName = false,
+    this.macAddress = '',
   });
 
   final String id;
@@ -27,12 +28,15 @@ class SavedComputer {
   final String deviceId;
   final String location;
   final bool customName;
+  // MAC is optional and comes only from authenticated agent metadata.
+  final String macAddress;
 
   Map<String, String> toJson() => {
     'id': id, 'name': name, 'host': host, 'token': token,
     'fingerprint': fingerprint, 'platform': platform,
     'deviceId': deviceId, 'location': location,
     'customName': customName.toString(),
+    'macAddress': macAddress,
   };
 
   static SavedComputer fromJson(Map<String, dynamic> data) {
@@ -44,6 +48,7 @@ class SavedComputer {
       location: const {'home', 'office', 'other'}.contains(value('location'))
           ? value('location') : 'other',
       customName: value('customName') == 'true',
+      macAddress: value('macAddress'),
     );
     if (computer.id.isEmpty || computer.host.isEmpty ||
         (computer.token.length < 20 && computer.deviceId.length != 32) ||

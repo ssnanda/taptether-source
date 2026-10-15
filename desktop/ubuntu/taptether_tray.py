@@ -62,6 +62,9 @@ def show_splash(version):
     window.set_resizable(False)
     window.set_position(Gtk.WindowPosition.CENTER)
     window.set_decorated(False)
+    window.set_skip_taskbar_hint(True)
+    window.set_skip_pager_hint(True)
+    window.set_type_hint(Gdk.WindowTypeHint.UTILITY)
     window.set_keep_above(True)
     outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
     outer.set_border_width(24)
@@ -184,11 +187,22 @@ def main():
         indicator = Indicator.Indicator.new(
             "taptether", "taptether", Indicator.IndicatorCategory.APPLICATION_STATUS)
         indicator.set_icon_theme_path(str(ICON.parent))
+        if ICON.is_file():
+            # The AppIndicator icon must point to our installed asset. GNOME
+            # Wayland cannot reliably show GTK StatusIcon notification icons.
+            indicator.set_icon_full(str(ICON), "TapTether Agent")
+        else:
+            indicator.set_icon_full("input-mouse", "TapTether Agent")
         indicator.set_status(Indicator.IndicatorStatus.ACTIVE)
         indicator.set_menu(menu(version))
     else:
-        # GTK StatusIcon is a fallback for X11 desktops; on GNOME Wayland
-        # the AppIndicator extension and Ayatana packages are necessary.
+        # GTK StatusIcon fallback is X11-only. There must never be a
+        # permanently visible GTK window in the dock or task switcher.
+        if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+            print("TapTether tray requires AppIndicator support on Wayland. "
+                  "Install the Ubuntu AppIndicator extension and "
+                  "gir1.2-ayatanaappindicator3-0.1.", file=sys.stderr)
+            return
         icon = Gtk.StatusIcon()
         if ICON.exists():
             icon.set_from_file(str(ICON))

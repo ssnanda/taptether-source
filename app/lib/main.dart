@@ -69,6 +69,8 @@ class LocalAgent {
   bool _shutdownEnabled = false;
   String? _reportedHostname;
   String? _reportedPlatform;
+  String? _reportedMacAddress;
+  String? get reportedMacAddress => _reportedMacAddress;
   bool get shutdownEnabled => _shutdownEnabled;
   String? get reportedHostname => _reportedHostname;
   String? get reportedPlatform => _reportedPlatform;
@@ -114,6 +116,7 @@ class LocalAgent {
     _sessionExpires = null;
     _reportedHostname = null;
     _reportedPlatform = null;
+    _reportedMacAddress = null;
     _shutdownEnabled = false;
   }
 
@@ -221,7 +224,7 @@ class LocalAgent {
       final response = await request.close().timeout(const Duration(seconds: 4));
       if (response.statusCode != 200) {
         await response.drain<void>();
-        return null; // Compatibility with older Ubuntu agents.
+        return null;
       }
       final body = jsonDecode(await utf8.decoder.bind(response).join());
       if (body is Map && body['version'] is String) {
@@ -231,17 +234,67 @@ class LocalAgent {
             RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$').hasMatch(name)) {
           _reportedHostname = name;
         }
+        final macAddress = body['macAddress'];
+        if (macAddress is String &&
+            RegExp(r'^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$').hasMatch(macAddress)) {
+          _reportedMacAddress = macAddress.toUpperCase();
+        }
         final platform = body['platform'];
-        if (platform == 'linux' || platform == 'darwin' ||
-            platform == 'windows') {
+        if (platform == 'linux' || platform == 'darwin' || platform == 'windows') {
           _reportedPlatform = platform as String;
         }
         return body['version'] as String;
       }
     } catch (_) {
-      // Older agent versions and offline connections still work normally.
+      // Older agents without this endpoint remain compatible.
     }
     return null;
+  }
+
+  /// Best-effort ARP neighbor inventory from the authenticated agent.
+  Future<Map<String, String>> trustedLanNeighbors() async {
+    if (!configured) return {};
+    try {
+      final request = await _client!.getUrl(_base!.resolve('/api/neighbors'));
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+      final response = await request.close().timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        return {};
+      }
+      final decoded = jsonDecode(await utf8.decoder.bind(response).join());
+      if (decoded is! List || decoded.length > 1024) return {};
+      final result = <String, String>{};
+      for (final item in decoded) {
+        if (item is! Map || item['ip'] is! String || item['mac'] is! String) {
+          continue;
+        }
+        final ip = item['ip'] as String;
+        final mac = item['mac'] as String;
+        if (isPrivateIPv4(ip) &&
+            RegExp(r'^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$').hasMatch(mac)) {
+          result[ip] = mac.toUpperCase();
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Existing agents that lack this endpoint still use the SSH/local updater.
+    Future<bool> requestUpdate() async {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final req = await _client!.postUrl(_base!.resolve('/api/update'));
+    req.headers.contentType = ContentType.json;
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+    req.write(jsonEncode({'confirm': true}));
+    final res = await req.close().timeout(const Duration(seconds: 8));
+    final result = res.statusCode;
+    await res.drain<void>();
+    if (result == 202) return true;
+    if (result == 404 || result == 501) return false;
+    throw StateError('Computer could not start the update (HTTP $result).');
   }
 
   void disconnect() {
@@ -256,6 +309,7 @@ class LocalAgent {
     _shutdownEnabled = false;
     _reportedHostname = null;
     _reportedPlatform = null;
+    _reportedMacAddress = null;
   }
 }
 
@@ -418,6 +472,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           token: device.token, fingerprint: device.fingerprint,
           platform: device.platform, deviceId: device.deviceId,
           customName: device.customName, location: choice,
+          macAddress: device.macAddress,
         ));
       }
     }
@@ -483,10 +538,40 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     }
   }
 
+  Future<Map<String, String>> _trustedMacDiscovery() async {
+    final current = _wifiRange;
+    if (current == null) return {};
+    final candidates = savedComputers.where((device) =>
+        lanRangeContains(current, device.host)).take(3);
+    PhoneIdentity? phone;
+    try {
+      if (candidates.any((device) => device.deviceId.isNotEmpty)) {
+        phone = await PhoneIdentity.loadOrCreate();
+      }
+    } catch (_) {}
+    final combined = <String, String>{};
+    for (final device in candidates) {
+      final connection = LocalAgent();
+      try {
+        connection.configure(device.host, device.token, device.fingerprint,
+            identity: device.deviceId.isNotEmpty ? phone : null,
+            deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
+        combined.addAll(await connection.trustedLanNeighbors());
+      } catch (_) {
+        // Offline or older agents cannot provide neighbor information.
+      } finally {
+        connection.disconnect();
+      }
+    }
+    return combined;
+  }
+
   Future<void> scanNetwork() async {
     final selected = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) =>
-          LanScanScreen(initialIp: host.text.trim())),
+          LanScanScreen(initialIp: host.text.trim(),
+              knownComputers: savedComputers,
+              macResolver: _trustedMacDiscovery)),
     );
     if (selected == null || !mounted) return;
     agent.disconnect();
@@ -547,6 +632,66 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     await connect(existingId: device.id, deviceId: device.deviceId);
   }
 
+  Future<void> updateSavedAgent(SavedComputer device) async {
+    if (device.platform != 'linux' && device.platform != 'darwin' &&
+        device.platform != 'windows') {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('This operating system has no supported updater.'),
+      ));
+      return;
+    }
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text('Update ${device.name}?'),
+        content: const Text(
+          'Install the latest published agent version. '
+          'The computer may briefly disconnect during the update.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Update')),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    // Existing installed agents own the update action and verify the release.
+    // Ubuntu requires the user to have separately enabled noninteractive sudo.
+    // Older agents or machines without it retain the SSH GUI fallback.
+    if (device.platform == 'darwin' ||
+        device.platform == 'linux' || device.platform == 'windows') {
+      final client = LocalAgent();
+      try {
+        final phone = device.deviceId.isEmpty
+            ? null : await PhoneIdentity.loadOrCreate();
+        client.configure(device.host, device.token, device.fingerprint,
+            identity: phone,
+            deviceId: device.deviceId.isEmpty ? null : device.deviceId);
+        if (await client.requestUpdate()) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Update started on ${device.name}.'),
+            ));
+          }
+          return;
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text(
+              'Direct update unavailable. Opening SSH update instead.')),
+          );
+        }
+      } finally {
+        client.disconnect();
+      }
+    }
+    if (mounted) {
+      await _launchAgentInstaller(device: device, updateOnly: true);
+    }
+  }
+
   Future<void> forgetComputer(SavedComputer device) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -575,8 +720,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       builder: (_) => DeviceManagerScreen(
         store: deviceStore,
         onConnect: connectSaved,
-        onUpdate: (device) => _launchAgentInstaller(
-            device: device, updateOnly: true),
+        onUpdate: updateSavedAgent,
       ),
     ));
     if (!mounted) return;
@@ -825,10 +969,20 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
             subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
                 ' · ${_online[device.id] == true ? 'Online' : _online[device.id] == false ? 'Offline' : 'Checking…'}',
                 maxLines: 2, overflow: TextOverflow.ellipsis),
-            trailing: Icon(Icons.circle, size: 13,
-                color: _online[device.id] == true
-                    ? Colors.green : Theme.of(context)
-                        .colorScheme.outline),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (device.platform == 'linux' ||
+                  device.platform == 'darwin' ||
+                  device.platform == 'windows')
+                IconButton(
+                  tooltip: 'Update agent',
+                  onPressed: () => updateSavedAgent(device),
+                  icon: const Icon(Icons.system_update_alt),
+                ),
+              Icon(Icons.circle, size: 13,
+                  color: _online[device.id] == true
+                      ? Colors.green : Theme.of(context)
+                          .colorScheme.outline),
+            ]),
             onTap: () => connectSaved(device),
           )),
       for (final nearby in nearbyComputers)
@@ -1197,6 +1351,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         } catch (_) {}
       }
       _connectedPlatform = agent.reportedPlatform ?? _connectedPlatform;
+      if (_connectedPlatform == 'windows' || _connectedPlatform == 'linux') {
+        _macShortcuts = false;
+      }
       if (verifiedName != null) discoveredName = verifiedName;
       if (mounted) {
         setState(() {
@@ -1230,6 +1387,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
               : discovered.first.platform),
           location: location,
           customName: existing?.customName ?? false,
+          macAddress: agent.reportedMacAddress ?? existing?.macAddress ?? '',
         );
         final updated = await deviceStore.upsert(device);
         if (mounted) {
@@ -1499,6 +1657,13 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   ]);
 
   Widget _trackpadSurface({double height = 224}) => GestureDetector(
+    // Win the gesture arena against the enclosing ListView. A Listener
+    // receives raw multi-touch pointer events but cannot stop parent scroll.
+    // Pointer tracking below continues to handle movement and two-finger
+    // gestures; these pan handlers deliberately do not send duplicate input.
+    behavior: HitTestBehavior.opaque,
+    onPanStart: (_) {},
+    onPanUpdate: (_) {},
     onTap: _connectionLost ? null : () {
       if (!_multiTouchGesture) unawaited(command('click', {'button': 'left'}));
     },
@@ -1573,8 +1738,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                 icon: const Icon(Icons.content_paste_go),
                 label: const Text('Type phone clipboard'),
               ),
-              Text('Explicit action only · up to 4 KB · no clipboard sync',
-                  style: Theme.of(context).textTheme.bodySmall),
+              // Clipboard action is intentionally explicit. Technical detail
+              // belongs in Help, not the main remote-control surface.
             ],
           ),
         ),
@@ -1604,8 +1769,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                 label: const Text('Shut down computer'),
               ),
               if (!agent.shutdownEnabled)
-                const Text('Remote shutdown is disabled. Enable it on '
-                    'Ubuntu with taptetherctl enable-shutdown.'),
+                const Text('Shutdown is not enabled on this computer.'),
             ],
           ),
         ),
@@ -1619,7 +1783,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                     setState(() => mouseSensitivity = value),
               )),
             ]),
-            if (_connectedPlatform != 'linux')
+            if (_connectedPlatform != 'linux' &&
+                _connectedPlatform != 'windows')
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Mac shortcuts (⌘)'),
@@ -1812,7 +1977,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         Expanded(child: Text(discoveredName ?? host.text.trim(),
             maxLines: 1, overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium)),
-        TextButton.icon(
+        IconButton(
+          tooltip: 'Switch computer',
           onPressed: () {
             agent.disconnect();
             setState(() {
@@ -1821,8 +1987,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
               status = 'Select a device to connect.';
             });
           },
-          icon: const Icon(Icons.swap_horiz, size: 18),
-          label: const Text('Switch'),
+          icon: const Icon(Icons.swap_horiz, size: 20),
         ),
       ]),
       if (_connectionLost) _connectionBanner(),
@@ -1832,11 +1997,11 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       if (!_remoteLayout.presentationMode && !landscape) ...[
       ListTile(
         key: const ValueKey('trackpad-toggle'),
+        dense: true,
+        visualDensity: VisualDensity.compact,
         contentPadding: EdgeInsets.zero,
         title: Text('Trackpad',
-            style: Theme.of(context).textTheme.titleLarge),
-        subtitle: Text(_remoteLayout.trackpadExpanded
-            ? 'Tap to collapse' : 'Tap to expand'),
+            style: Theme.of(context).textTheme.titleMedium),
         trailing: Icon(_remoteLayout.trackpadExpanded
             ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
         onTap: () => _setLayout(_changedLayout(
@@ -1866,6 +2031,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         autocorrect: false,
         enableSuggestions: false,
         decoration: const InputDecoration(
+          isDense: true,
           prefixIcon: Icon(Icons.keyboard_outlined),
           labelText: 'Type on computer',
         ),
@@ -1878,8 +2044,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       ),
       const SizedBox(height: 10),
       Row(children: [
-        Expanded(child: Text('Quick keys',
-            style: Theme.of(context).textTheme.titleMedium)),
+        Expanded(child: Text('Shortcuts',
+            style: Theme.of(context).textTheme.titleSmall)),
         TextButton.icon(
           onPressed: _customizeQuickKeys,
           icon: const Icon(Icons.tune, size: 18),
@@ -1887,7 +2053,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ),
       ]),
       if (_remoteLayout.quickKeys.isEmpty)
-        const Text('Add your favorite keys using Customize.')
+        const Text('Choose shortcuts using Customize.')
       else
         Wrap(spacing: 8, runSpacing: 4, children: [
           for (final id in _remoteLayout.quickKeys) _quickKeyButton(id),
@@ -1943,7 +2109,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
               )),
           const SizedBox(height: 12),
         ],
-        updateNotices(),
+        if (!connected) updateNotices(),
         if (!connected) ...[
           deviceDashboard(),
           if (_showPairForm) ...[
@@ -1966,13 +2132,14 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           _connectedControls(),
         ],
         const SizedBox(height: 16),
-        if (!connected || !_connectionLost)
+        if (!connected) ...[
           Text(status, style: TextStyle(fontSize: 12,
             color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 12),
-        Center(child: Text('TapTether v$installedVersion',
-          style: TextStyle(fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant))),
+          const SizedBox(height: 12),
+          Center(child: Text('TapTether v$installedVersion',
+            style: TextStyle(fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        ],
       ])),
     );
   }
