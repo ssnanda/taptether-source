@@ -57,6 +57,29 @@ void main() {
     expect(() => movedDevice(mac, '8.8.8.8'), throwsFormatException);
   });
 
+  test('TCP recovery probes both sides of the current /23', () {
+    final network = rangeFromWifi(
+        '192.168.21.252', '255.255.254.0')!;
+    final probes = agentTcpProbeAddresses(network);
+    expect(probes, contains('192.168.21.242'));
+    expect(probes, contains('192.168.20.1'));
+    expect(probes, contains('192.168.21.0'));
+    expect(probes, contains('192.168.20.255'));
+    expect(probes, isNot(contains('192.168.20.0')));
+    expect(probes, isNot(contains('192.168.21.255')));
+    expect(probes, isNot(contains('192.168.1.86')));
+    expect(probes, isNot(contains('192.168.68.77')));
+    expect(probes.length, 510);
+    expect(agentTcpProbeAddresses(network, maxAddresses: 10).length, 10);
+  });
+
+  test('TCP recovery cannot sweep an unbounded larger subnet', () {
+    final network = rangeFromWifi(
+        '192.168.21.252', '255.255.240.0')!;
+    expect(agentTcpProbeAddresses(network).length, lessThanOrEqualTo(1024));
+    expect(agentTcpProbeAddresses(network), contains('192.168.21.242'));
+  });
+
   test('recovery never suggests a host outside the detected subnet', () {
     final network = rangeFromWifi(
         '192.168.21.252', '255.255.254.0')!;

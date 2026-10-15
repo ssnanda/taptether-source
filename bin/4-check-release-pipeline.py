@@ -137,6 +137,16 @@ assert "TapTetherTray.ps1" in win_installer and "TapTetherTray.ps1" in win_updat
 assert "TapTetherTray.ps1" in workflow
 assert "PowerShell syntax" in workflow
 
+# DHCP recovery must not depend only on UDP discovery or Bonjour. An
+# untrusted open port is authenticated using the stored pinned phone pairing.
+recovery = (ROOT / "app" / "lib" / "device_recovery.dart").read_text(
+    encoding="utf-8")
+mobile = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
+assert "probeAgentControlPorts" in recovery
+assert "Socket.connect(ip, 48321" in recovery
+assert "_pingSavedDevice(device, phone, atHost: ip)" in mobile
+assert "forceRecovery: true" in mobile
+
 # Guard against regressing the broken 0.6.7 remote class and F-key parser.
 remote = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
 assert remote.count("Widget _connectedControls()") == 1
