@@ -21,6 +21,7 @@ import 'ssh_key_screen.dart';
 import 'install_agent_screen.dart';
 import 'lan_scan_screen.dart';
 import 'scan_report.dart';
+import 'agent_update_check.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -343,6 +344,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
   String? _connectedPlatform;
   bool _connectionLost = false;
+  bool _agentInputDenied = false;
   String? _connectionTechnical;
   bool _retryingConnection = false;
   List<SavedComputer> savedComputers = [];
@@ -919,22 +921,38 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       ));
       return;
     }
+    // A saved device may be online yet run a different agent build from
+    // the iPhone app. Read its actual version over the authenticated,
+    // TLS-pinned channel and refresh the published release metadata before
+    // showing an actionable update confirmation.
+    String? installedAgentVersion;
+    final inspector = LocalAgent();
+    try {
+      final phone = device.deviceId.isEmpty
+          ? null : await PhoneIdentity.loadOrCreate();
+      inspector.configure(device.host, device.token, device.fingerprint,
+          identity: phone,
+          deviceId: device.deviceId.isEmpty ? null : device.deviceId);
+      installedAgentVersion = await inspector.agentVersion();
+    } catch (_) {
+      // An unreachable or legacy agent has an unknown version.
+    } finally {
+      inspector.disconnect();
+    }
+    await checkForUpdates();
+    if (!mounted) return;
+    final check = AgentUpdateCheck(
+      installed: installedAgentVersion,
+      published: _latestReleaseVersion,
+    );
     final approved = await showDialog<bool>(
       context: context,
-      builder: (dialog) => AlertDialog(
-        title: Text('Update ${device.name}?'),
-        content: const Text(
-          'Install the latest published agent version. '
-          'The computer may briefly disconnect during the update.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false),
-              child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true),
-              child: const Text('Update')),
-        ],
+      builder: (_) => AgentUpdateDialog(
+        computerName: device.name,
+        check: check,
       ),
     );
-    if (approved != true || !mounted) return;
+    if (approved != true || !mounted || !check.canUpdate) return;
     // Existing installed agents own the update action and verify the release.
     // Ubuntu requires the user to have separately enabled noninteractive sudo.
     // Older agents or machines without it retain the SSH GUI fallback.
@@ -1254,7 +1272,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                   device.platform == 'darwin' ||
                   device.platform == 'windows')
                 IconButton(
-                  tooltip: 'Update agent',
+                  tooltip: 'Check agent update',
                   onPressed: () => updateSavedAgent(device),
                   icon: const Icon(Icons.system_update_alt),
                 ),
@@ -1580,9 +1598,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   Future<void> command(String type, [Map<String, Object> data = const {}]) async {
     try {
       await agent.send(type, data);
-      if (_connectionLost && mounted) {
+      if ((_connectionLost || _agentInputDenied) && mounted) {
         setState(() {
           _connectionLost = false;
+          _agentInputDenied = false;
           _connectionTechnical = null;
           status = 'Connected to ${host.text.trim()}';
         });
@@ -1644,6 +1663,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         setState(() {
         status = 'Connected to ${host.text.trim()}';
         _connectionLost = false;
+        _agentInputDenied = false;
         _connectionTechnical = null;
         connectedAgentVersion = currentAgent;
         availableAgentVersion = currentAgent != null &&
@@ -1779,6 +1799,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         _pendingMoveY = 0;
         _pendingScroll = 0;
         _touches.clear();
+      } else if (isMacAccessibilityError(error)) {
+        _agentInputDenied = true;
+        status = 'Mac is online but Accessibility permission blocks input.';
       } else {
         status = 'Remote command failed. Check the computer connection.';
       }
@@ -2277,6 +2300,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
             agent.disconnect();
             setState(() {
               _connectionLost = false;
+              _agentInputDenied = false;
               _connectionTechnical = null;
               status = 'Select a device to connect.';
             });
@@ -2285,6 +2309,25 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ),
       ]),
       if (_connectionLost) _connectionBanner(),
+      if (_agentInputDenied && !_connectionLost)
+        Card(
+          key: const ValueKey('mac-accessibility-warning'),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Mac input permission required',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                const Text('Your Mac is online, but macOS is blocking '
+                    'mouse and keyboard control. On the Mac, open '
+                    'System Settings → Privacy & Security → Accessibility, '
+                    'allow ~/.local/bin/taptether-agent, then restart the agent.'),
+              ],
+            ),
+          ),
+        ),
       _modeSwitcher(),
       if (_remoteLayout.presentationMode) _presentationView(landscape),
       if (!_remoteLayout.presentationMode && landscape) _landscapeRemote(),
