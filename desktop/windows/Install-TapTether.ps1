@@ -16,6 +16,7 @@ Copy-Item $source $destination -Force
 foreach ($file in @('Update-TapTether.ps1', 'Show-Pairing.ps1',
         'Install-TapTether.ps1', 'Allow-TapTether.ps1',
         'Show-Pairing.cmd', 'Install-TapTether.cmd',
+        'Configure-Shutdown.ps1', 'Configure-Shutdown.cmd',
         'README-Windows.txt', 'version.txt')) {
     Copy-Item (Join-Path $PSScriptRoot $file) (Join-Path $destinationDir $file) -Force
 }

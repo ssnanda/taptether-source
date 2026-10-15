@@ -170,6 +170,7 @@ jobs:
                       'Allow-TapTether.ps1', 'Show-Pairing.ps1',
                       'Update-TapTether.ps1',
                       'Install-TapTether.cmd', 'Show-Pairing.cmd',
+                      'Configure-Shutdown.ps1', 'Configure-Shutdown.cmd',
                       'README-Windows.txt', 'version.txt'}
                   assert z.getinfo('TapTetherAgent.exe').file_size > 100000
           PY

@@ -716,8 +716,13 @@ changes made directly on the presenting computer. Font size and scrolling are
 adjustable. Current-slide detection from external PowerPoint controls is not
 yet supported. The .pptx must be smaller than 24 MB; this is not a .ppt reader.
 
-macOS Agent menu includes **Enable remote shutdown** and **Disable remote
-shutdown**, each executed locally on the Mac. The enable action requires an
-explicit confirmation and remains opt-in. Reconnect the phone after changing
-the setting to refresh the shutdown button. Remote shutdown may need macOS
-System Events Automation permission when first used.
+**Remote Shutdown defaults to enabled on all three agents** after installing
+v0.6.12: macOS shows a checked **Allow remote shutdown** menu item; Ubuntu
+shows the same checked setting in its system tray, and Windows includes the
+local double-click **Configure-Shutdown.cmd** GUI with the setting checked.
+The computer owner can uncheck it at any time; the opt-out survives repair,
+reboot, and updates. All shutdown requests still require an authenticated
+paired phone and an explicit confirmation in TapTether. Reconnect the phone to
+refresh the shutdown button. macOS may request System Events Automation
+permission; Ubuntu requires the installer to configure a limited polkit rule.
+Existing agents must be upgraded before new default settings apply.

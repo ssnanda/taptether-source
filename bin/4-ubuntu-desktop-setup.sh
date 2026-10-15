@@ -10,6 +10,7 @@ CTL="$HOME/.local/bin/taptetherctl"
 UPDATER="$HOME/.local/bin/taptether-agent-update"
 POWER_RULE="/etc/polkit-1/rules.d/80-taptether-shutdown.rules"
 POWER_DROPIN="/etc/systemd/system/taptether-agent.service.d/40-shutdown.conf"
+POWER_DISABLED="$HOME/.config/taptether/remote-shutdown-disabled"
 APP="$HOME/.local/share/applications/taptether.desktop"
 TRAY="$HOME/.local/share/taptether/taptether_tray.py"
 TRAY_AUTOSTART="$HOME/.config/autostart/taptether-tray.desktop"
@@ -259,6 +260,11 @@ SYSTEMD
   sudo systemctl enable "$UNIT"
   sudo systemctl restart "$UNIT"
   ensure_running
+  # Computer owner requested default ON for all agents. Existing explicit
+  # disable marker must survive repair and updates.
+  # Always prepare the narrow shutdown policy; preserve an existing OFF
+  # preference without briefly enabling shutdown during the service restart.
+  enable_shutdown --preserve-preference
   # Earlier builds pinned the launcher to GNOME Favorites. Remove only
   # that legacy auto-pin; the tray remains available without a taskbar icon.
   unpin_legacy_launcher
@@ -314,14 +320,25 @@ EOF
   sudo install -m 0644 "$temp" "$POWER_DROPIN"
   rm -f "$temp"
   sudo systemctl daemon-reload
+  mkdir -p "$CONFIG"
+  if [[ "${1:-}" != "--preserve-preference" ]]; then
+    rm -f "$POWER_DISABLED"
+  fi
   sudo systemctl restart "$UNIT"
-  note 'Remote shutdown enabled. Any phone with the correct pairing token can shut down this computer.'
+  if [[ -f "$POWER_DISABLED" ]]; then
+    note 'Remote shutdown remains disabled by this computer owner.'
+  else
+    note 'Remote shutdown enabled for paired computers; phone confirmation remains mandatory.'
+  fi
 }
 disable_shutdown() {
-  sudo rm -f "$POWER_RULE" "$POWER_DROPIN"
-  sudo systemctl daemon-reload
-  sudo systemctl restart "$UNIT"
-  note 'Remote shutdown disabled.'
+  # Leave the already-granted narrowly scoped systemd/polkit authorization
+  # intact so the ordinary desktop user's tray can re-enable without sudo.
+  # Every authenticated shutdown request checks this local opt-out marker.
+  mkdir -p "$CONFIG"
+  touch "$POWER_DISABLED"
+  chmod 600 "$POWER_DISABLED"
+  note 'Remote shutdown disabled until re-enabled on this computer.'
 }
 check_update() {
   [[ -f "$UPDATER" ]] || fail 'Updater missing. Re-run current Ubuntu installer from your Mac.'
