@@ -33,6 +33,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         add(menu, "Restart agent", #selector(restartAgent))
         add(menu, "Stop agent", #selector(stopAgent))
         add(menu, "Check for updates", #selector(checkUpdate))
+        add(menu, "Enable remote shutdown…", #selector(enableRemoteShutdown))
+        add(menu, "Disable remote shutdown", #selector(disableRemoteShutdown))
         add(menu, "Agent diagnostics", #selector(showAgentDiagnostics))
         add(menu, "Open Accessibility settings", #selector(openAccessibilitySettings))
         menu.addItem(.separator())
@@ -220,6 +222,23 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     @objc private func restartAgent() { runControl("restart") }
     @objc private func stopAgent() { runControl("stop") }
     @objc private func checkUpdate() { runControl("check-update") }
+
+    @objc private func enableRemoteShutdown() {
+        let alert = NSAlert()
+        alert.messageText = "Allow shutdown from your paired phone?"
+        alert.informativeText = "TapTether will accept an authenticated shutdown request on your trusted local network. Unsaved work may be lost. You can disable this later from this menu."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Enable shutdown")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            runControl("enable-shutdown")
+        }
+    }
+
+    @objc private func disableRemoteShutdown() {
+        runControl("disable-shutdown")
+    }
     @objc private func showAgentDiagnostics() {
         // Read a fixed-format, privacy-safe status report. Do not copy raw
         // log lines or launchctl dumps (which might include pairing material).

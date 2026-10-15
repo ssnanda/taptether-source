@@ -702,3 +702,22 @@ main-branch validation and release workflow again after merge.
 **Validation status:** code and regression tests are committed to a separate
 development branch; automated Go/Flutter CI and real-device tests must run
 before claiming any new Windows, Ubuntu or iOS behavior is production-ready.
+
+
+### v0.6.12 Speaker notes (PowerPoint)
+
+Presentation mode now includes **Choose PowerPoint (.pptx)** on the phone.
+Select a copy of the same deck from iOS Files/Android file picker to display
+speaker notes privately on the phone; no screen sharing, notes upload, cloud
+account, or computer agent changes are required. The mobile app parses OOXML
+locally and keeps the notes in memory only. TapTether Next/Previous buttons
+advance the tracked notes; manual note-only +/- buttons compensate for slide
+changes made directly on the presenting computer. Font size and scrolling are
+adjustable. Current-slide detection from external PowerPoint controls is not
+yet supported. The .pptx must be smaller than 24 MB; this is not a .ppt reader.
+
+macOS Agent menu includes **Enable remote shutdown** and **Disable remote
+shutdown**, each executed locally on the Mac. The enable action requires an
+explicit confirmation and remains opt-in. Reconnect the phone after changing
+the setting to refresh the shutdown button. Remote shutdown may need macOS
+System Events Automation permission when first used.
