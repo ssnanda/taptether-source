@@ -108,7 +108,7 @@ assert 'uninstall) uninstall_agent "${2:-}"' in mac_setup
 assert 'rm -rf -- "$TRAY_BUNDLE" "$LOGDIR"' in mac_setup
 assert 'rm -rf -- "$CONF"' in mac_setup
 assert 'codesign --verify "$APP"' in mac_setup
-assert 'title: "Repair Accessibility…"' in mac_tray if False else "Repair Accessibility…" in mac_tray
+assert "Repair Accessibility…" in mac_tray
 assert "Uninstall TapTether…" in mac_tray
 assert 'erase ? "--erase-pairing" : "--keep-pairing"' in mac_tray
 assert "restart) start_agent" in mac_setup
