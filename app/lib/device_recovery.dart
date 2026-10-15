@@ -22,7 +22,7 @@ List<String> recoveryCandidates(
   final ordered = announced.where((entry) =>
       lanRangeContains(network, entry.host)).toList();
   String normalized(String name) =>
-      name.toLowerCase().replaceFirst(RegExp(r'\.local\\.?$'), '').trim();
+      name.toLowerCase().replaceFirst(RegExp(r'\.local\.?$'), '').trim();
   ordered.sort((left, right) {
     int priority(DiscoveredDevice entry) {
       if (normalized(entry.name) == normalized(saved.name)) return 0;
