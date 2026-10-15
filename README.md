@@ -777,3 +777,16 @@ installer to acquire these menu actions; afterward updates are initiated from
 the tray without launching the command line. Existing pairing credentials,
 TLS identity and user settings remain intact. macOS and Windows must still
 be tested on physical desktop hardware after CI builds.
+
+### v0.6.12+48 — resilient on-LAN address recovery
+
+On network changes and explicit **My Devices → Refresh**, offline saved agents
+are recovered by using UDP discovery, Bonjour hostname hints and now a bounded
+TCP 48321 scan of the iPhone's currently connected Wi-Fi network. This
+fallback is necessary when iOS or the Wi-Fi network suppresses UDP/multicast
+responses from macOS. For a phone at 192.168.21.252/23, the TCP sweep includes
+192.168.21.242. The scan is capped at four /24 windows and is throttled to
+once per four minutes during automatic heartbeats; tapping Refresh overrides
+the throttle. **An open port or matching hostname alone is never trusted**:
+TapTether verifies the original TLS pin and authenticated pairing before
+updating My Devices. No secret or device identity is sent to unverified hosts.
