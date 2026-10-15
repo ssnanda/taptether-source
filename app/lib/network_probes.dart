@@ -90,7 +90,9 @@ LanProbeHost? parseSsdpHost(String sourceIp, List<int> payload) {
   }
   final raw = latin1.decode(payload, allowInvalid: true);
   if (!raw.startsWith('HTTP/1.1 200') &&
-      !raw.startsWith('NOTIFY * HTTP/1.1')) return null;
+      !raw.startsWith('NOTIFY * HTTP/1.1')) {
+    return null;
+  }
   final server = RegExp(r'^SERVER:\s*(.+)$',
           caseSensitive: false, multiLine: true)
       .firstMatch(raw)?.group(1)?.trim();
