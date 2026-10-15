@@ -69,7 +69,7 @@ assert "dpkg-deb --info" in workflow
 
 assert "python3 bin/4-test-deb-packaging.py" in workflow
 assert "python3 bin/4-test-macos-uninstall.py" in workflow
-assert 'uninstall) uninstall_agent "${2:-}"' in mac_setup if False else True, (
+, (
     "Run offline Debian payload regression test before expensive agent builds"
 )
 assert "run: bash bin/2b-tt-ubuntu.sh" in workflow
@@ -104,6 +104,13 @@ mac_setup = (ROOT / "bin" / "4-macos-agent-setup.sh").read_text(encoding="utf-8"
 mac_tray = (ROOT / "desktop" / "macos" / "TapTetherTray.swift").read_text(
     encoding="utf-8")
 assert "diagnostics) diagnostics" in mac_setup
+assert 'uninstall) uninstall_agent "${2:-}"' in mac_setup
+assert 'rm -rf -- "$TRAY_BUNDLE" "$LOGDIR"' in mac_setup
+assert 'rm -rf -- "$CONF"' in mac_setup
+assert 'codesign --verify "$APP"' in mac_setup
+assert 'title: "Repair Accessibility…"' in mac_tray if False else "Repair Accessibility…" in mac_tray
+assert "Uninstall TapTether…" in mac_tray
+assert 'erase ? "--erase-pairing" : "--keep-pairing"' in mac_tray
 assert "restart) start_agent" in mac_setup
 assert "launchctl bootstrap" in mac_setup
 assert "Privacy: no passwords, pairing tokens" in mac_setup
