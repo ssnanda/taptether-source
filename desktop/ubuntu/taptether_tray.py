@@ -8,6 +8,8 @@ import argparse
 import fcntl
 import signal
 import os
+import threading
+import time
 from pathlib import Path
 import subprocess
 import sys
@@ -108,9 +110,7 @@ def on_command(item, *args):
     # Running sudo commands in a background menu without a TTY would stall or fail.
     # Use a graphical polkit authorization prompt where supported.
     command = args[0]
-    if command == "update":
-        run_command(["check-update"], "TapTether update check")
-    elif command in ("start", "restart", "stop"):
+    if command in ("start", "restart", "stop"):
         try:
             result = subprocess.run(
                 ["pkexec", "/usr/bin/systemctl", command, "taptether-agent.service"],
@@ -122,6 +122,75 @@ def on_command(item, *args):
             message("Service control", str(exc), error=True)
 
 
+
+def update_from_tray(item):
+    """Run the fixed, privileged update service after explicit confirmation."""
+    dialog = Gtk.MessageDialog(
+        None, Gtk.DialogFlags.MODAL, Gtk.MessageType.QUESTION,
+        Gtk.ButtonsType.NONE, "Update TapTether Agent?")
+    dialog.format_secondary_text(
+        "Download and install the latest verified release if available. "
+        "The agent may briefly disconnect. Pairing and settings remain.")
+    dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+    dialog.add_button("Update Agent", Gtk.ResponseType.OK)
+    approved = dialog.run() == Gtk.ResponseType.OK
+    dialog.destroy()
+    if not approved:
+        return
+    if not Path("/etc/systemd/system/taptether-update.service").is_file():
+        message("Update service unavailable",
+                "This computer needs the current TapTether installer once "
+                "before tray updates are supported.", error=True)
+        return
+    item.set_sensitive(False)
+    item.set_label("Updating…")
+
+    def finished(ok, details):
+        item.set_sensitive(True)
+        item.set_label("Update Agent…")
+        message("TapTether update complete" if ok else "Update needs attention",
+                details, error=not ok)
+        return False
+
+    def worker():
+        try:
+            # The owner-installed polkit rule authorizes only this named unit.
+            cmd = ["systemctl", "start", "--no-block", "taptether-update.service"]
+            result = subprocess.run(cmd, capture_output=True, text=True,
+                                    timeout=25, check=False)
+            if result.returncode != 0:
+                # A graphical UAC-like prompt, still scoped to the fixed unit.
+                result = subprocess.run(["pkexec", "/usr/bin/systemctl",
+                    "start", "--no-block", "taptether-update.service"],
+                    capture_output=True, text=True, timeout=75, check=False)
+            if result.returncode != 0:
+                raise RuntimeError("Authorization declined or update request failed.")
+            for _ in range(150):
+                time.sleep(2)
+                state = subprocess.run(["systemctl", "show",
+                    "taptether-update.service", "--property=ActiveState",
+                    "--property=Result", "--property=ExecMainStatus"],
+                    capture_output=True, text=True, timeout=6, check=False)
+                if state.returncode != 0:
+                    continue
+                data = dict(line.split("=", 1) for line in state.stdout.splitlines()
+                            if "=" in line)
+                if data.get("ActiveState") in ("inactive", "failed"):
+                    passed = data.get("ActiveState") == "inactive" and (
+                        data.get("Result") == "success") and (
+                        data.get("ExecMainStatus") in ("", "0", None))
+                    details = ("Installed agent: " + agent_version() +
+                               ". Reconnect your phone if needed.") if passed else (
+                               "The update service reported an error. "
+                               "The previous agent remains installed.")
+                    GLib.idle_add(finished, passed, details)
+                    return
+            raise RuntimeError("The update is taking longer than expected.")
+        except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+            GLib.idle_add(finished, False, str(error))
+
+    threading.Thread(target=worker, daemon=True).start()
+
 def add_menu_item(menu, text, callback):
     item = Gtk.MenuItem(label=text)
     item.connect("activate", callback)
@@ -131,12 +200,13 @@ def add_menu_item(menu, text, callback):
 
 def menu(version):
     m = Gtk.Menu()
-    status_item = add_menu_item(m, "TapTether Agent v" + version, lambda _: show_splash(version))
+    status_item = add_menu_item(m, "TapTether Agent v" + version, lambda _: show_splash(agent_version()))
     status_item.set_sensitive(True)
     status = add_menu_item(m, "", lambda _: None)
     status.set_sensitive(False)
 
     def refresh():
+        status_item.set_label("TapTether Agent v" + agent_version())
         status.set_label("Status: " + ("Running" if running() else "Stopped"))
         return True
 
@@ -147,7 +217,7 @@ def menu(version):
     add_menu_item(m, "Start agent", lambda item: on_command(item, "start"))
     add_menu_item(m, "Restart agent", lambda item: on_command(item, "restart"))
     add_menu_item(m, "Stop agent", lambda item: on_command(item, "stop"))
-    add_menu_item(m, "Check for updates", lambda item: on_command(item, "update"))
+    add_menu_item(m, "Update Agent…", update_from_tray)
     # Locally stored owner-only opt-out, no passwordless sudo. Installed
     # service/polkit policy is narrowly limited to the existing agent.
     shutdown = Gtk.CheckMenuItem(label="Allow remote shutdown")
