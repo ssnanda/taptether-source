@@ -33,8 +33,22 @@ pairing() {
     notice 'Agent identity not ready. Start agent and retry.' >&2
     return 1
   fi
-  printf 'LAN IP: '
-  ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo '(check network settings)'
+  # macOS can be connected over Wi-Fi and Ethernet simultaneously.
+  # Show all private IPv4 interfaces; the phone can use only a reachable
+  # address (normally on the same local subnet as its current Wi-Fi).
+  printf 'LAN IP(s) (choose an address reachable from your phone):\n'
+  local addresses
+  addresses="$(/sbin/ifconfig -a | /usr/bin/awk '
+    $1 == "inet" {
+      ip=$2
+      if (ip ~ /^192[.]168[.]/ || ip ~ /^10[.]/ ||
+          ip ~ /^172[.](1[6-9]|2[0-9]|3[01])[.]/) print ip
+    }' | /usr/bin/sort -u)"
+  if [[ -n "$addresses" ]]; then
+    printf '%s\n' "$addresses"
+  else
+    printf '%s\n' '(no private IPv4 interfaces found)'
+  fi
   printf 'Port: 48321\nPairing token (PRIVATE): '
   cat "$CONF/pairing.token"
   printf 'TLS SHA-256 fingerprint: '
