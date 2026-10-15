@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'computer_store.dart';
 import 'discovery.dart';
 import 'lan_scan.dart';
@@ -65,4 +68,68 @@ SavedComputer movedDevice(SavedComputer saved, String verifiedIp,
     customName: saved.customName,
     macAddress: saved.macAddress,
   );
+}
+
+
+/// Enumerate at most a /22 worth of addresses from the current phone Wi-Fi.
+/// A /23 has usable addresses on both the .20.x and .21.x halves; do not
+/// confuse the CIDR network address with an exact device IP.
+List<String> agentTcpProbeAddresses(DetectedLanRange network, {
+  int maxAddresses = 1024,
+}) {
+  if (maxAddresses <= 0) return const [];
+  final prefixes = network.scanPrefixes.take(4);
+  final networkAddress = network.cidr.split('/').first;
+  final numbers = network.ip.split('.').map(int.parse).toList();
+  final mask = network.subnetMask.split('.').map(int.parse).toList();
+  final broadcastParts = <int>[
+    for (var index = 0; index < 4; index++)
+      numbers[index] | (255 ^ mask[index]),
+  ];
+  final broadcast = broadcastParts.join('.');
+  final result = <String>[];
+  for (final prefix in prefixes) {
+    for (var last = 0; last <= 255; last++) {
+      final ip = '$prefix.$last';
+      if (ip == networkAddress || ip == broadcast ||
+          !lanRangeContains(network, ip)) {
+        continue;
+      }
+      result.add(ip);
+      if (result.length >= maxAddresses) return result;
+    }
+  }
+  return result;
+}
+
+/// Best-effort reachability discovery for TapTether's single TCP agent port.
+/// Crucially, an open TCP port is NEVER enough to change a paired device.
+/// The caller must authenticate using the SAVED phone identity and TLS pin.
+/// This fallback works where UDP discovery/mDNS is blocked on iOS Wi-Fi.
+Future<List<String>> probeAgentControlPorts(
+  DetectedLanRange network, {
+  int parallelism = 48,
+  int maxHits = 24,
+  Duration timeout = const Duration(milliseconds: 320),
+}) async {
+  final addresses = agentTcpProbeAddresses(network);
+  final found = <String>[];
+  final workers = parallelism.clamp(1, 64);
+  for (var index = 0; index < addresses.length; index += workers) {
+    final batch = addresses.skip(index).take(workers).toList();
+    final hits = await Future.wait(batch.map((ip) async {
+      try {
+        final socket = await Socket.connect(ip, 48321, timeout: timeout);
+        socket.destroy();
+        return ip;
+      } on SocketException {
+        return null;
+      } on TimeoutException {
+        return null;
+      }
+    }));
+    found.addAll(hits.whereType<String>());
+    if (found.length >= maxHits) break;
+  }
+  return found.take(maxHits).toList();
 }
