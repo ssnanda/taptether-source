@@ -10,6 +10,7 @@ void main() {
       (tester) async {
     final holdSecondRange = Completer<void>();
     final seenPrefixes = <String>[];
+    final visitedBounds = <String>[];
     final verifiedIps = <String>[];
     const newHost = LanHost(
       ip: '192.168.21.242',
@@ -23,8 +24,13 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: LanScanScreen(
         initialNetwork: network,
-        scanRange: (prefix, {onProgress, onAgentFound, cancelled}) async {
+        scanRange: (prefix, {
+          onProgress, onAgentFound, onProbe, cancelled,
+          startHost = 1, endHost,
+        }) async {
           seenPrefixes.add(prefix);
+          visitedBounds.add('$prefix:$startHost-$endHost');
+          onProbe?.call('$prefix.242', const []);
           if (prefix == '192.168.20') {
             return const [];
           }
@@ -65,6 +71,8 @@ void main() {
     holdSecondRange.complete();
     await tester.pumpAndSettle();
     expect(seenPrefixes.toSet(), {'192.168.20', '192.168.21'});
+    expect(visitedBounds.toSet(),
+        {'192.168.21:0-254', '192.168.20:1-255'});
     expect(find.textContaining('paired computer(s) verified'), findsOneWidget);
   });
 
@@ -76,13 +84,17 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: LanScanScreen(
         initialNetwork: network,
-        scanRange: (prefix, {onProgress, onAgentFound, cancelled}) async {
+        scanRange: (prefix, {
+          onProgress, onAgentFound, onProbe, cancelled,
+          startHost = 1, endHost,
+        }) async {
           if (prefix != '192.168.21') return [];
           const host = LanHost(
             ip: '192.168.21.242',
             hostname: 'UnknownMac.local',
             openPorts: [48321],
           );
+          onProbe?.call(host.ip, host.openPorts);
           onAgentFound?.call(host);
           return [host];
         },
