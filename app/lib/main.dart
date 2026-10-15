@@ -220,7 +220,7 @@ class LocalAgent {
     if (!configured) return null;
     try {
       final request = await _client!.getUrl(_base!.resolve('/api/info'));
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ' + await _bearer());
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
       final response = await request.close().timeout(const Duration(seconds: 4));
       if (response.statusCode != 200) {
         await response.drain<void>();
@@ -256,7 +256,7 @@ class LocalAgent {
     if (!configured) return {};
     try {
       final request = await _client!.getUrl(_base!.resolve('/api/neighbors'));
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ' + await _bearer());
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
       final response = await request.close().timeout(const Duration(seconds: 5));
       if (response.statusCode != 200) {
         await response.drain<void>();
