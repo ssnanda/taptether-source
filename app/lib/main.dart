@@ -786,8 +786,26 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       if (!mounted) return;
       final verified = await _reconcileDiscoveredAgents(result);
       if (!mounted) return;
+      // "Discover" is also an explicit phone-initiated scan. Where UDP
+      // broadcasts are blocked, fall back to the current Wi-Fi's agent TCP
+      // port and verify all candidates with the same pinned saved pairing.
+      if (verified.isEmpty && savedComputers.isNotEmpty) {
+        final wifi = _wifiRange ?? await detectLanRange();
+        if (wifi != null) {
+          final ips = await probeAgentControlPorts(wifi);
+          for (final ip in ips) {
+            if (!mounted) break;
+            final name = await _reconcileScannedAgent(ip);
+            if (name != null) verified[ip] = name;
+          }
+        }
+      }
+      if (!mounted) return;
       setState(() {
-        nearbyComputers = result;
+        // Already paired devices belong in My Devices, not duplicate
+        // unverified rows in Nearby Computers.
+        nearbyComputers = result.where((candidate) =>
+            !verified.containsKey(candidate.host)).toList();
         status = verified.isNotEmpty
             ? 'Recognized ${verified.length} paired computer(s). My Devices is updated.'
             : result.isEmpty
