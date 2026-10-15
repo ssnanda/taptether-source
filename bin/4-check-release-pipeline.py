@@ -111,6 +111,9 @@ assert 'rm -rf -- "$CONF"' in mac_setup
 assert 'codesign --verify "$APP"' in mac_setup
 assert "Repair Accessibility…" in mac_tray
 assert "Uninstall TapTether…" in mac_tray
+assert "Quit TapTether (stop agent & menu)" in mac_tray
+assert 'task.arguments = ["bootout", target]' in mac_tray
+assert "Quit menu (agent stays running)" not in mac_tray
 assert 'erase ? "--erase-pairing" : "--keep-pairing"' in mac_tray
 assert "restart) start_agent" in mac_setup
 assert "launchctl bootstrap" in mac_setup
