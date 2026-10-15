@@ -262,9 +262,9 @@ SYSTEMD
   ensure_running
   # Computer owner requested default ON for all agents. Existing explicit
   # disable marker must survive repair and updates.
-  if [[ ! -f "$POWER_DISABLED" ]]; then
-    enable_shutdown
-  fi
+  # Always prepare the narrow shutdown policy; preserve an existing OFF
+  # preference without briefly enabling shutdown during the service restart.
+  enable_shutdown --preserve-preference
   # Earlier builds pinned the launcher to GNOME Favorites. Remove only
   # that legacy auto-pin; the tray remains available without a taskbar icon.
   unpin_legacy_launcher
@@ -321,9 +321,15 @@ EOF
   rm -f "$temp"
   sudo systemctl daemon-reload
   mkdir -p "$CONFIG"
-  rm -f "$POWER_DISABLED"
+  if [[ "${1:-}" != "--preserve-preference" ]]; then
+    rm -f "$POWER_DISABLED"
+  fi
   sudo systemctl restart "$UNIT"
-  note 'Remote shutdown enabled for paired computers; phone confirmation remains mandatory.'
+  if [[ -f "$POWER_DISABLED" ]]; then
+    note 'Remote shutdown remains disabled by this computer owner.'
+  else
+    note 'Remote shutdown enabled for paired computers; phone confirmation remains mandatory.'
+  fi
 }
 disable_shutdown() {
   # Leave the already-granted narrowly scoped systemd/polkit authorization
