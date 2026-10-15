@@ -159,7 +159,9 @@ EOF
   notice 'Background agent installed, running and enabled at login.'
   notice 'TapTether Agent.app displays the splash on demand; the menu bar tray starts silently at login.'
   notice 'Allow TapTether in macOS System Settings > Privacy & Security > Accessibility to enable mouse/keyboard.'
-  pairing
+  # Never print pairing tokens in routine install/update logs. The owner can
+  # deliberately reveal them from the menu bar or the pairing subcommand.
+  notice 'To pair your phone, use the menu-bar Show pairing details command.'
 }
 pairing_qr() {
   command -v qrencode >/dev/null 2>&1 || { notice 'Install qrencode: brew install qrencode' >&2; exit 1; }
