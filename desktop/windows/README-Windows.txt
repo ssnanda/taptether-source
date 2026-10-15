@@ -21,3 +21,13 @@ value TapTetherAgent, remove %LOCALAPPDATA%\TapTether, and remove
 the two TapTether Private LAN firewall rules (administrator required).
 Pairing identity is stored under %APPDATA%\taptether.
 Do not delete that identity folder unless you want to revoke this local installation.
+
+
+Windows tray menu (signed-in desktop session)
+--------------------------------------------
+TapTether also installs an icon in the Windows notification area. Right-click
+it, select Update Agent..., approve the prompt, and wait for completion.
+The installed updater downloads the current GitHub Release, verifies SHA-256,
+and replaces only the user's agent binaries. No command line is required.
+The branded tray and agent start automatically on user sign-in. Older Windows agents
+must be installed once from the current ZIP before the new tray menu appears.

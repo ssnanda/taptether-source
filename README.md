@@ -752,3 +752,28 @@ Existing agents must be upgraded before new default settings apply.
 
 Discovery remains local, best-effort, and may be blocked by client isolation,
 VLAN firewalls, VPN routing, corporate Wi-Fi policies or multicast filtering.
+
+### v0.6.12+47 — update directly from agent tray icons
+
+**macOS:** The menu-bar icon now has **Update Agent…** rather than a
+check-only command. It requests confirmation, runs the already installed
+SHA-256-verifying updater in the background, and refreshes its displayed
+installed version. The menu never prints private pairing tokens.
+
+**Ubuntu:** **Update Agent…** in the AppIndicator tray requests a fixed,
+installer-managed `taptether-update.service` through the desktop user's
+restricted systemd/polkit authorization. The GTK tray stays responsive and
+shows completion or failure without asking the user to type terminal commands.
+
+**Windows:** A branded, sign-in-autostart `TapTetherTray.ps1` notification
+icon now exposes **Update Agent...**, agent start/stop/restart,
+a checked-by-default remote-shutdown toggle, and explicitly requested pairing
+details. Updating launches the user-scoped SHA-256-verified PowerShell
+updater without an interactive console. The signed-in user's agent and
+notification icon remain separate from Windows services.
+
+The **first upgrade from an older agent/tray** may still need a fresh native
+installer to acquire these menu actions; afterward updates are initiated from
+the tray without launching the command line. Existing pairing credentials,
+TLS identity and user settings remain intact. macOS and Windows must still
+be tested on physical desktop hardware after CI builds.

@@ -12,6 +12,9 @@ private let controller = NSHomeDirectory() + "/.local/bin/taptetherctl-mac"
 final class TapTetherMenu: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var statusLabel: NSMenuItem!
+    private var versionMenuItem: NSMenuItem!
+    private var updateMenuItem: NSMenuItem!
+    private var updateInProgress = false
     private var remoteShutdownItem: NSMenuItem!
     private var splashWindow: NSPanel?
     private var activeVersion = "unknown"
@@ -23,6 +26,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         let version = NSMenuItem(title: "TapTether Agent v" + activeVersion,
                                  action: #selector(showSplash), keyEquivalent: "")
         version.target = self
+        versionMenuItem = version
         menu.addItem(version)
         statusLabel = NSMenuItem(title: "Status: checking…", action: nil, keyEquivalent: "")
         statusLabel.isEnabled = false
@@ -33,7 +37,10 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         add(menu, "Start agent", #selector(startAgent))
         add(menu, "Restart agent", #selector(restartAgent))
         add(menu, "Stop agent", #selector(stopAgent))
-        add(menu, "Check for updates", #selector(checkUpdate))
+        updateMenuItem = NSMenuItem(title: "Update Agent…",
+                                  action: #selector(updateAgent), keyEquivalent: "")
+        updateMenuItem.target = self
+        menu.addItem(updateMenuItem)
         remoteShutdownItem = NSMenuItem(
             title: "Allow remote shutdown", action: #selector(toggleRemoteShutdown),
             keyEquivalent: "")
@@ -141,6 +148,12 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     }
 
     private func refreshStatus() {
+        let installedVersion = versionFromAgent()
+        if installedVersion != activeVersion {
+            activeVersion = installedVersion
+            versionMenuItem?.title = "TapTether Agent v" + installedVersion
+            statusItem?.button?.toolTip = "TapTether Agent v" + installedVersion
+        }
         remoteShutdownItem?.state = remoteShutdownEnabled() ? .on : .off
         let target = "gui/" + String(getuid()) + "/" + agentLabel
         let state = output("/bin/launchctl", ["print", target])
@@ -238,7 +251,59 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     }
     @objc private func restartAgent() { runControl("restart") }
     @objc private func stopAgent() { runControl("stop") }
-    @objc private func checkUpdate() { runControl("check-update") }
+    @objc private func updateAgent() {
+        if updateInProgress { return }
+        guard FileManager.default.isExecutableFile(atPath: controller) else {
+            promptSetup()
+            return
+        }
+        let prompt = NSAlert()
+        prompt.messageText = "Update TapTether Agent?"
+        prompt.informativeText = "Check the latest published release and install it " +
+            "if a newer version is available. The agent may briefly disconnect. " +
+            "Your paired phones and local settings will be preserved."
+        prompt.addButton(withTitle: "Update Agent")
+        prompt.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if prompt.runModal() != .alertFirstButtonReturn { return }
+        updateInProgress = true
+        updateMenuItem.isEnabled = false
+        statusLabel?.title = "Status: Updating…"
+
+        // The updater can replace the agent and tray. Its output must not be
+        // displayed because legacy installers printed private pairing tokens.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/bin/bash")
+            task.arguments = [controller, "update"]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            var succeeded = false
+            do {
+                try task.run()
+                task.waitUntilExit()
+                succeeded = task.terminationStatus == 0
+            } catch {
+                succeeded = false
+            }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.updateInProgress = false
+                self.updateMenuItem.isEnabled = true
+                self.refreshStatus()
+                if succeeded {
+                    self.showNotice("TapTether update complete",
+                        "Installed version: " + self.activeVersion +
+                        ". The agent and menu may restart briefly.")
+                } else {
+                    self.showNotice("Update could not finish",
+                        "The previously installed agent remains available. " +
+                        "Try Update Agent again; if it still fails, " +
+                        "use Agent diagnostics.")
+                }
+            }
+        }
+    }
 
     @objc private func toggleRemoteShutdown() {
         // Persist via the local controller. The installed agent has its own

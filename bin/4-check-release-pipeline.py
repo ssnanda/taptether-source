@@ -116,6 +116,27 @@ assert "  pairing\n}" not in mac_setup  # no private token printed on updates
 assert "Copy diagnostics" in mac_tray
 assert "Open Accessibility settings" in mac_tray
 
+# All desktop tray menus must perform updates, not merely display a CLI hint.
+ubuntu_tray = (ROOT / "desktop" / "ubuntu" / "taptether_tray.py").read_text(
+    encoding="utf-8")
+win_tray = (ROOT / "desktop" / "windows" / "TapTetherTray.ps1").read_text(
+    encoding="utf-8")
+win_installer = (ROOT / "desktop" / "windows" / "Install-TapTether.ps1").read_text(
+    encoding="utf-8")
+win_updater = (ROOT / "desktop" / "windows" / "Update-TapTether.ps1").read_text(
+    encoding="utf-8")
+assert 'title: "Update Agent…"' in mac_tray
+assert 'task.arguments = [controller, "update"]' in mac_tray
+assert 'task.standardOutput = FileHandle.nullDevice' in mac_tray
+assert "update_from_tray" in ubuntu_tray
+assert 'add_menu_item(m, "Update Agent…", update_from_tray)' in ubuntu_tray
+assert 'taptether-update.service' in ubuntu_tray
+assert "Update Agent..." in win_tray
+assert "Update-TapTether.ps1" in win_tray
+assert "TapTetherTray.ps1" in win_installer and "TapTetherTray.ps1" in win_updater
+assert "TapTetherTray.ps1" in workflow
+assert "PowerShell syntax" in workflow
+
 # Guard against regressing the broken 0.6.7 remote class and F-key parser.
 remote = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
 assert remote.count("Widget _connectedControls()") == 1
