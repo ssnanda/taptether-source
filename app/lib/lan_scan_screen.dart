@@ -5,12 +5,23 @@ import 'package:flutter/material.dart';
 import 'lan_scan.dart';
 import 'computer_store.dart';
 
+/// Injecting a scanner permits deterministic tests of authenticated
+/// scan-to-paired-device reconciliation without touching real network hosts.
+typedef LanRangeScanner = Future<List<LanHost>> Function(
+  String prefix, {
+  void Function(int completed, int total)? onProgress,
+  void Function(LanHost candidate)? onAgentFound,
+  bool Function()? cancelled,
+});
+
 /// Manual on-device /24 scan. No internet API, cloud account or analytics.
 class LanScanScreen extends StatefulWidget {
   const LanScanScreen({
     super.key, this.initialIp, this.knownComputers = const [],
     this.macResolver,
     this.verifyPairedAgent,
+    this.scanRange,
+    this.initialNetwork,
   });
   final String? initialIp;
   final List<SavedComputer> knownComputers;
@@ -19,6 +30,8 @@ class LanScanScreen extends StatefulWidget {
   /// with a saved TLS certificate pin AND paired-phone credentials before
   /// returning the matching computer name or changing a saved record.
   final Future<String?> Function(String ip)? verifyPairedAgent;
+  final LanRangeScanner? scanRange;
+  final DetectedLanRange? initialNetwork;
 
   @override
   State<LanScanScreen> createState() => _LanScanScreenState();
@@ -50,7 +63,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
   }
 
   Future<void> _loadDefault() async {
-    final range = await detectLanRange();
+    final range = widget.initialNetwork ?? await detectLanRange();
     if (!mounted) return;
     setState(() {
       _network = range;
@@ -143,7 +156,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
       final found = <String, LanHost>{};
       for (var index = 0; index < targets.length && !_cancel; index++) {
         final scannedBefore = index * 254;
-        final group = await scanPrivate24(targets[index],
+        final group = await (widget.scanRange ?? scanPrivate24)(targets[index],
           cancelled: () => _cancel,
           onAgentFound: _showAgentCandidate,
           onProgress: (done, _) {
