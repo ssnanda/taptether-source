@@ -53,7 +53,7 @@ try {
             'Allow-TapTether.ps1','Show-Pairing.ps1','Update-TapTether.ps1',
             'Install-TapTether.cmd','Show-Pairing.cmd',
             'Configure-Shutdown.ps1','Configure-Shutdown.cmd',
-            'TapTetherTray.ps1','README-Windows.txt',
+            'TapTetherTray.ps1','TapTether.ico','README-Windows.txt',
             'version.txt')) {
         if (!(Test-Path (Join-Path $unpacked $name) -PathType Leaf)) {
             throw ('Required ZIP file missing: ' + $name)
@@ -70,7 +70,7 @@ try {
             'Show-Pairing.ps1','Update-TapTether.ps1',
             'Install-TapTether.cmd','Show-Pairing.cmd',
             'Configure-Shutdown.ps1','Configure-Shutdown.cmd',
-            'TapTetherTray.ps1','README-Windows.txt','version.txt')) {
+            'TapTetherTray.ps1','TapTether.ico','README-Windows.txt','version.txt')) {
         Copy-Item (Join-Path $unpacked $name) (Join-Path $agentDir $name) -Force
     }
     Start-Process -FilePath $currentExe -WindowStyle Hidden
