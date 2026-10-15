@@ -15,13 +15,11 @@ on:
           - build
           - validate
   push:
-    branches: [main, fix/v0.6-remote-scan-mac-details, fix/macos-accessibility-repair-uninstall]
+    branches: [main, fix/v0.6-remote-scan-mac-details]
     # Branch VERSION bumps validate/build Windows without publishing.
     # Only main can publish a release.
     paths:
       - VERSION
-      - .github/workflows/taptether.yml
-      - desktop/macos/TapTetherTray.swift
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
     - cron: '37 4 * * 0'
