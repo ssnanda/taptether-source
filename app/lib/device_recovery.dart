@@ -112,11 +112,13 @@ Future<List<String>> probeAgentControlPorts(
   int maxHits = 24,
   Duration timeout = const Duration(milliseconds: 320),
   void Function(String ip, bool accepts)? onProbe,
+  bool Function()? cancelled,
 }) async {
   final addresses = agentTcpProbeAddresses(network);
   final found = <String>[];
   final workers = parallelism.clamp(1, 64);
   for (var index = 0; index < addresses.length; index += workers) {
+    if (cancelled?.call() ?? false) break;
     final batch = addresses.skip(index).take(workers).toList();
     final hits = await Future.wait(batch.map((ip) async {
       try {
