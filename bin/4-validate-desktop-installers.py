@@ -92,9 +92,19 @@ def check_macos(root: Path, version: str, arch: str) -> None:
     bundle_zip = root / 'dist' / 'macos' / f'TapTetherAgent-macos-{arch}-{version}.zip'
     core_version = (root / 'INPUT_CORE_VERSION').read_text(encoding='utf-8').strip()
     core_archive = root / 'dist' / 'macos' / f'TapTetherInputCore-macos-{arch}-{core_version}.tar.gz'
+    screen_version = (root / 'SCREEN_CORE_VERSION').read_text(encoding='utf-8').strip()
+    screen_archive = root / 'dist' / 'macos' / f'TapTetherScreenCore-macos-{arch}-{screen_version}.tar.gz'
     require(archive.is_file() and bundle_zip.is_file(),
             f'Missing macOS agent archive or Finder-friendly app ZIP: {arch}')
     require(core_archive.is_file(), f'Missing macOS Input Core archive: {arch}')
+    require(screen_archive.is_file(), f'Missing stable Screen Core archive: {arch}')
+    with tarfile.open(screen_archive, mode='r:gz') as tf:
+        entries = {m.name: m for m in tf.getmembers()}
+        require(entries.keys() == {'taptether-screen-core'},
+                f'{screen_archive}: unexpected Screen Core payload')
+        require(entries['taptether-screen-core'].isfile() and
+                entries['taptether-screen-core'].mode & 0o111,
+                f'{screen_archive}: Screen Core is not executable')
     with tarfile.open(core_archive, mode='r:gz') as tf:
         entries = {m.name: m for m in tf.getmembers()}
         require(entries.keys() == {'taptether-input-core'},
@@ -127,6 +137,7 @@ def check_macos(root: Path, version: str, arch: str) -> None:
                 app + 'Resources/TapTether.icns',
                 app + 'Resources/taptether-agent',
                 app + 'Resources/taptether-input-core',
+                app + 'Resources/taptether-screen-core',
                 app + 'Resources/taptetherctl-mac',
                 app + 'Resources/taptether-agent-update-mac',
                 app + 'Resources/version.txt'}
