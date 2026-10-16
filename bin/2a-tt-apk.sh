@@ -11,6 +11,7 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 python3 "$ROOT/bin/9-tt-brand-icons.py"
+python3 "$ROOT/bin/4-sync-app-version.py"
 cd "$ROOT/app"
 flutter pub get
 flutter analyze
