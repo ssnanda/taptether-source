@@ -49,6 +49,10 @@ install_core() {
     notice 'Explicit Input Core version authorization did not match payload.' >&2
     return 1
   fi
+  if [[ -x "$CORE" && "$incoming" == "$installed" ]]; then
+    notice 'Input Core already approved at this version; no replacement.'
+    return 0
+  fi
   cp "$source" "$CORE.new"
   chmod 755 "$CORE.new"
   mv -f "$CORE.new" "$CORE"
@@ -219,7 +223,7 @@ install_agent() {
 </dict></plist>
 MACPLIST
     if command -v codesign >/dev/null 2>&1; then
-      codesign --force --deep --sign - --timestamp=none "$bundle" >/dev/null 2>&1 ||
+      codesign --force --sign - --timestamp=none "$bundle" >/dev/null 2>&1 ||
         notice 'Ad-hoc signing of menu-bar app was not possible; macOS may request approval.'
     fi
     cat > "$TRAY_PLIST" <<EOF
@@ -280,13 +284,21 @@ EOF
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN string 1" "$PLIST"
   fi
-  launchctl bootout "$TARGET/$CORE_LABEL" >/dev/null 2>&1 || true
-  launchctl bootstrap "$TARGET" "$CORE_PLIST"
-  launchctl kickstart -k "$TARGET/$CORE_LABEL"
+  # Preserve both independently approved TCC processes through ordinary
+  # upgrades. Only launch a missing service; never restart an existing core.
+  if launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
+    notice 'Preserved running Input Core (no restart or re-sign).'
+  else
+    launchctl bootstrap "$TARGET" "$CORE_PLIST"
+    launchctl kickstart "$TARGET/$CORE_LABEL"
+  fi
   if [[ -x "$SCREEN" && -f "$SCREEN_PLIST" ]]; then
-    launchctl bootout "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1 || true
-    launchctl bootstrap "$TARGET" "$SCREEN_PLIST"
-    launchctl kickstart -k "$TARGET/$SCREEN_LABEL"
+    if launchctl print "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1; then
+      notice 'Preserved running Screen Core (no restart or re-sign).'
+    else
+      launchctl bootstrap "$TARGET" "$SCREEN_PLIST"
+      launchctl kickstart "$TARGET/$SCREEN_LABEL"
+    fi
   fi
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
@@ -411,13 +423,13 @@ start_agent() {
   [[ -f "$PLIST" ]] || { notice 'Agent not installed. Choose Install / Repair agent first.' >&2; return 1; }
   if ! launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$CORE_PLIST" || return 1
+    launchctl kickstart "$TARGET/$CORE_LABEL" || return 1
   fi
-  launchctl kickstart -k "$TARGET/$CORE_LABEL"
   if [[ -x "$SCREEN" && -f "$SCREEN_PLIST" ]]; then
     if ! launchctl print "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1; then
       launchctl bootstrap "$TARGET" "$SCREEN_PLIST" || return 1
+      launchctl kickstart "$TARGET/$SCREEN_LABEL" || return 1
     fi
-    launchctl kickstart -k "$TARGET/$SCREEN_LABEL"
   fi
   if ! launchctl print "$TARGET/$LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$PLIST" || {
