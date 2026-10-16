@@ -50,7 +50,8 @@ void main() {
       scanRange: (prefix, {onProgress, onAgentFound, onProbe, cancelled,
           required startHost, endHost}) async {
         probes++;
-        onProgress?.call(endHost! - startHost + 1, endHost - startHost + 1);
+        final total = (endHost ?? 254) - startHost + 1;
+        onProgress?.call(total, total);
         return [];
       },
     )));
