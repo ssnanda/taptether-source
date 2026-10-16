@@ -13,6 +13,8 @@ class VisualSurface extends StatefulWidget {
     required this.error,
     required this.onRefresh,
     required this.onTap,
+    required this.onClick,
+    required this.onMove,
     required this.onScroll,
   });
 
@@ -23,6 +25,8 @@ class VisualSurface extends StatefulWidget {
   final String? error;
   final VoidCallback onRefresh;
   final void Function(int x, int y, String button) onTap;
+  final ValueChanged<String> onClick;
+  final ValueChanged<Offset> onMove;
   final ValueChanged<int> onScroll;
 
   @override
@@ -34,13 +38,41 @@ class _VisualSurfaceState extends State<VisualSurface> {
   double _startZoom = 1;
   Offset? _lastFocal;
   double _scrollRemainder = 0;
+  // Screen preview and trackpad share the same relative cursor gesture.
+  final Map<int, Offset> _fingers = {};
+  bool _movedWithMultipleFingers = false;
+
+  void _fingerDown(PointerDownEvent event) {
+    if (_fingers.isEmpty) _movedWithMultipleFingers = false;
+    _fingers[event.pointer] = event.localPosition;
+    if (_fingers.length > 1) _movedWithMultipleFingers = true;
+  }
+
+  void _fingerMove(PointerMoveEvent event) {
+    final previous = _fingers[event.pointer];
+    if (previous == null) return;
+    _fingers[event.pointer] = event.localPosition;
+    if (_fingers.length != 1 || _movedWithMultipleFingers) return;
+    final delta = event.localPosition - previous;
+    if (delta.distanceSquared > 0) widget.onMove(delta);
+  }
+
+  void _fingerUp(PointerEvent event) {
+    _fingers.remove(event.pointer);
+  }
 
   void _tap(Offset local, Size size, String button) {
     final frame = widget.frame;
     if (frame == null) return;
     final coords = VisualGeometry.tap(local, size,
         imageWidth: frame.width, imageHeight: frame.height, zoom: _zoom);
-    if (coords != null) widget.onTap(coords.$1, coords.$2, button);
+    if (_movedWithMultipleFingers) return;
+    if (coords != null) {
+      widget.onTap(coords.$1, coords.$2, button);
+    } else {
+      // Letterboxed margins should still behave as a normal touchpad.
+      widget.onClick(button);
+    }
   }
 
   @override
@@ -50,7 +82,13 @@ class _VisualSurfaceState extends State<VisualSurface> {
         final viewport = Size(constraints.maxWidth, constraints.maxHeight);
         return ClipRRect(
           borderRadius: BorderRadius.circular(14),
-          child: GestureDetector(
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: _fingerDown,
+            onPointerMove: _fingerMove,
+            onPointerUp: _fingerUp,
+            onPointerCancel: _fingerUp,
+            child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapUp: (details) =>
                 _tap(details.localPosition, viewport, 'left'),
@@ -142,6 +180,7 @@ class _VisualSurfaceState extends State<VisualSurface> {
                         color: Colors.black)])))),
               ]),
             ),
+          ),
           ),
         );
       }),
