@@ -70,7 +70,9 @@ EOF
   plutil -lint "$bundle/Contents/Info.plist" >/dev/null
   # Personal-use build: no Apple Developer certificate or notarization required
   # to package; Gatekeeper may still ask for explicit user approval to run.
-  codesign --force --deep --sign "$signing_identity" --timestamp=none "$bundle"
+  # Sign the outer Finder bundle only. Input Core is already independently
+  # signed and must not be recursively re-signed as agent versions advance.
+  codesign --force --sign "$signing_identity" --timestamp=none "$bundle"
   # Keep the original five-member archive unchanged so existing v0.6.1
   # agents can upgrade with their strict manifest-checking updater.
   out="$ROOT/dist/macos/TapTetherAgent-macos-$arch-$version.tar.gz"
