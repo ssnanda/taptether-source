@@ -456,7 +456,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   int _screenEpoch = 0;
 
   bool get _viewingScreen => agent.configured && !_connectionLost &&
-      _appForeground && _pageVisible && _remoteLayout.trackpadExpanded &&
+      _appForeground && _pageVisible &&
+      (_remoteLayout.trackpadExpanded ||
+          MediaQuery.orientationOf(context) == Orientation.landscape) &&
       !_remoteLayout.mediaMode && !_remoteLayout.presentationMode &&
       agent.screenCaptureSupported &&
       VisualModePolicy.normalize(_remoteLayout.visualMode) != 'trackpad';
@@ -2464,6 +2466,197 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+
+  // Landscape keeps the input surface immersive in every control mode.
+  // Secondary buttons live in a sheet instead of splitting the screen.
+  Future<void> _showLandscapeControls() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      constraints: const BoxConstraints(maxWidth: 840),
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * .72,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            children: [
+              Text(_remoteLayout.presentationMode ? 'Presentation controls'
+                  : _remoteLayout.mediaMode ? 'Media controls'
+                  : 'Remote controls',
+                style: Theme.of(sheetContext).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              if (_remoteLayout.presentationMode) _presentationView(false),
+              if (_remoteLayout.mediaMode)
+                MediaRemote(
+                  service: _remoteLayout.mediaService == 'netflix'
+                      ? MediaService.netflix : MediaService.youtube,
+                  enabled: agent.configured && !_connectionLost,
+                  landscape: false,
+                  onServiceChanged: (value) =>
+                      _setLayout(_changedLayout(mediaService: value.name)),
+                  onKey: (key) => unawaited(command('key', {'key': key})),
+                  onSearch: _searchMedia,
+                  onOpenService: (service) => _searchMedia(service, ''),
+                ),
+              const SizedBox(height: 12),
+              _landscapeTyping(),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(child: Text('Quick keys',
+                  style: Theme.of(sheetContext).textTheme.titleSmall)),
+                TextButton(
+                  onPressed: _customizeQuickKeys,
+                  child: const Text('Customize')),
+              ]),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final id in _remoteLayout.quickKeys) _quickKeyButton(id),
+              ]),
+              const SizedBox(height: 16),
+              _arrowPad(),
+              const SizedBox(height: 8),
+              ..._moreControlSections(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _landscapeImmersive() => LayoutBuilder(
+    builder: (context, limits) {
+      final mode = _remoteLayout.presentationMode ? 'presentation'
+          : _remoteLayout.mediaMode ? 'media' : 'remote';
+      final visual = VisualModePolicy.normalize(_remoteLayout.visualMode);
+      final label = discoveredName ?? host.text.trim();
+      return Stack(fit: StackFit.expand, children: [
+        if (mode == 'remote')
+          _remoteInputSurface(height: limits.maxHeight)
+        else
+          _trackpadSurface(height: limits.maxHeight),
+        Positioned(top: 8, left: 8, right: 8,
+          child: Material(
+            color: Theme.of(context).colorScheme.surface.withValues(alpha: .94),
+            elevation: 2,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(children: [
+                IconButton(
+                  tooltip: 'Navigation',
+                  icon: const Icon(Icons.menu),
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer()),
+                Expanded(child: Text(label, maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge)),
+                PopupMenuButton<String>(
+                  tooltip: 'Remote mode',
+                  initialValue: mode,
+                  onSelected: (selection) => _setLayout(_changedLayout(
+                    presenting: selection == 'presentation',
+                    mediaMode: selection == 'media')),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'remote', child: Text('Remote')),
+                    PopupMenuItem(value: 'presentation',
+                      child: Text('Presentation')),
+                    PopupMenuItem(value: 'media', child: Text('Media')),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(mode == 'remote' ? 'Remote'
+                          : mode == 'media' ? 'Media' : 'Slides'),
+                      const Icon(Icons.arrow_drop_down),
+                    ]),
+                  ),
+                ),
+                if (mode == 'remote')
+                  PopupMenuButton<String>(
+                    tooltip: 'Screen mode',
+                    initialValue: visual,
+                    onSelected: (selection) =>
+                        _setLayout(_changedLayout(visualMode: selection)),
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(value: 'trackpad',
+                        child: Text('Trackpad')),
+                      if (agent.screenCaptureSupported) ...const [
+                        PopupMenuItem(value: 'snapshot',
+                          child: Text('Snapshot')),
+                        PopupMenuItem(value: 'live',
+                          child: Text('Live')),
+                      ],
+                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(visual == 'trackpad' ? Icons.mouse_outlined
+                            : visual == 'snapshot' ? Icons.photo_outlined
+                            : Icons.live_tv_outlined, size: 18),
+                        const Icon(Icons.arrow_drop_down),
+                      ]),
+                    ),
+                  ),
+                IconButton(
+                  tooltip: 'Keyboard and controls',
+                  onPressed: _showLandscapeControls,
+                  icon: const Icon(Icons.tune)),
+                IconButton(
+                  tooltip: 'Disconnect',
+                  onPressed: () {
+                    _stopScreen();
+                    agent.disconnect();
+                    setState(() => status = 'Disconnected');
+                  },
+                  icon: const Icon(Icons.link_off)),
+              ]),
+            ),
+          ),
+        ),
+        Positioned(bottom: 8, right: 12, child: Row(children: [
+          if (mode == 'presentation') ...[
+            IconButton.filledTonal(
+              tooltip: 'Previous slide',
+              onPressed: () => unawaited(command('key', {'key': 'Left'})),
+              icon: const Icon(Icons.chevron_left)),
+            const SizedBox(width: 6),
+            IconButton.filledTonal(
+              tooltip: 'Next slide',
+              onPressed: () => unawaited(command('key', {'key': 'Right'})),
+              icon: const Icon(Icons.chevron_right)),
+          ],
+          if (mode == 'media') ...[
+            IconButton.filledTonal(
+              tooltip: 'Play / Pause',
+              onPressed: () => unawaited(command('key', {'key': 'space'})),
+              icon: const Icon(Icons.play_pause)),
+            const SizedBox(width: 6),
+            IconButton.filledTonal(
+              tooltip: 'Volume down',
+              onPressed: () => unawaited(command('key',
+                  {'key': 'XF86AudioLowerVolume'})),
+              icon: const Icon(Icons.volume_down)),
+            const SizedBox(width: 6),
+            IconButton.filledTonal(
+              tooltip: 'Volume up',
+              onPressed: () => unawaited(command('key',
+                  {'key': 'XF86AudioRaiseVolume'})),
+              icon: const Icon(Icons.volume_up)),
+          ],
+          if (mode == 'remote') ...[
+            IconButton.filledTonal(
+              tooltip: 'Right click',
+              onPressed: () => unawaited(command('click',
+                  {'button': 'right'})),
+              icon: const Icon(Icons.ads_click)),
+          ],
+        ])),
+      ]);
+    },
+  );
+
   Widget _landscapeRemote() {
     final screen = MediaQuery.sizeOf(context);
     final safe = MediaQuery.paddingOf(context);
@@ -2730,10 +2923,11 @@ class _RemoteScreenState extends State<RemoteScreen>
   @override
   Widget build(BuildContext context) {
     final connected = agent.configured;
+    final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       key: _scaffoldKey,
       drawer: appDrawer(),
-      appBar: AppBar(
+      appBar: connected && landscape ? null : AppBar(
         leading: IconButton(
           tooltip: 'Open navigation',
           icon: const Icon(Icons.menu),
@@ -2744,7 +2938,9 @@ class _RemoteScreenState extends State<RemoteScreen>
           _stopScreen(); agent.disconnect(); setState(() => status = 'Disconnected');
         } : null, icon: const Icon(Icons.link_off)),
       ]),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
+      body: connected && landscape
+          ? SafeArea(child: _landscapeImmersive())
+          : SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
         if (!connected) ...[
           Text('Your devices. Your control. Your network.',
               style: TextStyle(
