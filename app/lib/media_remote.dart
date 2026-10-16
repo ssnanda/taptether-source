@@ -47,6 +47,7 @@ class MediaRemote extends StatefulWidget {
     required this.onServiceChanged,
     required this.onKey,
     required this.onSearch,
+    this.onOpenService,
   });
 
   final MediaService service;
@@ -55,6 +56,7 @@ class MediaRemote extends StatefulWidget {
   final ValueChanged<MediaService> onServiceChanged;
   final ValueChanged<String> onKey;
   final Future<void> Function(MediaService, String) onSearch;
+  final Future<void> Function(MediaService)? onOpenService;
 
   @override
   State<MediaRemote> createState() => _MediaRemoteState();
@@ -106,6 +108,14 @@ class _MediaRemoteState extends State<MediaRemote> {
         onSelectionChanged: (selection) =>
             widget.onServiceChanged(selection.first),
       ),
+      if (widget.onOpenService != null)
+        Align(alignment: Alignment.centerRight, child: TextButton.icon(
+          key: const ValueKey('media-open-provider'),
+          onPressed: widget.enabled ? () =>
+              widget.onOpenService!(widget.service) : null,
+          icon: const Icon(Icons.open_in_browser),
+          label: Text('Open ${widget.service.label} on computer'),
+        )),
       const SizedBox(height: 12),
       TextField(
         key: const ValueKey('media-search-text'),
@@ -126,7 +136,7 @@ class _MediaRemoteState extends State<MediaRemote> {
         onSubmitted: (_) => _submitSearch(),
       ),
       const SizedBox(height: 5),
-      Text('Search opens in the browser currently focused on the computer.',
+      Text('Search opens in the computer’s default browser.',
         style: Theme.of(context).textTheme.bodySmall),
       const SizedBox(height: 16),
       Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
