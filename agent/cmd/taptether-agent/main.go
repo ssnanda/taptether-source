@@ -28,6 +28,7 @@ import (
 
 	"github.com/ssnanda/taptether.com/agent/internal/discovery"
 	"github.com/ssnanda/taptether.com/agent/internal/input"
+	"github.com/ssnanda/taptether.com/agent/internal/screencap"
 	"github.com/ssnanda/taptether.com/agent/internal/identity"
 	"github.com/ssnanda/taptether.com/agent/internal/power"
     "github.com/ssnanda/taptether.com/agent/internal/updater"
@@ -82,6 +83,7 @@ func main() {
 	mux := http.NewServeMux()
 	access := &identityAPI{devices: registry, legacyToken: token}
 	access.Register(mux)
+	registerScreenEndpoints(mux, access)
     // Upgrades require a previously paired, TLS-pinned phone. The server
     // chooses its own fixed updater; clients never supply commands or URLs.
     mux.HandleFunc("/api/neighbors", func(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +163,7 @@ func main() {
             "version": version, "shutdownEnabled": power.Enabled(),
             "hostname": hostname, "platform": runtime.GOOS,
             "macAddress": localHardwareAddress(),
+            "screenCaptureSupported": screencap.Available(),
         })
     })
     var mu sync.Mutex
@@ -218,7 +221,7 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	go func() { if err:=discovery.Serve(context.Background(),version,48321);err!=nil {log.Printf("LAN discovery unavailable (UDP %d): %v",discovery.Port,err)} }()
-	server := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 8 * time.Second, WriteTimeout: 8 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 4096}
+	server := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 8 * time.Second, WriteTimeout: 0, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 4096}
 	log.Fatal(server.ListenAndServeTLS(certFile, keyFile))
 }
 
