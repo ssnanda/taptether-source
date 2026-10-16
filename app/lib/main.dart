@@ -2825,7 +2825,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                 const Text('Your Mac is online, but macOS is blocking '
                     'mouse and keyboard control. On the Mac, open '
                     'System Settings → Privacy & Security → Accessibility, '
-                    'allow ~/.local/bin/taptether-agent, then restart the agent.'),
+                    'allow taptether-input-core, then restart TapTether.'),
               ],
             ),
           ),
