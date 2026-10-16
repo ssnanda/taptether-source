@@ -2634,146 +2634,63 @@ class _RemoteScreenState extends State<RemoteScreen>
   );
 
   Widget _connectedControls() {
-    final colors = Theme.of(context).colorScheme;
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Icon(Icons.circle, color: _connectionLost ? colors.error
-            : colors.primary, size: 11),
-        const SizedBox(width: 8),
-        Expanded(child: Text(discoveredName ?? host.text.trim(),
-            maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium)),
-        IconButton(
-          tooltip: 'Switch computer',
-          onPressed: () {
-            _stopScreen();
-            agent.disconnect();
-            setState(() {
-              _connectionLost = false;
-              _agentInputDenied = false;
-              _connectionTechnical = null;
-              status = 'Select a device to connect.';
-            });
-          },
-          icon: const Icon(Icons.swap_horiz, size: 20),
-        ),
-      ]),
       if (_connectionLost) _connectionBanner(),
       if (_agentInputDenied && !_connectionLost)
         Card(
           key: const ValueKey('mac-accessibility-warning'),
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Mac input permission required',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 6),
-                const Text('Your Mac is online, but macOS is blocking '
-                    'mouse and keyboard control. On the Mac, open '
-                    'System Settings → Privacy & Security → Accessibility, '
-                    'allow ~/.local/bin/taptether-agent, then restart the agent.'),
-              ],
-            ),
+                const Text('Open macOS System Settings → Privacy & Security '
+                    '→ Accessibility and allow TapTether Input Core. '
+                    'Then restart TapTether if needed.'),
+              ]),
           ),
         ),
       _modeSwitcher(),
       if (_remoteLayout.presentationMode) _presentationView(landscape),
       if (_remoteLayout.mediaMode) _mediaView(landscape),
-      if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
-          landscape) ...[
+      if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode) ...[
         _visualModeSelector(),
-        _landscapeRemote(),
-      ],
-      if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
-          !landscape) ...[
-        _visualModeSelector(),
-      ListTile(
-        key: const ValueKey('trackpad-toggle'),
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        contentPadding: EdgeInsets.zero,
-        title: Text('Trackpad',
-            style: Theme.of(context).textTheme.titleMedium),
-        trailing: Icon(_remoteLayout.trackpadExpanded
-            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
-        onTap: () => _setLayout(_changedLayout(
-          trackpad: !_remoteLayout.trackpadExpanded)),
-      ),
-      if (_remoteLayout.trackpadExpanded) ...[
-        _remoteInputSurface(),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(child: OutlinedButton(
-            onPressed: _connectionLost ? null :
-                () => command('click', {'button': 'left'}),
-            child: const Text('Left click'),
-          )),
-          const SizedBox(width: 8),
-          Expanded(child: OutlinedButton(
-            onPressed: _connectionLost ? null :
-                () => command('click', {'button': 'right'}),
-            child: const Text('Right click'),
-          )),
-        ]),
-        const SizedBox(height: 8),
-      ],
-      TextField(
-        controller: typing,
-        enabled: !_connectionLost,
-        autocorrect: false,
-        enableSuggestions: false,
-        decoration: const InputDecoration(
-          isDense: true,
-          prefixIcon: Icon(Icons.keyboard_outlined),
-          labelText: 'Type on computer',
-        ),
-        onChanged: (text) {
-          if (text.isNotEmpty) {
-            unawaited(command('text', {'text': text}));
-            typing.clear();
-          }
-        },
-      ),
-      const SizedBox(height: 10),
-      Row(children: [
-        Expanded(child: Text('Shortcuts',
-            style: Theme.of(context).textTheme.titleSmall)),
-        TextButton.icon(
-          onPressed: _customizeQuickKeys,
-          icon: const Icon(Icons.tune, size: 18),
-          label: const Text('Customize'),
-        ),
-      ]),
-      if (_remoteLayout.quickKeys.isEmpty)
-        const Text('Choose shortcuts using Customize.')
-      else
-        Wrap(spacing: 8, runSpacing: 4, children: [
-          for (final id in _remoteLayout.quickKeys) _quickKeyButton(id),
-        ]),
-      TextButton.icon(
-        key: const ValueKey('arrow-keys-toggle'),
-        onPressed: () => _setLayout(_changedLayout(
-          arrows: !_remoteLayout.arrowsExpanded)),
-        icon: Icon(_remoteLayout.arrowsExpanded
-            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
-        label: Text(_remoteLayout.arrowsExpanded
-            ? 'Hide arrow keys' : 'Show arrow keys'),
-      ),
-      if (_remoteLayout.arrowsExpanded) _arrowPad(),
-      const Divider(),
-      OutlinedButton.icon(
-        key: const ValueKey('more-controls-toggle'),
-        onPressed: () => _setLayout(_changedLayout(
-          more: !_remoteLayout.moreExpanded)),
-        icon: Icon(_remoteLayout.moreExpanded
-            ? Icons.expand_less : Icons.expand_more),
-        label: Text(_remoteLayout.moreExpanded
-            ? 'Hide more controls' : 'More controls'),
-      ),
-      if (_remoteLayout.moreExpanded) ..._moreControlSections(),
+        const SizedBox(height: 4),
+        if (!_remoteLayout.keyboardExpanded) ...[
+          Row(children: [
+            Expanded(child: Text(
+              VisualModePolicy.normalize(_remoteLayout.visualMode) == 'trackpad'
+                  ? 'Trackpad' : 'Screen control',
+              style: Theme.of(context).textTheme.titleSmall)),
+            TextButton.icon(
+              key: const ValueKey('trackpad-toggle'),
+              onPressed: () => _setLayout(_changedLayout(
+                trackpad: !_remoteLayout.trackpadExpanded,
+                keyboard: false)),
+              icon: Icon(_remoteLayout.trackpadExpanded
+                  ? Icons.expand_less : Icons.expand_more, size: 18),
+              label: Text(_remoteLayout.trackpadExpanded ? 'Hide' : 'Show'),
+            ),
+          ]),
+          if (_remoteLayout.trackpadExpanded) _remoteInputSurface(),
+        ],
+        const SizedBox(height: 6),
+        Card(child: ExpansionTile(
+          key: ValueKey('remote-keyboard-${_remoteLayout.keyboardExpanded}'),
+          initiallyExpanded: _remoteLayout.keyboardExpanded,
+          leading: const Icon(Icons.keyboard_outlined),
+          title: const Text('Keyboard & shortcuts'),
+          subtitle: const Text('Expand to type or use extra keys'),
+          onExpansionChanged: (expanded) => _setLayout(_changedLayout(
+              keyboard: expanded, trackpad: !expanded)),
+          children: [
+            Padding(padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+              child: _keyboardControls()),
+          ],
+        )),
       ],
     ]);
   }
@@ -2781,6 +2698,15 @@ class _RemoteScreenState extends State<RemoteScreen>
   @override
   Widget build(BuildContext context) {
     final connected = agent.configured;
+    final immersive = connected &&
+        MediaQuery.orientationOf(context) == Orientation.landscape &&
+        !_remoteLayout.presentationMode && !_remoteLayout.mediaMode;
+    if (immersive) {
+      return Scaffold(
+        key: _scaffoldKey,
+        body: SafeArea(child: _immersiveLandscapeRemote()),
+      );
+    }
     return Scaffold(
       key: _scaffoldKey,
       drawer: appDrawer(),
@@ -2790,10 +2716,36 @@ class _RemoteScreenState extends State<RemoteScreen>
           icon: const Icon(Icons.menu),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        title: const Text('TapTether'), actions: [
-        IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
-          _stopScreen(); agent.disconnect(); setState(() => status = 'Disconnected');
-        } : null, icon: const Icon(Icons.link_off)),
+        title: connected
+            ? Row(children: [
+                Icon(Icons.circle, size: 10,
+                  color: _connectionLost
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(child: Text(discoveredName ?? host.text.trim(),
+                  maxLines: 1, overflow: TextOverflow.ellipsis)),
+              ])
+            : const Text('TapTether'),
+        actions: [
+          if (connected) IconButton(
+            tooltip: 'Switch computer',
+            onPressed: () {
+              _stopScreen();
+              agent.disconnect();
+              setState(() => status = 'Select a device to connect.');
+            },
+            icon: const Icon(Icons.swap_horiz),
+          ),
+          if (connected) IconButton(
+            tooltip: 'Disconnect',
+            onPressed: () {
+              _stopScreen();
+              agent.disconnect();
+              setState(() => status = 'Disconnected');
+            },
+            icon: const Icon(Icons.link_off),
+          ),
       ]),
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
         if (!connected) ...[
