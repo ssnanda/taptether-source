@@ -39,6 +39,18 @@ void main() {
     expect(parser.add(payload), hasLength(1));
   });
 
+  test('stream accepts multiple frames delivered in one large network chunk', () {
+    final parser = MjpegFrameDecoder();
+    final jpeg = List<int>.filled(900000, 42);
+    final header = ascii.encode('--ttframe\r\nContent-Type: image/jpeg\r\n'
+        'Content-Length: 900000\r\nX-Screen-Width: 1280\r\n'
+        'X-Screen-Height: 720\r\n\r\n');
+    final one = <int>[...header, ...jpeg, 13, 10];
+    final frames = parser.add([...one, ...one, ...one]);
+    expect(frames, hasLength(3));
+    expect(frames.every((frame) => frame.jpeg.length == 900000), isTrue);
+  });
+
   test('stream refuses oversized buffers', () {
     final parser = MjpegFrameDecoder();
     expect(() => parser.add(List.filled((2 << 20) + 1025, 1)),
