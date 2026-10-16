@@ -52,8 +52,17 @@ class _LanScanScreenState extends State<LanScanScreen>
   StreamSubscription<List<ConnectivityResult>>? _connectivityChanges;
   bool _networkChecked = false;
 
-  Future<DetectedLanRange?> _activeNetwork() =>
-      widget.networkDetector?.call() ?? detectLanRange();
+  Future<DetectedLanRange?> _activeNetwork() {
+    if (widget.networkDetector != null) {
+      return widget.networkDetector!();
+    }
+    // Deterministic widget tests can supply a mock LAN with their mock scanner.
+    // Real production scans always re-check the actual active transport.
+    if (widget.scanRange != null && widget.initialNetwork != null) {
+      return Future.value(widget.initialNetwork);
+    }
+    return detectLanRange();
+  }
   bool _checkingSpecificIp = false;
   String? _notRespondingIp;
   bool _editedPrefix = false;
@@ -107,8 +116,7 @@ class _LanScanScreenState extends State<LanScanScreen>
       _networkChecked = true;
       _network = range;
       if (!_editedPrefix) {
-        _prefix.text = range?.activePrefix ??
-            (prefixFromIp(widget.initialIp ?? '') ?? '');
+        _prefix.text = range?.activePrefix ?? '';
       }
       if (_specificIp.text.isEmpty &&
           widget.initialIp != null && widget.initialIp!.isNotEmpty) {
