@@ -2485,7 +2485,8 @@ class _RemoteScreenState extends State<RemoteScreen>
       useSafeArea: true,
       showDragHandle: true,
       constraints: const BoxConstraints(maxWidth: 840),
-      builder: (sheetContext) => Padding(
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refreshSheet) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
         child: SizedBox(
@@ -2505,8 +2506,10 @@ class _RemoteScreenState extends State<RemoteScreen>
                       ? MediaService.netflix : MediaService.youtube,
                   enabled: agent.configured && !_connectionLost,
                   landscape: false,
-                  onServiceChanged: (value) =>
-                      _setLayout(_changedLayout(mediaService: value.name)),
+                  onServiceChanged: (value) {
+                    _setLayout(_changedLayout(mediaService: value.name));
+                    refreshSheet(() {});
+                  },
                   onKey: (key) => unawaited(command('key', {'key': key})),
                   onSearch: _searchMedia,
                   onOpenService: (service) => _searchMedia(service, ''),
@@ -2531,7 +2534,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 
