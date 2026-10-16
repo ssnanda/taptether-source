@@ -579,6 +579,15 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   @override
+  void didChangeMetrics() {
+    // Reconnect Snapshot/Live when the orientation switches into or out of
+    // the full-screen landscape control surface.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncScreen();
+    });
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appForeground = state == AppLifecycleState.resumed;
     if (_appForeground) {
@@ -2348,7 +2357,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       segments: const [
         ButtonSegment<String>(value: 'remote', label: Text('Remote'),
           icon: Icon(Icons.mouse_outlined)),
-        ButtonSegment<String>(value: 'presentation', label: Text('Presentation'),
+        ButtonSegment<String>(value: 'presentation', label: Text('Slides'),
           icon: Icon(Icons.slideshow_outlined)),
         ButtonSegment<String>(value: 'media', label: Text('Media'),
           icon: Icon(Icons.smart_display_outlined)),
@@ -2631,7 +2640,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             IconButton.filledTonal(
               tooltip: 'Play / Pause',
               onPressed: () => unawaited(command('key', {'key': 'space'})),
-              icon: const Icon(Icons.play_pause)),
+              icon: const Icon(Icons.play_arrow)),
             const SizedBox(width: 6),
             IconButton.filledTonal(
               tooltip: 'Volume down',
