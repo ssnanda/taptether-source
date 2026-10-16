@@ -174,6 +174,188 @@ class MacSshProvisioner {
             'match the release manifest.');
       }
 
+      // Separate, signed Screen Core is provisioned once over trusted SSH.
+      final screenEntries = (decoded['installers'] as List)
+          .whereType<Map>()
+          .where((item) => item['platform'] == 'macos-screen-core'
+              && item['arch'] == arch).toList();
+      if (screenEntries.length != 1) {
+        throw StateError('[MAC-SCREEN] Screen Core is not bundled.');
+      }
+      final screenEntry = screenEntries.single;
+      final screenFilename = screenEntry['filename'];
+      final screenAsset = screenEntry['asset'];
+      final screenSha = screenEntry['sha256'];
+      if (screenFilename is! String || screenAsset is! String ||
+          screenSha is! String ||
+          !screenFilename.startsWith('TapTetherScreenCore-macos-$arch-') ||
+          !screenFilename.endsWith('.tar.gz') ||
+          !RegExp(r'^[A-Za-z0-9+._-]+
+          'mktemp -d /tmp/taptether-mac.XXXXXXXX');
+      if (make.exitCode != 0) {
+        throw StateError('[MAC-STAGE] Cannot create a temporary Mac folder.');
+      }
+      stage = utf8.decode(make.stdout).trim();
+      if (!RegExp(r'^/tmp/taptether-mac\.[A-Za-z0-9]{8}$')
+          .hasMatch(stage)) {
+        throw StateError('[MAC-STAGE] Unexpected staging directory.');
+      }
+      progress('Uploading Mac agent over encrypted SSH');
+      sftp = await client.sftp();
+      final output = await sftp.open('$stage/$filename',
+          mode: SftpFileOpenMode.create |
+              SftpFileOpenMode.write | SftpFileOpenMode.truncate);
+      try {
+        await output.writeBytes(archive);
+      } finally {
+        await output.close();
+      }
+
+      progress('Checking archive and installing user LaunchAgent');
+      final cmd = '''
+set -e
+cd '$stage'
+tar -tzf '$filename' > archive-list.txt
+for f in taptether-agent taptetherctl-mac taptether-agent-update-mac TapTether.icns TapTetherTray; do
+  grep -Fxq "\$f" archive-list.txt || exit 52
+done
+test "\$(wc -l < archive-list.txt | tr -d ' ')" -eq 5 || exit 52
+tar -xzf '$filename'
+chmod 755 taptether-agent taptetherctl-mac taptether-agent-update-mac TapTetherTray
+bash taptetherctl-mac install > install.log 2>&1 || exit 53
+cat install.log
+''';
+      // Mac agent setup prints pairing tokens. Hold it only in memory;
+      // never expose raw stdout/stderr in the mobile diagnostic report.
+      final session = await client.execute(cmd);
+      final collected = <int>[];
+      await Future.wait([
+        session.stdout.forEach(collected.addAll),
+        session.stderr.forEach(collected.addAll),
+      ]).timeout(const Duration(minutes: 5));
+      final result = await session.waitForExit(
+          timeout: const Duration(seconds: 12));
+      if (result != 0) {
+        if (result == 52) {
+          throw StateError('[MAC-ARCHIVE] Bundled agent archive could not '
+              'be verified on the Mac.');
+        }
+        if (result == 53) {
+          throw StateError('[MAC-LAUNCHD] The Mac installer could not start '
+              'the background service. Sign in to the Mac desktop, verify '
+              'Remote Login and retry. Open Agent Diagnostics locally if '
+              'it still fails.');
+        }
+        throw StateError('[MAC-INSTALL] Remote Mac installation failed '
+            'during archive extraction or setup.');
+      }
+
+      progress('Reading pairing details and preserving identity');
+      final pairing = macosPairingFromOutput(
+          utf8.decode(collected, allowMalformed: true));
+      return InstalledAgent(input.host, pairing.token, pairing.fingerprint);
+    } finally {
+      if (sftp != null) await sftp.close();
+      if (stage != null) {
+        try {
+          await client.run("rm -rf -- '$stage'");
+        } catch (_) {
+          // Cleanup is best-effort and must not shadow the primary failure.
+        }
+      }
+      await client.close();
+    }
+  }
+}
+).hasMatch(screenFilename) ||
+          screenAsset != 'assets/agents/$screenFilename' ||
+          !RegExp(r'^[a-fA-F0-9]{64}
+          'mktemp -d /tmp/taptether-mac.XXXXXXXX');
+      if (make.exitCode != 0) {
+        throw StateError('[MAC-STAGE] Cannot create a temporary Mac folder.');
+      }
+      stage = utf8.decode(make.stdout).trim();
+      if (!RegExp(r'^/tmp/taptether-mac\.[A-Za-z0-9]{8}$')
+          .hasMatch(stage)) {
+        throw StateError('[MAC-STAGE] Unexpected staging directory.');
+      }
+      progress('Uploading Mac agent over encrypted SSH');
+      sftp = await client.sftp();
+      final output = await sftp.open('$stage/$filename',
+          mode: SftpFileOpenMode.create |
+              SftpFileOpenMode.write | SftpFileOpenMode.truncate);
+      try {
+        await output.writeBytes(archive);
+      } finally {
+        await output.close();
+      }
+
+      progress('Checking archive and installing user LaunchAgent');
+      final cmd = '''
+set -e
+cd '$stage'
+tar -tzf '$filename' > archive-list.txt
+for f in taptether-agent taptetherctl-mac taptether-agent-update-mac TapTether.icns TapTetherTray; do
+  grep -Fxq "\$f" archive-list.txt || exit 52
+done
+test "\$(wc -l < archive-list.txt | tr -d ' ')" -eq 5 || exit 52
+tar -xzf '$filename'
+chmod 755 taptether-agent taptetherctl-mac taptether-agent-update-mac TapTetherTray
+bash taptetherctl-mac install > install.log 2>&1 || exit 53
+cat install.log
+''';
+      // Mac agent setup prints pairing tokens. Hold it only in memory;
+      // never expose raw stdout/stderr in the mobile diagnostic report.
+      final session = await client.execute(cmd);
+      final collected = <int>[];
+      await Future.wait([
+        session.stdout.forEach(collected.addAll),
+        session.stderr.forEach(collected.addAll),
+      ]).timeout(const Duration(minutes: 5));
+      final result = await session.waitForExit(
+          timeout: const Duration(seconds: 12));
+      if (result != 0) {
+        if (result == 52) {
+          throw StateError('[MAC-ARCHIVE] Bundled agent archive could not '
+              'be verified on the Mac.');
+        }
+        if (result == 53) {
+          throw StateError('[MAC-LAUNCHD] The Mac installer could not start '
+              'the background service. Sign in to the Mac desktop, verify '
+              'Remote Login and retry. Open Agent Diagnostics locally if '
+              'it still fails.');
+        }
+        throw StateError('[MAC-INSTALL] Remote Mac installation failed '
+            'during archive extraction or setup.');
+      }
+
+      progress('Reading pairing details and preserving identity');
+      final pairing = macosPairingFromOutput(
+          utf8.decode(collected, allowMalformed: true));
+      return InstalledAgent(input.host, pairing.token, pairing.fingerprint);
+    } finally {
+      if (sftp != null) await sftp.close();
+      if (stage != null) {
+        try {
+          await client.run("rm -rf -- '$stage'");
+        } catch (_) {
+          // Cleanup is best-effort and must not shadow the primary failure.
+        }
+      }
+      await client.close();
+    }
+  }
+}
+).hasMatch(screenSha)) {
+        throw StateError('[MAC-SCREEN] Invalid Screen Core metadata.');
+      }
+      final screenBundle = await rootBundle.load(screenAsset);
+      final screenArchive = screenBundle.buffer.asUint8List(
+          screenBundle.offsetInBytes, screenBundle.lengthInBytes);
+      if (sha256.convert(screenArchive).toString() != screenSha.toLowerCase()) {
+        throw StateError('[MAC-SCREEN] Screen Core checksum mismatch.');
+      }
+
       final make = await client.runWithResult(
           'mktemp -d /tmp/taptether-mac.XXXXXXXX');
       if (make.exitCode != 0) {
