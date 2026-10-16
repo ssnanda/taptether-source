@@ -2563,7 +2563,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           Positioned(top: 8, right: 56,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: (limits.maxWidth - 76).clamp(160, 570)),
+                maxWidth: (limits.maxWidth - 76).clamp(160, 570).toDouble()),
               child: Material(
                 key: const ValueKey('immersive-controls-dock'),
                 color: scheme.surface.withValues(alpha: .92),
