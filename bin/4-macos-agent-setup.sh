@@ -48,6 +48,10 @@ install_core() {
     notice 'Explicit Input Core version authorization did not match payload.' >&2
     return 1
   fi
+  if [[ -x "$CORE" && "$installed" == "$incoming" ]]; then
+    notice "Input Core $installed already approved; refusing needless replacement."
+    return 0
+  fi
   cp "$source" "$CORE.new"
   chmod 755 "$CORE.new"
   mv -f "$CORE.new" "$CORE"
@@ -91,6 +95,10 @@ install_screen_core() {
   if [[ -n "$requested" && "$requested" != "$incoming" ]]; then
     notice 'Explicit Screen Core version authorization did not match payload.' >&2
     return 1
+  fi
+  if [[ -x "$SCREEN_CORE" && "$installed" == "$incoming" ]]; then
+    notice "Screen Core $installed unchanged; no re-sign or replacement."
+    return 0
   fi
   cp "$source" "$SCREEN_CORE.new"
   chmod 755 "$SCREEN_CORE.new"
@@ -224,7 +232,7 @@ install_agent() {
 </dict></plist>
 MACPLIST
     if command -v codesign >/dev/null 2>&1; then
-      codesign --force --deep --sign - --timestamp=none "$bundle" >/dev/null 2>&1 ||
+      codesign --force --sign - --timestamp=none "$bundle" >/dev/null 2>&1 ||
         notice 'Ad-hoc signing of menu-bar app was not possible; macOS may request approval.'
     fi
     cat > "$TRAY_PLIST" <<EOF
@@ -285,13 +293,21 @@ EOF
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN string 1" "$PLIST"
   fi
-  launchctl bootout "$TARGET/$CORE_LABEL" >/dev/null 2>&1 || true
-  launchctl bootstrap "$TARGET" "$CORE_PLIST"
-  launchctl kickstart -k "$TARGET/$CORE_LABEL"
+  # These two OS-approved executables are not part of the routine agent
+  # lifecycle. Do not replace, re-sign or restart them when refreshing agent.
+  if launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
+    notice 'Preserved running Input Core service (no restart or re-sign).'
+  else
+    launchctl bootstrap "$TARGET" "$CORE_PLIST"
+    launchctl kickstart "$TARGET/$CORE_LABEL"
+  fi
   if [[ -x "$SCREEN_CORE" ]]; then
-    launchctl bootout "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1 || true
-    launchctl bootstrap "$TARGET" "$SCREEN_PLIST"
-    launchctl kickstart -k "$TARGET/$SCREEN_LABEL"
+    if launchctl print "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1; then
+      notice 'Preserved running Screen Core service (no restart or re-sign).'
+    else
+      launchctl bootstrap "$TARGET" "$SCREEN_PLIST"
+      launchctl kickstart "$TARGET/$SCREEN_LABEL"
+    fi
   fi
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
@@ -430,12 +446,13 @@ start_agent() {
   if ! launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$CORE_PLIST" || return 1
   fi
-  launchctl kickstart -k "$TARGET/$CORE_LABEL"
+    launchctl kickstart "$TARGET/$CORE_LABEL" || return 1
+  fi
   if [[ -f "$SCREEN_PLIST" ]]; then
     if ! launchctl print "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1; then
       launchctl bootstrap "$TARGET" "$SCREEN_PLIST" || return 1
+      launchctl kickstart "$TARGET/$SCREEN_LABEL" || return 1
     fi
-    launchctl kickstart -k "$TARGET/$SCREEN_LABEL"
   fi
   if ! launchctl print "$TARGET/$LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$PLIST" || {
