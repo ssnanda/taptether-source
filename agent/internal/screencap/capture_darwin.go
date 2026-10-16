@@ -1,46 +1,18 @@
 //go:build darwin && cgo
 
-// Package screencap captures the primary macOS display in memory only.
-// macOS Screen Recording approval is separate from Input Core Accessibility.
+// Package screencap uses ScreenCaptureKit to capture the primary macOS
+// display. Bytes remain in memory; Screen Recording consent is mandatory.
 package screencap
 
 /*
-#cgo LDFLAGS: -framework ApplicationServices
-#include <ApplicationServices/ApplicationServices.h>
-#include <stdlib.h>
+#cgo LDFLAGS: -framework ScreenCaptureKit -framework ApplicationServices -framework Foundation
 #include <stdbool.h>
-#include <math.h>
+#include <stdlib.h>
 
-static bool tt_capture_permitted(void) {
-  return CGPreflightScreenCaptureAccess();
-}
-static void tt_request_capture_access(void) {
-  CGRequestScreenCaptureAccess();
-}
-static void *tt_primary_display(int *outW, int *outH) {
-  CGImageRef src = CGDisplayCreateImage(CGMainDisplayID());
-  if (src == NULL) return NULL;
-  size_t originalW = CGImageGetWidth(src), originalH = CGImageGetHeight(src);
-  if (originalW == 0 || originalH == 0) { CGImageRelease(src); return NULL; }
-  double ratio = fmin(1280.0/(double)originalW, 720.0/(double)originalH);
-  if (ratio > 1.0) ratio = 1.0;
-  size_t w = (size_t)((double)originalW * ratio);
-  size_t h = (size_t)((double)originalH * ratio);
-  if (w == 0 || h == 0 || w > 1280 || h > 720) { CGImageRelease(src); return NULL; }
-  void *pixels = calloc(w * h, 4);
-  if (!pixels) { CGImageRelease(src); return NULL; }
-  CGColorSpaceRef colors = CGColorSpaceCreateDeviceRGB();
-  CGContextRef ctx = CGBitmapContextCreate(pixels, w, h, 8, w*4, colors,
-      kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
-  CGColorSpaceRelease(colors);
-  if (!ctx) { CGImageRelease(src); free(pixels); return NULL; }
-  CGContextSetInterpolationQuality(ctx, kCGInterpolationMedium);
-  CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), src);
-  CGContextRelease(ctx);
-  CGImageRelease(src);
-  *outW = (int)w; *outH = (int)h;
-  return pixels;
-}
+bool tt_capture_supported(void);
+bool tt_capture_permitted(void);
+void tt_request_capture_access(void);
+void *tt_primary_display(int *outW, int *outH);
 */
 import "C"
 
@@ -61,9 +33,12 @@ type Frame struct {
     Height int
 }
 
-func Available() bool { return true }
+func Available() bool { return bool(C.tt_capture_supported()) }
 
 func Capture() (Frame, error) {
+    if !Available() {
+        return Frame{}, errors.New("ScreenCaptureKit screenshots require macOS 14 or newer")
+    }
     if !bool(C.tt_capture_permitted()) {
         requestAccess.Do(func() { C.tt_request_capture_access() })
         return Frame{}, errors.New("allow Screen Recording for TapTether Agent in macOS System Settings > Privacy & Security, then restart the agent")
@@ -71,7 +46,7 @@ func Capture() (Frame, error) {
     var w, h C.int
     ptr := C.tt_primary_display(&w, &h)
     if ptr == nil {
-        return Frame{}, errors.New("macOS display capture unavailable; verify the desktop session and Screen Recording permission")
+        return Frame{}, errors.New("ScreenCaptureKit could not capture the main display; verify the desktop session and permission")
     }
     defer C.free(ptr)
     size := int(w) * int(h) * 4
