@@ -45,6 +45,10 @@ install_core() {
     notice 'Explicit Input Core version authorization did not match payload.' >&2
     return 1
   fi
+  if [[ -x "$CORE" && "$installed" == "$incoming" ]]; then
+    notice "Input Core $installed already approved; refusing needless replacement."
+    return 0
+  fi
   cp "$source" "$CORE.new"
   chmod 755 "$CORE.new"
   mv -f "$CORE.new" "$CORE"
@@ -191,7 +195,8 @@ install_agent() {
 </dict></plist>
 MACPLIST
     if command -v codesign >/dev/null 2>&1; then
-      codesign --force --deep --sign - --timestamp=none "$bundle" >/dev/null 2>&1 ||
+      # Re-sign only the launcher bundle, never nested Input/Screen Core.
+      codesign --force --sign - --timestamp=none "$bundle" >/dev/null 2>&1 ||
         notice 'Ad-hoc signing of menu-bar app was not possible; macOS may request approval.'
     fi
     cat > "$TRAY_PLIST" <<EOF
