@@ -238,9 +238,16 @@ EOF
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN string 1" "$PLIST"
   fi
-  launchctl bootout "$TARGET/$CORE_LABEL" >/dev/null 2>&1 || true
-  launchctl bootstrap "$TARGET" "$CORE_PLIST"
-  launchctl kickstart -k "$TARGET/$CORE_LABEL"
+  # Never interrupt the long-lived, TCC-approved Input Core just because
+  # the ordinary agent or Finder tray is being updated. Reusing its process
+  # avoids needless Accessibility permission churn.
+  if launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
+    notice 'Preserved running Input Core service (no restart or re-sign).'
+  else
+    launchctl bootstrap "$TARGET" "$CORE_PLIST"
+    launchctl kickstart "$TARGET/$CORE_LABEL"
+    notice 'Started existing Input Core service without replacing binary.'
+  fi
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
   launchctl kickstart -k "$TARGET/$LABEL"
@@ -364,8 +371,8 @@ start_agent() {
   [[ -f "$PLIST" ]] || { notice 'Agent not installed. Choose Install / Repair agent first.' >&2; return 1; }
   if ! launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$CORE_PLIST" || return 1
+    launchctl kickstart "$TARGET/$CORE_LABEL" || return 1
   fi
-  launchctl kickstart -k "$TARGET/$CORE_LABEL"
   if ! launchctl print "$TARGET/$LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$PLIST" || {
       notice 'Could not load the LaunchAgent. Choose Agent diagnostics / Repair.' >&2
