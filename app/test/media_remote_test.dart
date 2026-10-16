@@ -15,6 +15,19 @@ void main() {
         throwsFormatException);
   });
 
+  test('capture UI stays usable if macOS/Windows capability info is stale', () {
+    expect(VisualModePolicy.canRequestCapture(
+        advertised: false, platform: 'darwin'), true);
+    expect(VisualModePolicy.canRequestCapture(
+        advertised: false, platform: 'windows'), true);
+    expect(VisualModePolicy.canRequestCapture(
+        advertised: false, platform: 'linux'), false);
+    expect(VisualModePolicy.canRequestCapture(
+        advertised: true, platform: 'linux'), true);
+    expect(VisualModePolicy.canRequestCapture(
+        advertised: false, platform: null), false);
+  });
+
   test('snapshot cadence and mode normalization are stable', () {
     expect(VisualModePolicy.snapshotInterval, const Duration(seconds: 15));
     expect(VisualModePolicy.normalize('live'), 'live');
