@@ -14,6 +14,12 @@ on:
           - release
           - build
           - validate
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'agent/**'
+      - '.github/workflows/taptether.yml'
   push:
     branches: [main, fix/v0.6-remote-scan-mac-details]
     # Branch VERSION bumps validate/build Windows without publishing.
@@ -33,7 +39,7 @@ concurrency:
 
 jobs:
   validate:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
