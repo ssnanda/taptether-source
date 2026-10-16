@@ -1,6 +1,6 @@
 # TapTether 0.7 — Visual & Media Remote
 
-Status: in-development implementation in draft PR #40. macOS capture, Snapshot refresh/taps, in-app Live MJPEG preview and authenticated default-browser Media are coded but require CI and hands-on permission, screen-coordinate, latency and device validation. Do not merge or publish 0.7 yet.
+Status: in-development implementation in draft PR #40. macOS ScreenCaptureKit capture, Snapshot refresh/taps, in-app Live MJPEG preview and authenticated default-browser Media are coded but require CI and hands-on permission, screen-coordinate, latency and device validation. Do not merge or publish 0.7 yet.
 
 ## Scope and interface
 - Existing computer Remote stays primary and preserves trackpad and keyboard.
@@ -12,7 +12,7 @@ Status: in-development implementation in draft PR #40. macOS capture, Snapshot r
 - Presentation mode remains intact; slide previews/speaker notes integration can reuse future screen capture.
 
 ## Capture engineering
-1. **Implemented provisionally on macOS:** CoreGraphics primary-display capture (CGDisplayCreateImage) and Screen Recording TCC consent, entirely in memory. Verify real macOS screen capture and whether ScreenCaptureKit migration is necessary for current macOS versions. **Pending:** Windows Graphics Capture and Linux PipeWire/XDG Desktop Portal on Wayland (X11 fallback). Screen Recording permission is distinct from Accessibility.
+1. **Implemented provisionally on macOS:** ScreenCaptureKit (SCScreenshotManager, macOS 14+) primary-display capture and Screen Recording TCC consent, entirely in memory. CoreGraphics' old CGDisplayCreateImage is unavailable in recent SDKs, so the native agent uses a ScreenCaptureKit Objective-C bridge. Verify real on-device capture, scale/orientation, permission flow and CPU costs. Mac systems below 14 have no visual capture support. **Pending:** Windows Graphics Capture and Linux PipeWire/XDG Desktop Portal on Wayland (X11 fallback). Screen Recording permission is distinct from Accessibility.
 2. Agent endpoints require existing pinned TLS, authenticated phone identity/session, RFC1918 LAN, no unauthenticated preview, no third-party relay and no permanent screenshot storage.
 3. Snapshot API returns a bounded JPEG/WebP, no-store, rate limited, one capture request at a time; first baseline per host only after success on that host.
 4. **Implemented preview:** one-viewer authenticated multipart MJPEG stream, 720p upper bound, 30 FPS target (adaptive lower real FPS based on encoding), with client cancellation on leaving screen/background/disconnect. No WebRTC/H.264 yet; migrate to an efficient hardware H.264 transport and benchmark real latency before release.
