@@ -208,7 +208,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         prompt.messageText = "Install TapTether Agent?"
         prompt.informativeText = "This installs a background agent that starts at login, "
             + "and keeps the menu-bar app available without a Terminal window. "
-            + "You'll allow Input Core in Accessibility and Screen Core in Screen Recording once."
+            + "Approve Input Core for Accessibility and Screen Core for Screen Recording once."
         prompt.addButton(withTitle: "Install & Start")
         prompt.addButton(withTitle: "Not now")
         NSApp.activate(ignoringOtherApps: true)
@@ -246,7 +246,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                     self.activeVersion = self.versionFromAgent()
                     let alert = NSAlert()
                     alert.messageText = "TapTether installed / repaired"
-                    alert.informativeText = "Agent and Input Core are running. "
+                    alert.informativeText = "Agent, Input Core and Screen Core are configured. "
                         + "For this one-time migration, allow taptether-input-core "
                         + "in Accessibility. Future agent updates preserve the core."
                     alert.addButton(withTitle: "Open Accessibility…")
