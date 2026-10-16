@@ -5,15 +5,18 @@ SELF="$(cd "$(dirname "$0")" && pwd)"
 BIN="$HOME/.local/bin"
 APP="$BIN/taptether-agent"
 CORE="$BIN/taptether-input-core"
+SCREEN_CORE="$BIN/taptether-screen-core"
 CTL="$BIN/taptetherctl-mac"
 UPDATER="$BIN/taptether-agent-update-mac"
 PLIST="$HOME/Library/LaunchAgents/com.taptether.agent.plist"
 CORE_PLIST="$HOME/Library/LaunchAgents/com.taptether.input-core.plist"
+SCREEN_PLIST="$HOME/Library/LaunchAgents/com.taptether.screen-core.plist"
 LOGDIR="$HOME/Library/Logs/TapTether"
 CONF="$HOME/Library/Application Support/taptether"
 SHUTDOWN_DISABLED="$HOME/Library/Application Support/taptether/remote-shutdown-disabled"
 LABEL=com.taptether.agent
 CORE_LABEL=com.taptether.input-core
+SCREEN_LABEL=com.taptether.screen-core
 TRAY_LABEL=com.taptether.tray
 TRAY_PLIST="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
 TRAY_BUNDLE="$HOME/Applications/TapTether Agent.app"
@@ -74,6 +77,26 @@ PY
   tar -xzf "$archive" -C "$tmp"
   install_core "$tmp/taptether-input-core"
 }
+# A stable, independent executable keeps macOS Screen Recording approval.
+install_screen_core() {
+  local source="$1" requested="${2:-}"
+  [[ -x "$source" ]] || { notice 'Screen Core payload missing.' >&2; return 1; }
+  local incoming installed
+  incoming="$("$source" --version)"
+  installed="$("$SCREEN_CORE" --version 2>/dev/null || true)"
+  if [[ -x "$SCREEN_CORE" && -z "$requested" ]]; then
+    notice "Preserved TapTether Screen Core $installed (routine agent update)."
+    return 0
+  fi
+  if [[ -n "$requested" && "$requested" != "$incoming" ]]; then
+    notice 'Explicit Screen Core version authorization did not match payload.' >&2
+    return 1
+  fi
+  cp "$source" "$SCREEN_CORE.new"
+  chmod 755 "$SCREEN_CORE.new"
+  mv -f "$SCREEN_CORE.new" "$SCREEN_CORE"
+  notice "Installed TapTether Screen Core $incoming."
+}
 # Never truncate a currently executing shell script during self-update.
 # Older taptetherctl-mac/update helper processes can still be reading the
 # original inode. Install in the same directory and rename atomically.
@@ -120,14 +143,24 @@ install_agent() {
   [[ -f "$SHUTDOWN_DISABLED" ]] && shutdown_enabled=0
   mkdir -p "$BIN" "$(dirname "$PLIST")" "$LOGDIR"
   chmod 700 "$LOGDIR"
-  mkdir -p "$CONF/input-core"
-  chmod 700 "$CONF" "$CONF/input-core"
+  mkdir -p "$CONF/input-core" "$CONF/screen-core"
+  chmod 700 "$CONF" "$CONF/input-core" "$CONF/screen-core"
   if [[ ! -s "$CONF/input-core/ipc.token" ]]; then
     umask 077
     openssl rand -hex 32 > "$CONF/input-core/ipc.token"
   fi
   chmod 600 "$CONF/input-core/ipc.token"
+  if [[ ! -s "$CONF/screen-core/ipc.token" ]]; then
+    umask 077
+    openssl rand -hex 32 > "$CONF/screen-core/ipc.token"
+  fi
+  chmod 600 "$CONF/screen-core/ipc.token"
   ensure_core_payload
+  if [[ -x "$SELF/taptether-screen-core" ]]; then
+    install_screen_core "$SELF/taptether-screen-core"
+  elif [[ ! -x "$SCREEN_CORE" ]]; then
+    notice 'Screen Core not staged: using legacy agent capture until installed.'
+  fi
   if [[ "$SELF/taptether-agent" != "$APP" ]]; then
     [[ -x "$SELF/taptether-agent" ]] || { notice 'Run setup from extracted agent archive' >&2; exit 1; }
     cp "$SELF/taptether-agent" "$APP"
@@ -164,7 +197,7 @@ install_agent() {
     [[ "$icon_source" == "$icon_target" ]] || cp "$SELF/TapTether.icns" "$icon_target"
     [[ "$binary_source" == "$binary_target" ]] || cp "$tray_source" "$binary_target"
     # Include self-install resources for future repairs and direct Finder launch.
-    for resource in taptether-agent taptether-input-core taptetherctl-mac taptether-agent-update-mac; do
+    for resource in taptether-agent taptether-input-core taptether-screen-core taptetherctl-mac taptether-agent-update-mac; do
       local src="$SELF/$resource" dest="$bundle/Contents/Resources/$resource"
       [[ -s "$src" ]] || continue
       [[ "$(cd "$(dirname "$src")" && pwd -P)/$(basename "$src")" == \
