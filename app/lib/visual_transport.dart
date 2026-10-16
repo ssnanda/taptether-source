@@ -24,7 +24,7 @@ class VisualGeometry {
         zoom > 5 || !zoom.isFinite) return null;
     final scale = (viewport.width / imageWidth)
         .clamp(0.0, viewport.height / imageHeight);
-    if (scale <= 0) return null;
+    if (scale <= 0) { return null; }
     final w = imageWidth * scale;
     final h = imageHeight * scale;
     // Undo preview zoom around the surface center before letterbox mapping.
@@ -96,7 +96,7 @@ class MjpegFrameDecoder {
   int _findHeaderEnd() {
     for (var i = 0; i + 3 < _pending.length; i++) {
       if (_pending[i] == 13 && _pending[i+1] == 10 &&
-          _pending[i+2] == 13 && _pending[i+3] == 10) return i;
+          _pending[i+2] == 13 && _pending[i+3] == 10) { return i; }
     }
     return -1;
   }
