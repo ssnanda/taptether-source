@@ -320,8 +320,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('Discover nearby devices on your local Wi-Fi.'),
-          const SizedBox(height: 12),
+          const SizedBox(height: 4),
           if (_network != null) ...[
             Text('Phone Wi-Fi: ${_network!.ip} · Network: ${_network!.cidr}',
                 style: Theme.of(context).textTheme.bodySmall),
@@ -406,9 +405,6 @@ class _LanScanScreenState extends State<LanScanScreen> {
           Text('Check a specific computer',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          Text('A Mac may not appear in a full scan if its services are '
-              'blocked. Check its known IP directly, or pair it manually.',
-              style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: TextField(
@@ -479,14 +475,15 @@ class _LanScanScreenState extends State<LanScanScreen> {
             title: 'Full Scan Output',
             report: _report,
           ),
-          const SizedBox(height: 12),
-          Text('MAC addresses come from paired agents or their LAN '
-              'neighbor caches when available. They may be missing '
-              'or stale, and do not prove a device is online.',
-              style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 6),
-          const Text('Tap any result to use its IP in the computer pairing form. '
-              'An IP scan does not authorize access to a computer.'),
+          const SizedBox(height: 8),
+          const ExpansionTile(
+            title: Text('About scan results'),
+            childrenPadding: EdgeInsets.fromLTRB(12, 0, 12, 12),
+            children: [Text('Network scans find addresses, not trusted '
+                'identities. Tap a result to use its IP for pairing. '
+                'A missing or stale MAC address does not establish '
+                'whether a computer is online or authorized.')],
+          ),
         ],
       )),
     );
