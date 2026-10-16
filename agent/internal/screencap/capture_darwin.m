@@ -40,8 +40,8 @@ void *tt_primary_display(int *outW, int *outH) {
             }
             if (display == nil) display = content.displays.firstObject;
             SCContentFilter *filter =
-                [[SCContentFilter alloc] initWithDisplay:display excludingWindows:@[]];
-            SCStreamConfiguration *config = [[SCStreamConfiguration alloc] init];
+                [[[SCContentFilter alloc] initWithDisplay:display excludingWindows:@[]] autorelease];
+            SCStreamConfiguration *config = [[[SCStreamConfiguration alloc] init] autorelease];
             config.capturesAudio = NO;
             config.showsCursor = YES;
             double sourceWidth = filter.contentRect.size.width * filter.pointPixelScale;
