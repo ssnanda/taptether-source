@@ -211,11 +211,17 @@ presentation = (ROOT / "app" / "lib" / "presentation_mode.dart").read_text(
     encoding="utf-8")
 layout = (ROOT / "app" / "lib" / "remote_layout_settings.dart").read_text(
     encoding="utf-8")
-assert 'Widget _landscapeRemote()' in remote
+assert 'Widget _landscapeImmersive()' in remote
+assert "ValueKey('immersive-controls-toggle')" in remote
+assert "ValueKey('immersive-controls-dock')" in remote
 assert 'MediaQuery.orientationOf(context) == Orientation.landscape' in remote
 assert 'Widget _presentationView(bool landscape)' in remote
-assert 'SegmentedButton<String>' in remote
-assert "value: 'presentation'" in remote and "value: 'media'" in remote
+assert '_compactModeSwitcher()' in remote
+compact_bar = (ROOT / 'app' / 'lib' / 'remote_mode_bar.dart').read_text(
+    encoding='utf-8')
+assert "ValueKey('one-row-remote-navigation')" in compact_bar
+assert "ValueKey('screen-view-mode-switcher')" in compact_bar
+assert "'presentation'" in compact_bar and "'media'" in compact_bar
 assert 'PresentationShortcuts.start' in presentation
 assert "static const next = 'Right';" in presentation
 assert "static const previous = 'Left';" in presentation

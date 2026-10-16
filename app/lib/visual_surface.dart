@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'visual_transport.dart';
+import 'stepped_scroll.dart';
 
 /// Primary display preview shared by Snapshot and Live. No image is stored.
 class VisualSurface extends StatefulWidget {
   const VisualSurface({
     super.key,
     required this.height,
+    this.immersive = false,
     required this.frame,
     required this.live,
     required this.busy,
@@ -19,6 +21,7 @@ class VisualSurface extends StatefulWidget {
   });
 
   final double height;
+  final bool immersive;
   final ScreenFrame? frame;
   final bool live;
   final bool busy;
@@ -37,7 +40,7 @@ class _VisualSurfaceState extends State<VisualSurface> {
   double _zoom = 1;
   double _startZoom = 1;
   Offset? _lastFocal;
-  double _scrollRemainder = 0;
+  final _steppedScroll = SteppedScroll();
   // Raw pointer-up detection keeps clicks responsive even when Flutter's
   // scale gesture recognizer wins the arena after a cursor drag. Two quick
   // primary taps naturally form a desktop double-click.
@@ -122,7 +125,7 @@ class _VisualSurfaceState extends State<VisualSurface> {
         final viewport = Size(constraints.maxWidth, constraints.maxHeight);
         _viewport = viewport;
         return ClipRRect(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(widget.immersive ? 0 : 14),
           child: Listener(
             behavior: HitTestBehavior.opaque,
             onPointerDown: _fingerDown,
@@ -149,18 +152,14 @@ class _VisualSurfaceState extends State<VisualSurface> {
                   _zoom = (_startZoom * details.scale).clamp(1.0, 4.0);
                 });
               } else if (previous != null) {
-                _scrollRemainder +=
-                    (details.localFocalPoint.dy - previous.dy) / 16.0;
-                final ticks = _scrollRemainder.truncate().clamp(-8, 8);
-                if (ticks != 0) {
-                  _scrollRemainder -= ticks;
-                  widget.onScroll(ticks);
-                }
+                final ticks = _steppedScroll.add(
+                    details.localFocalPoint.dy - previous.dy);
+                if (ticks != 0) widget.onScroll(ticks);
               }
             },
             onScaleEnd: (_) {
               _lastFocal = null;
-              _scrollRemainder = 0;
+              _steppedScroll.reset();
             },
             child: ColoredBox(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -188,7 +187,7 @@ class _VisualSurfaceState extends State<VisualSurface> {
                         child: Text(widget.error!, textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.white,
                             fontSize: 11))))),
-                Positioned(right: 8, top: 8, child: Row(
+                if (!widget.immersive) Positioned(right: 8, top: 8, child: Row(
                   mainAxisSize: MainAxisSize.min, children: [
                     if (_zoom > 1)
                       IconButton.filledTonal(
@@ -206,11 +205,11 @@ class _VisualSurfaceState extends State<VisualSurface> {
                       ),
                   ],
                 )),
-                if (widget.busy)
+                if (widget.busy && !widget.immersive)
                   const Positioned(left: 10, top: 10,
                     child: SizedBox(width: 16, height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))),
-                Positioned(left: 8, bottom: 8,
+                if (!widget.immersive) Positioned(left: 8, bottom: 8,
                   child: IgnorePointer(child: Text(
                     widget.live ? 'LIVE • local only' : 'SNAPSHOT • 15s',
                     style: const TextStyle(fontSize: 10,

@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'remote_layout_settings.dart';
+import 'remote_mode_bar.dart';
+import 'stepped_scroll.dart';
 import 'presentation_mode.dart';
 import 'media_remote.dart';
 import 'visual_mode.dart';
@@ -454,6 +456,24 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _pageVisible = true;
   bool _refreshAfterCapture = false;
   int _screenEpoch = 0;
+  bool _immersiveDockVisible = false;
+  Timer? _immersiveDockTimer;
+
+  void _showImmersiveDock() {
+    _immersiveDockTimer?.cancel();
+    if (!_immersiveDockVisible) setState(() => _immersiveDockVisible = true);
+    _immersiveDockTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _immersiveDockVisible = false);
+    });
+  }
+
+  void _hideImmersiveDock() {
+    _immersiveDockTimer?.cancel();
+    if (_immersiveDockVisible && mounted) {
+      setState(() => _immersiveDockVisible = false);
+    }
+  }
+
 
   bool get _viewingScreen => agent.configured && !_connectionLost &&
       _appForeground && _pageVisible &&
@@ -1647,7 +1667,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   double _swipeX = 0;
   bool _swipeSent = false;
   bool _multiTouchGesture = false;
-  double _scrollRemainder = 0;
+  final _trackpadScroll = SteppedScroll();
   int _pendingScroll = 0;
   Timer? _scrollTimer;
   bool _scrollInFlight = false;
@@ -1657,6 +1677,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (_touches.isEmpty) _multiTouchGesture = false;
     _touches[e.pointer] = e.localPosition;
     if (_touches.length > 1) _multiTouchGesture = true;
+    if (_touches.length == 2) _trackpadScroll.reset();
     _pinchStart = _touches.length == 2
         ? (_touches.values.first - _touches.values.last).distance : null;
     _pinching = false;
@@ -1683,10 +1704,10 @@ class _RemoteScreenState extends State<RemoteScreen>
         _pinchStart = distance;
       }
       if (!_pinching) {
-        _scrollRemainder += delta.dy / 15;
-        final ticks = _scrollRemainder.truncate();
+        // One wheel step per deliberate 24px centroid movement.
+        // Divide by two because both fingers contribute pointer events.
+        final ticks = _trackpadScroll.add(delta.dy / 2);
         if (ticks != 0) {
-          _scrollRemainder -= ticks;
           _pendingScroll += ticks;
           _scheduleScroll();
         }
@@ -1707,7 +1728,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (_touches.length < 2) {
       _pinchStart = null;
       _pinching = false;
-      _scrollRemainder = 0;
+      _trackpadScroll.reset();
     }
     if (_touches.length < 3) _swipeX = 0;
   }
@@ -1795,6 +1816,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     WidgetsBinding.instance.removeObserver(this);
     _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
+    _immersiveDockTimer?.cancel();
     host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
     _movementTimer?.cancel();
     _scrollTimer?.cancel();
@@ -2207,7 +2229,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     ]),
   ]);
 
-  Widget _trackpadSurface({double height = 224}) => GestureDetector(
+  Widget _trackpadSurface({double height = 224,
+      bool immersive = false}) => GestureDetector(
     // Win the gesture arena against the enclosing ListView. A Listener
     // receives raw multi-touch pointer events but cannot stop parent scroll.
     // Pointer tracking below continues to handle movement and two-finger
@@ -2233,11 +2256,11 @@ class _RemoteScreenState extends State<RemoteScreen>
         height: height,
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
+          borderRadius: BorderRadius.circular(immersive ? 0 : 16),
+          border: immersive ? null : Border.all(
             color: Theme.of(context).colorScheme.primary
                 .withValues(alpha: 0.25))),
-        child: Center(child: Icon(Icons.touch_app, size: 36,
+        child: immersive ? null : Center(child: Icon(Icons.touch_app, size: 36,
             color: Theme.of(context).colorScheme.onPrimaryContainer
                 .withValues(alpha: 0.5))),
       ),
@@ -2353,47 +2376,16 @@ class _RemoteScreenState extends State<RemoteScreen>
   ];
 
 
-  Widget _modeSwitcher() => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8),
-    child: SegmentedButton<String>(
-      key: const ValueKey('remote-mode-switcher'),
-      showSelectedIcon: false,
-      segments: const [
-        ButtonSegment<String>(value: 'remote', label: Text('Remote'),
-          icon: Icon(Icons.mouse_outlined)),
-        ButtonSegment<String>(value: 'presentation', label: Text('Slides'),
-          icon: Icon(Icons.slideshow_outlined)),
-        ButtonSegment<String>(value: 'media', label: Text('Media'),
-          icon: Icon(Icons.smart_display_outlined)),
-      ],
-      selected: {
-        _remoteLayout.presentationMode ? 'presentation'
-            : _remoteLayout.mediaMode ? 'media' : 'remote'
-      },
-      onSelectionChanged: (selection) => _setLayout(
-        _changedLayout(
-          presenting: selection.first == 'presentation',
-          mediaMode: selection.first == 'media',
-        ),
-      ),
-    ),
-  );
-
-  Widget _visualModeSelector() => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: SegmentedButton<String>(
-      key: const ValueKey('screen-view-mode-switcher'),
-      showSelectedIcon: false,
-      segments: const [
-        ButtonSegment<String>(value: 'trackpad', label: Text('Trackpad')),
-        ButtonSegment<String>(value: 'snapshot', label: Text('Snapshot')),
-        ButtonSegment<String>(value: 'live', label: Text('Live')),
-      ],
-      selected: {VisualModePolicy.normalize(_remoteLayout.visualMode)},
-      onSelectionChanged: agent.screenCaptureSupported
-          ? (values) => _setLayout(_changedLayout(visualMode: values.first))
-          : null,
-    ),
+  Widget _compactModeSwitcher() => RemoteModeBar(
+    key: const ValueKey('remote-mode-switcher'),
+    primaryMode: _remoteLayout.presentationMode ? 'presentation'
+        : _remoteLayout.mediaMode ? 'media' : 'remote',
+    visualMode: VisualModePolicy.normalize(_remoteLayout.visualMode),
+    captureAvailable: agent.screenCaptureSupported,
+    onPrimaryMode: (mode) => _setLayout(_changedLayout(
+      presenting: mode == 'presentation', mediaMode: mode == 'media')),
+    onVisualMode: (mode) =>
+        _setLayout(_changedLayout(visualMode: mode)),
   );
 
   Future<void> _searchMedia(MediaService service, String text) async {
@@ -2412,16 +2404,18 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
-  Widget _remoteInputSurface({double height = 224}) {
+  Widget _remoteInputSurface({double height = 224,
+      bool immersive = false}) {
     final showPreview = _remoteLayout.visualMode != 'trackpad' &&
         agent.screenCaptureSupported;
     // One permanent trackpad; snapshot and live are in-place visual layers.
     return SizedBox(height: height, child: Stack(fit: StackFit.expand, children: [
-      _trackpadSurface(height: height),
+      _trackpadSurface(height: height, immersive: immersive),
       if (showPreview)
         VisualSurface(
           key: const ValueKey('shared-visual-overlay'),
           height: height,
+          immersive: immersive,
           frame: _currentFrame,
           live: _remoteLayout.visualMode == 'live',
           busy: _screenBusy,
@@ -2548,236 +2542,154 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  // Full-screen touch surface with a tiny persistent entry point. The
+  // floating dock auto-dismisses and never covers the full screen width.
   Widget _landscapeImmersive() => LayoutBuilder(
     builder: (context, limits) {
       final mode = _remoteLayout.presentationMode ? 'presentation'
           : _remoteLayout.mediaMode ? 'media' : 'remote';
       final visual = VisualModePolicy.normalize(_remoteLayout.visualMode);
       final label = discoveredName ?? host.text.trim();
+      final scheme = Theme.of(context).colorScheme;
       return Stack(fit: StackFit.expand, children: [
         if (mode == 'remote')
-          _remoteInputSurface(height: limits.maxHeight)
+          _remoteInputSurface(height: limits.maxHeight, immersive: true)
         else
-          _trackpadSurface(height: limits.maxHeight),
-        Positioned(top: 8, left: 8, right: 8,
-          child: Material(
-            color: Theme.of(context).colorScheme.surface.withValues(alpha: .94),
-            elevation: 2,
-            borderRadius: BorderRadius.circular(18),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(children: [
-                IconButton(
-                  tooltip: 'Navigation',
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => _scaffoldKey.currentState?.openDrawer()),
-                Expanded(child: Text(label, maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge)),
-                PopupMenuButton<String>(
-                  tooltip: 'Remote mode',
-                  initialValue: mode,
-                  onSelected: (selection) => _setLayout(_changedLayout(
-                    presenting: selection == 'presentation',
-                    mediaMode: selection == 'media')),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'remote', child: Text('Remote')),
-                    PopupMenuItem(value: 'presentation',
-                      child: Text('Presentation')),
-                    PopupMenuItem(value: 'media', child: Text('Media')),
-                  ],
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(mode == 'remote' ? 'Remote'
-                          : mode == 'media' ? 'Media' : 'Slides'),
-                      const Icon(Icons.arrow_drop_down),
-                    ]),
-                  ),
-                ),
-                if (mode == 'remote')
-                  PopupMenuButton<String>(
-                    tooltip: 'Screen mode',
-                    initialValue: visual,
-                    onSelected: (selection) =>
-                        _setLayout(_changedLayout(visualMode: selection)),
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'trackpad',
-                        child: Text('Trackpad')),
-                      if (agent.screenCaptureSupported) ...const [
-                        PopupMenuItem(value: 'snapshot',
-                          child: Text('Snapshot')),
-                        PopupMenuItem(value: 'live',
-                          child: Text('Live')),
+          _trackpadSurface(height: limits.maxHeight, immersive: true),
+        if (_connectionLost)
+          Positioned(left: 16, right: 16, top: 56,
+            child: _connectionBanner()),
+        if (_immersiveDockVisible)
+          Positioned(top: 8, right: 56,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: (limits.maxWidth - 76).clamp(160, 570).toDouble()),
+              child: Material(
+                key: const ValueKey('immersive-controls-dock'),
+                color: scheme.surface.withValues(alpha: .92),
+                elevation: 2,
+                borderRadius: BorderRadius.circular(14),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    IconButton(
+                      tooltip: 'Navigation',
+                      icon: const Icon(Icons.menu, size: 20),
+                      onPressed: () {
+                        _hideImmersiveDock();
+                        _scaffoldKey.currentState?.openDrawer();
+                      }),
+                    Tooltip(message: label,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 110),
+                        child: Text(label, maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall))),
+                    PopupMenuButton<String>(
+                      tooltip: 'Remote, Slides, Media',
+                      initialValue: mode,
+                      onSelected: (selection) {
+                        _setLayout(_changedLayout(
+                          presenting: selection == 'presentation',
+                          mediaMode: selection == 'media'));
+                        _hideImmersiveDock();
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'remote',
+                            child: Text('Remote')),
+                        PopupMenuItem(value: 'presentation',
+                            child: Text('Slides')),
+                        PopupMenuItem(value: 'media', child: Text('Media')),
                       ],
-                    ],
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(visual == 'trackpad' ? Icons.mouse_outlined
-                            : visual == 'snapshot' ? Icons.photo_outlined
-                            : Icons.live_tv_outlined, size: 18),
-                        const Icon(Icons.arrow_drop_down),
-                      ]),
+                      icon: Icon(mode == 'remote' ? Icons.mouse_outlined
+                          : mode == 'media' ? Icons.smart_display_outlined
+                          : Icons.slideshow_outlined),
                     ),
-                  ),
-                IconButton(
-                  tooltip: 'Keyboard and controls',
-                  onPressed: _showLandscapeControls,
-                  icon: const Icon(Icons.tune)),
-                IconButton(
-                  tooltip: 'Disconnect',
-                  onPressed: () {
-                    _stopScreen();
-                    agent.disconnect();
-                    setState(() => status = 'Disconnected');
-                  },
-                  icon: const Icon(Icons.link_off)),
-              ]),
+                    if (mode == 'remote') PopupMenuButton<String>(
+                      tooltip: 'Trackpad, Snapshot, Live',
+                      initialValue: visual,
+                      onSelected: (selection) {
+                        _setLayout(_changedLayout(visualMode: selection));
+                        _hideImmersiveDock();
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(value: 'trackpad',
+                            child: Text('Trackpad')),
+                        PopupMenuItem(value: 'snapshot',
+                            enabled: agent.screenCaptureSupported,
+                            child: const Text('Snapshot')),
+                        PopupMenuItem(value: 'live',
+                            enabled: agent.screenCaptureSupported,
+                            child: const Text('Live')),
+                      ],
+                      icon: Icon(visual == 'trackpad' ? Icons.mouse_outlined
+                          : visual == 'snapshot' ? Icons.photo_outlined
+                          : Icons.live_tv_outlined),
+                    ),
+                    if (mode == 'remote' && visual == 'snapshot')
+                      IconButton(
+                        tooltip: 'Refresh screenshot',
+                        onPressed: _screenBusy ? null :
+                            () => unawaited(_refreshScreenshot()),
+                        icon: const Icon(Icons.refresh)),
+                    IconButton(
+                      tooltip: 'Keyboard and controls',
+                      onPressed: () {
+                        _hideImmersiveDock();
+                        unawaited(_showLandscapeControls());
+                      },
+                      icon: const Icon(Icons.keyboard_outlined)),
+                    PopupMenuButton<String>(
+                      tooltip: 'Computer options',
+                      onSelected: (selection) {
+                        _hideImmersiveDock();
+                        if (selection == 'switch' ||
+                            selection == 'disconnect') {
+                          _stopScreen();
+                          agent.disconnect();
+                          setState(() {
+                            _connectionLost = false;
+                            status = selection == 'switch'
+                                ? 'Select a device to connect.'
+                                : 'Disconnected';
+                          });
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'switch',
+                            child: Text('Switch computer')),
+                        PopupMenuItem(value: 'disconnect',
+                            child: Text('Disconnect')),
+                      ],
+                      icon: const Icon(Icons.more_horiz),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        Positioned(top: 8, right: 8,
+          child: Material(
+            color: scheme.surface.withValues(alpha: .78),
+            borderRadius: BorderRadius.circular(12),
+            child: IconButton(
+              key: const ValueKey('immersive-controls-toggle'),
+              tooltip: _immersiveDockVisible
+                  ? 'Hide remote controls' : 'Show remote controls',
+              iconSize: 20,
+              constraints: const BoxConstraints(
+                minWidth: 40, minHeight: 40),
+              onPressed: _immersiveDockVisible
+                  ? _hideImmersiveDock : _showImmersiveDock,
+              icon: Icon(_immersiveDockVisible ?
+                  Icons.close : Icons.tune_outlined),
             ),
           ),
         ),
-        Positioned(bottom: 8, right: 12, child: Row(children: [
-          if (mode == 'presentation') ...[
-            IconButton.filledTonal(
-              tooltip: 'Previous slide',
-              onPressed: () => unawaited(command('key', {'key': 'Left'})),
-              icon: const Icon(Icons.chevron_left)),
-            const SizedBox(width: 6),
-            IconButton.filledTonal(
-              tooltip: 'Next slide',
-              onPressed: () => unawaited(command('key', {'key': 'Right'})),
-              icon: const Icon(Icons.chevron_right)),
-          ],
-          if (mode == 'media') ...[
-            IconButton.filledTonal(
-              tooltip: 'Play / Pause',
-              onPressed: () => unawaited(command('key', {'key': 'space'})),
-              icon: const Icon(Icons.play_arrow)),
-            const SizedBox(width: 6),
-            IconButton.filledTonal(
-              tooltip: 'Volume down',
-              onPressed: () => unawaited(command('key',
-                  {'key': 'XF86AudioLowerVolume'})),
-              icon: const Icon(Icons.volume_down)),
-            const SizedBox(width: 6),
-            IconButton.filledTonal(
-              tooltip: 'Volume up',
-              onPressed: () => unawaited(command('key',
-                  {'key': 'XF86AudioRaiseVolume'})),
-              icon: const Icon(Icons.volume_up)),
-          ],
-          if (mode == 'remote') ...[
-            IconButton.filledTonal(
-              tooltip: 'Right click',
-              onPressed: () => unawaited(command('click',
-                  {'button': 'right'})),
-              icon: const Icon(Icons.ads_click)),
-          ],
-        ])),
       ]);
     },
   );
 
-  Widget _landscapeRemote() {
-    final screen = MediaQuery.sizeOf(context);
-    final safe = MediaQuery.paddingOf(context);
-    final available = (screen.height - safe.vertical -
-        kToolbarHeight - 132.0).clamp(185.0, 390.0).toDouble();
-    return SizedBox(
-      key: const ValueKey('landscape-remote'),
-      height: available,
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Expanded(
-          flex: 6,
-          child: Column(children: [
-            Row(children: [
-              Expanded(child: TextButton.icon(
-                key: const ValueKey('landscape-trackpad-toggle'),
-                onPressed: () => _setLayout(_changedLayout(
-                  trackpad: !_remoteLayout.trackpadExpanded,
-                )),
-                icon: Icon(_remoteLayout.trackpadExpanded
-                    ? Icons.expand_less : Icons.expand_more),
-                label: Text(_remoteLayout.trackpadExpanded
-                    ? 'Hide trackpad' : 'Show trackpad'),
-              )),
-            ]),
-            if (_remoteLayout.trackpadExpanded) ...[
-              Expanded(child: LayoutBuilder(
-                builder: (context, limits) => _remoteInputSurface(
-                  height: limits.maxHeight,
-                ),
-              )),
-              const SizedBox(height: 4),
-              Row(children: [
-                Expanded(child: OutlinedButton(
-                  onPressed: _connectionLost ? null :
-                      () => command('click', {'button': 'left'}),
-                  child: const Text('Left click'),
-                )),
-                const SizedBox(width: 6),
-                Expanded(child: OutlinedButton(
-                  onPressed: _connectionLost ? null :
-                      () => command('click', {'button': 'right'}),
-                  child: const Text('Right click'),
-                )),
-              ]),
-            ] else
-              const Expanded(child: Center(
-                child: Text('Trackpad hidden. Tap Show trackpad to open.'),
-              )),
-          ]),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          flex: 5,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _landscapeTyping(),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(child: Text('Quick keys',
-                    style: Theme.of(context).textTheme.titleSmall)),
-                  TextButton(
-                    onPressed: _customizeQuickKeys,
-                    child: const Text('Customize'),
-                  ),
-                ]),
-                if (_remoteLayout.quickKeys.isEmpty)
-                  const Text('Add quick keys using Customize.')
-                else
-                  Wrap(spacing: 4, runSpacing: 3, children: [
-                    for (final id in _remoteLayout.quickKeys)
-                      _quickKeyButton(id),
-                  ]),
-                TextButton.icon(
-                  onPressed: () => _setLayout(_changedLayout(
-                    arrows: !_remoteLayout.arrowsExpanded,
-                  )),
-                  icon: Icon(_remoteLayout.arrowsExpanded
-                      ? Icons.expand_less : Icons.expand_more),
-                  label: const Text('Arrow pad'),
-                ),
-                if (_remoteLayout.arrowsExpanded) _arrowPad(),
-                OutlinedButton.icon(
-                  onPressed: () => _setLayout(_changedLayout(
-                    more: !_remoteLayout.moreExpanded,
-                  )),
-                  icon: Icon(_remoteLayout.moreExpanded
-                      ? Icons.expand_less : Icons.expand_more),
-                  label: const Text('More controls'),
-                ),
-                if (_remoteLayout.moreExpanded) ..._moreControlSections(),
-              ],
-            ),
-          ),
-        ),
-      ]),
-    );
-  }
 
   Widget _landscapeTyping() => TextField(
     controller: typing,
@@ -2843,17 +2755,12 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
         ),
-      _modeSwitcher(),
+      _compactModeSwitcher(),
       if (_remoteLayout.presentationMode) _presentationView(landscape),
       if (_remoteLayout.mediaMode) _mediaView(landscape),
       if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
-          landscape) ...[
-        _visualModeSelector(),
-        _landscapeRemote(),
-      ],
-      if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
           !landscape) ...[
-        _visualModeSelector(),
+      const SizedBox(height: 8),
       _remoteInputSurface(),
       const SizedBox(height: 8),
       Row(children: [
