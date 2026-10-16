@@ -16,15 +16,6 @@ class VisualModePolicy {
 
   static const snapshotInterval = Duration(seconds: 15);
 
-  /// Some running agents have a working capture endpoint even when the
-  /// best-effort /api/info feature advertisement is absent or stale. Let
-  /// macOS/Windows try the authenticated endpoint and show any real error.
-  /// Ubuntu stays disabled until its capture backend advertises support.
-  static bool canRequestCapture({
-    required bool advertised,
-    required String? platform,
-  }) => advertised || platform == 'darwin' || platform == 'windows';
-
   static String normalize(String? value) =>
       const {'trackpad', 'snapshot', 'live'}.contains(value)
           ? value! : 'trackpad';
