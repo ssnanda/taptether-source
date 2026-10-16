@@ -2846,7 +2846,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         dense: true,
         visualDensity: VisualDensity.compact,
         contentPadding: EdgeInsets.zero,
-        title: Text('Trackpad',
+        title: Text(_remoteLayout.visualMode == 'snapshot' ? 'Snapshot' :
+            _remoteLayout.visualMode == 'live' ? 'Live screen' : 'Trackpad',
             style: Theme.of(context).textTheme.titleMedium),
         trailing: Icon(_remoteLayout.trackpadExpanded
             ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
