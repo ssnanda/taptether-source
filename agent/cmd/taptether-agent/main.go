@@ -28,6 +28,7 @@ import (
 
 	"github.com/ssnanda/taptether.com/agent/internal/discovery"
 	"github.com/ssnanda/taptether.com/agent/internal/input"
+	"github.com/ssnanda/taptether.com/agent/internal/screencap"
 	"github.com/ssnanda/taptether.com/agent/internal/identity"
 	"github.com/ssnanda/taptether.com/agent/internal/power"
     "github.com/ssnanda/taptether.com/agent/internal/updater"
@@ -82,6 +83,8 @@ func main() {
 	mux := http.NewServeMux()
 	access := &identityAPI{devices: registry, legacyToken: token}
 	access.Register(mux)
+	registerScreenEndpoints(mux, access)
+	registerMediaEndpoint(mux, access)
     // Upgrades require a previously paired, TLS-pinned phone. The server
     // chooses its own fixed updater; clients never supply commands or URLs.
     mux.HandleFunc("/api/neighbors", func(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +164,7 @@ func main() {
             "version": version, "shutdownEnabled": power.Enabled(),
             "hostname": hostname, "platform": runtime.GOOS,
             "macAddress": localHardwareAddress(),
+            "screenCaptureSupported": screencap.Available(),
         })
     })
     var mu sync.Mutex

@@ -13,6 +13,9 @@ void main() {
     expect(value.arrowsExpanded, false);
     expect(value.moreExpanded, false);
     expect(value.presentationMode, false);
+    expect(value.mediaMode, false);
+    expect(value.mediaService, 'youtube');
+    expect(value.visualMode, 'trackpad');
     expect(value.presentationApp, 'powerPoint');
     expect(value.expandedSections, isEmpty);
     expect(value.quickKeys, defaultRemoteQuickKeys);
@@ -26,6 +29,9 @@ void main() {
       arrowsExpanded: true,
       moreExpanded: true,
       presentationMode: true,
+      mediaMode: false,
+      mediaService: 'netflix',
+      visualMode: 'snapshot',
       presentationApp: 'googleSlides',
       expandedSections: ['editing', 'volume'],
       quickKeys: ['paste', 'enter', 'escape'],
@@ -53,6 +59,9 @@ void main() {
     expect(parsed.trackpadExpanded, false);
     expect(parsed.presentationMode, true);
     expect(parsed.presentationApp, 'powerPoint');
+    expect(parsed.mediaMode, false);
+    expect(parsed.mediaService, 'youtube');
+    expect(parsed.visualMode, 'trackpad');
   });
 
   test('malformed preferences restore a usable default remote', () async {

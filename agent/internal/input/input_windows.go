@@ -20,6 +20,7 @@ const (
     inputMouse = 0
     inputKeyboard = 1
     mouseMove = 0x0001
+    mouseAbsolute = 0x8000
     mouseLeftDown = 0x0002
     mouseLeftUp = 0x0004
     mouseRightDown = 0x0008
@@ -158,6 +159,23 @@ func Send(e Event) error {
     switch e.Type {
     case "ping": return nil
     case "move": return inject(mouse(int32(e.DX), int32(e.DY), 0, mouseMove))
+    case "tap":
+        // Absolute coordinates use only the primary display; SendInput with
+        // MOUSEEVENTF_ABSOLUTE (without VIRTUALDESK) uses 0..65535.
+        x := int32(int64(e.X) * 65535 / 10000)
+        y := int32(int64(e.Y) * 65535 / 10000)
+        if err := inject(mouse(x, y, 0, mouseMove|mouseAbsolute)); err != nil {
+            return err
+        }
+        down, up, count := uint32(mouseLeftDown), uint32(mouseLeftUp), 1
+        if e.Button == "right" { down, up = mouseRightDown, mouseRightUp }
+        if e.Button == "double" { count = 2 }
+        entries := make([]winInput, 0, count*2)
+        for i:=0; i<count; i++ {
+            entries=append(entries,mouse(0,0,0,down),mouse(0,0,0,up))
+        }
+        return inject(entries...)
+
     case "scroll":
         if e.DY == 0 { return nil }
         return inject(mouse(0, 0, uint32(int32(-e.DY*120)), mouseWheel))

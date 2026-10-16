@@ -45,6 +45,9 @@ class RemoteLayoutSettings {
     this.arrowsExpanded = false,
     this.moreExpanded = false,
     this.presentationMode = false,
+    this.mediaMode = false,
+    this.mediaService = 'youtube',
+    this.visualMode = 'trackpad',
     this.presentationApp = 'powerPoint',
     this.expandedSections = const <String>[],
     this.quickKeys = defaultRemoteQuickKeys,
@@ -54,6 +57,9 @@ class RemoteLayoutSettings {
   final bool arrowsExpanded;
   final bool moreExpanded;
   final bool presentationMode;
+  final bool mediaMode;
+  final String mediaService;
+  final String visualMode;
   final String presentationApp;
   final List<String> expandedSections;
   final List<String> quickKeys;
@@ -63,6 +69,9 @@ class RemoteLayoutSettings {
     'arrowsExpanded': arrowsExpanded,
     'moreExpanded': moreExpanded,
     'presentationMode': presentationMode,
+    'mediaMode': mediaMode,
+    'mediaService': mediaService,
+    'visualMode': visualMode,
     'presentationApp': presentationApp,
     'expandedSections': expandedSections,
     'quickKeys': quickKeys,
@@ -87,6 +96,12 @@ class RemoteLayoutSettings {
       arrowsExpanded: values['arrowsExpanded'] == true,
       moreExpanded: values['moreExpanded'] == true,
       presentationMode: values['presentationMode'] == true,
+      mediaMode: values['presentationMode'] != true && values['mediaMode'] == true,
+      mediaService: const {'youtube', 'netflix'}.contains(values['mediaService'])
+          ? values['mediaService'] as String : 'youtube',
+      visualMode: const {'trackpad', 'snapshot', 'live'}
+              .contains(values['visualMode'])
+          ? values['visualMode'] as String : 'trackpad',
       presentationApp: const {'powerPoint', 'googleSlides', 'keynote'}
               .contains(values['presentationApp'])
           ? values['presentationApp'] as String

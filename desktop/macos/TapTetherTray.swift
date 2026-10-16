@@ -59,6 +59,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         add(settingsMenu, "Agent diagnostics", #selector(showAgentDiagnostics))
         add(settingsMenu, "Repair Accessibility…", #selector(repairAccessibility))
         add(settingsMenu, "Open Accessibility settings", #selector(openAccessibilitySettings))
+        add(settingsMenu, "Open Screen Recording settings", #selector(openScreenRecordingSettings))
         settingsMenu.addItem(.separator())
         add(settingsMenu, "Uninstall TapTether…", #selector(uninstallTapTether))
         settingsItem.submenu = settingsMenu
@@ -448,6 +449,13 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     @objc private func openAccessibilitySettings() {
         guard let url = URL(string:
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func openScreenRecordingSettings() {
+        guard let url = URL(string:
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
         else { return }
         NSWorkspace.shared.open(url)
     }

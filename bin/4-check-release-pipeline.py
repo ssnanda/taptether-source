@@ -214,7 +214,8 @@ layout = (ROOT / "app" / "lib" / "remote_layout_settings.dart").read_text(
 assert 'Widget _landscapeRemote()' in remote
 assert 'MediaQuery.orientationOf(context) == Orientation.landscape' in remote
 assert 'Widget _presentationView(bool landscape)' in remote
-assert 'SegmentedButton<bool>' in remote
+assert 'SegmentedButton<String>' in remote
+assert "value: 'presentation'" in remote and "value: 'media'" in remote
 assert 'PresentationShortcuts.start' in presentation
 assert "static const next = 'Right';" in presentation
 assert "static const previous = 'Left';" in presentation

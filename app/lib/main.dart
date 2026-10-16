@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'remote_layout_settings.dart';
 import 'presentation_mode.dart';
+import 'media_remote.dart';
+import 'visual_mode.dart';
+import 'visual_transport.dart';
+import 'visual_surface.dart';
 import 'lan_scan.dart';
 import 'network_location.dart';
 import 'device_recovery.dart';
@@ -27,6 +32,9 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+final RouteObserver<ModalRoute<dynamic>> _remoteRouteObserver =
+    RouteObserver<ModalRoute<dynamic>>();
+
 void main() => runApp(const TapTetherApp());
 
 class TapTetherApp extends StatefulWidget {
@@ -48,6 +56,7 @@ class _TapTetherAppState extends State<TapTetherApp> {
     builder: (context, mode, _) => MaterialApp(
       title: 'TapTether',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [_remoteRouteObserver],
       theme: TapTetherPalette.light(),
       darkTheme: TapTetherPalette.dark(),
       themeMode: mode,
@@ -70,6 +79,8 @@ class LocalAgent {
   String? _session;
   DateTime? _sessionExpires;
   bool _shutdownEnabled = false;
+  bool _screenCaptureSupported = false;
+  bool get screenCaptureSupported => _screenCaptureSupported;
   String? _reportedHostname;
   String? _reportedPlatform;
   String? _reportedMacAddress;
@@ -121,6 +132,7 @@ class LocalAgent {
     _reportedPlatform = null;
     _reportedMacAddress = null;
     _shutdownEnabled = false;
+    _screenCaptureSupported = false;
   }
 
   static bool _isLocalHost(String host) {
@@ -232,6 +244,7 @@ class LocalAgent {
       final body = jsonDecode(await utf8.decoder.bind(response).join());
       if (body is Map && body['version'] is String) {
         _shutdownEnabled = body['shutdownEnabled'] == true;
+        _screenCaptureSupported = body['screenCaptureSupported'] == true;
         final name = body['hostname'];
         if (name is String &&
             RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$').hasMatch(name)) {
@@ -300,6 +313,70 @@ class LocalAgent {
     throw StateError('Computer could not start the update (HTTP $result).');
   }
 
+
+  Future<void> openMedia(String service, String query) async {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final req = await _client!.postUrl(_base!.resolve('/api/media/open'));
+    req.headers.contentType = ContentType.json;
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+    req.write(jsonEncode({'service': service, 'query': query}));
+    final res = await req.close().timeout(const Duration(seconds: 8));
+    if (res.statusCode != 204) {
+      final explanation = await utf8.decoder.bind(res).join();
+      throw StateError(explanation.trim().isNotEmpty
+          ? explanation.trim()
+          : 'Computer could not open the media service.');
+    }
+    await res.drain<void>();
+  }
+
+  Future<ScreenFrame> snapshot() async {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final req = await _client!.getUrl(_base!.resolve('/api/snapshot'));
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+    final response = await req.close().timeout(const Duration(seconds: 7));
+    if (response.statusCode != 200) {
+      final explanation = await utf8.decoder.bind(response).join();
+      throw StateError(explanation.trim().isEmpty
+          ? 'Screen capture unavailable (HTTP ${response.statusCode}).'
+          : explanation.trim());
+    }
+    final width = int.tryParse(response.headers.value('x-screen-width') ?? '');
+    final height = int.tryParse(response.headers.value('x-screen-height') ?? '');
+    if (width == null || height == null || width < 1 || height < 1 ||
+        width > 1280 || height > 720) {
+      await response.drain<void>();
+      throw const FormatException('Agent sent invalid screen dimensions.');
+    }
+    final output = BytesBuilder(copy: false);
+    await for (final bytes in response.timeout(const Duration(seconds: 8))) {
+      output.add(bytes);
+      if (output.length > 2 << 20) {
+        throw const FormatException('Screenshot exceeds safe transfer size.');
+      }
+    }
+    return ScreenFrame(output.takeBytes(), width, height);
+  }
+
+  Stream<ScreenFrame> liveFrames() async* {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final req = await _client!.getUrl(_base!.resolve('/api/live'));
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+    final response = await req.close().timeout(const Duration(seconds: 7));
+    if (response.statusCode != 200) {
+      final explanation = await utf8.decoder.bind(response).join();
+      throw StateError(explanation.trim().isEmpty
+          ? 'Live video unavailable (HTTP ${response.statusCode}).'
+          : explanation.trim());
+    }
+    final frames = MjpegFrameDecoder();
+    await for (final bytes in response) {
+      for (final frame in frames.add(bytes)) {
+        yield frame;
+      }
+    }
+  }
+
   void disconnect() {
     _client?.close(force: true);
     _client = null;
@@ -310,6 +387,7 @@ class LocalAgent {
     _session = null;
     _sessionExpires = null;
     _shutdownEnabled = false;
+    _screenCaptureSupported = false;
     _reportedHostname = null;
     _reportedPlatform = null;
     _reportedMacAddress = null;
@@ -322,7 +400,8 @@ class RemoteScreen extends StatefulWidget {
   State<RemoteScreen> createState() => _RemoteScreenState();
 }
 
-class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver {
+class _RemoteScreenState extends State<RemoteScreen>
+    with WidgetsBindingObserver, RouteAware {
   final agent = LocalAgent();
   final deviceStore = ComputerStore();
   final remoteLayoutStore = RemoteLayoutStore();
@@ -366,6 +445,100 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   String? _latestReleaseVersion;
   bool _macShortcuts = false;
   bool _haptics = true;
+  Timer? _snapshotTimer;
+  StreamSubscription<ScreenFrame>? _liveFrames;
+  ScreenFrame? _currentFrame;
+  String? _screenError;
+  bool _screenBusy = false;
+  bool _appForeground = true;
+  bool _pageVisible = true;
+  bool _refreshAfterCapture = false;
+  int _screenEpoch = 0;
+
+  bool get _viewingScreen => agent.configured && !_connectionLost &&
+      _appForeground && _pageVisible && _remoteLayout.trackpadExpanded &&
+      !_remoteLayout.mediaMode && !_remoteLayout.presentationMode &&
+      agent.screenCaptureSupported &&
+      VisualModePolicy.normalize(_remoteLayout.visualMode) != 'trackpad';
+
+  void _stopScreen() {
+    _screenEpoch++;
+    _snapshotTimer?.cancel();
+    _snapshotTimer = null;
+    final prior = _liveFrames;
+    _liveFrames = null;
+    if (prior != null) unawaited(prior.cancel());
+    _screenBusy = false;
+    _refreshAfterCapture = false;
+    _currentFrame = null;
+    _screenError = null;
+  }
+
+  void _syncScreen() {
+    _stopScreen();
+    if (!_viewingScreen) return;
+    final epoch = _screenEpoch;
+    if (_remoteLayout.visualMode == 'snapshot') {
+      unawaited(_refreshScreenshot());
+      _snapshotTimer = Timer.periodic(VisualModePolicy.snapshotInterval,
+          (_) => unawaited(_refreshScreenshot()));
+    } else if (_remoteLayout.visualMode == 'live') {
+      _screenBusy = true;
+      _liveFrames = agent.liveFrames().listen((frame) {
+        if (!mounted || _screenEpoch != epoch || !_viewingScreen) return;
+        setState(() {
+          _currentFrame = frame;
+          _screenBusy = false;
+          _screenError = null;
+        });
+      }, onError: (Object error) {
+        if (!mounted || _screenEpoch != epoch) return;
+        setState(() {
+          _screenBusy = false;
+          _screenError = error.toString();
+        });
+      }, onDone: () {
+        if (!mounted || _screenEpoch != epoch) return;
+        setState(() {
+          _screenBusy = false;
+          _screenError ??= 'Live stream stopped. Reopen Live to retry.';
+        });
+      }, cancelOnError: true);
+    }
+  }
+
+  Future<void> _refreshScreenshot() async {
+    if (!_viewingScreen || _remoteLayout.visualMode != 'snapshot') return;
+    if (_screenBusy) {
+      _refreshAfterCapture = true;
+      return;
+    }
+    _refreshAfterCapture = false;
+    final epoch = _screenEpoch;
+    _screenBusy = true;
+    if (mounted) setState(() {});
+    try {
+      final frame = await agent.snapshot();
+      if (!mounted || _screenEpoch != epoch) return;
+      setState(() {
+        _currentFrame = frame;
+        _screenError = null;
+      });
+    } catch (error) {
+      if (mounted && _screenEpoch == epoch) {
+        setState(() => _screenError = error.toString());
+      }
+    } finally {
+      if (mounted && _screenEpoch == epoch) {
+        setState(() => _screenBusy = false);
+        if (_refreshAfterCapture) {
+          _refreshAfterCapture = false;
+          unawaited(_refreshScreenshot());
+        }
+      }
+    }
+  }
+
 
   @override
   void initState() {
@@ -385,10 +558,33 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) _remoteRouteObserver.subscribe(this, route);
+  }
+
+  @override
+  void didPushNext() {
+    _pageVisible = false;
+    _stopScreen();
+  }
+
+  @override
+  void didPopNext() {
+    _pageVisible = true;
+    _syncScreen();
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    _appForeground = state == AppLifecycleState.resumed;
+    if (_appForeground) {
+      _syncScreen();
       unawaited(_refreshNetworkLocation());
       unawaited(_refreshHeartbeats());
+    } else {
+      _stopScreen();
     }
   }
 
@@ -1038,6 +1234,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   }
 
   void showPairForm() {
+    _stopScreen();
     if (agent.configured) agent.disconnect();
     setState(() {
       _showPairForm = true;
@@ -1587,10 +1784,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
     host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
     _movementTimer?.cancel();
     _scrollTimer?.cancel();
+    _stopScreen();
     agent.disconnect();
     super.dispose();
   }
@@ -1598,6 +1797,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   Future<void> command(String type, [Map<String, Object> data = const {}]) async {
     try {
       await agent.send(type, data);
+      if ((type == 'click' || type == 'tap' || type == 'scroll') &&
+          _viewingScreen && _remoteLayout.visualMode == 'snapshot') {
+        // The input has reached the agent before requesting the next frame.
+        unawaited(Future<void>.delayed(const Duration(milliseconds: 120),
+            _refreshScreenshot));
+      }
       if ((_connectionLost || _agentInputDenied) && mounted) {
         setState(() {
           _connectionLost = false;
@@ -1615,6 +1820,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   }
 
   Future<bool> connect({String? existingId, String? deviceId}) async {
+    _stopScreen();
     try {
       if (mounted) {
         setState(() => _remoteLayout = const RemoteLayoutSettings());
@@ -1738,11 +1944,17 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     final loaded = await remoteLayoutStore.read(expectedHost);
     if (mounted && agent.configured && host.text.trim() == expectedHost) {
       setState(() => _remoteLayout = loaded);
+      _syncScreen();
     }
   }
 
   void _setLayout(RemoteLayoutSettings next) {
+    final visualChanged = _remoteLayout.visualMode != next.visualMode ||
+        _remoteLayout.trackpadExpanded != next.trackpadExpanded ||
+        _remoteLayout.mediaMode != next.mediaMode ||
+        _remoteLayout.presentationMode != next.presentationMode;
     setState(() => _remoteLayout = next);
+    if (visualChanged) _syncScreen();
     unawaited(_persistLayout(host.text.trim(), next));
   }
 
@@ -1765,6 +1977,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     bool? arrows,
     bool? more,
     bool? presenting,
+    bool? mediaMode,
+    String? mediaService,
+    String? visualMode,
     String? presentationApp,
     List<String>? sections,
     List<String>? quick,
@@ -1773,6 +1988,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     arrowsExpanded: arrows ?? _remoteLayout.arrowsExpanded,
     moreExpanded: more ?? _remoteLayout.moreExpanded,
     presentationMode: presenting ?? _remoteLayout.presentationMode,
+    mediaMode: mediaMode ?? _remoteLayout.mediaMode,
+    mediaService: mediaService ?? _remoteLayout.mediaService,
+    visualMode: visualMode ?? _remoteLayout.visualMode,
     presentationApp: presentationApp ?? _remoteLayout.presentationApp,
     expandedSections: sections ?? _remoteLayout.expandedSections,
     quickKeys: quick ?? _remoteLayout.quickKeys,
@@ -1792,6 +2010,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         error is HttpException;
     setState(() {
       if (disconnected) {
+        _stopScreen();
         _connectionLost = true;
         _connectionTechnical = error.toString();
         status = 'Connection lost';
@@ -2121,27 +2340,107 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
 
   Widget _modeSwitcher() => Padding(
     padding: const EdgeInsets.symmetric(vertical: 8),
-    child: SegmentedButton<bool>(
+    child: SegmentedButton<String>(
       key: const ValueKey('remote-mode-switcher'),
       showSelectedIcon: false,
       segments: const [
-        ButtonSegment<bool>(
-          value: false,
-          label: Text('Remote'),
-          icon: Icon(Icons.mouse_outlined),
-        ),
-        ButtonSegment<bool>(
-          value: true,
-          label: Text('Presentation'),
-          icon: Icon(Icons.slideshow_outlined),
-        ),
+        ButtonSegment<String>(value: 'remote', label: Text('Remote'),
+          icon: Icon(Icons.mouse_outlined)),
+        ButtonSegment<String>(value: 'presentation', label: Text('Presentation'),
+          icon: Icon(Icons.slideshow_outlined)),
+        ButtonSegment<String>(value: 'media', label: Text('Media'),
+          icon: Icon(Icons.smart_display_outlined)),
       ],
-      selected: {_remoteLayout.presentationMode},
+      selected: {
+        _remoteLayout.presentationMode ? 'presentation'
+            : _remoteLayout.mediaMode ? 'media' : 'remote'
+      },
       onSelectionChanged: (selection) => _setLayout(
-        _changedLayout(presenting: selection.first),
+        _changedLayout(
+          presenting: selection.first == 'presentation',
+          mediaMode: selection.first == 'media',
+        ),
       ),
     ),
   );
+
+  Widget _visualModeSelector() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: SegmentedButton<String>(
+      key: const ValueKey('screen-view-mode-switcher'),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment<String>(value: 'trackpad', label: Text('Trackpad')),
+        ButtonSegment<String>(value: 'snapshot', label: Text('Snapshot')),
+        ButtonSegment<String>(value: 'live', label: Text('Live')),
+      ],
+      selected: {VisualModePolicy.normalize(_remoteLayout.visualMode)},
+      onSelectionChanged: agent.screenCaptureSupported
+          ? (values) => _setLayout(_changedLayout(visualMode: values.first))
+          : null,
+    ),
+  );
+
+  Future<void> _searchMedia(MediaService service, String text) async {
+    try {
+      if (text.trim().isNotEmpty) {
+        MediaSearch.url(service, text); // validate before contacting the agent
+      }
+      await agent.openMedia(service.name, text);
+    } on FormatException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)));
+      }
+    } catch (error) {
+      _handleRemoteFailure(error);
+    }
+  }
+
+  Widget _remoteInputSurface({double height = 224}) {
+    if (VisualModePolicy.normalize(_remoteLayout.visualMode) == 'trackpad' ||
+        !agent.screenCaptureSupported) {
+      return _trackpadSurface(height: height);
+    }
+    return VisualSurface(
+      key: ValueKey('remote-visual-${_remoteLayout.visualMode}'),
+      height: height,
+      frame: _currentFrame,
+      live: _remoteLayout.visualMode == 'live',
+      busy: _screenBusy,
+      error: _screenError,
+      onRefresh: () => unawaited(_refreshScreenshot()),
+      onTap: (x, y, button) =>
+          unawaited(command('tap', {'x': x, 'y': y, 'button': button})),
+      onScroll: (ticks) =>
+          unawaited(command('scroll', {'dy': ticks})),
+    );
+  }
+
+  Widget _mediaView(bool landscape) {
+    final selected = _remoteLayout.mediaService == 'netflix'
+        ? MediaService.netflix : MediaService.youtube;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      MediaRemote(
+        key: const ValueKey('media-remote'),
+        service: selected,
+        enabled: agent.configured && !_connectionLost,
+        landscape: landscape,
+        onServiceChanged: (service) =>
+            _setLayout(_changedLayout(mediaService: service.name)),
+        onKey: (key) => unawaited(command('key', {'key': key})),
+        onSearch: (service, text) => _searchMedia(service, text),
+        onOpenService: (service) => _searchMedia(service, ''),
+      ),
+      const SizedBox(height: 12),
+      Text('Mouse and keyboard',
+          style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 6),
+      _trackpadSurface(height: landscape ? 100 : 140),
+      const SizedBox(height: 8),
+      _landscapeTyping(),
+    ]);
+  }
 
   Widget _presentationView(bool landscape) {
     final isMac = _connectedPlatform == 'darwin' ||
@@ -2191,7 +2490,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
             ]),
             if (_remoteLayout.trackpadExpanded) ...[
               Expanded(child: LayoutBuilder(
-                builder: (context, limits) => _trackpadSurface(
+                builder: (context, limits) => _remoteInputSurface(
                   height: limits.maxHeight,
                 ),
               )),
@@ -2297,6 +2596,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         IconButton(
           tooltip: 'Switch computer',
           onPressed: () {
+            _stopScreen();
             agent.disconnect();
             setState(() {
               _connectionLost = false;
@@ -2330,8 +2630,15 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ),
       _modeSwitcher(),
       if (_remoteLayout.presentationMode) _presentationView(landscape),
-      if (!_remoteLayout.presentationMode && landscape) _landscapeRemote(),
-      if (!_remoteLayout.presentationMode && !landscape) ...[
+      if (_remoteLayout.mediaMode) _mediaView(landscape),
+      if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
+          landscape) ...[
+        _visualModeSelector(),
+        _landscapeRemote(),
+      ],
+      if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
+          !landscape) ...[
+        _visualModeSelector(),
       ListTile(
         key: const ValueKey('trackpad-toggle'),
         dense: true,
@@ -2345,7 +2652,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           trackpad: !_remoteLayout.trackpadExpanded)),
       ),
       if (_remoteLayout.trackpadExpanded) ...[
-        _trackpadSurface(),
+        _remoteInputSurface(),
         const SizedBox(height: 8),
         Row(children: [
           Expanded(child: OutlinedButton(
@@ -2434,7 +2741,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ),
         title: const Text('TapTether'), actions: [
         IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
-          agent.disconnect(); setState(() => status = 'Disconnected');
+          _stopScreen(); agent.disconnect(); setState(() => status = 'Disconnected');
         } : null, icon: const Icon(Icons.link_off)),
       ]),
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [

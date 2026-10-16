@@ -14,6 +14,12 @@ on:
           - release
           - build
           - validate
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'agent/**'
+      - '.github/workflows/taptether.yml'
   push:
     branches: [main, fix/v0.6-remote-scan-mac-details]
     # Branch VERSION bumps validate/build Windows without publishing.
@@ -29,11 +35,12 @@ permissions:
 
 concurrency:
   group: taptether-one-workflow-${{ github.ref }}
-  cancel-in-progress: false
+  # Cancel superseded PR validation, but never interrupt a release.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -83,6 +90,10 @@ jobs:
           cd agent
           go test ./...
           go vet ./...
+      - name: Cross-compile Windows snapshot agent
+        run: |
+          cd agent
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/taptether-agent
       - name: Initialize Flutter runner and dependencies
         run: |
           cd app
@@ -107,6 +118,27 @@ jobs:
         run: |
           cd app
           flutter build apk --debug
+
+  verify-macos-agent:
+    # Lightweight native verification of the new macOS Screen Recording CGo
+    # code. This job never packages, uploads or publishes artifacts.
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: validate
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Compile and test native macOS agents
+        run: |
+          cd agent
+          go test ./...
+          go vet ./...
+      - name: Parse macOS tray UI
+        run: swiftc -parse desktop/macos/TapTetherTray.swift
 
   build-ubuntu:
     needs: validate
