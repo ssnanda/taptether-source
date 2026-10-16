@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'remote_layout_settings.dart';
 import 'presentation_mode.dart';
+import 'media_remote.dart';
+import 'visual_mode.dart';
 import 'lan_scan.dart';
 import 'network_location.dart';
 import 'device_recovery.dart';
@@ -1765,6 +1767,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     bool? arrows,
     bool? more,
     bool? presenting,
+    bool? mediaMode,
+    String? mediaService,
+    String? visualMode,
     String? presentationApp,
     List<String>? sections,
     List<String>? quick,
@@ -1773,6 +1778,9 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     arrowsExpanded: arrows ?? _remoteLayout.arrowsExpanded,
     moreExpanded: more ?? _remoteLayout.moreExpanded,
     presentationMode: presenting ?? _remoteLayout.presentationMode,
+    mediaMode: mediaMode ?? _remoteLayout.mediaMode,
+    mediaService: mediaService ?? _remoteLayout.mediaService,
+    visualMode: visualMode ?? _remoteLayout.visualMode,
     presentationApp: presentationApp ?? _remoteLayout.presentationApp,
     expandedSections: sections ?? _remoteLayout.expandedSections,
     quickKeys: quick ?? _remoteLayout.quickKeys,
@@ -2121,27 +2129,80 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
 
   Widget _modeSwitcher() => Padding(
     padding: const EdgeInsets.symmetric(vertical: 8),
-    child: SegmentedButton<bool>(
+    child: SegmentedButton<String>(
       key: const ValueKey('remote-mode-switcher'),
       showSelectedIcon: false,
       segments: const [
-        ButtonSegment<bool>(
-          value: false,
-          label: Text('Remote'),
-          icon: Icon(Icons.mouse_outlined),
-        ),
-        ButtonSegment<bool>(
-          value: true,
-          label: Text('Presentation'),
-          icon: Icon(Icons.slideshow_outlined),
-        ),
+        ButtonSegment<String>(value: 'remote', label: Text('Remote'),
+          icon: Icon(Icons.mouse_outlined)),
+        ButtonSegment<String>(value: 'presentation', label: Text('Presentation'),
+          icon: Icon(Icons.slideshow_outlined)),
+        ButtonSegment<String>(value: 'media', label: Text('Media'),
+          icon: Icon(Icons.smart_display_outlined)),
       ],
-      selected: {_remoteLayout.presentationMode},
+      selected: {
+        _remoteLayout.presentationMode ? 'presentation'
+            : _remoteLayout.mediaMode ? 'media' : 'remote'
+      },
       onSelectionChanged: (selection) => _setLayout(
-        _changedLayout(presenting: selection.first),
+        _changedLayout(
+          presenting: selection.first == 'presentation',
+          mediaMode: selection.first == 'media',
+        ),
       ),
     ),
   );
+
+  Widget _visualModeSelector() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: SegmentedButton<String>(
+      key: const ValueKey('screen-view-mode-switcher'),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment<String>(value: 'trackpad', label: Text('Trackpad')),
+        ButtonSegment<String>(value: 'snapshot', label: Text('Snapshot'),
+          enabled: false),
+        ButtonSegment<String>(value: 'live', label: Text('Live'),
+          enabled: false),
+      ],
+      selected: {VisualMode.normalize(_remoteLayout.visualMode)},
+      onSelectionChanged: (values) =>
+          _setLayout(_changedLayout(visualMode: values.first)),
+    ),
+  );
+
+  Future<void> _searchMedia(MediaService service, String text) async {
+    try {
+      final address = MediaSearch.url(service, text);
+      // This first 0.7 implementation controls the *foreground browser*.
+      // It never executes a command or arbitrary URL on the desktop agent.
+      await agent.send('key', {'key': _shortcut('l')});
+      await agent.send('text', {'text': address});
+      await agent.send('key', {'key': 'Return'});
+    } on FormatException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)));
+      }
+    } catch (error) {
+      _handleRemoteFailure(error);
+    }
+  }
+
+  Widget _mediaView(bool landscape) {
+    final selected = _remoteLayout.mediaService == 'netflix'
+        ? MediaService.netflix : MediaService.youtube;
+    return MediaRemote(
+      key: const ValueKey('media-remote'),
+      service: selected,
+      enabled: agent.configured && !_connectionLost,
+      landscape: landscape,
+      onServiceChanged: (service) =>
+          _setLayout(_changedLayout(mediaService: service.name)),
+      onKey: (key) => unawaited(command('key', {'key': key})),
+      onSearch: (service, text) => _searchMedia(service, text),
+    );
+  }
 
   Widget _presentationView(bool landscape) {
     final isMac = _connectedPlatform == 'darwin' ||
@@ -2330,8 +2391,15 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ),
       _modeSwitcher(),
       if (_remoteLayout.presentationMode) _presentationView(landscape),
-      if (!_remoteLayout.presentationMode && landscape) _landscapeRemote(),
-      if (!_remoteLayout.presentationMode && !landscape) ...[
+      if (_remoteLayout.mediaMode) _mediaView(landscape),
+      if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
+          landscape) ...[
+        _visualModeSelector(),
+        _landscapeRemote(),
+      ],
+      if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
+          !landscape) ...[
+        _visualModeSelector(),
       ListTile(
         key: const ValueKey('trackpad-toggle'),
         dense: true,
