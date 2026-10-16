@@ -445,7 +445,6 @@ start_agent() {
   [[ -f "$PLIST" ]] || { notice 'Agent not installed. Choose Install / Repair agent first.' >&2; return 1; }
   if ! launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$CORE_PLIST" || return 1
-  fi
     launchctl kickstart "$TARGET/$CORE_LABEL" || return 1
   fi
   if [[ -f "$SCREEN_PLIST" ]]; then
