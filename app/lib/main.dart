@@ -459,10 +459,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   Orientation? _lastRemoteOrientation;
   int _screenEpoch = 0;
 
-  bool get _captureSelectable => VisualModePolicy.canRequestCapture(
-    advertised: agent.screenCaptureSupported,
-    platform: _connectedPlatform ?? agent.reportedPlatform,
-  );
+  bool get _captureSelectable => agent.screenCaptureSupported;
 
   bool get _viewingScreen => agent.configured && !_connectionLost &&
       _appForeground && _pageVisible &&
