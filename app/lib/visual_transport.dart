@@ -66,7 +66,7 @@ class MjpegFrameDecoder {
           throw const FormatException('Invalid local video frame header.');
         }
         int readHeader(String key) {
-          final match = RegExp('^$key: ([0-9]+)\\$', multiLine: true)
+          final match = RegExp('^$key: ([0-9]+)', multiLine: true)
               .firstMatch(header.replaceAll('\r', ''));
           return int.tryParse(match?.group(1) ?? '') ?? -1;
         }
