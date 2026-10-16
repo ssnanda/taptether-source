@@ -90,6 +90,10 @@ jobs:
           cd agent
           go test ./...
           go vet ./...
+      - name: Cross-compile Windows snapshot agent
+        run: |
+          cd agent
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/taptether-agent
       - name: Initialize Flutter runner and dependencies
         run: |
           cd app
