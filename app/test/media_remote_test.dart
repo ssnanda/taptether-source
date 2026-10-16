@@ -11,7 +11,7 @@ void main() {
         'https://www.netflix.com/search?q=star+wars');
     expect(() => MediaSearch.url(MediaService.youtube, ''),
         throwsFormatException);
-    expect(() => MediaSearch.url(MediaService.netflix, 'a' * 80),
+    expect(() => MediaSearch.url(MediaService.netflix, List.filled(80, 'a').join()),
         throwsFormatException);
   });
 
