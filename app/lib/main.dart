@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'remote_layout_settings.dart';
 import 'presentation_mode.dart';
 import 'media_remote.dart';
 import 'visual_mode.dart';
+import 'visual_transport.dart';
 import 'lan_scan.dart';
 import 'network_location.dart';
 import 'device_recovery.dart';
@@ -72,6 +74,8 @@ class LocalAgent {
   String? _session;
   DateTime? _sessionExpires;
   bool _shutdownEnabled = false;
+  bool _screenCaptureSupported = false;
+  bool get screenCaptureSupported => _screenCaptureSupported;
   String? _reportedHostname;
   String? _reportedPlatform;
   String? _reportedMacAddress;
@@ -123,6 +127,7 @@ class LocalAgent {
     _reportedPlatform = null;
     _reportedMacAddress = null;
     _shutdownEnabled = false;
+    _screenCaptureSupported = false;
   }
 
   static bool _isLocalHost(String host) {
@@ -234,6 +239,7 @@ class LocalAgent {
       final body = jsonDecode(await utf8.decoder.bind(response).join());
       if (body is Map && body['version'] is String) {
         _shutdownEnabled = body['shutdownEnabled'] == true;
+        _screenCaptureSupported = body['screenCaptureSupported'] == true;
         final name = body['hostname'];
         if (name is String &&
             RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$').hasMatch(name)) {
@@ -302,6 +308,54 @@ class LocalAgent {
     throw StateError('Computer could not start the update (HTTP $result).');
   }
 
+
+  Future<ScreenFrame> snapshot() async {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final req = await _client!.getUrl(_base!.resolve('/api/snapshot'));
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+    final response = await req.close().timeout(const Duration(seconds: 7));
+    if (response.statusCode != 200) {
+      final explanation = await utf8.decoder.bind(response).join();
+      throw StateError(explanation.trim().isEmpty
+          ? 'Screen capture unavailable (HTTP ${response.statusCode}).'
+          : explanation.trim());
+    }
+    final width = int.tryParse(response.headers.value('x-screen-width') ?? '');
+    final height = int.tryParse(response.headers.value('x-screen-height') ?? '');
+    if (width == null || height == null || width < 1 || height < 1 ||
+        width > 1280 || height > 720) {
+      await response.drain<void>();
+      throw const FormatException('Agent sent invalid screen dimensions.');
+    }
+    final output = BytesBuilder(copy: false);
+    await for (final bytes in response.timeout(const Duration(seconds: 8))) {
+      output.add(bytes);
+      if (output.length > 2 << 20) {
+        throw const FormatException('Screenshot exceeds safe transfer size.');
+      }
+    }
+    return ScreenFrame(output.takeBytes(), width, height);
+  }
+
+  Stream<ScreenFrame> liveFrames() async* {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final req = await _client!.getUrl(_base!.resolve('/api/live'));
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+    final response = await req.close().timeout(const Duration(seconds: 7));
+    if (response.statusCode != 200) {
+      final explanation = await utf8.decoder.bind(response).join();
+      throw StateError(explanation.trim().isEmpty
+          ? 'Live video unavailable (HTTP ${response.statusCode}).'
+          : explanation.trim());
+    }
+    final frames = MjpegFrameDecoder();
+    await for (final bytes in response) {
+      for (final frame in frames.add(bytes)) {
+        yield frame;
+      }
+    }
+  }
+
   void disconnect() {
     _client?.close(force: true);
     _client = null;
@@ -312,6 +366,7 @@ class LocalAgent {
     _session = null;
     _sessionExpires = null;
     _shutdownEnabled = false;
+    _screenCaptureSupported = false;
     _reportedHostname = null;
     _reportedPlatform = null;
     _reportedMacAddress = null;
