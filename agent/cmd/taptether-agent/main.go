@@ -84,6 +84,7 @@ func main() {
 	access := &identityAPI{devices: registry, legacyToken: token}
 	access.Register(mux)
 	registerScreenEndpoints(mux, access)
+	registerMediaEndpoint(mux, access)
     // Upgrades require a previously paired, TLS-pinned phone. The server
     // chooses its own fixed updater; clients never supply commands or URLs.
     mux.HandleFunc("/api/neighbors", func(w http.ResponseWriter, r *http.Request) {
