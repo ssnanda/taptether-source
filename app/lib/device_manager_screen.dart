@@ -155,13 +155,11 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Manage Devices')),
+    appBar: AppBar(title: const Text('My Computers')),
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('${_computers.length} saved ${_computers.length == 1 ? 'computer' : 'computers'}',
-          style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 12),
+        const SizedBox(height: 6),
         SizedBox(width: double.infinity, child: FilledButton.icon(
           onPressed: () => Navigator.pop(context, true),
           icon: const Icon(Icons.add),
@@ -184,9 +182,8 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 ? Icons.laptop_mac : Icons.computer),
             title: Text(device.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
-                '${device.macAddress.isEmpty ? '' : ' · MAC: ${device.macAddress}'}',
-                maxLines: 2, overflow: TextOverflow.ellipsis),
+            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}',
+                maxLines: 1, overflow: TextOverflow.ellipsis),
             onTap: _busy ? null : () => _action(device, 'connect'),
             trailing: PopupMenuButton<String>(
               tooltip: 'Manage ${device.name}', enabled: !_busy,
@@ -214,11 +211,7 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
               ],
             ),
           )),
-        const SizedBox(height: 16),
-        Text('Saved connections retain their verified TLS fingerprint '
-            'and authentication credentials. Changing an address does not '
-            'silently trust a different computer.',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+
       ],
     ),
   );

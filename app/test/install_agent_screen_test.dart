@@ -17,11 +17,11 @@ void main() {
     // ListView builds its children lazily; the optional link sits below the
     // fold on a normal phone. Scroll to it before checking visibility.
     await tester.scrollUntilVisible(
-      find.text('Manual macOS download (optional)'),
+      find.text('Get Mac app (one-time setup)'),
       180,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Manual macOS download (optional)'), findsOneWidget);
+    expect(find.text('Get Mac app (one-time setup)'), findsOneWidget);
     expect(find.text('Install over SSH'), findsNothing);
   });
 

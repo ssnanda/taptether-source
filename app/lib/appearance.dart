@@ -41,6 +41,19 @@ class TapTetherPalette {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: canvas,
+      visualDensity: VisualDensity.compact,
+      splashFactory: InkRipple.splashFactory,
+      dividerTheme: const DividerThemeData(space: 20, thickness: .7),
+      listTileTheme: const ListTileThemeData(
+        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(15)))),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 10, vertical: 9)),
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14))))),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white, foregroundColor: ink,
         surfaceTintColor: Colors.transparent, centerTitle: true,
@@ -56,7 +69,13 @@ class TapTetherPalette {
       drawerTheme: const DrawerThemeData(backgroundColor: Colors.white),
       inputDecorationTheme: InputDecorationTheme(
         filled: true, fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFDCE6E9))),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: teal, width: 1.5)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       ),
       filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(

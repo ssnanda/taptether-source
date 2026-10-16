@@ -5,15 +5,19 @@ SELF="$(cd "$(dirname "$0")" && pwd)"
 BIN="$HOME/.local/bin"
 APP="$BIN/taptether-agent"
 CORE="$BIN/taptether-input-core"
+SCREEN="$BIN/taptether-screen-core"
 CTL="$BIN/taptetherctl-mac"
 UPDATER="$BIN/taptether-agent-update-mac"
 PLIST="$HOME/Library/LaunchAgents/com.taptether.agent.plist"
 CORE_PLIST="$HOME/Library/LaunchAgents/com.taptether.input-core.plist"
+SCREEN_PLIST="$HOME/Library/LaunchAgents/com.taptether.screen-core.plist"
 LOGDIR="$HOME/Library/Logs/TapTether"
 CONF="$HOME/Library/Application Support/taptether"
 SHUTDOWN_DISABLED="$HOME/Library/Application Support/taptether/remote-shutdown-disabled"
+SCREEN_DIR="$CONF/screen-core"
 LABEL=com.taptether.agent
 CORE_LABEL=com.taptether.input-core
+SCREEN_LABEL=com.taptether.screen-core
 TRAY_LABEL=com.taptether.tray
 TRAY_PLIST="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
 TRAY_BUNDLE="$HOME/Applications/TapTether Agent.app"
@@ -74,6 +78,24 @@ PY
   tar -xzf "$archive" -C "$tmp"
   install_core "$tmp/taptether-input-core"
 }
+# Screen Core is installed once and never overwritten by an agent update.
+ensure_screen_payload() {
+  [[ -x "$SCREEN" ]] && return 0
+  if [[ -x "$SELF/taptether-screen-core" ]]; then
+    cp "$SELF/taptether-screen-core" "$SCREEN.new"
+    chmod 755 "$SCREEN.new"
+    if ! /usr/bin/codesign --verify --strict "$SCREEN.new" >/dev/null 2>&1; then
+      rm -f "$SCREEN.new"
+      notice 'Screen Core signature verification failed.' >&2
+      return 1
+    fi
+    mv -f "$SCREEN.new" "$SCREEN"
+    notice 'Stable Screen Core installed. Allow Screen Recording once.'
+  else
+    notice 'Open the latest TapTether Agent.app once to install Screen Core.' >&2
+    return 1
+  fi
+}
 # Never truncate a currently executing shell script during self-update.
 # Older taptetherctl-mac/update helper processes can still be reading the
 # original inode. Install in the same directory and rename atomically.
@@ -120,14 +142,20 @@ install_agent() {
   [[ -f "$SHUTDOWN_DISABLED" ]] && shutdown_enabled=0
   mkdir -p "$BIN" "$(dirname "$PLIST")" "$LOGDIR"
   chmod 700 "$LOGDIR"
-  mkdir -p "$CONF/input-core"
-  chmod 700 "$CONF" "$CONF/input-core"
+  mkdir -p "$CONF/input-core" "$SCREEN_DIR"
+  chmod 700 "$CONF" "$CONF/input-core" "$SCREEN_DIR"
+  if [[ ! -s "$SCREEN_DIR/ipc.token" ]]; then
+    umask 077
+    openssl rand -hex 32 > "$SCREEN_DIR/ipc.token"
+  fi
+  chmod 600 "$SCREEN_DIR/ipc.token"
   if [[ ! -s "$CONF/input-core/ipc.token" ]]; then
     umask 077
     openssl rand -hex 32 > "$CONF/input-core/ipc.token"
   fi
   chmod 600 "$CONF/input-core/ipc.token"
   ensure_core_payload
+  ensure_screen_payload || true
   if [[ "$SELF/taptether-agent" != "$APP" ]]; then
     [[ -x "$SELF/taptether-agent" ]] || { notice 'Run setup from extracted agent archive' >&2; exit 1; }
     cp "$SELF/taptether-agent" "$APP"
@@ -164,7 +192,7 @@ install_agent() {
     [[ "$icon_source" == "$icon_target" ]] || cp "$SELF/TapTether.icns" "$icon_target"
     [[ "$binary_source" == "$binary_target" ]] || cp "$tray_source" "$binary_target"
     # Include self-install resources for future repairs and direct Finder launch.
-    for resource in taptether-agent taptether-input-core taptetherctl-mac taptether-agent-update-mac; do
+    for resource in taptether-agent taptether-input-core taptether-screen-core taptetherctl-mac taptether-agent-update-mac; do
       local src="$SELF/$resource" dest="$bundle/Contents/Resources/$resource"
       [[ -s "$src" ]] || continue
       [[ "$(cd "$(dirname "$src")" && pwd -P)/$(basename "$src")" == \
@@ -234,6 +262,20 @@ EOF
 <key>StandardErrorPath</key><string>$LOGDIR/input-core.stderr.log</string>
 </dict></plist>
 EOF
+  if [[ -x "$SCREEN" ]]; then
+    cat > "$SCREEN_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>$SCREEN_LABEL</string>
+<key>ProgramArguments</key><array><string>$SCREEN</string></array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>StandardOutPath</key><string>/dev/null</string>
+<key>StandardErrorPath</key><string>$LOGDIR/screen-core.stderr.log</string>
+</dict></plist>
+EOF
+  fi
   if [[ "$shutdown_enabled" -eq 1 ]]; then
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:TAPTETHER_ENABLE_SHUTDOWN string 1" "$PLIST"
@@ -241,6 +283,11 @@ EOF
   launchctl bootout "$TARGET/$CORE_LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$CORE_PLIST"
   launchctl kickstart -k "$TARGET/$CORE_LABEL"
+  if [[ -x "$SCREEN" && -f "$SCREEN_PLIST" ]]; then
+    launchctl bootout "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1 || true
+    launchctl bootstrap "$TARGET" "$SCREEN_PLIST"
+    launchctl kickstart -k "$TARGET/$SCREEN_LABEL"
+  fi
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
   launchctl kickstart -k "$TARGET/$LABEL"
@@ -258,7 +305,7 @@ EOF
   fi
   notice 'Background agent installed, running and enabled at login.'
   notice 'TapTether Agent.app displays the splash on demand; the menu bar tray starts silently at login.'
-  notice 'Migration only: allow taptether-input-core in macOS Accessibility once. Routine agent updates preserve it.'
+  notice 'Accessibility: allow Input Core once. Screen Recording: allow Screen Core once. Agent updates preserve both.'
   # Never print pairing tokens in routine install/update logs. The owner can
   # deliberately reveal them from the menu bar or the pairing subcommand.
   notice 'To pair your phone, use the menu-bar Show pairing details command.'
@@ -366,6 +413,12 @@ start_agent() {
     launchctl bootstrap "$TARGET" "$CORE_PLIST" || return 1
   fi
   launchctl kickstart -k "$TARGET/$CORE_LABEL"
+  if [[ -x "$SCREEN" && -f "$SCREEN_PLIST" ]]; then
+    if ! launchctl print "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1; then
+      launchctl bootstrap "$TARGET" "$SCREEN_PLIST" || return 1
+    fi
+    launchctl kickstart -k "$TARGET/$SCREEN_LABEL"
+  fi
   if ! launchctl print "$TARGET/$LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$PLIST" || {
       notice 'Could not load the LaunchAgent. Choose Agent diagnostics / Repair.' >&2
@@ -414,14 +467,17 @@ uninstall_agent() {
   if [[ -z "${TAPTETHER_TEST_TRASH_DIR:-}" ]]; then
     launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
     launchctl bootout "$TARGET/$CORE_LABEL" >/dev/null 2>&1 || true
+    launchctl bootout "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1 || true
   fi
   # The uninstaller may be launched by the tray process. Unload that job
   # LAST or launchd could terminate its child helper mid-cleanup.
   trash_path "$PLIST"
   trash_path "$CORE_PLIST"
+  trash_path "$SCREEN_PLIST"
   trash_path "$TRAY_PLIST"
   trash_path "$APP"
   trash_path "$CORE"
+  trash_path "$SCREEN"
   trash_path "$UPDATER"
   trash_path "$TRAY_BUNDLE"
   trash_path "$LOGDIR"
@@ -432,7 +488,7 @@ uninstall_agent() {
   fi
   # Remove the controller itself last, after all other cleanup is complete.
   trash_path "$CTL"
-  notice 'TapTether agent, Input Core, tray, launch agents, and logs moved to Trash.'
+  notice 'TapTether agent, Input Core, Screen Core, tray, launch agents, and logs moved to Trash.'
   if [[ "$mode" == "--erase-pairing" ]]; then
     notice 'Local pairing identities, certificates and preferences moved to Trash.'
   else
@@ -446,7 +502,7 @@ uninstall_agent() {
 case "${1:-}" in
   install) install_agent ;;
   start) start_agent ;;
-  stop) launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true; launchctl bootout "$TARGET/$CORE_LABEL" ;;
+  stop) launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true; launchctl bootout "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1 || true; launchctl bootout "$TARGET/$CORE_LABEL" ;;
   restart) start_agent ;;
   status) launchctl print "$TARGET/$LABEL" ;;
   pairing) pairing ;;

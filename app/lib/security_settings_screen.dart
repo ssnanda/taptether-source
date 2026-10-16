@@ -128,11 +128,9 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Security & Appearance')),
     body: ListView(padding: const EdgeInsets.all(16), children: [
-      Text('App security',
+      Text('App lock',
           style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 6),
-      const Text('Protect saved devices and SSH keys on this phone. '
-          'App lock is optional and works offline.'),
+      const SizedBox(height: 8),
       if (_busy) const LinearProgressIndicator(),
       if (_error != null) Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -143,7 +141,7 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
         contentPadding: EdgeInsets.zero,
         secondary: const Icon(Icons.lock_outline),
         title: const Text('Require app unlock'),
-        subtitle: const Text('Set a six-digit PIN to enable app lock'),
+        subtitle: const Text('Secure this app with a PIN'),
         value: _security.enabled,
         onChanged: _busy ? null : _toggleLock,
       ),
@@ -151,10 +149,10 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.fingerprint),
-          title: const Text('Face ID / Touch ID / biometrics'),
+          title: const Text('Biometric unlock'),
           subtitle: Text(_biometricsAvailable
-              ? 'Use biometrics with your app PIN as fallback'
-              : 'No enrolled biometric authenticator available'),
+              ? 'Unlock with Face ID or Touch ID'
+              : 'Not available on this device'),
           value: _security.biometricEnabled,
           onChanged: _busy || !_biometricsAvailable
               ? null : _toggleBiometrics,
@@ -193,7 +191,6 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
         builder: (context, mode, _) => SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Dark appearance'),
-          subtitle: const Text('Light theme is the default'),
           secondary: const Icon(Icons.brightness_6_outlined),
           value: mode == ThemeMode.dark,
           onChanged: (dark) async {
@@ -207,9 +204,7 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
           },
         ),
       ),
-      const Divider(height: 32),
-      const Text('Private SSH key export requires another app-unlock '
-          'check when app lock is enabled. Your PIN is never uploaded.'),
+
     ]),
   );
 }

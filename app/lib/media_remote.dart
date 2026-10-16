@@ -94,7 +94,6 @@ class _MediaRemoteState extends State<MediaRemote> {
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SizedBox(height: 8),
       SegmentedButton<MediaService>(
         key: const ValueKey('media-provider-selector'),
         showSelectedIcon: false,
@@ -135,9 +134,7 @@ class _MediaRemoteState extends State<MediaRemote> {
         ),
         onSubmitted: (_) => _submitSearch(),
       ),
-      const SizedBox(height: 5),
-      Text('Search opens in the computer’s default browser.',
-        style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(height: 6),
       const SizedBox(height: 16),
       Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
         children: [
@@ -149,8 +146,6 @@ class _MediaRemoteState extends State<MediaRemote> {
         ],
       ),
       const SizedBox(height: 12),
-      Text('Volume', style: Theme.of(context).textTheme.titleSmall),
-      const SizedBox(height: 6),
       Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
         children: [
           _button('Lower', Icons.volume_down, 'XF86AudioLowerVolume',
@@ -160,9 +155,7 @@ class _MediaRemoteState extends State<MediaRemote> {
               buttonKey: const ValueKey('media-volume-up')),
         ],
       ),
-      const SizedBox(height: 10),
-      Text('Playback shortcuts depend on the active video player.',
-        style: Theme.of(context).textTheme.bodySmall),
+
     ]);
   }
 }
