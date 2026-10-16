@@ -2476,105 +2476,144 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  Widget _landscapeRemote() {
-    final screen = MediaQuery.sizeOf(context);
-    final safe = MediaQuery.paddingOf(context);
-    final available = (screen.height - safe.vertical -
-        kToolbarHeight - 132.0).clamp(185.0, 390.0).toDouble();
-    return SizedBox(
-      key: const ValueKey('landscape-remote'),
-      height: available,
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Expanded(
-          flex: 6,
-          child: Column(children: [
-            Row(children: [
-              Expanded(child: TextButton.icon(
-                key: const ValueKey('landscape-trackpad-toggle'),
-                onPressed: () => _setLayout(_changedLayout(
-                  trackpad: !_remoteLayout.trackpadExpanded,
-                )),
-                icon: Icon(_remoteLayout.trackpadExpanded
-                    ? Icons.expand_less : Icons.expand_more),
-                label: Text(_remoteLayout.trackpadExpanded
-                    ? 'Hide trackpad' : 'Show trackpad'),
-              )),
-            ]),
-            if (_remoteLayout.trackpadExpanded) ...[
-              Expanded(child: LayoutBuilder(
-                builder: (context, limits) => _remoteInputSurface(
-                  height: limits.maxHeight,
-                ),
-              )),
-              const SizedBox(height: 4),
-              Row(children: [
-                Expanded(child: OutlinedButton(
-                  onPressed: _connectionLost ? null :
-                      () => command('click', {'button': 'left'}),
-                  child: const Text('Left click'),
-                )),
-                const SizedBox(width: 6),
-                Expanded(child: OutlinedButton(
-                  onPressed: _connectionLost ? null :
-                      () => command('click', {'button': 'right'}),
-                  child: const Text('Right click'),
-                )),
-              ]),
-            ] else
-              const Expanded(child: Center(
-                child: Text('Trackpad hidden. Tap Show trackpad to open.'),
-              )),
-          ]),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          flex: 5,
+  void _openLandscapeTools() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16,
+              MediaQuery.viewInsetsOf(sheetContext).bottom + 16),
           child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _landscapeTyping(),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(child: Text('Quick keys',
-                    style: Theme.of(context).textTheme.titleSmall)),
-                  TextButton(
-                    onPressed: _customizeQuickKeys,
-                    child: const Text('Customize'),
-                  ),
-                ]),
-                if (_remoteLayout.quickKeys.isEmpty)
-                  const Text('Add quick keys using Customize.')
-                else
-                  Wrap(spacing: 4, runSpacing: 3, children: [
-                    for (final id in _remoteLayout.quickKeys)
-                      _quickKeyButton(id),
-                  ]),
-                TextButton.icon(
-                  onPressed: () => _setLayout(_changedLayout(
-                    arrows: !_remoteLayout.arrowsExpanded,
-                  )),
-                  icon: Icon(_remoteLayout.arrowsExpanded
-                      ? Icons.expand_less : Icons.expand_more),
-                  label: const Text('Arrow pad'),
-                ),
-                if (_remoteLayout.arrowsExpanded) _arrowPad(),
-                OutlinedButton.icon(
-                  onPressed: () => _setLayout(_changedLayout(
-                    more: !_remoteLayout.moreExpanded,
-                  )),
-                  icon: Icon(_remoteLayout.moreExpanded
-                      ? Icons.expand_less : Icons.expand_more),
-                  label: const Text('More controls'),
-                ),
-                if (_remoteLayout.moreExpanded) ..._moreControlSections(),
-              ],
-            ),
+            child: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('Keyboard & shortcuts',
+                  style: Theme.of(sheetContext).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              _keyboardControls(),
+            ]),
           ),
         ),
-      ]),
+      ),
     );
   }
+
+  Widget _immersiveLandscapeRemote() => LayoutBuilder(
+    builder: (context, bounds) => Stack(fit: StackFit.expand, children: [
+      _remoteInputSurface(height: bounds.maxHeight),
+      Positioned(left: 12, top: 8, right: 12,
+        child: Material(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(16),
+          elevation: 3,
+          child: Row(children: [
+            const SizedBox(width: 8),
+            Expanded(child: _visualModeSelector()),
+            IconButton(
+              key: const ValueKey('landscape-keyboard'),
+              tooltip: 'Keyboard and shortcuts',
+              onPressed: _openLandscapeTools,
+              icon: const Icon(Icons.keyboard_outlined),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'Remote options',
+              icon: const Icon(Icons.more_vert),
+              onSelected: (choice) {
+                if (choice == 'presentation' || choice == 'media') {
+                  _setLayout(_changedLayout(
+                    presenting: choice == 'presentation',
+                    mediaMode: choice == 'media',
+                  ));
+                } else if (choice == 'devices') {
+                  _stopScreen();
+                  agent.disconnect();
+                  setState(() => status = 'Select a device to connect.');
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'presentation',
+                    child: Text('Presentation')),
+                PopupMenuItem(value: 'media', child: Text('Media')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'devices', child: Text('Switch computer')),
+              ],
+            ),
+          ]),
+        ),
+      ),
+      Positioned(left: 16, bottom: 8,
+        child: IgnorePointer(child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(8)),
+          child: Padding(padding: const EdgeInsets.symmetric(
+              horizontal: 9, vertical: 4),
+            child: Text(discoveredName ?? host.text.trim(),
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall)),
+        )),
+      ),
+    ]),
+  );
+
+  Widget _keyboardControls() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _landscapeTyping(),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: OutlinedButton.icon(
+          onPressed: _connectionLost ? null :
+              () => command('click', {'button': 'left'}),
+          icon: const Icon(Icons.touch_app_outlined, size: 18),
+          label: const Text('Left click'),
+        )),
+        const SizedBox(width: 8),
+        Expanded(child: OutlinedButton.icon(
+          onPressed: _connectionLost ? null :
+              () => command('click', {'button': 'right'}),
+          icon: const Icon(Icons.ads_click, size: 18),
+          label: const Text('Right click'),
+        )),
+      ]),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: Text('Quick keys',
+            style: Theme.of(context).textTheme.titleSmall)),
+        TextButton.icon(
+          onPressed: _customizeQuickKeys,
+          icon: const Icon(Icons.tune, size: 16),
+          label: const Text('Customize'),
+        ),
+      ]),
+      if (_remoteLayout.quickKeys.isEmpty)
+        const Text('Add your preferred keys using Customize.')
+      else
+        Wrap(spacing: 6, runSpacing: 3, children: [
+          for (final id in _remoteLayout.quickKeys) _quickKeyButton(id),
+        ]),
+      TextButton.icon(
+        key: const ValueKey('arrow-keys-toggle'),
+        onPressed: () => _setLayout(_changedLayout(
+          arrows: !_remoteLayout.arrowsExpanded)),
+        icon: Icon(_remoteLayout.arrowsExpanded
+            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+        label: Text(_remoteLayout.arrowsExpanded
+            ? 'Hide arrow keys' : 'Arrow keys'),
+      ),
+      if (_remoteLayout.arrowsExpanded) _arrowPad(),
+      OutlinedButton.icon(
+        key: const ValueKey('more-controls-toggle'),
+        onPressed: () => _setLayout(_changedLayout(
+          more: !_remoteLayout.moreExpanded)),
+        icon: Icon(_remoteLayout.moreExpanded
+            ? Icons.expand_less : Icons.expand_more),
+        label: Text(_remoteLayout.moreExpanded
+            ? 'Hide more controls' : 'More controls'),
+      ),
+      if (_remoteLayout.moreExpanded) ..._moreControlSections(),
+    ],
+  );
 
   Widget _landscapeTyping() => TextField(
     controller: typing,
