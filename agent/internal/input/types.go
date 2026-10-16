@@ -6,6 +6,8 @@ type Event struct {
 	Type   string `json:"type"`
 	DX     int    `json:"dx,omitempty"`
 	DY     int    `json:"dy,omitempty"`
+	X      int    `json:"x,omitempty"`
+	Y      int    `json:"y,omitempty"`
 	Button string `json:"button,omitempty"`
 	Key    string `json:"key,omitempty"`
 	Text   string `json:"text,omitempty"`
@@ -22,6 +24,13 @@ func (e Event) Validate() error {
 	case "scroll":
 		if e.DY < -100 || e.DY > 100 {
 			return fmt.Errorf("scroll too large")
+		}
+	case "tap":
+		if e.X < 0 || e.X > 10000 || e.Y < 0 || e.Y > 10000 {
+			return fmt.Errorf("tap coordinates outside primary display")
+		}
+		if e.Button != "left" && e.Button != "right" && e.Button != "double" {
+			return fmt.Errorf("invalid tap button")
 		}
 	case "click":
 		if e.Button != "left" && e.Button != "right" && e.Button != "double" {
