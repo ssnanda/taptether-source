@@ -9,6 +9,7 @@ package screencap
 #include <ApplicationServices/ApplicationServices.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <math.h>
 
 static bool tt_capture_permitted(void) {
   return CGPreflightScreenCaptureAccess();
