@@ -457,13 +457,11 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   bool get _viewingScreen => agent.configured && !_connectionLost &&
       _appForeground && _pageVisible &&
-      (_remoteLayout.trackpadExpanded ||
-          MediaQuery.orientationOf(context) == Orientation.landscape) &&
       !_remoteLayout.mediaMode && !_remoteLayout.presentationMode &&
       agent.screenCaptureSupported &&
       VisualModePolicy.normalize(_remoteLayout.visualMode) != 'trackpad';
 
-  void _stopScreen() {
+  void _stopScreen({bool preserveFrame = false}) {
     _screenEpoch++;
     _snapshotTimer?.cancel();
     _snapshotTimer = null;
@@ -472,12 +470,12 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (prior != null) unawaited(prior.cancel());
     _screenBusy = false;
     _refreshAfterCapture = false;
-    _currentFrame = null;
+    if (!preserveFrame) _currentFrame = null;
     _screenError = null;
   }
 
-  void _syncScreen() {
-    _stopScreen();
+  void _syncScreen({bool preserveFrame = false}) {
+    _stopScreen(preserveFrame: preserveFrame);
     if (!_viewingScreen) return;
     final epoch = _screenEpoch;
     if (_remoteLayout.visualMode == 'snapshot') {
@@ -1961,11 +1959,17 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   void _setLayout(RemoteLayoutSettings next) {
     final visualChanged = _remoteLayout.visualMode != next.visualMode ||
-        _remoteLayout.trackpadExpanded != next.trackpadExpanded ||
         _remoteLayout.mediaMode != next.mediaMode ||
         _remoteLayout.presentationMode != next.presentationMode;
+    final previousPreview = !_remoteLayout.mediaMode &&
+        !_remoteLayout.presentationMode &&
+        _remoteLayout.visualMode != 'trackpad';
+    final nextPreview = !next.mediaMode && !next.presentationMode &&
+        next.visualMode != 'trackpad';
     setState(() => _remoteLayout = next);
-    if (visualChanged) _syncScreen();
+    if (visualChanged) {
+      _syncScreen(preserveFrame: previousPreview && nextPreview);
+    }
     unawaited(_persistLayout(host.text.trim(), next));
   }
 
@@ -2409,23 +2413,29 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Widget _remoteInputSurface({double height = 224}) {
-    if (VisualModePolicy.normalize(_remoteLayout.visualMode) == 'trackpad' ||
-        !agent.screenCaptureSupported) {
-      return _trackpadSurface(height: height);
-    }
-    return VisualSurface(
-      key: ValueKey('remote-visual-${_remoteLayout.visualMode}'),
-      height: height,
-      frame: _currentFrame,
-      live: _remoteLayout.visualMode == 'live',
-      busy: _screenBusy,
-      error: _screenError,
-      onRefresh: () => unawaited(_refreshScreenshot()),
-      onTap: (x, y, button) =>
-          unawaited(command('tap', {'x': x, 'y': y, 'button': button})),
-      onScroll: (ticks) =>
-          unawaited(command('scroll', {'dy': ticks})),
-    );
+    final showPreview = _remoteLayout.visualMode != 'trackpad' &&
+        agent.screenCaptureSupported;
+    // One permanent trackpad; snapshot and live are in-place visual layers.
+    return SizedBox(height: height, child: Stack(fit: StackFit.expand, children: [
+      _trackpadSurface(height: height),
+      if (showPreview)
+        VisualSurface(
+          key: const ValueKey('shared-visual-overlay'),
+          height: height,
+          frame: _currentFrame,
+          live: _remoteLayout.visualMode == 'live',
+          busy: _screenBusy,
+          error: _screenError,
+          onRefresh: () => unawaited(_refreshScreenshot()),
+          onTap: (x, y, button) => unawaited(
+              command('tap', {'x': x, 'y': y, 'button': button})),
+          onClick: (button) => unawaited(
+              command('click', {'button': button})),
+          onMove: queueMovement,
+          onScroll: (ticks) => unawaited(
+              command('scroll', {'dy': ticks})),
+        ),
+    ]));
   }
 
   Widget _mediaView(bool landscape) {
@@ -2844,37 +2854,22 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (!_remoteLayout.presentationMode && !_remoteLayout.mediaMode &&
           !landscape) ...[
         _visualModeSelector(),
-      ListTile(
-        key: const ValueKey('trackpad-toggle'),
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        contentPadding: EdgeInsets.zero,
-        title: Text(_remoteLayout.visualMode == 'snapshot' ? 'Snapshot' :
-            _remoteLayout.visualMode == 'live' ? 'Live screen' : 'Trackpad',
-            style: Theme.of(context).textTheme.titleMedium),
-        trailing: Icon(_remoteLayout.trackpadExpanded
-            ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
-        onTap: () => _setLayout(_changedLayout(
-          trackpad: !_remoteLayout.trackpadExpanded)),
-      ),
-      if (_remoteLayout.trackpadExpanded) ...[
-        _remoteInputSurface(),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(child: OutlinedButton(
-            onPressed: _connectionLost ? null :
-                () => command('click', {'button': 'left'}),
-            child: const Text('Left click'),
-          )),
-          const SizedBox(width: 8),
-          Expanded(child: OutlinedButton(
-            onPressed: _connectionLost ? null :
-                () => command('click', {'button': 'right'}),
-            child: const Text('Right click'),
-          )),
-        ]),
-        const SizedBox(height: 8),
-      ],
+      _remoteInputSurface(),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: OutlinedButton(
+          onPressed: _connectionLost ? null :
+              () => command('click', {'button': 'left'}),
+          child: const Text('Left click'),
+        )),
+        const SizedBox(width: 8),
+        Expanded(child: OutlinedButton(
+          onPressed: _connectionLost ? null :
+              () => command('click', {'button': 'right'}),
+          child: const Text('Right click'),
+        )),
+      ]),
+      const SizedBox(height: 8),
       TextField(
         controller: typing,
         enabled: !_connectionLost,
