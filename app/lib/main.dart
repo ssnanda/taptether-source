@@ -554,8 +554,12 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(loadComputers());
     unawaited(_refreshNetworkLocation());
     _networkChanges = Connectivity().onConnectivityChanged.listen((_) {
-      // Invalidate any in-flight LAN discovery immediately on a transport
-      // change. Work already in a TCP batch finishes, but no new batch starts.
+      // Stop future probe batches when Wi-Fi is lost or switches networks.
+      _lanEpoch++;
+      unawaited(_refreshNetworkLocation());
+    }, onError: (Object _) {
+      // Some test runners and unsupported platforms have no event stream.
+      // Periodic/on-resume detection still fails closed without Wi-Fi.
       _lanEpoch++;
       unawaited(_refreshNetworkLocation());
     });
