@@ -36,6 +36,9 @@ for ARCH in amd64 arm64; do
   if [[ -s "$MAC" ]]; then cp "$MAC" "$STAGE/TapTetherAgent-macOS-$ARCH.tar.gz"; fi
   if [[ -s "$MAC_APP" ]]; then cp "$MAC_APP" "$STAGE/TapTetherAgent-macOS-$ARCH.zip"; fi
   if [[ -s "$MAC_CORE" ]]; then cp "$MAC_CORE" "$STAGE/TapTetherInputCore-macOS-$ARCH.tar.gz"; fi
+  SCREEN_VERSION="$(cat "$ROOT/SCREEN_CORE_VERSION")"
+  SCREEN_CORE="$(printf '%s/dist/macos/TapTetherScreenCore-macos-%s-%s.tar.gz' "$ROOT" "$ARCH" "$SCREEN_VERSION")"
+  if [[ -s "$SCREEN_CORE" ]]; then cp "$SCREEN_CORE" "$STAGE/TapTetherScreenCore-macOS-$ARCH.tar.gz"; fi
   WIN="$ROOT/dist/windows/TapTetherAgent-Windows-$ARCH-$VERSION.zip"
   if [[ -s "$WIN" ]]; then cp "$WIN" "$STAGE/TapTetherAgent-Windows-$ARCH.zip"; fi
 done
@@ -54,6 +57,7 @@ expected_assets=(
   TapTetherAgent-macOS-amd64.tar.gz TapTetherAgent-macOS-arm64.tar.gz
   TapTetherAgent-macOS-amd64.zip TapTetherAgent-macOS-arm64.zip
   TapTetherInputCore-macOS-amd64.tar.gz TapTetherInputCore-macOS-arm64.tar.gz
+  TapTetherScreenCore-macOS-amd64.tar.gz TapTetherScreenCore-macOS-arm64.tar.gz
   TapTetherAgent-Windows-amd64.zip TapTetherAgent-Windows-arm64.zip
 )
 for asset in "${expected_assets[@]}"; do
