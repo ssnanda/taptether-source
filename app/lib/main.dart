@@ -459,12 +459,17 @@ class _RemoteScreenState extends State<RemoteScreen>
   Orientation? _lastRemoteOrientation;
   int _screenEpoch = 0;
 
+  bool get _captureSelectable => VisualModePolicy.canRequestCapture(
+    advertised: agent.screenCaptureSupported,
+    platform: _connectedPlatform ?? agent.reportedPlatform,
+  );
+
   bool get _viewingScreen => agent.configured && !_connectionLost &&
       _appForeground && _pageVisible &&
       (_remoteLayout.trackpadExpanded ||
           (mounted && MediaQuery.orientationOf(context) == Orientation.landscape)) &&
       !_remoteLayout.mediaMode && !_remoteLayout.presentationMode &&
-      agent.screenCaptureSupported &&
+      _captureSelectable &&
       VisualModePolicy.normalize(_remoteLayout.visualMode) != 'trackpad';
 
   void _stopScreen() {
@@ -2426,15 +2431,18 @@ class _RemoteScreenState extends State<RemoteScreen>
     child: SegmentedButton<String>(
       key: const ValueKey('screen-view-mode-switcher'),
       showSelectedIcon: false,
-      segments: const [
-        ButtonSegment<String>(value: 'trackpad', label: Text('Trackpad')),
-        ButtonSegment<String>(value: 'snapshot', label: Text('Snapshot')),
-        ButtonSegment<String>(value: 'live', label: Text('Live')),
+      segments: [
+        const ButtonSegment<String>(value: 'trackpad',
+            label: Text('Trackpad')),
+        ButtonSegment<String>(value: 'snapshot',
+            label: const Text('Snapshot'), enabled: _captureSelectable),
+        ButtonSegment<String>(value: 'live',
+            label: const Text('Live'), enabled: _captureSelectable),
       ],
       selected: {VisualModePolicy.normalize(_remoteLayout.visualMode)},
-      onSelectionChanged: agent.screenCaptureSupported
-          ? (values) => _setLayout(_changedLayout(visualMode: values.first))
-          : null,
+      // Trackpad must never become disabled because /api/info is missing.
+      onSelectionChanged: (values) =>
+          _setLayout(_changedLayout(visualMode: values.first)),
     ),
   );
 
@@ -2456,7 +2464,7 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Widget _remoteInputSurface({double height = 224}) {
     if (VisualModePolicy.normalize(_remoteLayout.visualMode) == 'trackpad' ||
-        !agent.screenCaptureSupported) {
+        !_captureSelectable) {
       return _trackpadSurface(height: height);
     }
     return VisualSurface(
