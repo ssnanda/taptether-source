@@ -90,13 +90,7 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(18),
         children: [
-          Text(widget.updateOnly ? 'Update TapTether remotely' : 'Install TapTether on a computer',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          const Text('One installer screen for all supported computer types. '
-              'The OS is selected automatically when a trusted computer '
-              'reports it. Otherwise choose it below.'),
-          const SizedBox(height: 18),
+          const SizedBox(height: 6),
           TextField(
             controller: _address,
             keyboardType: TextInputType.url,
@@ -107,8 +101,7 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
             autocorrect: false,
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
-              labelText: 'Computer LAN IP',
-              helperText: 'The local network prefix is filled automatically',
+              labelText: 'Computer IP address',
             ),
           ),
           const SizedBox(height: 14),
@@ -125,13 +118,12 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
           ),
           const SizedBox(height: 18),
           if (_platform == null)
-            const Text('Choose a computer OS to see its installation method. '
-                'An unpaired computer cannot be identified securely from '
-                'its IP address alone.'),
+            const ListTile(
+              leading: Icon(Icons.devices_outlined),
+              title: Text('Choose the computer operating system'),
+            ),
           if (_platform == 'linux') ...[
-            Text('Ubuntu ${widget.updateOnly ? 'update' : 'installation'} uses SSH '
-                'and your saved phone key or SSH password. '
-                'Package updates preserve your pairing credentials.'),
+            const Text('Connect using SSH. Saved pairings are preserved.'),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: isPrivateIPv4(_address.text.trim())
@@ -141,15 +133,9 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
             ),
           ],
           if (_platform == 'darwin') ...[
-            Text('macOS ${widget.updateOnly ? 'update' : 'installation'} '
-                'uses SSH Remote Login. Use a saved phone SSH key or your '
-                'Mac account password. The agent runs through launchd and '
-                'preserves your pairing. Sudo is not required.'),
-            const SizedBox(height: 8),
-            const Text('Before first setup, enable Remote Login in '
-                'System Settings > General > Sharing on the Mac. '
-                'A signed-in desktop session is needed for launchd. '
-                'Accessibility access must be approved on the Mac.'),
+            const Text('Enable Remote Login on the Mac, then connect over SSH. '
+                'First-time Screen Core installation needs the Mac app once; '
+                'future agent updates preserve screen permissions.'),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: isPrivateIPv4(_address.text.trim())
@@ -162,15 +148,12 @@ class _InstallAgentScreenState extends State<InstallAgentScreen> {
             TextButton.icon(
               onPressed: _openMacDownload,
               icon: const Icon(Icons.download_outlined),
-              label: const Text('Manual macOS download (optional)'),
+              label: const Text('Get Mac app (one-time setup)'),
             ),
           ],
           if (_platform == 'windows') ...[
-            const Text('Install on your Windows computer (no SSH). '
-                'Download and extract the Windows agent ZIP, double-click '
-                'Install-TapTether.cmd, then Show-Pairing.cmd. '
-                'Enter the displayed private token and TLS fingerprint '
-                'to pair this phone. The agent starts at Windows sign-in.'),
+            const Text('Download the Windows ZIP, then run Install-TapTether.cmd '
+                'and Show-Pairing.cmd on the computer.'),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: _openMacDownload,
