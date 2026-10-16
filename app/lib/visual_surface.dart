@@ -81,7 +81,8 @@ class _VisualSurfaceState extends State<VisualSurface> {
     final wasPrimary = event.pointer == _primaryPointer;
     final isTap = wasPrimary && !_tapConsumed && !_movedWithMultipleFingers &&
         _tapBegan != null &&
-        event.timeStamp - _tapBegan! < const Duration(milliseconds: 450);
+        (event.timeStamp - _tapBegan!)
+            .compareTo(const Duration(milliseconds: 450)) < 0;
     _fingers.remove(event.pointer);
     if (isTap) _tap(event.localPosition, _viewport, 'left');
     if (wasPrimary) {
