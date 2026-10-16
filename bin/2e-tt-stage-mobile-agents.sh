@@ -66,6 +66,10 @@ for platform, suffix, folder, prefix in (
 # Stage independently signed Screen Core archives. The existing five-file
 # macOS agent installer format remains unchanged for older updater clients.
 for arch in ("amd64", "arm64"):
+    # Linux-only development builds can stage Ubuntu without Mac artifacts.
+    if not any(row["platform"] == "macos" and row["arch"] == arch
+               for row in installers):
+        continue
     name = f"TapTetherScreenCore-macos-{arch}-{screen_version}.tar.gz"
     source = root / "dist" / "macos" / name
     if not source.is_file():
