@@ -16,9 +16,9 @@ void main() {
   });
 
   test('snapshot cadence and mode normalization are stable', () {
-    expect(VisualMode.snapshotInterval, const Duration(seconds: 15));
-    expect(VisualMode.normalize('live'), 'live');
-    expect(VisualMode.normalize('anything-else'), 'trackpad');
+    expect(VisualModePolicy.snapshotInterval, const Duration(seconds: 15));
+    expect(VisualModePolicy.normalize('live'), 'live');
+    expect(VisualModePolicy.normalize('anything-else'), 'trackpad');
   });
 
   testWidgets('media buttons dispatch ordinary agent keys', (tester) async {
