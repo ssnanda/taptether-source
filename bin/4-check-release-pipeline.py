@@ -89,6 +89,13 @@ assert "actions/download-artifact@" in workflow
 assert "TAPTETHER_USE_PREBUILT_AGENTS: '1'" in workflow
 assert "TAPTETHER_USE_PREBUILT_AGENTS:-0" in stage
 assert "gh release create \"$VERSION_TAG\"" in publisher
+# A concurrent VERSION bump must not fail a completed binary release or roll
+# an older altstore.json over a newer version.
+assert 'git show origin/main:VERSION' in publisher
+assert 'git worktree add --quiet --detach' in publisher
+assert 'git -C "$FEED_WORKTREE" push origin HEAD:main' in publisher
+assert 'if [[ "$remote_version" != "$VERSION" ]]; then' in publisher
+assert 'git push origin HEAD:main' not in publisher
 assert "--latest=false" in publisher
 assert "expected_assets=(" in publisher
 assert "already published" in publisher

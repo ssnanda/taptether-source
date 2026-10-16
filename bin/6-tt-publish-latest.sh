@@ -112,12 +112,57 @@ else
 fi
 echo "Updated stable downloads: https://github.com/$REPO/releases/tag/$TAG"
 # Only commit a valid feed after its corresponding IPA is actually uploaded.
+# Use a disposable worktree based on the current remote HEAD. The release can
+# finish after someone else bumps VERSION; in that case the old AltStore feed
+# must not overwrite the newer release (or make a successful release look failed).
 if [[ "$HAS_IPA" -eq 1 ]]; then
-  git add -- altstore.json
-  if ! git diff --cached --quiet -- altstore.json; then
-    git -c user.name='TapTether Release Bot' -c user.email='actions@users.noreply.github.com' commit -m "chore: publish AltStore feed for $VERSION" -- altstore.json
-    git push origin HEAD:main
-    echo 'Committed and pushed altstore.json with the published IPA size/version.'
+  FEED_SNAPSHOT="$(mktemp)"
+  FEED_WORKTREE="$(mktemp -d)"
+  cp "$ROOT/altstore.json" "$FEED_SNAPSHOT"
+  cleanup_feed_worktree() {
+    git worktree remove --force "$FEED_WORKTREE" >/dev/null 2>&1 || true
+    rmdir "$FEED_WORKTREE" >/dev/null 2>&1 || true
+    rm -f "$FEED_SNAPSHOT"
+  }
+  trap cleanup_feed_worktree EXIT
+  feed_done=0
+  worktree_ready=0
+  for attempt in 1 2 3; do
+    git fetch --quiet origin main
+    remote_version="$(git show origin/main:VERSION | tr -d '\r\n')"
+    if [[ "$remote_version" != "$VERSION" ]]; then
+      echo "::notice::Release $VERSION assets published, but main is already $remote_version. Skipping stale AltStore feed push."
+      feed_done=1
+      break
+    fi
+    if [[ "$worktree_ready" -eq 0 ]]; then
+      git worktree add --quiet --detach "$FEED_WORKTREE" origin/main
+      worktree_ready=1
+    else
+      git -C "$FEED_WORKTREE" reset --hard origin/main >/dev/null
+    fi
+    cp "$FEED_SNAPSHOT" "$FEED_WORKTREE/altstore.json"
+    git -C "$FEED_WORKTREE" add -- altstore.json
+    if git -C "$FEED_WORKTREE" diff --cached --quiet -- altstore.json; then
+      echo 'AltStore feed already matches published IPA.'
+      feed_done=1
+      break
+    fi
+    git -C "$FEED_WORKTREE" -c user.name='TapTether Release Bot' \
+      -c user.email='actions@users.noreply.github.com' \
+      commit -m "chore: publish AltStore feed for $VERSION" -- altstore.json
+    if git -C "$FEED_WORKTREE" push origin HEAD:main; then
+      echo 'Committed and pushed altstore.json with the published IPA size/version.'
+      feed_done=1
+      break
+    fi
+    echo "::warning::main moved during feed publication; retrying ($attempt/3)."
+  done
+  if [[ "$feed_done" -ne 1 ]]; then
+    echo 'AltStore feed push could not be reconciled with main after three attempts.' >&2
+    exit 1
   fi
+  cleanup_feed_worktree
+  trap - EXIT
 fi
 echo 'Note: private GitHub release assets and raw altstore.json are not anonymously accessible to AltStore.'
