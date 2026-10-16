@@ -11,8 +11,8 @@ extension VisualModeLabel on VisualMode {
   };
 }
 
-class VisualMode {
-  const VisualMode._();
+class VisualModePolicy {
+  const VisualModePolicy._();
 
   static const snapshotInterval = Duration(seconds: 15);
 
