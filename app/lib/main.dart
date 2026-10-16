@@ -2420,17 +2420,26 @@ class _RemoteScreenState extends State<RemoteScreen>
   Widget _mediaView(bool landscape) {
     final selected = _remoteLayout.mediaService == 'netflix'
         ? MediaService.netflix : MediaService.youtube;
-    return MediaRemote(
-      key: const ValueKey('media-remote'),
-      service: selected,
-      enabled: agent.configured && !_connectionLost,
-      landscape: landscape,
-      onServiceChanged: (service) =>
-          _setLayout(_changedLayout(mediaService: service.name)),
-      onKey: (key) => unawaited(command('key', {'key': key})),
-      onSearch: (service, text) => _searchMedia(service, text),
-      onOpenService: (service) => _searchMedia(service, ''),
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      MediaRemote(
+        key: const ValueKey('media-remote'),
+        service: selected,
+        enabled: agent.configured && !_connectionLost,
+        landscape: landscape,
+        onServiceChanged: (service) =>
+            _setLayout(_changedLayout(mediaService: service.name)),
+        onKey: (key) => unawaited(command('key', {'key': key})),
+        onSearch: (service, text) => _searchMedia(service, text),
+        onOpenService: (service) => _searchMedia(service, ''),
+      ),
+      const SizedBox(height: 12),
+      Text('Mouse and keyboard',
+          style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 6),
+      _trackpadSurface(height: landscape ? 100 : 140),
+      const SizedBox(height: 8),
+      _landscapeTyping(),
+    ]);
   }
 
   Widget _presentationView(bool landscape) {
