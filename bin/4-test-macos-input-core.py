@@ -16,6 +16,11 @@ assert 'upgrade-core)' in SETUP and '--authorize' in SETUP
 assert 'com.taptether.input-core' in SETUP
 assert 'ipc.token' in SETUP and 'chmod 600' in SETUP
 assert 'launchctl bootout "$TARGET/$CORE_LABEL"' in SETUP
+assert 'Preserved running Input Core (no restart or re-sign).' in SETUP
+assert 'Preserved running Screen Core (no restart or re-sign).' in SETUP
+assert 'Input Core already approved at this version; no replacement.' in SETUP
+assert 'codesign --force --deep' not in BUILD
+assert 'codesign --force --deep' not in SETUP
 assert 'taptether-input-core' in BUILD
 assert 'TapTetherInputCore-macos-' in BUILD
 assert 'taptether-input-core' not in UPDATER  # routine updater is agent-only
