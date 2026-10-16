@@ -62,11 +62,15 @@ class _VisualSurfaceState extends State<VisualSurface> {
   }
 
   void _tap(Offset local, Size size, String button) {
+    if (_movedWithMultipleFingers) return;
     final frame = widget.frame;
-    if (frame == null) return;
+    if (frame == null) {
+      // Preview has not arrived yet; the area is still a usable touchpad.
+      widget.onClick(button);
+      return;
+    }
     final coords = VisualGeometry.tap(local, size,
         imageWidth: frame.width, imageHeight: frame.height, zoom: _zoom);
-    if (_movedWithMultipleFingers) return;
     if (coords != null) {
       widget.onTap(coords.$1, coords.$2, button);
     } else {
