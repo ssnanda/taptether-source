@@ -24,6 +24,28 @@ static bool tt_button(int button, int clicks) {
   for (int i=0; i<clicks; i++) { CGEventRef d=CGEventCreateMouseEvent(NULL,down,p,b), u=CGEventCreateMouseEvent(NULL,up,p,b); if(!d||!u){if(d)CFRelease(d);if(u)CFRelease(u);return false;} CGEventSetIntegerValueField(d,kCGMouseEventClickState,i+1); CGEventSetIntegerValueField(u,kCGMouseEventClickState,i+1); CGEventPost(kCGHIDEventTap,d); CGEventPost(kCGHIDEventTap,u); CFRelease(d); CFRelease(u); }
   return true;
 }
+// Taps are normalized (0..10000) against the same primary display captured
+// for the mobile preview, not the current cursor location.
+static bool tt_point(int x, int y, int button, int clicks) {
+  CGRect bounds = CGDisplayBounds(CGMainDisplayID());
+  CGPoint p = CGPointMake(bounds.origin.x + bounds.size.width * ((double)x / 10000.0),
+                          bounds.origin.y + bounds.size.height * ((double)y / 10000.0));
+  CGMouseButton b = button == 1 ? kCGMouseButtonRight : kCGMouseButtonLeft;
+  CGEventRef move = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, p, kCGMouseButtonLeft);
+  if (!move) return false;
+  CGEventPost(kCGHIDEventTap,move); CFRelease(move);
+  CGEventType down = button == 1 ? kCGEventRightMouseDown : kCGEventLeftMouseDown;
+  CGEventType up = button == 1 ? kCGEventRightMouseUp : kCGEventLeftMouseUp;
+  for (int i=0;i<clicks;i++) {
+    CGEventRef d=CGEventCreateMouseEvent(NULL,down,p,b), u=CGEventCreateMouseEvent(NULL,up,p,b);
+    if(!d||!u){if(d)CFRelease(d);if(u)CFRelease(u);return false;}
+    CGEventSetIntegerValueField(d,kCGMouseEventClickState,i+1);
+    CGEventSetIntegerValueField(u,kCGMouseEventClickState,i+1);
+    CGEventPost(kCGHIDEventTap,d); CGEventPost(kCGHIDEventTap,u);
+    CFRelease(d);CFRelease(u);
+  }
+  return true;
+}
 static bool tt_scroll(int delta) { CGEventRef e=CGEventCreateScrollWheelEvent(NULL,kCGScrollEventUnitLine,1,-delta); if(!e)return false; CGEventPost(kCGHIDEventTap,e); CFRelease(e); return true; }
 static bool tt_key(int code, uint64_t flags) { CGEventRef d=CGEventCreateKeyboardEvent(NULL,(CGKeyCode)code,true),u=CGEventCreateKeyboardEvent(NULL,(CGKeyCode)code,false); if(!d||!u){if(d)CFRelease(d);if(u)CFRelease(u);return false;} CGEventSetFlags(d,flags);CGEventSetFlags(u,flags);CGEventPost(kCGHIDEventTap,d);CGEventPost(kCGHIDEventTap,u);CFRelease(d);CFRelease(u);return true; }
 static bool tt_type(const uint16_t *chars,int count) { CGEventRef d=CGEventCreateKeyboardEvent(NULL,0,true),u=CGEventCreateKeyboardEvent(NULL,0,false);if(!d||!u){if(d)CFRelease(d);if(u)CFRelease(u);return false;}CGEventKeyboardSetUnicodeString(d,(UniCharCount)count,(const UniChar*)chars);CGEventKeyboardSetUnicodeString(u,(UniCharCount)count,(const UniChar*)chars);CGEventPost(kCGHIDEventTap,d);CGEventPost(kCGHIDEventTap,u);CFRelease(d);CFRelease(u);return true; }
@@ -68,6 +90,11 @@ func SendNative(e input.Event) error {
 		ok = bool(C.tt_move(C.int(e.DX), C.int(e.DY)))
 	case "scroll":
 		ok = bool(C.tt_scroll(C.int(e.DY)))
+	case "tap":
+		b, clicks := 0, 1
+		if e.Button == "right" { b = 1 }
+		if e.Button == "double" { clicks = 2 }
+		ok = bool(C.tt_point(C.int(e.X), C.int(e.Y), C.int(b), C.int(clicks)))
 	case "click":
 		b, c := 0, 1
 		if e.Button == "right" {
