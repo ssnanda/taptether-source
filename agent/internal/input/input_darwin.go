@@ -16,6 +16,7 @@ import (
 // Send delegates all Accessibility-sensitive work to the independently
 // installed Input Core. Routine agent updates never replace that executable.
 func Send(event Event) error {
+	if event.Type == "tap" { return tapViaInputCore(event) }
 	config, err := os.UserConfigDir()
 	if err != nil {
 		return err
