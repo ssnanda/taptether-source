@@ -87,9 +87,13 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
         w.Header().Set("Connection", "close")
         ticker := time.NewTicker(time.Second / 30)
         defer ticker.Stop()
+        // A long-lived connection must not outlive the paired session indefinitely.
+        lifetime := time.NewTimer(14 * time.Minute)
+        defer lifetime.Stop()
         for {
             select {
             case <-r.Context().Done(): return
+            case <-lifetime.C: return
             default:
             }
             if err := deadlines.SetWriteDeadline(time.Now().Add(5*time.Second)); err != nil { return }
@@ -100,6 +104,7 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             flusher.Flush()
             select {
             case <-r.Context().Done(): return
+            case <-lifetime.C: return
             case <-ticker.C:
             }
             screenCaptureLock.Lock()
