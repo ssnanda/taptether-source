@@ -409,6 +409,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final networkLocationStore = NetworkLocationStore();
   Timer? _heartbeatTimer;
   StreamSubscription<List<ConnectivityResult>>? _networkChanges;
+  int _lanEpoch = 0;
   DetectedLanRange? _wifiRange;
   String? _detectedLocation;
   String _locationFilter = 'automatic';
@@ -553,6 +554,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(loadComputers());
     unawaited(_refreshNetworkLocation());
     _networkChanges = Connectivity().onConnectivityChanged.listen((_) {
+      // Invalidate any in-flight LAN discovery immediately on a transport
+      // change. Work already in a TCP batch finishes, but no new batch starts.
+      _lanEpoch++;
       unawaited(_refreshNetworkLocation());
     });
     WidgetsBinding.instance.addObserver(this);
@@ -1010,6 +1014,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       });
       return;
     }
+    final discoveryEpoch = _lanEpoch;
     _scanningToReconcile = true;
     _scanVerifiedDeviceIds.clear();
     _discoveryReport.clear();
@@ -1028,14 +1033,14 @@ class _RemoteScreenState extends State<RemoteScreen>
       _discoveryReport.add('UDP discovery: broadcast + unicast on port 48322 · '
           'ranges ${prefixes.map((p) => "$p.0/24").join(", ")}');
       final result = await findNearbyDevices(scanPrefixes: prefixes);
-      if (!mounted) return;
+      if (!mounted || _lanEpoch != discoveryEpoch) return;
       _discoveryReport.add('UDP responses: ${result.length}');
       for (final found in result) {
         _discoveryReport.add('${found.host}: UDP announcement '
             '(unverified, platform ${found.platform})');
       }
       final verified = await _reconcileDiscoveredAgents(result);
-      if (!mounted) return;
+      if (!mounted || _lanEpoch != discoveryEpoch) return;
       final allCandidates = <String, DiscoveredDevice>{
         for (final found in result) found.host: found,
       };
@@ -1048,6 +1053,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             '(320ms per host, up to 1024 addresses; max 24 results)');
         var attempted = 0;
         final ips = await probeAgentControlPorts(wifi,
+          cancelled: () => _lanEpoch != discoveryEpoch,
           onProbe: (ip, accepts) {
             attempted++;
             if (accepts) {
@@ -1055,6 +1061,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             }
           },
         );
+        if (!mounted || _lanEpoch != discoveryEpoch) return;
         _discoveryReport.add('TCP fallback complete: $attempted addresses '
             'checked; ${ips.length} TCP responder(s)');
         for (final ip in ips) {
