@@ -47,11 +47,22 @@ class MjpegFrameDecoder {
   int _height = 0;
 
   List<ScreenFrame> add(List<int> bytes) {
-    _pending.addAll(bytes);
-    if (_pending.length > (2 << 20) + 1024) {
-      throw const FormatException('Video frame exceeds safe buffer size.');
-    }
+    // Process each network chunk incrementally. A single TLS read can contain
+    // several valid frames, so bound the *unparsed* buffer, not the input chunk.
     final frames = <ScreenFrame>[];
+    for (var start = 0; start < bytes.length; start += 65536) {
+      final end = (start + 65536 < bytes.length)
+          ? start + 65536 : bytes.length;
+      _pending.addAll(bytes.sublist(start, end));
+      _parseAvailable(frames);
+      if (_pending.length > (2 << 20) + 1024) {
+        throw const FormatException('Video frame exceeds safe buffer size.');
+      }
+    }
+    return frames;
+  }
+
+  void _parseAvailable(List<ScreenFrame> frames) {
     while (true) {
       if (_expectedLength == null) {
         final headerEnd = _findHeaderEnd();
@@ -90,7 +101,6 @@ class MjpegFrameDecoder {
       _pending.removeRange(0, count + 2);
       _expectedLength = null;
     }
-    return frames;
   }
 
   int _findHeaderEnd() {
