@@ -61,6 +61,22 @@ for platform, suffix, folder, prefix in (
             "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
             "bytes": destination.stat().st_size,
         })
+# Bundle stable Screen Core separately to preserve the legacy five-file agent
+# manifest while allowing fully offline SSH installation from the phone.
+screen_version = (root / "SCREEN_CORE_VERSION").read_text().strip()
+for arch in ("amd64", "arm64"):
+    filename = f"TapTetherScreenCore-macos-{arch}-{screen_version}.tar.gz"
+    source = root / "dist" / "macos" / filename
+    if not source.is_file() or not tarfile.is_tarfile(source):
+        raise SystemExit(f"Missing stable Screen Core archive: {filename}")
+    destination = outdir / filename
+    shutil.copyfile(source, destination)
+    installers.append({
+        "platform": "macos-screen-core", "arch": arch,
+        "filename": filename, "asset": f"assets/agents/{filename}",
+        "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
+        "bytes": destination.stat().st_size,
+    })
 # Bundle the exact installation helpers with the matching agents so the phone
 # can deploy to an SSH-authenticated Ubuntu desktop without another computer.
 for name, source in (
