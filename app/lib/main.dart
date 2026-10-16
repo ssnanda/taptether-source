@@ -30,6 +30,7 @@ import 'agent_update_check.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 final RouteObserver<ModalRoute<dynamic>> _remoteRouteObserver =
@@ -407,6 +408,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final remoteLayoutStore = RemoteLayoutStore();
   final networkLocationStore = NetworkLocationStore();
   Timer? _heartbeatTimer;
+  StreamSubscription<List<ConnectivityResult>>? _networkChanges;
   DetectedLanRange? _wifiRange;
   String? _detectedLocation;
   String _locationFilter = 'automatic';
@@ -550,6 +552,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(checkForUpdates());
     unawaited(loadComputers());
     unawaited(_refreshNetworkLocation());
+    _networkChanges = Connectivity().onConnectivityChanged.listen((_) {
+      unawaited(_refreshNetworkLocation());
+    });
     WidgetsBinding.instance.addObserver(this);
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (WidgetsBinding.instance.lifecycleState ==
@@ -610,7 +615,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         _wifiRange = current;
         _detectedLocation = label;
       });
-      if (changed && savedComputers.isNotEmpty) {
+      if (changed && savedComputers.isNotEmpty && current != null) {
         unawaited(_refreshHeartbeats());
       }
     }
@@ -635,6 +640,14 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> _refreshHeartbeats({bool forceRecovery = false}) async {
     if (_checkingHeartbeat || _scanningToReconcile ||
         savedComputers.isEmpty) {
+      return;
+    }
+    // Saved device heartbeats are also LAN traffic; do not probe private
+    // cellular/VPN addresses while Wi-Fi is unavailable.
+    final activeWifi = await detectLanRange();
+    if (!mounted) return;
+    if (activeWifi == null) {
+      setState(() => _online.clear());
       return;
     }
     _checkingHeartbeat = true;
@@ -662,7 +675,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         });
       }
 
-      final wifi = _wifiRange ?? await detectLanRange();
+      final wifi = activeWifi;
       if (wifi != null && missing.isNotEmpty && mounted) {
         final thisNetwork = wifi.cidr;
         final now = DateTime.now();
@@ -985,6 +998,18 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Future<void> searchNearby() async {
     if (searching || _scanningToReconcile) return;
+    final wifi = await detectLanRange();
+    if (!mounted) return;
+    if (wifi == null) {
+      _discoveryReport.clear();
+      _discoveryReport.add('Discovery skipped: Wi-Fi is not connected');
+      setState(() {
+        nearbyComputers = [];
+        status = 'Connect to Wi-Fi to discover nearby computers. '
+            'Cellular networks are not scanned.';
+      });
+      return;
+    }
     _scanningToReconcile = true;
     _scanVerifiedDeviceIds.clear();
     _discoveryReport.clear();
@@ -997,7 +1022,6 @@ class _RemoteScreenState extends State<RemoteScreen>
     try {
       // Read the Wi-Fi again so a recent SSID switch does not reuse a
       // stale subnet from the preceding heartbeat refresh.
-      final wifi = await detectLanRange() ?? _wifiRange;
       _discoveryReport.add('Wi-Fi: ${wifi?.ip ?? "unknown"} · '
           'CIDR: ${wifi?.cidr ?? "unknown"}');
       final prefixes = wifi?.scanPrefixes.take(8).toList();
@@ -1426,6 +1450,19 @@ class _RemoteScreenState extends State<RemoteScreen>
             label: const Text('Label network'),
           ),
         ]),
+        if (_wifiRange == null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              const Icon(Icons.wifi_off, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text(
+                'Connect to Wi-Fi to discover and scan computers. '
+                'Cellular networks are not scanned.',
+                style: Theme.of(context).textTheme.bodySmall,
+              )),
+            ]),
+          ),
         if (_wifiRange != null)
           Text('Wi-Fi: ${_wifiRange!.cidr}'
               '${_detectedLocation == null ? ' · Unassigned' : ' · ${deviceLocations[_detectedLocation]!}'}',
@@ -1513,9 +1550,11 @@ class _RemoteScreenState extends State<RemoteScreen>
                 label: const Text('Scan QR'), onPressed: scanQrPairing),
               ActionChip(avatar: const Icon(Icons.radar, size: 18),
                 label: Text(searching ? 'Searching…' : 'Discover'),
-                onPressed: searching ? null : searchNearby),
+                onPressed: searching || _wifiRange == null
+                    ? null : searchNearby),
               ActionChip(avatar: const Icon(Icons.network_check, size: 18),
-                label: const Text('Scan IPs'), onPressed: scanNetwork),
+                label: const Text('Scan IPs'),
+                onPressed: _wifiRange == null ? null : scanNetwork),
               ActionChip(avatar: const Icon(Icons.install_desktop, size: 18),
                 label: const Text('Install agent'),
                 onPressed: installingAgent ? null : openAgentInstaller),
@@ -1791,6 +1830,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     WidgetsBinding.instance.removeObserver(this);
     _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
+    unawaited(_networkChanges?.cancel());
     host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
     _movementTimer?.cancel();
     _scrollTimer?.cancel();
