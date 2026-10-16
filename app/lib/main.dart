@@ -32,6 +32,9 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+final RouteObserver<ModalRoute<dynamic>> _remoteRouteObserver =
+    RouteObserver<ModalRoute<dynamic>>();
+
 void main() => runApp(const TapTetherApp());
 
 class TapTetherApp extends StatefulWidget {
@@ -53,6 +56,7 @@ class _TapTetherAppState extends State<TapTetherApp> {
     builder: (context, mode, _) => MaterialApp(
       title: 'TapTether',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [_remoteRouteObserver],
       theme: TapTetherPalette.light(),
       darkTheme: TapTetherPalette.dark(),
       themeMode: mode,
@@ -380,7 +384,8 @@ class RemoteScreen extends StatefulWidget {
   State<RemoteScreen> createState() => _RemoteScreenState();
 }
 
-class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver {
+class _RemoteScreenState extends State<RemoteScreen>
+    with WidgetsBindingObserver, RouteAware {
   final agent = LocalAgent();
   final deviceStore = ComputerStore();
   final remoteLayoutStore = RemoteLayoutStore();
@@ -430,10 +435,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   String? _screenError;
   bool _screenBusy = false;
   bool _appForeground = true;
+  bool _pageVisible = true;
+  bool _refreshAfterCapture = false;
   int _screenEpoch = 0;
 
   bool get _viewingScreen => agent.configured && !_connectionLost &&
-      _appForeground && _remoteLayout.trackpadExpanded &&
+      _appForeground && _pageVisible && _remoteLayout.trackpadExpanded &&
       !_remoteLayout.mediaMode && !_remoteLayout.presentationMode &&
       agent.screenCaptureSupported &&
       VisualModePolicy.normalize(_remoteLayout.visualMode) != 'trackpad';
@@ -446,6 +453,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     _liveFrames = null;
     if (prior != null) unawaited(prior.cancel());
     _screenBusy = false;
+    _refreshAfterCapture = false;
     _currentFrame = null;
     _screenError = null;
   }
@@ -484,8 +492,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   }
 
   Future<void> _refreshScreenshot() async {
-    if (!_viewingScreen || _remoteLayout.visualMode != 'snapshot' ||
-        _screenBusy) return;
+    if (!_viewingScreen || _remoteLayout.visualMode != 'snapshot') return;
+    if (_screenBusy) {
+      _refreshAfterCapture = true;
+      return;
+    }
+    _refreshAfterCapture = false;
     final epoch = _screenEpoch;
     _screenBusy = true;
     if (mounted) setState(() {});
@@ -503,6 +515,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     } finally {
       if (mounted && _screenEpoch == epoch) {
         setState(() => _screenBusy = false);
+        if (_refreshAfterCapture) {
+          _refreshAfterCapture = false;
+          unawaited(_refreshScreenshot());
+        }
       }
     }
   }
@@ -523,6 +539,25 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         unawaited(_refreshHeartbeats());
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) _remoteRouteObserver.subscribe(this, route);
+  }
+
+  @override
+  void didPushNext() {
+    _pageVisible = false;
+    _stopScreen();
+  }
+
+  @override
+  void didPopNext() {
+    _pageVisible = true;
+    _syncScreen();
   }
 
   @override
@@ -1733,6 +1768,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
     host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
     _movementTimer?.cancel();
