@@ -38,27 +38,62 @@ class _VisualSurfaceState extends State<VisualSurface> {
   double _startZoom = 1;
   Offset? _lastFocal;
   double _scrollRemainder = 0;
-  // Screen preview and trackpad share the same relative cursor gesture.
+  // Raw pointer-up detection keeps clicks responsive even when Flutter's
+  // scale gesture recognizer wins the arena after a cursor drag. Two quick
+  // primary taps naturally form a desktop double-click.
   final Map<int, Offset> _fingers = {};
   bool _movedWithMultipleFingers = false;
+  int? _primaryPointer;
+  Offset? _tapStart;
+  Duration? _tapBegan;
+  bool _tapConsumed = false;
+  Size _viewport = Size.zero;
 
   void _fingerDown(PointerDownEvent event) {
-    if (_fingers.isEmpty) _movedWithMultipleFingers = false;
+    if (_fingers.isEmpty) {
+      _movedWithMultipleFingers = false;
+      _primaryPointer = event.pointer;
+      _tapStart = event.localPosition;
+      _tapBegan = event.timeStamp;
+      _tapConsumed = false;
+    }
     _fingers[event.pointer] = event.localPosition;
-    if (_fingers.length > 1) _movedWithMultipleFingers = true;
+    if (_fingers.length > 1) {
+      _movedWithMultipleFingers = true;
+      _tapConsumed = true;
+    }
   }
 
   void _fingerMove(PointerMoveEvent event) {
     final previous = _fingers[event.pointer];
     if (previous == null) return;
     _fingers[event.pointer] = event.localPosition;
+    if (event.pointer == _primaryPointer && _tapStart != null &&
+        (event.localPosition - _tapStart!).distance > 12) {
+      _tapConsumed = true;
+    }
     if (_fingers.length != 1 || _movedWithMultipleFingers) return;
     final delta = event.localPosition - previous;
     if (delta.distanceSquared > 0) widget.onMove(delta);
   }
 
   void _fingerUp(PointerEvent event) {
+    final wasPrimary = event.pointer == _primaryPointer;
+    final isTap = wasPrimary && !_tapConsumed && !_movedWithMultipleFingers &&
+        _tapBegan != null &&
+        event.timeStamp - _tapBegan! < const Duration(milliseconds: 450);
     _fingers.remove(event.pointer);
+    if (isTap) _tap(event.localPosition, _viewport, 'left');
+    if (wasPrimary) {
+      _primaryPointer = null;
+      _tapStart = null;
+      _tapBegan = null;
+    }
+  }
+
+  void _fingerCancel(PointerEvent event) {
+    _tapConsumed = true;
+    _fingerUp(event);
   }
 
   void _tap(Offset local, Size size, String button) {
@@ -84,6 +119,7 @@ class _VisualSurfaceState extends State<VisualSurface> {
     return SizedBox(height: widget.height,
       child: LayoutBuilder(builder: (context, constraints) {
         final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+        _viewport = viewport;
         return ClipRRect(
           borderRadius: BorderRadius.circular(14),
           child: Listener(
@@ -91,15 +127,13 @@ class _VisualSurfaceState extends State<VisualSurface> {
             onPointerDown: _fingerDown,
             onPointerMove: _fingerMove,
             onPointerUp: _fingerUp,
-            onPointerCancel: _fingerUp,
+            onPointerCancel: _fingerCancel,
             child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapUp: (details) =>
-                _tap(details.localPosition, viewport, 'left'),
-            onDoubleTapDown: (details) =>
-                _tap(details.localPosition, viewport, 'double'),
-            onLongPressStart: (details) =>
-                _tap(details.localPosition, viewport, 'right'),
+            onLongPressStart: (details) {
+              _tapConsumed = true;
+              _tap(details.localPosition, viewport, 'right');
+            },
             onScaleStart: (details) {
               _startZoom = _zoom;
               _lastFocal = details.localFocalPoint;
