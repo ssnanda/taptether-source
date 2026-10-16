@@ -65,26 +65,25 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             http.Error(w, "streaming not supported", http.StatusNotImplemented)
             return
         }
-        // MJPEG preview is the initial local-only transport; it targets
-        // 720p / 30 fps, dropping frames when the device cannot encode that fast.
-        // Replace the encoder with hardware H.264 before full live release.
+        // Capture once before sending the 200 response: an OS permission
+        // denial must remain an actionable HTTP error, not a blank stream.
+        screenCaptureLock.Lock()
+        frame, err := screencap.Capture()
+        screenCaptureLock.Unlock()
+        if err != nil {
+            http.Error(w, err.Error(), http.StatusForbidden)
+            return
+        }
+        // MJPEG preview targets 720p / 30 fps as an initial local transport.
+        // The loop naturally drops FPS if encoding cannot keep up.
         w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=ttframe")
         w.Header().Set("Connection", "close")
         ticker := time.NewTicker(time.Second / 30)
         defer ticker.Stop()
         for {
             select {
-            case <-r.Context().Done():
-                return
+            case <-r.Context().Done(): return
             default:
-            }
-            screenCaptureLock.Lock()
-            frame, err := screencap.Capture()
-            screenCaptureLock.Unlock()
-            if err != nil {
-                // A capture error must terminate streaming rather than
-                // repeatedly prompting for permission or sending stale pixels.
-                return
             }
             header := fmt.Sprintf("--ttframe\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nX-Screen-Width: %d\r\nX-Screen-Height: %d\r\n\r\n", len(frame.JPEG), frame.Width, frame.Height)
             if _, err := w.Write([]byte(header)); err != nil { return }
@@ -95,6 +94,10 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             case <-r.Context().Done(): return
             case <-ticker.C:
             }
+            screenCaptureLock.Lock()
+            frame, err = screencap.Capture()
+            screenCaptureLock.Unlock()
+            if err != nil { return }
         }
     })
 }
