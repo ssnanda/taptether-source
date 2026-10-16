@@ -208,7 +208,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         prompt.messageText = "Install TapTether Agent?"
         prompt.informativeText = "This installs a background agent that starts at login, "
             + "and keeps the menu-bar app available without a Terminal window. "
-            + "You'll need to allow the stable Input Core in Accessibility once."
+            + "You'll allow Input Core in Accessibility and Screen Core in Screen Recording once."
         prompt.addButton(withTitle: "Install & Start")
         prompt.addButton(withTitle: "Not now")
         NSApp.activate(ignoringOtherApps: true)
