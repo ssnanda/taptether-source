@@ -65,6 +65,13 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             http.Error(w, "streaming not supported", http.StatusNotImplemented)
             return
         }
+        // Keep the regular server write timeout for all other endpoints.
+        // Only the authenticated active stream gets a renewed deadline.
+        deadlines := http.NewResponseController(w)
+        if err := deadlines.SetWriteDeadline(time.Now().Add(5*time.Second)); err != nil {
+            http.Error(w, "stream write deadlines unavailable", http.StatusNotImplemented)
+            return
+        }
         // Capture once before sending the 200 response: an OS permission
         // denial must remain an actionable HTTP error, not a blank stream.
         screenCaptureLock.Lock()
@@ -85,6 +92,7 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             case <-r.Context().Done(): return
             default:
             }
+            if err := deadlines.SetWriteDeadline(time.Now().Add(5*time.Second)); err != nil { return }
             header := fmt.Sprintf("--ttframe\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nX-Screen-Width: %d\r\nX-Screen-Height: %d\r\n\r\n", len(frame.JPEG), frame.Width, frame.Height)
             if _, err := w.Write([]byte(header)); err != nil { return }
             if _, err := w.Write(frame.JPEG); err != nil { return }
