@@ -115,6 +115,27 @@ jobs:
           cd app
           flutter build apk --debug
 
+  verify-macos-agent:
+    # Lightweight native verification of the new macOS Screen Recording CGo
+    # code. This job never packages, uploads or publishes artifacts.
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: validate
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Compile and test native macOS agents
+        run: |
+          cd agent
+          go test ./...
+          go vet ./...
+      - name: Parse macOS tray UI
+        run: swiftc -parse desktop/macos/TapTetherTray.swift
+
   build-ubuntu:
     needs: validate
     if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build' }}
