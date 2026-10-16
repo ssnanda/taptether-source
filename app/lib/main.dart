@@ -453,10 +453,13 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _appForeground = true;
   bool _pageVisible = true;
   bool _refreshAfterCapture = false;
+  Orientation? _lastRemoteOrientation;
   int _screenEpoch = 0;
 
   bool get _viewingScreen => agent.configured && !_connectionLost &&
-      _appForeground && _pageVisible && _remoteLayout.trackpadExpanded &&
+      _appForeground && _pageVisible &&
+      (_remoteLayout.trackpadExpanded ||
+          (mounted && MediaQuery.orientationOf(context) == Orientation.landscape)) &&
       !_remoteLayout.mediaMode && !_remoteLayout.presentationMode &&
       agent.screenCaptureSupported &&
       VisualModePolicy.normalize(_remoteLayout.visualMode) != 'trackpad';
@@ -562,6 +565,13 @@ class _RemoteScreenState extends State<RemoteScreen>
     super.didChangeDependencies();
     final route = ModalRoute.of(context);
     if (route != null) _remoteRouteObserver.subscribe(this, route);
+    final orientation = MediaQuery.orientationOf(context);
+    if (_lastRemoteOrientation != orientation) {
+      _lastRemoteOrientation = orientation;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncScreen();
+      });
+    }
   }
 
   @override
@@ -1974,6 +1984,7 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   RemoteLayoutSettings _changedLayout({
     bool? trackpad,
+    bool? keyboard,
     bool? arrows,
     bool? more,
     bool? presenting,
@@ -1985,6 +1996,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     List<String>? quick,
   }) => RemoteLayoutSettings(
     trackpadExpanded: trackpad ?? _remoteLayout.trackpadExpanded,
+    keyboardExpanded: keyboard ?? _remoteLayout.keyboardExpanded,
     arrowsExpanded: arrows ?? _remoteLayout.arrowsExpanded,
     moreExpanded: more ?? _remoteLayout.moreExpanded,
     presentationMode: presenting ?? _remoteLayout.presentationMode,
@@ -2339,17 +2351,17 @@ class _RemoteScreenState extends State<RemoteScreen>
 
 
   Widget _modeSwitcher() => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8),
+    padding: const EdgeInsets.symmetric(vertical: 3),
     child: SegmentedButton<String>(
       key: const ValueKey('remote-mode-switcher'),
       showSelectedIcon: false,
       segments: const [
-        ButtonSegment<String>(value: 'remote', label: Text('Remote'),
-          icon: Icon(Icons.mouse_outlined)),
-        ButtonSegment<String>(value: 'presentation', label: Text('Presentation'),
-          icon: Icon(Icons.slideshow_outlined)),
-        ButtonSegment<String>(value: 'media', label: Text('Media'),
-          icon: Icon(Icons.smart_display_outlined)),
+        ButtonSegment<String>(value: 'remote',
+          label: Text('Remote', maxLines: 1, softWrap: false)),
+        ButtonSegment<String>(value: 'presentation',
+          label: Text('Presentation', maxLines: 1, softWrap: false)),
+        ButtonSegment<String>(value: 'media',
+          label: Text('Media', maxLines: 1, softWrap: false)),
       ],
       selected: {
         _remoteLayout.presentationMode ? 'presentation'
@@ -2365,7 +2377,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   );
 
   Widget _visualModeSelector() => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
+    padding: const EdgeInsets.symmetric(vertical: 3),
     child: SegmentedButton<String>(
       key: const ValueKey('screen-view-mode-switcher'),
       showSelectedIcon: false,
