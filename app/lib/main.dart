@@ -2165,7 +2165,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         ButtonSegment<String>(value: 'live', label: Text('Live'),
           enabled: false),
       ],
-      selected: {VisualMode.normalize(_remoteLayout.visualMode)},
+      selected: {VisualModePolicy.normalize(_remoteLayout.visualMode)},
       onSelectionChanged: (values) =>
           _setLayout(_changedLayout(visualMode: values.first)),
     ),
@@ -2176,7 +2176,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       final address = MediaSearch.url(service, text);
       // This first 0.7 implementation controls the *foreground browser*.
       // It never executes a command or arbitrary URL on the desktop agent.
-      await agent.send('key', {'key': _shortcut('l')});
+      await agent.send('key', {'key': _connectedPlatform == 'darwin' ||\n          (_connectedPlatform == null && _macShortcuts) ? 'cmd+l' : 'ctrl+l'});
       await agent.send('text', {'text': address});
       await agent.send('key', {'key': 'Return'});
     } on FormatException catch (error) {
