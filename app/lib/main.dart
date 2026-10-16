@@ -676,7 +676,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       }
 
       final wifi = activeWifi;
-      if (wifi != null && missing.isNotEmpty && mounted) {
+      if (missing.isNotEmpty && mounted) {
         final thisNetwork = wifi.cidr;
         final now = DateTime.now();
         final eligibleForTcp = forceRecovery ||
@@ -1022,11 +1022,11 @@ class _RemoteScreenState extends State<RemoteScreen>
     try {
       // Read the Wi-Fi again so a recent SSID switch does not reuse a
       // stale subnet from the preceding heartbeat refresh.
-      _discoveryReport.add('Wi-Fi: ${wifi?.ip ?? "unknown"} · '
-          'CIDR: ${wifi?.cidr ?? "unknown"}');
-      final prefixes = wifi?.scanPrefixes.take(8).toList();
+      _discoveryReport.add('Wi-Fi: ${wifi.ip} · '
+          'CIDR: ${wifi.cidr}');
+      final prefixes = wifi.scanPrefixes.take(8).toList();
       _discoveryReport.add('UDP discovery: broadcast + unicast on port 48322 · '
-          'ranges ${prefixes?.map((p) => "$p.0/24").join(", ") ?? "system detected"}');
+          'ranges ${prefixes.map((p) => "$p.0/24").join(", ")}');
       final result = await findNearbyDevices(scanPrefixes: prefixes);
       if (!mounted) return;
       _discoveryReport.add('UDP responses: ${result.length}');
@@ -1043,15 +1043,16 @@ class _RemoteScreenState extends State<RemoteScreen>
       // on-link /24 slices of up to a /22, even with no saved pairing.
       // This gives unpaired agents a chance to appear when UDP is blocked.
       // Open ports remain UNTRUSTED until pairing/TLS authentication.
-      if (verified.isEmpty && wifi != null) {
+      if (verified.isEmpty) {
         _discoveryReport.add('TCP fallback: probe port 48321 on Wi-Fi CIDR '
             '(320ms per host, up to 1024 addresses; max 24 results)');
         var attempted = 0;
         final ips = await probeAgentControlPorts(wifi,
           onProbe: (ip, accepts) {
             attempted++;
-            _discoveryReport.add('$ip: TCP 48321 '
-                '${accepts ? "accepted (unverified)" : "no connection"}');
+            if (accepts) {
+              _discoveryReport.add('$ip: TCP 48321 accepted (unverified)');
+            }
           },
         );
         _discoveryReport.add('TCP fallback complete: $attempted addresses '
@@ -1075,8 +1076,6 @@ class _RemoteScreenState extends State<RemoteScreen>
       } else if (verified.isNotEmpty) {
         _discoveryReport.add('TCP fallback skipped: paired computer found '
             'through UDP and authenticated');
-      } else {
-        _discoveryReport.add('TCP fallback unavailable: no Wi-Fi CIDR');
       }
       if (!mounted) return;
       _discoveryReport.add('Discover finished: '
