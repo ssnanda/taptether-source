@@ -314,6 +314,22 @@ class LocalAgent {
   }
 
 
+  Future<void> openMedia(String service, String query) async {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final req = await _client!.postUrl(_base!.resolve('/api/media/open'));
+    req.headers.contentType = ContentType.json;
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
+    req.write(jsonEncode({'service': service, 'query': query}));
+    final res = await req.close().timeout(const Duration(seconds: 8));
+    if (res.statusCode != 204) {
+      final explanation = await utf8.decoder.bind(res).join();
+      throw StateError(explanation.trim().isNotEmpty
+          ? explanation.trim()
+          : 'Computer could not open the media service.');
+    }
+    await res.drain<void>();
+  }
+
   Future<ScreenFrame> snapshot() async {
     if (!configured) throw StateError('Connect to a paired computer first.');
     final req = await _client!.getUrl(_base!.resolve('/api/snapshot'));
@@ -2367,13 +2383,10 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Future<void> _searchMedia(MediaService service, String text) async {
     try {
-      final address = MediaSearch.url(service, text);
-      // This first 0.7 implementation controls the *foreground browser*.
-      // It never executes a command or arbitrary URL on the desktop agent.
-      await agent.send('key', {'key': _connectedPlatform == 'darwin' ||
-          (_connectedPlatform == null && _macShortcuts) ? 'cmd+l' : 'ctrl+l'});
-      await agent.send('text', {'text': address});
-      await agent.send('key', {'key': 'Return'});
+      if (text.trim().isNotEmpty) {
+        MediaSearch.url(service, text); // validate before contacting the agent
+      }
+      await agent.openMedia(service.name, text);
     } on FormatException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2416,6 +2429,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           _setLayout(_changedLayout(mediaService: service.name)),
       onKey: (key) => unawaited(command('key', {'key': key})),
       onSearch: (service, text) => _searchMedia(service, text),
+      onOpenService: (service) => _searchMedia(service, ''),
     );
   }
 
