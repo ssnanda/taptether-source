@@ -21,7 +21,7 @@ class VisualGeometry {
       double zoom = 1.0}) {
     if (viewport.width <= 0 || viewport.height <= 0 ||
         imageWidth <= 0 || imageHeight <= 0 || zoom < 1 ||
-        zoom > 5 || !zoom.isFinite) return null;
+        zoom > 5 || !zoom.isFinite) { return null; }
     final scale = (viewport.width / imageWidth)
         .clamp(0.0, viewport.height / imageHeight);
     if (scale <= 0) { return null; }
