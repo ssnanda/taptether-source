@@ -14,7 +14,7 @@ class SteppedScroll {
     final steps = (_remainder / pixelsPerStep).truncate()
         .clamp(-maxStepsPerEvent, maxStepsPerEvent);
     _remainder -= steps * pixelsPerStep;
-    return steps;
+    return steps.toInt();
   }
 
   void reset() => _remainder = 0;
