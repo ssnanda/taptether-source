@@ -190,7 +190,7 @@ assert "Socket.connect(ip, 48321" in recovery
 heartbeat = mobile.split(
     "  Future<void> _refreshHeartbeats() async {", 1)[1].split(
     "  Future<void> _labelCurrentNetwork()", 1)[0]
-assert "_pingSavedDevice(device, phone)" in heartbeat
+assert "_probeSavedDevice(device, phone)" in heartbeat
 assert "probeAgentControlPorts(" not in heartbeat
 assert "findNearbyDevices(" not in heartbeat
 assert "forceRecovery" not in heartbeat

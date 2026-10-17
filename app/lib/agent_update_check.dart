@@ -54,6 +54,17 @@ class AgentUpdateCheck {
   }
 }
 
+/// Saved-device update affordances are shown only for devices that were
+/// authenticated as online and have a verified, strictly newer agent release.
+/// Unknown installed/published versions, equal versions, and offline devices
+/// must never show a speculative update icon.
+bool showSavedAgentUpdate({
+  required bool? online,
+  required String? installed,
+  required String? published,
+}) => online == true &&
+    AgentUpdateCheck(installed: installed, published: published).canUpdate;
+
 /// The macOS agent responds to ping even if it cannot post keyboard/mouse
 /// events; its authenticated control endpoint reports this specific error.
 bool isMacAccessibilityError(Object error) {

@@ -16,7 +16,7 @@ for forbidden in ('findNearbyDevices(', 'probeAgentControlPorts(',
     assert forbidden not in body, (
         f'My Devices heartbeat must not start discovery: {forbidden}'
     )
-assert "_pingSavedDevice(device, phone)" in body
+assert "_probeSavedDevice(device, phone)" in body
 assert "savedComputers.toList()" in body
 assert "Future.wait(savedSnapshot.map(" in body
 assert "bool _showOffline = true;" in main

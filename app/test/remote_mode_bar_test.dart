@@ -37,6 +37,38 @@ void main() {
     expect(selected, 'live');
   });
 
+  testWidgets('Remote split menu works from Slides or Media without first tapping Remote',
+      (tester) async {
+    String currentPrimary = 'media';
+    String currentVisual = 'trackpad';
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: StatefulBuilder(builder: (context, update) => RemoteModeBar(
+        primaryMode: currentPrimary,
+        visualMode: currentVisual,
+        captureAvailable: true,
+        onPrimaryMode: (mode) => update(() => currentPrimary = mode),
+        onVisualMode: (mode) => update(() {
+          currentPrimary = 'remote';
+          currentVisual = mode;
+        }),
+      )),
+    )));
+    await tester.tap(find.byKey(const ValueKey('screen-view-mode-switcher')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Snapshot').last);
+    await tester.pumpAndSettle();
+    expect(currentPrimary, 'remote');
+    expect(currentVisual, 'snapshot');
+    await tester.tap(find.byKey(const ValueKey('primary-mode-presentation')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('screen-view-mode-switcher')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Live').last);
+    await tester.pumpAndSettle();
+    expect(currentPrimary, 'remote');
+    expect(currentVisual, 'live');
+  });
+
   testWidgets('trackpad remains available without screen capture',
       (tester) async {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:
