@@ -414,6 +414,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   // Saved devices appear immediately; the user can filter by location or hide offline.
   String _locationFilter = 'all';
   bool _showOffline = true;
+  bool _showQuickActions = false;
   bool _checkingHeartbeat = false;
   int _heartbeatGeneration = 0;
   String? _connectingDeviceId;
@@ -1323,6 +1324,35 @@ class _RemoteScreenState extends State<RemoteScreen>
     )),
   );
 
+  Widget _deviceStatus(String id) {
+    final state = _online[id];
+    final busy = _connectingDeviceId == id;
+    final color = state == true
+        ? Colors.green.shade700
+        : state == false
+            ? Theme.of(context).colorScheme.outline
+            : Theme.of(context).colorScheme.secondary;
+    final label = busy
+        ? 'CONNECTING' : state == true
+            ? 'ONLINE' : state == false ? 'OFFLINE' : 'CHECKING';
+    return Semantics(
+      label: 'Computer ${busy ? 'connecting' : label.toLowerCase()}',
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (busy)
+          SizedBox(width: 13, height: 13,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color))
+        else
+          Icon(state == true ? Icons.check_circle :
+              state == false ? Icons.circle_outlined : Icons.circle,
+              size: 15, color: color),
+        const SizedBox(width: 5),
+        Text(label, style: TextStyle(color: color,
+            fontSize: 11, fontWeight: FontWeight.w800,
+            letterSpacing: 0.35)),
+      ]),
+    );
+  }
+
   Widget deviceDashboard() {
     final visibleDevices = visibleSavedDevices(
       savedComputers,
@@ -1427,30 +1457,37 @@ class _RemoteScreenState extends State<RemoteScreen>
         ))
       else
         for (final device in visibleDevices)
-          Card(child: ListTile(
-            leading: Icon(device.platform == 'darwin'
-                ? Icons.laptop_mac : Icons.computer),
-            title: Text(device.name, maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
-                ' · ${_online[device.id] == true ? 'Online' : _online[device.id] == false ? 'Offline' : 'Checking…'}',
-                maxLines: 2, overflow: TextOverflow.ellipsis),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (device.platform == 'linux' ||
-                  device.platform == 'darwin' ||
-                  device.platform == 'windows')
-                IconButton(
-                  tooltip: 'Check agent update',
-                  onPressed: () => updateSavedAgent(device),
-                  icon: const Icon(Icons.system_update_alt),
-                ),
-              Icon(Icons.circle, size: 13,
-                  color: _online[device.id] == true
-                      ? Colors.green : Theme.of(context)
-                          .colorScheme.outline),
-            ]),
-            onTap: () => connectSaved(device),
-          )),
+          Card(
+            key: ValueKey('saved-device-${device.id}'),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 5),
+              leading: Icon(device.platform == 'darwin'
+                  ? Icons.laptop_mac : Icons.computer,
+                  size: 29),
+              title: Text(device.name,
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                '${device.host} · ${deviceLocations[device.location] ?? 'Other'}',
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (device.platform == 'linux' ||
+                    device.platform == 'darwin' ||
+                    device.platform == 'windows')
+                  IconButton(
+                    tooltip: 'Check agent update',
+                    onPressed: () => updateSavedAgent(device),
+                    icon: const Icon(Icons.system_update_alt),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                const SizedBox(width: 4),
+                _deviceStatus(device.id),
+              ]),
+              onTap: _connectingDeviceId != null
+                  ? null : () => connectSaved(device),
+            ),
+          ),
       for (final nearby in nearbyComputers)
         Card(child: ListTile(
           leading: const Icon(Icons.radar),
@@ -1459,42 +1496,54 @@ class _RemoteScreenState extends State<RemoteScreen>
           trailing: const Icon(Icons.add_link),
           onTap: () => selectDiscovered(nearby),
         )),
-      const SizedBox(height: 20),
-      Text('Quick actions', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 6),
-      Wrap(spacing: 8, runSpacing: 4, children: [
-        ActionChip(
-          avatar: const Icon(Icons.add, size: 18),
-          label: const Text('Pair'),
-          onPressed: showPairForm,
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          key: const ValueKey('quick-actions-toggle'),
+          onPressed: () => setState(
+              () => _showQuickActions = !_showQuickActions),
+          icon: Icon(_showQuickActions
+              ? Icons.expand_less : Icons.add_circle_outline),
+          label: Text(_showQuickActions
+              ? 'Hide add & discovery tools' : 'Add / Discover'),
         ),
-        ActionChip(
-          avatar: const Icon(Icons.qr_code_scanner, size: 18),
-          label: const Text('Scan QR'),
-          onPressed: scanQrPairing,
-        ),
-        ActionChip(
-          avatar: const Icon(Icons.radar, size: 18),
-          label: Text(searching ? 'Searching…' : 'Discover'),
-          onPressed: searching ? null : searchNearby,
-        ),
-        ActionChip(
-          avatar: const Icon(Icons.network_check, size: 18),
-          label: const Text('Scan IPs'),
-          onPressed: scanNetwork,
-        ),
-        ActionChip(
-          avatar: const Icon(Icons.install_desktop, size: 18),
-          label: const Text('Install agent'),
-          onPressed: installingAgent ? null : openAgentInstaller,
-        ),
-      ]),
-      const SizedBox(height: 14),
-      ScanReportPanel(
-        title: 'Full Discover Output',
-        report: _discoveryReport,
       ),
-      const SizedBox(height: 14),
+      if (_showQuickActions) ...[
+        const SizedBox(height: 4),
+        Wrap(spacing: 8, runSpacing: 4, children: [
+          ActionChip(
+            avatar: const Icon(Icons.add, size: 18),
+            label: const Text('Pair'),
+            onPressed: showPairForm,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.qr_code_scanner, size: 18),
+            label: const Text('Scan QR'),
+            onPressed: scanQrPairing,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.radar, size: 18),
+            label: Text(searching ? 'Searching…' : 'Discover'),
+            onPressed: searching ? null : searchNearby,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.network_check, size: 18),
+            label: const Text('Scan IPs'),
+            onPressed: scanNetwork,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.install_desktop, size: 18),
+            label: const Text('Install agent'),
+            onPressed: installingAgent ? null : openAgentInstaller,
+          ),
+        ]),
+        if (searching || _discoveryReport.events.isNotEmpty)
+          ScanReportPanel(
+            title: 'Discovery results',
+            report: _discoveryReport,
+          ),
+      ],
     ],
    );
   }
