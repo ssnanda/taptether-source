@@ -58,7 +58,7 @@ mobile = (ROOT/'app'/'lib'/'main.dart').read_text()
 mac = (ROOT/'bin'/'8-tt-update-macos.sh').read_text()
 windows = (ROOT/'desktop'/'windows'/'Update-TapTether.ps1').read_text()
 system = (ROOT/'bin'/'9-tt-system-update-ubuntu.sh').read_text()
-assert 'ubuntu-current' in publisher and 'macos-current' in publisher and 'windows-current' in publisher
+assert 'rolling="$platform-current"' in publisher
 assert 'gh release create "$tag"' in publisher
 assert 'TapTether.ipa' not in publisher and 'TapTether.apk' not in publisher
 assert 'bin/4-guard-release-sync.py' in workflow
