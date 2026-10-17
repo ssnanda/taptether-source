@@ -194,10 +194,10 @@ install() {
   # no frames are saved and capture pauses when Snapshot/Live are inactive.
   if [[ -s "$SCREEN_HELPER" ]]; then
     if command -v apt-get >/dev/null 2>&1; then
-      sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \\
-        python3-gi python3-pil gir1.2-gstreamer-1.0 \\
-        gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \\
-        gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \\
+      sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        python3-gi python3-pil gir1.2-gstreamer-1.0 \
+        gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \
+        gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \
         note 'Ubuntu screen packages unavailable. Install GStreamer, PipeWire, python3-gi and python3-pil.'
     fi
     cat > "$SCREEN_AUTOSTART" <<DESKTOP
