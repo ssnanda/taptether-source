@@ -424,10 +424,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _scanningToReconcile = false;
   final Set<String> _scanVerifiedDeviceIds = {};
   final ScanReport _discoveryReport = ScanReport();
-  DateTime? _lastTcpRecoveryAt;
-  String? _lastTcpRecoveryNetwork;
   String? _lastNetworkId;
-  String? _activeDeviceId;
   final Map<String, bool> _online = {};
   RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
   String? _connectedPlatform;
@@ -668,7 +665,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// remains an explicit user action under Discover / Scan IPs.
   Future<void> _refreshHeartbeats() async {
     if (_checkingHeartbeat || _scanningToReconcile ||
-        savedComputers.isEmpty) return;
+        savedComputers.isEmpty) {
+      return;
+    }
     _checkingHeartbeat = true;
     final generation = ++_heartbeatGeneration;
     if (mounted) setState(() {});
@@ -2018,7 +2017,6 @@ class _RemoteScreenState extends State<RemoteScreen>
           if (mounted) {
             setState(() {
               _online[device.id] = true;
-              _activeDeviceId = device.id;
             });
           }
           unawaited(() async {
@@ -2036,7 +2034,6 @@ class _RemoteScreenState extends State<RemoteScreen>
             setState(() {
               savedComputers = updated;
               _online[device.id] = true;
-              _activeDeviceId = device.id;
             });
           }
         }
@@ -2795,7 +2792,6 @@ class _RemoteScreenState extends State<RemoteScreen>
       _connectionLost = false;
       _agentInputDenied = false;
       _connectionTechnical = null;
-      _activeDeviceId = null;
       status = 'Select a saved device to connect.';
     });
     unawaited(_refreshHeartbeats());
