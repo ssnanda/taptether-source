@@ -17,8 +17,10 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'VERSION'
       - 'app/**'
       - 'agent/**'
+      - 'desktop/**'
       - 'bin/**'
       - 'docs/architecture/core-compatibility-and-release-notes.md'
       - '.github/workflows/taptether.yml'

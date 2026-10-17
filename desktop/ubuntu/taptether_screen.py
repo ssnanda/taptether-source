@@ -293,6 +293,15 @@ class ScreenService:
                 return
             client.settimeout(9)
             request = client.recv(1)
+            # Local control protocol for the logged-in owner's tray menu.
+            # SO_PEERCRED above enforces the same UID as the capture process.
+            if request == b"P":
+                client.sendall(b"Y")
+                return
+            if request == b"Q":
+                client.sendall(b"Y")
+                GLib.idle_add(self.mainloop.quit)
+                return
             if request == b"O":
                 self.open_media(client)
                 return
