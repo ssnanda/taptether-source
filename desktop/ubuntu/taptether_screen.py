@@ -421,6 +421,12 @@ class ScreenService:
 
 def main():
     Gst.init(None)
+    needed = ("queue", "videorate", "videoconvert", "videoscale",
+              "jpegenc", "appsink")
+    missing = [name for name in needed if Gst.ElementFactory.find(name) is None]
+    if missing:
+        raise RuntimeError("Ubuntu GStreamer plugins unavailable: "
+                           + ", ".join(missing))
     service = ScreenService()
     listener = service.bind_socket()
     threading.Thread(target=service.server, args=(listener,), daemon=True).start()
