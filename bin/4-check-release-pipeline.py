@@ -180,15 +180,20 @@ assert "$settingsItem = [System.Windows.Forms.ToolStripMenuItem]::new('Settings'
 assert "$quitItem = $menu.Items.Add('Quit TapTether')" in win_tray
 assert 'if (Stop-ManagedAgent)' in win_tray
 
-# DHCP recovery must not depend only on UDP discovery or Bonjour. An
-# untrusted open port is authenticated using the stored pinned phone pairing.
+# Full subnet recovery is an explicit Discover / Scan IPs action only.
+# My Devices' automatic heartbeat must contact only saved paired hosts.
 recovery = (ROOT / "app" / "lib" / "device_recovery.dart").read_text(
     encoding="utf-8")
 mobile = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
 assert "probeAgentControlPorts" in recovery
 assert "Socket.connect(ip, 48321" in recovery
-assert "_pingSavedDevice(device, phone, atHost: ip)" in mobile
-assert "forceRecovery: true" in mobile
+heartbeat = mobile.split(
+    "  Future<void> _refreshHeartbeats() async {", 1)[1].split(
+    "  Future<void> _labelCurrentNetwork()", 1)[0]
+assert "_pingSavedDevice(device, phone)" in heartbeat
+assert "probeAgentControlPorts(" not in heartbeat
+assert "findNearbyDevices(" not in heartbeat
+assert "forceRecovery" not in heartbeat
 
 # Explicit Scan IPs/Discover must reconcile saved computers immediately.
 # Background agents never need to poll the phone.
