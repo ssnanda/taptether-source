@@ -69,7 +69,7 @@ class ScreenService:
                 picture = Image.frombytes("RGB", (width, height),
                                           bytes(mapped.data), "raw", "RGB",
                                           info.stride[0])
-                picture.thumbnail((MAX_W, MAX_H), Image.Resampling.BILINEAR)
+                picture.thumbnail((MAX_W, MAX_H), getattr(Image, "Resampling", Image).BILINEAR)
                 output = io.BytesIO()
                 picture.save(output, "JPEG", quality=65)
             finally:
@@ -86,30 +86,40 @@ class ScreenService:
         return Gst.FlowReturn.OK
 
     def portal_request(self, method, arguments):
-        # Requests are asynchronous: a portal Response signal finishes them.
-        # No shell calls, screenshot filenames or untrusted remote URLs.
+        # Subscribe BEFORE making the request. Some portals finish
+        # CreateSession immediately, before call_sync returns the handle.
         response = [None]
-        handle = self.bus.call_sync(
-            PORTAL, PATH, SC, method, arguments, GLib.VariantType("(o)"),
-            Gio.DBusCallFlags.NONE, 120000, None).unpack()[0]
+        handle = [None]
+        early = {}
         nested = GLib.MainLoop()
 
-        def receive(_bus, _sender, _object, _interface, _signal, params):
-            response[0] = params.unpack()
-            nested.quit()
+        def receive(_bus, _sender, object_path, _interface, _signal, params):
+            item = params.unpack()
+            if handle[0] is None:
+                early[object_path] = item
+            elif object_path == handle[0]:
+                response[0] = item
+                nested.quit()
 
         subscription = self.bus.signal_subscribe(
-            PORTAL, "org.freedesktop.portal.Request", "Response", handle,
+            PORTAL, "org.freedesktop.portal.Request", "Response", None,
             None, Gio.DBusSignalFlags.NONE, receive)
-        def timeout():
-            nested.quit()
-            return False
-        timer = GLib.timeout_add_seconds(110, timeout)
+        timer = None
         try:
-            nested.run()
+            handle[0] = self.bus.call_sync(
+                PORTAL, PATH, SC, method, arguments, GLib.VariantType("(o)"),
+                Gio.DBusCallFlags.NONE, 120000, None).unpack()[0]
+            response[0] = early.get(handle[0])
+            if response[0] is None:
+                def timeout():
+                    nested.quit()
+                    return False
+                timer = GLib.timeout_add_seconds(110, timeout)
+                nested.run()
         finally:
             self.bus.signal_unsubscribe(subscription)
-            GLib.source_remove(timer) if response[0] is not None else None
+            if timer is not None and response[0] is not None:
+                GLib.source_remove(timer)
         if response[0] is None:
             raise RuntimeError("Ubuntu screen sharing approval timed out")
         status, result = response[0]
