@@ -14,7 +14,7 @@ List<SavedComputer> visibleSavedDevices(
   final selectedLocation = locationFilter == 'automatic'
       ? currentLocation
       : (locationFilter == 'all' ? null : locationFilter);
-  return saved.where((device) {
+  final filtered = saved.where((device) {
     // A verified device can travel between Home and Office. In automatic
     // mode its current, TLS-authenticated on-link status overrides a stale
     // manually labeled location; explicit Home/Office filters stay strict.
@@ -28,4 +28,11 @@ List<SavedComputer> visibleSavedDevices(
             ? onCurrentNetwork : true));
     return matchesLocation && (showOffline || online[device.id] == true);
   }).toList();
+  // Fast dashboard: keep saved order within each group, but surface online
+  // machines first, followed by pending verification, then offline machines.
+  // A saved machine never disappears just because its Wi-Fi is unavailable.
+  int priority(String id) => online[id] == true ? 0
+      : online[id] == null ? 1 : 2;
+  filtered.sort((a, b) => priority(a.id).compareTo(priority(b.id)));
+  return filtered;
 }
