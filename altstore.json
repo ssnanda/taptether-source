@@ -13,20 +13,20 @@
       "iconURL": "https://github.com/ssnanda/taptether.com/releases/download/current/TapTether-icon.png",
       "tintColor": "173A3C",
       "screenshotURLs": [],
-      "version": "0.7.7",
-      "buildVersion": "70",
+      "version": "0.7.9",
+      "buildVersion": "72",
       "versionDate": "2026-10-17",
-      "versionDescription": "TapTether 0.7.7+70: current iPhone build",
+      "versionDescription": "TapTether 0.7.9+72: current iPhone build",
       "downloadURL": "https://github.com/ssnanda/taptether.com/releases/download/current/TapTether.ipa",
-      "size": 29257328,
+      "size": 29258075,
       "versions": [
         {
-          "version": "0.7.7",
-          "buildVersion": "70",
+          "version": "0.7.9",
+          "buildVersion": "72",
           "date": "2026-10-17",
-          "localizedDescription": "TapTether 0.7.7+70: current iPhone build",
+          "localizedDescription": "TapTether 0.7.9+72: current iPhone build",
           "downloadURL": "https://github.com/ssnanda/taptether.com/releases/download/current/TapTether.ipa",
-          "size": 29257328,
+          "size": 29258075,
           "minOSVersion": "15.0"
         }
       ]
