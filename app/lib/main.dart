@@ -2916,7 +2916,9 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   @override
   Widget build(BuildContext context) {
-    final connected = agent.configured;
+    // Keep the dashboard visible until a tapped saved device has completed
+    // TLS pin verification and authenticated its control session.
+    final connected = agent.configured && _connectingDeviceId == null;
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       key: _scaffoldKey,
