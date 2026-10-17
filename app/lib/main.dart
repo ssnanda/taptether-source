@@ -1213,13 +1213,21 @@ class _RemoteScreenState extends State<RemoteScreen>
     // SSH fallback uses only the package already bundled with this app.
     // Never replace a newer installed agent with an older bundled installer
     // just because an independent platform-only release is available.
-    if (installedAgentVersion != null && _latestReleaseVersion != null &&
-        !newerThan(_latestReleaseVersion!, installedAgentVersion)) {
+    // The app can lag behind newer full releases too. Compare the computer
+    // against THIS INSTALLED APP's embedded agent version, not the latest
+    // version advertised on the internet.
+    String? bundledAgentVersion;
+    try {
+      final appInfo = await PackageInfo.fromPlatform();
+      bundledAgentVersion = '${appInfo.version}+${appInfo.buildNumber}';
+    } catch (_) {}
+    if (installedAgentVersion == null || bundledAgentVersion == null ||
+        !newerThan(bundledAgentVersion, installedAgentVersion)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('The bundled SSH installer is not newer. Update '
-              'from the computer tray instead; its verified updater can '
-              'install the latest platform-only release.'),
+          content: Text('The bundled SSH installer cannot be verified as '
+              'newer. Use the computer tray instead for its verified '
+              'platform-only update, or install a newer phone app.'),
         ));
       }
       return;
