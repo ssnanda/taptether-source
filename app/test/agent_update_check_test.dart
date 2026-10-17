@@ -34,6 +34,20 @@ void main() {
     ).canUpdate, isFalse);
   });
 
+  test('saved-device icon appears only for verified online outdated agents', () {
+    bool eligible(bool? online, String? installed, String? published) =>
+        showSavedAgentUpdate(
+          online: online, installed: installed, published: published);
+    expect(eligible(true, '0.7.8+71', '0.7.9+72'), isTrue);
+    expect(eligible(false, '0.7.8+71', '0.7.9+72'), isFalse);
+    expect(eligible(null, '0.7.8+71', '0.7.9+72'), isFalse);
+    expect(eligible(true, '0.7.9+72', '0.7.9+72'), isFalse);
+    expect(eligible(true, '0.7.9+73', '0.7.9+72'), isFalse);
+    expect(eligible(true, null, '0.7.9+72'), isFalse);
+    expect(eligible(true, '0.7.8+71', null), isFalse);
+    expect(eligible(true, 'unknown', '0.7.9+72'), isFalse);
+  });
+
   test('macOS permission failure is identified without treating pings as proof', () {
     expect(isMacAccessibilityError(StateError(
       'Agent response 422: TapTether needs macOS Accessibility permission: '
