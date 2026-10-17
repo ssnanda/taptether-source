@@ -18,6 +18,9 @@ func Send(e Event) error {
 	if e.Type == "ping" {
 		return nil
 	}
+	if e.Type == "tap" {
+		return sendTap(e)
+	}
 	if activeDevice == nil {
 		device, err := newVirtualDevice()
 		if err == nil {
