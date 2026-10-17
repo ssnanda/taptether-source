@@ -307,7 +307,10 @@ class ScreenService:
                     GLib.idle_add(self.start)
                 elif pipeline is not None:
                     GLib.idle_add(pipeline.set_state, Gst.State.PLAYING)
-            deadline = time.monotonic() + 8
+            # Keep the agent's 8-second HTTP write timeout and phone's
+            # 7-second request timeout below their limits. Permission dialogs
+            # can remain open; the user can retry after approving them.
+            deadline = time.monotonic() + 4.5
             while time.monotonic() < deadline:
                 with self.lock:
                     frame = self.frame
@@ -320,48 +323,66 @@ class ScreenService:
                 if error and not running and pipeline is None:
                     break
                 time.sleep(0.08)
-            message = (error or "Waiting for Ubuntu screen permission or first frame").encode()[:240]
+            message = (error or "Approve screen sharing on Ubuntu, then tap Refresh or reopen Live.").encode()[:240]
             client.sendall(struct.pack(">III", 0, 0, len(message)) + message)
         except (ConnectionError, OSError, TimeoutError):
             pass
         finally:
             client.close()
 
-    def server(self):
+    def bind_socket(self):
+        # Bind on the main thread so a duplicate XDG/autostart invocation
+        # cannot leave behind a half-running process with no usable socket.
         if not RUNTIME.is_dir() or RUNTIME.is_symlink():
-            sys.exit("No private logged-in desktop runtime directory")
+            raise RuntimeError("No private logged-in desktop runtime directory")
         if SOCKET.exists() or SOCKET.is_symlink():
             old = SOCKET.lstat()
             if not stat.S_ISSOCK(old.st_mode) or old.st_uid != os.getuid():
-                sys.exit("Refusing to overwrite unexpected screen socket")
+                raise RuntimeError("Refusing to overwrite unexpected screen socket")
             with socket.socket(socket.AF_UNIX) as probe:
                 probe.settimeout(0.2)
                 try:
                     probe.connect(str(SOCKET))
-                    sys.exit("TapTether screen helper is already running")
-                except ConnectionRefusedError:
-                    SOCKET.unlink()
+                except (ConnectionRefusedError, FileNotFoundError):
+                    SOCKET.unlink(missing_ok=True)
+                else:
+                    # XDG autostart and systemd --user may both invoke us.
+                    # Exit normally rather than retrying or replacing a
+                    # running process.
+                    sys.exit(0)
         os.umask(0o077)
-        with socket.socket(socket.AF_UNIX) as server:
+        server = socket.socket(socket.AF_UNIX)
+        try:
             server.bind(str(SOCKET))
             SOCKET.chmod(0o600)
             server.listen(8)
-            while True:
-                client, _ = server.accept()
-                threading.Thread(target=self.respond,
-                                 args=(client,), daemon=True).start()
+            return server
+        except Exception:
+            server.close()
+            raise
+
+    def server(self, listener):
+        while True:
+            try:
+                client, _ = listener.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.respond,
+                             args=(client,), daemon=True).start()
 
 
 def main():
     Gst.init(None)
     service = ScreenService()
-    threading.Thread(target=service.server, daemon=True).start()
+    listener = service.bind_socket()
+    threading.Thread(target=service.server, args=(listener,), daemon=True).start()
     GLib.timeout_add_seconds(3, service.check_idle)
     signal.signal(signal.SIGTERM, lambda *_: service.mainloop.quit())
     signal.signal(signal.SIGINT, lambda *_: service.mainloop.quit())
     try:
         service.mainloop.run()
     finally:
+        listener.close()
         service.close_stream()
         if SOCKET.exists() and not SOCKET.is_symlink():
             SOCKET.unlink()

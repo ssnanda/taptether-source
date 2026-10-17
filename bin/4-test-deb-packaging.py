@@ -28,6 +28,7 @@ def main() -> None:
             "bin/9-tt-system-update-ubuntu.sh",
             "desktop/ubuntu/taptether_tray.py",
             "desktop/ubuntu/taptether_screen.py",
+            "bin/10-tt-ubuntu-screen-session.sh",
             "assets/branding/TapTether-agent.png",
         ):
             target = fake / item
