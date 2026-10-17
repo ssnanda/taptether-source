@@ -23,7 +23,9 @@ def check(base):
     changed = set(git("diff", "--name-only", base, "HEAD").splitlines())
     if not changed:
         return
-    # Linux backends and platform fallback build tags do not alter the\n    # independently signed macOS Screen Core executable.\n    rules = [
+    # Linux backends and platform fallback build tags do not alter the
+    # independently signed macOS Screen Core executable.
+    rules = [
         ("Input Core", "INPUT_CORE_VERSION",
          ("agent/cmd/taptether-input-core/", "agent/internal/inputcore/")),
         ("Screen Core", "SCREEN_CORE_VERSION",
