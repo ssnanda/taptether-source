@@ -13,6 +13,10 @@ version="$(cat VERSION)"
 repo="ssnanda/taptether.com"
 tag="agent-$platform-v$version"
 rolling="$platform-current"
+display="$platform"
+[[ "$platform" == macos ]] && display="macOS"
+[[ "$platform" == windows ]] && display="Windows"
+[[ "$platform" == ubuntu ]] && display="Ubuntu"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 declare -a files=()
@@ -73,11 +77,11 @@ This release updates ONLY $platform agents. IPA/APK, AltStore, macOS Screen Core
 # Publish unique version first so a failure cannot remove the last usable
 # rolling download. Clients continue using previous rolling assets until swap.
 gh release create "$tag" "${files[@]}" -R "$repo" \
-  --target "$(git rev-parse HEAD)" --title "TapTether ${platform^} $version" \
+  --target "$(git rev-parse HEAD)" --title "TapTether ${display} $version" \
   --notes "$notes" --latest=false
 if gh release view "$rolling" -R "$repo" >/dev/null 2>&1; then
   gh release edit "$rolling" -R "$repo" \
-    --title "TapTether ${platform^} $version (agent-only rolling downloads)" \
+    --title "TapTether ${display} $version (agent-only rolling downloads)" \
     --notes "$notes" --latest=false
   while IFS=' ' read -r id name; do
     [[ "$name" == TapTetherAgent-* ]] || continue
@@ -87,7 +91,7 @@ if gh release view "$rolling" -R "$repo" >/dev/null 2>&1; then
 else
   gh release create "$rolling" "${files[@]}" -R "$repo" \
     --target "$(git rev-parse HEAD)" \
-    --title "TapTether ${platform^} $version (agent-only rolling downloads)" \
+    --title "TapTether ${display} $version (agent-only rolling downloads)" \
     --notes "$notes" --latest=false
 fi
 echo "Published agent-only $platform $version without changing current or mobile releases."
