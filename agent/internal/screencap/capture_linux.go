@@ -29,13 +29,12 @@ func screenSocket() string {
     return filepath.Join(dir, "taptether-screen.sock")
 }
 
+// Available reports installed OS support, not whether a graphical session
+// happens to be logged in at this instant. The UI must allow Snapshot/Live
+// selection and show an actionable error if the screen helper is absent.
 func Available() bool {
-    info, err := os.Stat(screenSocket())
-    if err != nil || info.Mode()&os.ModeSocket == 0 { return false }
-    conn, err := net.DialTimeout("unix", screenSocket(), 150*time.Millisecond)
-    if err != nil { return false }
-    _ = conn.Close()
-    return true
+    info, err := os.Stat("/usr/share/taptether/taptether_screen.py")
+    return err == nil && info.Mode().IsRegular()
 }
 
 func Capture() (Frame, error) {
