@@ -1428,15 +1428,16 @@ class _RemoteScreenState extends State<RemoteScreen>
               '${_detectedLocation == null ? ' · Unassigned' : ' · ${deviceLocations[_detectedLocation]!}'}',
               style: Theme.of(context).textTheme.bodySmall),
         if (_checkingHeartbeat)
-          const LinearProgressIndicator(),
+          Text('Checking saved devices…',
+            style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 8),
         if (visibleDevices.isEmpty)
           Padding(
             padding: const EdgeInsets.all(14),
             child: Text(_checkingHeartbeat
-                ? 'Checking which computers are online…'
-                : 'No online computers for this location. Select Show offline '
-                  'to see saved devices or change the location filter.'),
+                ? 'Checking saved devices…'
+                : 'No saved devices match this filter. Change the location '
+                  'or enable Show offline.'),
           ),
       ],
       if (savedComputers.isEmpty)
@@ -1494,14 +1495,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   ? null : () => connectSaved(device),
             ),
           ),
-      for (final nearby in nearbyComputers)
-        Card(child: ListTile(
-          leading: const Icon(Icons.radar),
-          title: Text(nearby.name),
-          subtitle: Text('${nearby.host} · ${nearby.platform}'),
-          trailing: const Icon(Icons.add_link),
-          onTap: () => selectDiscovered(nearby),
-        )),
+
       const SizedBox(height: 12),
       Align(
         alignment: Alignment.centerLeft,
@@ -1517,6 +1511,14 @@ class _RemoteScreenState extends State<RemoteScreen>
       ),
       if (_showQuickActions) ...[
         const SizedBox(height: 4),
+        for (final nearby in nearbyComputers)
+          Card(child: ListTile(
+            leading: const Icon(Icons.radar),
+            title: Text(nearby.name),
+            subtitle: Text('${nearby.host} · ${nearby.platform}'),
+            trailing: const Icon(Icons.add_link),
+            onTap: () => selectDiscovered(nearby),
+          )),
         Wrap(spacing: 8, runSpacing: 4, children: [
           ActionChip(
             avatar: const Icon(Icons.add, size: 18),
@@ -1909,11 +1911,18 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (mounted) {
         setState(() => _remoteLayout = const RemoteLayoutSettings());
       }
-      final phone = await PhoneIdentity.loadOrCreate();
+      // Reuse the cached Ed25519 phone identity on saved reconnects.
+      final phone = await _phoneIdentity();
       agent.configure(host.text, token.text, pin.text,
         identity: deviceId != null && deviceId.isNotEmpty ? phone : null,
         deviceId: deviceId != null && deviceId.isNotEmpty ? deviceId : null);
-      await agent.send('ping');
+      // One authenticated /api/info request replaces the separate ping +
+      // version round trip on modern agents. Fall back to ping for legacy
+      // agents that lack /api/info.
+      String? currentAgent = await agent.agentVersion();
+      if (currentAgent == null) {
+        await agent.send('ping');
+      }
       // Upgrade legacy token pairing to a device-specific signed identity.
       var enrolledId = deviceId ?? '';
       if (enrolledId.isEmpty) {
@@ -1928,11 +1937,11 @@ class _RemoteScreenState extends State<RemoteScreen>
           enrolledId = '';
         }
       }
-      final currentAgent = await agent.agentVersion();
+      currentAgent ??= await agent.agentVersion();
       String? verifiedName = agent.reportedHostname;
       // Older agents do not yet report hostname; reverse DNS is only a
       // display hint after a successful authenticated, TLS-pinned ping.
-      if (verifiedName == null) {
+      if (verifiedName == null && existingId == null) {
         try {
           final ip = InternetAddress(host.text.trim());
           final reverse = await ip.reverse()
@@ -1995,13 +2004,30 @@ class _RemoteScreenState extends State<RemoteScreen>
           customName: existing?.customName ?? false,
           macAddress: agent.reportedMacAddress ?? existing?.macAddress ?? '',
         );
-        final updated = await deviceStore.upsert(device);
-        if (mounted) {
-          setState(() {
-            savedComputers = updated;
-            _online[device.id] = true;
-            _activeDeviceId = device.id;
-          });
+        // For an already-saved, certificate-verified computer, show the
+        // remote immediately. Secure-storage writes and layout restore can
+        // finish asynchronously, without holding up one-tap launching.
+        if (existingId != null && existing != null) {
+          if (mounted) {
+            setState(() {
+              _online[device.id] = true;
+              _activeDeviceId = device.id;
+            });
+          }
+          unawaited(deviceStore.upsert(device).then((updated) {
+            if (mounted) setState(() => savedComputers = updated);
+          }).catchError((Object _) {
+            // Original pairing is still retained in secure storage.
+          }));
+        } else {
+          final updated = await deviceStore.upsert(device);
+          if (mounted) {
+            setState(() {
+              savedComputers = updated;
+              _online[device.id] = true;
+              _activeDeviceId = device.id;
+            });
+          }
         }
         unawaited(_loadLayoutForHost(host.text.trim()));
         // Refresh this OS's agent-only feed after the authenticated
