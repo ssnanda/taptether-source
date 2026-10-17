@@ -445,6 +445,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   String? availableAgentVersion;
   String? connectedAgentVersion;
   String? _latestReleaseVersion;
+  final Map<String, String> _latestAgentByPlatform = {};
   bool _macShortcuts = false;
   bool _haptics = true;
   Timer? _snapshotTimer;
@@ -1164,11 +1165,11 @@ class _RemoteScreenState extends State<RemoteScreen>
     } finally {
       inspector.disconnect();
     }
-    await checkForUpdates();
+    await checkForUpdates(agentPlatform: device.platform);
     if (!mounted) return;
     final check = AgentUpdateCheck(
       installed: installedAgentVersion,
-      published: _latestReleaseVersion,
+      published: _latestAgentByPlatform[device.platform] ?? _latestReleaseVersion,
     );
     final approved = await showDialog<bool>(
       context: context,
@@ -1208,6 +1209,20 @@ class _RemoteScreenState extends State<RemoteScreen>
       } finally {
         client.disconnect();
       }
+    }
+    // SSH fallback uses only the package already bundled with this app.
+    // Never replace a newer installed agent with an older bundled installer
+    // just because an independent platform-only release is available.
+    if (installedAgentVersion != null && _latestReleaseVersion != null &&
+        !newerThan(_latestReleaseVersion!, installedAgentVersion)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('The bundled SSH installer is not newer. Update '
+              'from the computer tray instead; its verified updater can '
+              'install the latest platform-only release.'),
+        ));
+      }
+      return;
     }
     if (mounted) {
       await _launchAgentInstaller(device: device, updateOnly: true);
@@ -1584,11 +1599,62 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
-  Future<void> checkForUpdates() async {
+  // The iPhone/Android application stays on the full AltStore release.
+  // Desktop agents may advance independently in their own GitHub feeds.
+  Future<String> _latestPlatformAgentVersion(
+      HttpClient client, String platform, String fullVersion) async {
+    const platforms = {
+      'linux': ('ubuntu-current', 'Ubuntu', 'Ubuntu'),
+      'darwin': ('macos-current', 'macOS', 'macOS'),
+      'windows': ('windows-current', 'Windows', 'Windows'),
+    };
+    final selected = platforms[platform];
+    if (selected == null) return fullVersion;
+    try {
+      final req = await client.getUrl(Uri.parse(
+        'https://api.github.com/repos/ssnanda/taptether.com/releases/tags/${selected.$1}'));
+      req.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+      req.headers.set(HttpHeaders.userAgentHeader, 'TapTether-Mobile-Release-Check');
+      final response = await req.close().timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        return fullVersion; // An absent optional platform feed is normal.
+      }
+      final data = jsonDecode(await utf8.decoder.bind(response).join());
+      if (data is! Map || data['tag_name'] != selected.$1 ||
+          data['name'] is! String || data['assets'] is! List) {
+        return fullVersion;
+      }
+      final match = RegExp(
+        r'^TapTether (Ubuntu|macOS|Windows) ([0-9]+\.[0-9]+\.[0-9]+\+[0-9]+)(?:\s|$)',
+      ).firstMatch(data['name'] as String);
+      if (match == null || match.group(1) != selected.$2) return fullVersion;
+      final name = 'TapTetherAgent-${selected.$3}-'
+          '${platform == 'windows' ? 'amd64.zip' : platform == 'darwin' ? 'amd64.tar.gz' : 'amd64.deb'}';
+      final matching = (data['assets'] as List).whereType<Map>().where(
+          (asset) => asset['name'] == name).toList();
+      if (matching.length != 1) return fullVersion;
+      final asset = matching.single;
+      if (asset['digest'] is! String ||
+          !RegExp(r'^sha256:[a-fA-F0-9]{64}$')
+              .hasMatch(asset['digest'] as String) ||
+          asset['browser_download_url'] !=
+              'https://github.com/ssnanda/taptether.com/releases/download/${selected.$1}/$name') {
+        return fullVersion;
+      }
+      final agentVersion = match.group(2)!;
+      return newerThan(agentVersion, fullVersion)
+          ? agentVersion : fullVersion;
+    } catch (_) {
+      // Network access is optional. LAN remote control remains fully local.
+      return fullVersion;
+    }
+  }
+
+  Future<void> checkForUpdates({String? agentPlatform}) async {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 4);
     try {
-      // The only startup internet request checks public release metadata.
       final request = await client.getUrl(Uri.parse(
         'https://raw.githubusercontent.com/ssnanda/taptether.com/main/altstore.json'));
       request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
@@ -1599,17 +1665,22 @@ class _RemoteScreenState extends State<RemoteScreen>
       final apps = data['apps'] as List;
       if (apps.isEmpty || apps.first is! Map) return;
       final app = apps.first as Map;
-      if (app['version'] is! String) return;
+      if (app['version'] is! String || app['buildVersion'] == null) return;
       final latest = "${app['version']}+${app['buildVersion']}";
+      final platform = agentPlatform ?? _connectedPlatform;
+      final latestAgent = platform == null ? latest :
+          await _latestPlatformAgentVersion(client, platform, latest);
       final local = await PackageInfo.fromPlatform();
       final current = '${local.version}+${local.buildNumber}';
       if (!mounted) return;
       setState(() {
         _latestReleaseVersion = latest;
+        if (platform != null) _latestAgentByPlatform[platform] = latestAgent;
         availableAppVersion = newerThan(latest, current) ? latest : null;
+        final selected = _latestAgentByPlatform[_connectedPlatform] ?? latest;
         availableAgentVersion = connectedAgentVersion != null &&
-                newerThan(latest, connectedAgentVersion!)
-            ? latest : null;
+                newerThan(selected, connectedAgentVersion!)
+            ? selected : null;
       });
     } catch (_) {
       // LAN control remains usable without internet access.
@@ -1904,9 +1975,12 @@ class _RemoteScreenState extends State<RemoteScreen>
         _connectionTechnical = null;
         connectedAgentVersion = currentAgent;
         availableAgentVersion = currentAgent != null &&
-                _latestReleaseVersion != null &&
-                newerThan(_latestReleaseVersion!, currentAgent)
-            ? _latestReleaseVersion : null;
+                (_latestAgentByPlatform[_connectedPlatform] ??
+                    _latestReleaseVersion) != null &&
+                newerThan((_latestAgentByPlatform[_connectedPlatform] ??
+                    _latestReleaseVersion)!, currentAgent)
+            ? (_latestAgentByPlatform[_connectedPlatform] ?? _latestReleaseVersion)
+            : null;
         });
       }
       // Persist only after certificate pin verification and authenticated ping.
