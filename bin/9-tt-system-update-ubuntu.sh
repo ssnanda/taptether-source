@@ -97,14 +97,14 @@ Terminal=false
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
 EOF
-  install -o "$owner" -g "$group" -m 0644 \\
+  install -o "$owner" -g "$group" -m 0644 \
     "$tmp/taptether-screen.desktop" "$autostart"
   # Installing optional graphics packages is safe only outside dpkg; a failure
   # must not break the agent's existing keyboard, pairing or input paths.
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \\
-    python3-gi python3-pil gir1.2-gstreamer-1.0 \\
-    gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \\
-    gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \\
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3-gi python3-pil gir1.2-gstreamer-1.0 \
+    gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \
+    gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \
     echo 'TapTether screen dependencies need manual installation.' >&2
 fi
 # Install the refreshed root helper for the next user-approved update.
