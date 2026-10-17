@@ -189,29 +189,17 @@ install() {
   else
     note 'Desktop tray script not staged; installer will still run the background agent.'
   fi
-  # The screen source belongs to the graphical session, never to this system
-  # service. The owner approves GNOME/Wayland ScreenCast when first requested;
-  # no frames are saved and capture pauses when Snapshot/Live are inactive.
+  # The capture helper is a per-user graphical service, separate from the
+  # background agent's privileged uinput group and independent of SSH login.
   if [[ -s "$SCREEN_HELPER" ]]; then
     if command -v apt-get >/dev/null 2>&1; then
       sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         python3-gi python3-pil gir1.2-gstreamer-1.0 \
         gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \
         gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \
-        note 'Ubuntu screen packages unavailable. Install GStreamer, PipeWire, python3-gi and python3-pil.'
+        note 'Screen packages need manual installation: python3-gi, python3-pil, GStreamer, PipeWire and xdg-desktop-portal.'
     fi
-    cat > "$SCREEN_AUTOSTART" <<DESKTOP
-[Desktop Entry]
-Type=Application
-Name=TapTether Screen Helper
-Comment=Private on-demand Snapshot and Live capture for the desktop owner
-Exec=/usr/bin/python3 $SCREEN_HELPER
-Terminal=false
-X-GNOME-Autostart-enabled=true
-NoDisplay=true
-DESKTOP
-    chmod 0644 "$SCREEN_AUTOSTART"
-    note 'Snapshot/Live helper will start at the next Ubuntu graphical login.'
+    bash /usr/share/taptether/10-tt-ubuntu-screen-session.sh install
   fi
   local launcher_exec launcher_comment
   if [[ -s "$TRAY" ]]; then
@@ -391,6 +379,8 @@ case "${1:-}" in
   update) update_agent ;;
   enable-shutdown) enable_shutdown ;;
   disable-shutdown) disable_shutdown ;;
+  screen-status) bash /usr/share/taptether/10-tt-ubuntu-screen-session.sh status ;;
+  screen-setup) bash /usr/share/taptether/10-tt-ubuntu-screen-session.sh install ;;
   session-start) : ;;  # Compatibility with old GNOME autostart references.
-  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|pairing-qr|devices|revoke-device ID|logs|permissions|pin|check-update|update|enable-shutdown|disable-shutdown}\n' >&2; exit 2 ;;
+  *) printf 'Usage: taptetherctl {install|start|stop|restart|status|pairing|pairing-qr|devices|revoke-device ID|logs|permissions|pin|check-update|update|screen-status|screen-setup|enable-shutdown|disable-shutdown}\n' >&2; exit 2 ;;
 esac
