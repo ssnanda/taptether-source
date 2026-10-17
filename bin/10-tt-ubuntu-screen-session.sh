@@ -21,8 +21,8 @@ user_bus() {
 }
 dependencies() {
   [[ -s "$HELPER" ]] || { say "screen helper absent from package"; return 1; }
-  /usr/bin/python3 -c 'import gi; gi.require_version("Gst", "1.0"); gi.require_version("GstVideo", "1.0"); from gi.repository import Gio,GLib,Gst,GstVideo; from PIL import Image' \
-    || { say "missing GStreamer/GI/Pillow dependencies"; return 1; }
+  /usr/bin/python3 -c 'import gi; gi.require_version("Gst", "1.0"); from gi.repository import Gio,GLib,Gst; Gst.init(None); assert all(Gst.ElementFactory.find(name) for name in ("videorate","videoconvert","videoscale","jpegenc","appsink"))' \
+    || { say "missing GStreamer/GI JPEG encoder dependencies"; return 1; }
 }
 install_helper() {
   [[ "$(id -u)" != 0 ]] || { say "run as the actual desktop owner, not root"; return 1; }
