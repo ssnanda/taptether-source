@@ -194,10 +194,10 @@ install() {
   if [[ -s "$SCREEN_HELPER" ]]; then
     if command -v apt-get >/dev/null 2>&1; then
       sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        python3-gi python3-pil gir1.2-gstreamer-1.0 \
-        gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \
+        python3-gi gir1.2-gstreamer-1.0 \
+        gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \
-        note 'Screen packages need manual installation: python3-gi, python3-pil, GStreamer, PipeWire and xdg-desktop-portal.'
+        note 'Screen packages need manual installation: python3-gi, GStreamer, PipeWire and xdg-desktop-portal.'
     fi
     bash /usr/share/taptether/10-tt-ubuntu-screen-session.sh install
   fi
