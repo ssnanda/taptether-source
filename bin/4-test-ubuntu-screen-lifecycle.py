@@ -83,13 +83,13 @@ class Service:
         self.messages.append(text)
 save_frame = namespace["save_frame"]
 service_instance = Service()
-valid = b"\\xff\\xd8" + b"testjpeg" + b"\\xff\\xd9"
+valid = b"\xff\xd8" + b"testjpeg" + b"\xff\xd9"
 assert save_frame(service_instance, fake_sample(valid)) == 0
 assert service_instance.frame[0:3] == (1280, 720, valid)
 save_frame(service_instance, fake_sample(b"not jpeg"))
 assert "rejected" in service_instance.error
 assert len(service_instance.messages) == 1
-save_frame(service_instance, fake_sample(b"\\xff\\xd8\\xff\\xd9", "video/x-raw"))
+save_frame(service_instance, fake_sample(b"\xff\xd8\xff\xd9", "video/x-raw"))
 assert "Expected encoded JPEG" in service_instance.error
 save_frame(service_instance, fake_sample(b"X" * ((2<<20)+1)))
 assert "outside safe bounds" in service_instance.error
