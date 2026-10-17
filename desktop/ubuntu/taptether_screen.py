@@ -47,6 +47,7 @@ class ScreenService:
         self.last_request = 0.0
         self.launching = False
         self.pipeline = None
+        self.capture_paused = False
         self.session = None
         self.bus = None
         self.fd = None
@@ -205,6 +206,7 @@ class ScreenService:
             pipeline.set_state(Gst.State.PLAYING)
             with self.lock:
                 self.pipeline = pipeline
+                self.capture_paused = False
                 self.error = ""
         except Exception as exc:
             with self.lock:
@@ -227,6 +229,7 @@ class ScreenService:
     def close_stream(self):
         pipeline = self.pipeline
         self.pipeline = None
+        self.capture_paused = False
         if pipeline is not None:
             pipeline.set_state(Gst.State.NULL)
         if self.session and self.bus:
@@ -262,7 +265,10 @@ class ScreenService:
         with self.lock:
             inactive = time.monotonic() - self.last_request > 35
             pipeline = self.pipeline
-        if pipeline is not None and inactive:
+            should_pause = pipeline is not None and inactive and not self.capture_paused
+            if should_pause:
+                self.capture_paused = True
+        if should_pause:
             # Expected for Snapshot/idle: stop recording until next request.
             # Live generates frequent requests, so it must remain running.
             pipeline.set_state(Gst.State.PAUSED)
@@ -338,7 +344,8 @@ class ScreenService:
                 if pipeline is None and not launching:
                     self.launching = True
                     GLib.idle_add(self.start)
-                elif pipeline is not None:
+                elif pipeline is not None and self.capture_paused:
+                    self.capture_paused = False
                     GLib.idle_add(self.resume_pipeline_once, pipeline)
             # Keep the agent's 8-second HTTP write timeout and phone's
             # 7-second request timeout below their limits. Permission dialogs
