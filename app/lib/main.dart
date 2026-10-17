@@ -653,7 +653,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       connection.configure(atHost ?? device.host, device.token, device.fingerprint,
           identity: device.deviceId.isNotEmpty ? phone : null,
           deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
-      await connection.send('ping');
+      await connection.send('ping').timeout(const Duration(seconds: 3));
       return true;
     } catch (_) {
       return false;
@@ -1050,13 +1050,19 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> connectSaved(SavedComputer device) async {
-    host.text = device.host;
-    token.text = device.token;
-    pin.text = device.fingerprint;
-    discoveredName = device.name;
-    _connectedPlatform = device.platform;
-    _macShortcuts = device.platform == 'darwin';
-    await connect(existingId: device.id, deviceId: device.deviceId);
+    if (_connectingDeviceId != null) return;
+    setState(() => _connectingDeviceId = device.id);
+    try {
+      host.text = device.host;
+      token.text = device.token;
+      pin.text = device.fingerprint;
+      discoveredName = device.name;
+      _connectedPlatform = device.platform;
+      _macShortcuts = device.platform == 'darwin';
+      await connect(existingId: device.id, deviceId: device.deviceId);
+    } finally {
+      if (mounted) setState(() => _connectingDeviceId = null);
+    }
   }
 
   Future<void> updateSavedAgent(SavedComputer device) async {
@@ -1538,7 +1544,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             onPressed: installingAgent ? null : openAgentInstaller,
           ),
         ]),
-        if (searching || _discoveryReport.events.isNotEmpty)
+        if (searching || !_discoveryReport.isEmpty)
           ScanReportPanel(
             title: 'Discovery results',
             report: _discoveryReport,
@@ -2693,29 +2699,11 @@ class _RemoteScreenState extends State<RemoteScreen>
                         unawaited(_showLandscapeControls());
                       },
                       icon: const Icon(Icons.keyboard_outlined)),
-                    PopupMenuButton<String>(
-                      tooltip: 'Computer options',
-                      onSelected: (selection) {
-                        _hideImmersiveDock();
-                        if (selection == 'switch' ||
-                            selection == 'disconnect') {
-                          _stopScreen();
-                          agent.disconnect();
-                          setState(() {
-                            _connectionLost = false;
-                            status = selection == 'switch'
-                                ? 'Select a device to connect.'
-                                : 'Disconnected';
-                          });
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'switch',
-                            child: Text('Switch computer')),
-                        PopupMenuItem(value: 'disconnect',
-                            child: Text('Disconnect')),
-                      ],
-                      icon: const Icon(Icons.more_horiz),
+                    IconButton(
+                      key: const ValueKey('immersive-back-to-devices'),
+                      tooltip: 'Back to My Devices',
+                      onPressed: _backToMyDevices,
+                      icon: const Icon(Icons.arrow_back),
                     ),
                   ]),
                 ),
@@ -2763,6 +2751,19 @@ class _RemoteScreenState extends State<RemoteScreen>
     },
   );
 
+  void _backToMyDevices() {
+    _stopScreen();
+    agent.disconnect();
+    setState(() {
+      _connectionLost = false;
+      _agentInputDenied = false;
+      _connectionTechnical = null;
+      _activeDeviceId = null;
+      status = 'Select a saved device to connect.';
+    });
+    unawaited(_refreshHeartbeats());
+  }
+
   Widget _connectedControls() {
     final colors = Theme.of(context).colorScheme;
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -2774,20 +2775,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         Expanded(child: Text(discoveredName ?? host.text.trim(),
             maxLines: 1, overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium)),
-        IconButton(
-          tooltip: 'Switch computer',
-          onPressed: () {
-            _stopScreen();
-            agent.disconnect();
-            setState(() {
-              _connectionLost = false;
-              _agentInputDenied = false;
-              _connectionTechnical = null;
-              status = 'Select a device to connect.';
-            });
-          },
-          icon: const Icon(Icons.swap_horiz, size: 20),
-        ),
+
       ]),
       if (_connectionLost) _connectionBanner(),
       if (_agentInputDenied && !_connectionLost)
@@ -2898,15 +2886,16 @@ class _RemoteScreenState extends State<RemoteScreen>
       drawer: appDrawer(),
       appBar: connected && landscape ? null : AppBar(
         leading: IconButton(
-          tooltip: 'Open navigation',
-          icon: const Icon(Icons.menu),
-          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+          key: ValueKey(connected ? 'back-to-devices' : 'open-navigation'),
+          tooltip: connected ? 'Back to My Devices' : 'Open navigation',
+          icon: Icon(connected ? Icons.arrow_back : Icons.menu),
+          onPressed: connected
+              ? _backToMyDevices
+              : () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        title: const Text('TapTether'), actions: [
-        IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
-          _stopScreen(); agent.disconnect(); setState(() => status = 'Disconnected');
-        } : null, icon: const Icon(Icons.link_off)),
-      ]),
+        title: Text(connected ? (discoveredName ?? 'Remote') : 'TapTether',
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
       body: connected && landscape
           ? SafeArea(child: _landscapeImmersive())
           : SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
