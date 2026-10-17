@@ -52,7 +52,15 @@ def screen_request(command):
 
 
 def screen_running():
-    return screen_request(b"P")
+    # A bare socket connect also recognizes previously installed helpers
+    # which predate the status opcode. It does not trigger capture/consent.
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(0.25)
+            connection.connect(str(SCREEN_SOCKET))
+            return True
+    except (OSError, TimeoutError):
+        return False
 
 
 def start_screen_helper():
