@@ -38,6 +38,7 @@ on:
     # Only main can publish a release.
     paths:
       - VERSION
+      - 'versions/ubuntu-agent.txt'
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
     - cron: '37 4 * * 0'
@@ -52,7 +53,7 @@ concurrency:
 
 jobs:
   validate:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.task != 'agent-ubuntu' && inputs.task != 'agent-macos' && inputs.task != 'agent-windows') }}
+    if: ${{ (github.event_name != 'workflow_dispatch' || (inputs.task != 'agent-ubuntu' && inputs.task != 'agent-macos' && inputs.task != 'agent-windows')) && !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -163,7 +164,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build' }}
+    if: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -199,7 +200,7 @@ jobs:
 
   build-windows:
     needs: validate
-    if: ${{ github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build' }}
+    if: ${{ (github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -257,7 +258,7 @@ jobs:
 
   build-and-publish:
     needs: [build-ubuntu, build-windows]
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build' }}
+    if: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -384,7 +385,7 @@ jobs:
   agent-only-validate:
     # A separate lightweight path in the SAME workflow. Does not initialize
     # Flutter, sign iOS code, or build Android; full releases remain untouched.
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'agent-ubuntu' || inputs.task == 'agent-macos' || inputs.task == 'agent-windows') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'agent-ubuntu' || inputs.task == 'agent-macos' || inputs.task == 'agent-windows')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -395,6 +396,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Agent releases only from main.' >&2; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            REQUESTED_VERSION="$(tr -d '\r\n' < versions/ubuntu-agent.txt)"
+          fi
           [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || {
             echo 'Set agent_version to a valid new version such as 0.7.8+68.' >&2
             exit 1
@@ -417,7 +421,7 @@ jobs:
 
   agent-only-ubuntu:
     needs: agent-only-validate
-    if: ${{ inputs.task == 'agent-ubuntu' }}
+    if: ${{ inputs.task == 'agent-ubuntu' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -430,10 +434,16 @@ jobs:
         with:
           go-version: '1.27.x'
           cache: false
-      - name: Set package-only version without committing VERSION
+      - name: Set Ubuntu package-only version without committing VERSION
         env:
           REQUESTED_VERSION: ${{ inputs.agent_version }}
-        run: printf '%s\n' "$REQUESTED_VERSION" > VERSION
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            REQUESTED_VERSION="$(tr -d '\r\n' < versions/ubuntu-agent.txt)"
+          fi
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]
+          printf '%s\n' "$REQUESTED_VERSION" > VERSION
       - name: Build and verify Ubuntu installers
         run: |
           bash bin/2b-tt-ubuntu.sh
