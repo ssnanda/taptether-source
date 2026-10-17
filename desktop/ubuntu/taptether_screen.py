@@ -77,8 +77,8 @@ class ScreenService:
             # extract_dup copies only the encoded JPEG payload; no Gst.MapInfo,
             # manually supplied row stride or Pillow C decoder is involved.
             jpeg = buffer.extract_dup(0, size)
-            if (len(jpeg) != size or jpeg[:2] != b"\\xff\\xd8"
-                    or jpeg[-2:] != b"\\xff\\xd9"):
+            if (len(jpeg) != size or jpeg[:2] != b"\xff\xd8"
+                    or jpeg[-2:] != b"\xff\xd9"):
                 raise ValueError("Invalid JPEG frame boundaries")
             with self.lock:
                 self.frame = (MAX_W, MAX_H, jpeg, time.monotonic())
