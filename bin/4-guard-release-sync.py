@@ -6,6 +6,7 @@ releases deliberately choose a VERSION greater than all platform-only feeds.
 """
 from __future__ import annotations
 import json
+import os
 import re
 import sys
 from urllib.error import HTTPError
@@ -37,10 +38,14 @@ def current_versions() -> dict[str, str]:
     versions = {}
     for platform in PLATFORMS:
         tag = f'{platform}-current'
+        headers = {'User-Agent': 'TapTether-Sync-Release-Guard',
+                   'Accept': 'application/vnd.github+json'}
+        token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+        if token:
+            headers['Authorization'] = 'Bearer ' + token
         request = Request(
             f'https://api.github.com/repos/{REPO}/releases/tags/{tag}',
-            headers={'User-Agent': 'TapTether-Sync-Release-Guard',
-                     'Accept': 'application/vnd.github+json'},
+            headers=headers,
         )
         try:
             with urlopen(request, timeout=15) as result:
