@@ -14,6 +14,8 @@ POWER_DISABLED="$HOME/.config/taptether/remote-shutdown-disabled"
 APP="$HOME/.local/share/applications/taptether.desktop"
 TRAY="$HOME/.local/share/taptether/taptether_tray.py"
 TRAY_AUTOSTART="$HOME/.config/autostart/taptether-tray.desktop"
+SCREEN_AUTOSTART="$HOME/.config/autostart/taptether-screen.desktop"
+SCREEN_HELPER="/usr/share/taptether/taptether_screen.py"
 OLD_AUTOSTART="$HOME/.config/autostart/taptether-agent.desktop"
 CONFIG="$HOME/.config/taptether"
 AGENT='/usr/local/bin/taptether-agent'
@@ -186,6 +188,30 @@ install() {
     fi
   else
     note 'Desktop tray script not staged; installer will still run the background agent.'
+  fi
+  # The screen source belongs to the graphical session, never to this system
+  # service. The owner approves GNOME/Wayland ScreenCast when first requested;
+  # no frames are saved and capture pauses when Snapshot/Live are inactive.
+  if [[ -s "$SCREEN_HELPER" ]]; then
+    if command -v apt-get >/dev/null 2>&1; then
+      sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        python3-gi python3-pil gir1.2-gstreamer-1.0 \
+        gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \
+        gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \
+        note 'Ubuntu screen packages unavailable. Install GStreamer, PipeWire, python3-gi and python3-pil.'
+    fi
+    cat > "$SCREEN_AUTOSTART" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=TapTether Screen Helper
+Comment=Private on-demand Snapshot and Live capture for the desktop owner
+Exec=/usr/bin/python3 $SCREEN_HELPER
+Terminal=false
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+DESKTOP
+    chmod 0644 "$SCREEN_AUTOSTART"
+    note 'Snapshot/Live helper will start at the next Ubuntu graphical login.'
   fi
   local launcher_exec launcher_comment
   if [[ -s "$TRAY" ]]; then

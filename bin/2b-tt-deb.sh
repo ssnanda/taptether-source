@@ -98,6 +98,7 @@ for arch in ('amd64', 'arm64'):
         ('usr/share/taptether/7-tt-update-ubuntu.sh', root / 'bin' / '7-tt-update-ubuntu.sh'),
         ('usr/share/taptether/9-tt-system-update-ubuntu.sh', root / 'bin' / '9-tt-system-update-ubuntu.sh'),
         ('usr/share/taptether/taptether_tray.py', root / 'desktop' / 'ubuntu' / 'taptether_tray.py'),
+        ('usr/share/taptether/taptether_screen.py', root / 'desktop' / 'ubuntu' / 'taptether_screen.py'),
     ):
         if not source.is_file() or source.stat().st_size < 100:
             raise SystemExit(f'Missing required desktop resource: {source}')
