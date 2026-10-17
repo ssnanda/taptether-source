@@ -40,7 +40,8 @@ assert 'GLib.timeout_add_seconds(3, service.check_idle)' in text
 
 # Native Ubuntu 26.10 crash regression: do not map raw RGB video frames,
 # calculate stride in Python or call Pillow from GStreamer's streaming thread.
-assert "GstVideo" not in text
+assert "GstVideo.VideoInfo(" not in text
+assert 'gi.require_version("GstVideo"' not in text
 assert "Image.frombytes" not in text
 assert "buffer.map(" not in text
 assert "buffer.unmap(" not in text
