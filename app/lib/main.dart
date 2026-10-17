@@ -411,16 +411,20 @@ class _RemoteScreenState extends State<RemoteScreen>
   Timer? _heartbeatTimer;
   DetectedLanRange? _wifiRange;
   String? _detectedLocation;
-  String _locationFilter = 'automatic';
-  bool _showOffline = false;
+  // Saved devices appear immediately; the user can filter by location or hide offline.
+  String _locationFilter = 'all';
+  bool _showOffline = true;
+  bool _showQuickActions = false;
   bool _checkingHeartbeat = false;
+  int _heartbeatGeneration = 0;
+  String? _connectingDeviceId;
+  Future<PhoneIdentity>? _cachedPhoneIdentity;
+  Future<PhoneIdentity> _phoneIdentity() =>
+      _cachedPhoneIdentity ??= PhoneIdentity.loadOrCreate();
   bool _scanningToReconcile = false;
   final Set<String> _scanVerifiedDeviceIds = {};
   final ScanReport _discoveryReport = ScanReport();
-  DateTime? _lastTcpRecoveryAt;
-  String? _lastTcpRecoveryNetwork;
   String? _lastNetworkId;
-  String? _activeDeviceId;
   final Map<String, bool> _online = {};
   RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
   String? _connectedPlatform;
@@ -631,6 +635,9 @@ class _RemoteScreenState extends State<RemoteScreen>
         _detectedLocation = label;
       });
       if (changed && savedComputers.isNotEmpty) {
+        // Invalidate probes started on the previous Wi-Fi before refreshing.
+        _heartbeatGeneration++;
+        _checkingHeartbeat = false;
         unawaited(_refreshHeartbeats());
       }
     }
@@ -643,7 +650,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       connection.configure(atHost ?? device.host, device.token, device.fingerprint,
           identity: device.deviceId.isNotEmpty ? phone : null,
           deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
-      await connection.send('ping');
+      await connection.send('ping').timeout(const Duration(seconds: 3));
       return true;
     } catch (_) {
       return false;
@@ -652,132 +659,44 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
-  Future<void> _refreshHeartbeats({bool forceRecovery = false}) async {
+  /// My Devices is a saved-pairings dashboard, never a network scanner.
+  /// Heartbeats contact ONLY the persisted hosts using the saved certificate
+  /// fingerprint and authenticated phone identity. DHCP address discovery
+  /// remains an explicit user action under Discover / Scan IPs.
+  Future<void> _refreshHeartbeats() async {
     if (_checkingHeartbeat || _scanningToReconcile ||
         savedComputers.isEmpty) {
       return;
     }
     _checkingHeartbeat = true;
+    final generation = ++_heartbeatGeneration;
     if (mounted) setState(() {});
     try {
       PhoneIdentity? phone;
       try {
-        if (savedComputers.any((d) => d.deviceId.isNotEmpty)) {
-          phone = await PhoneIdentity.loadOrCreate();
+        if (savedComputers.any((device) => device.deviceId.isNotEmpty)) {
+          phone = await _phoneIdentity();
         }
       } catch (_) {}
-      final snapshot = savedComputers.toList();
-      final missing = <SavedComputer>[];
-      for (var start = 0; start < snapshot.length; start += 4) {
-        final chunk = snapshot.skip(start).take(4).toList();
-        final values = await Future.wait(
-          chunk.map((d) => _pingSavedDevice(d, phone)),
-        );
-        if (!mounted) break;
-        setState(() {
-          for (var i = 0; i < chunk.length; i++) {
-            _online[chunk[i].id] = values[i];
-            if (!values[i]) missing.add(chunk[i]);
-          }
-        });
-      }
-
-      final wifi = _wifiRange ?? await detectLanRange();
-      if (wifi != null && missing.isNotEmpty && mounted) {
-        final thisNetwork = wifi.cidr;
-        final now = DateTime.now();
-        final eligibleForTcp = forceRecovery ||
-            _lastTcpRecoveryNetwork != thisNetwork ||
-            _lastTcpRecoveryAt == null ||
-            now.difference(_lastTcpRecoveryAt!) >
-                const Duration(minutes: 4);
-        List<String>? tcpHints;
-        List<DiscoveredDevice> replies = [];
-        try {
-          replies = await findNearbyDevices(
-            scanPrefixes: wifi.scanPrefixes.take(8).toList(),
-            duration: const Duration(milliseconds: 1400),
-          );
-        } catch (_) {}
-        for (final device in missing) {
-          if (!mounted) break;
-          final candidates = recoveryCandidates(device, wifi, replies)
-              .where((ip) => ip != device.host).toList();
-          // Bonjour addresses and UDP announcements are untrusted hints.
-          final label = device.name.trim().replaceFirst(
-              RegExp(r'\.local\.?$', caseSensitive: false), '');
-          if (RegExp(r'^[A-Za-z0-9][A-Za-z0-9-]{0,62}$')
-              .hasMatch(label)) {
-            try {
-              final addresses = await InternetAddress.lookup('$label.local',
-                  type: InternetAddressType.IPv4)
-                  .timeout(const Duration(milliseconds: 1250));
-              for (final address in addresses) {
-                if (lanRangeContains(wifi, address.address) &&
-                    !candidates.contains(address.address) &&
-                    address.address != device.host) {
-                  candidates.insert(0, address.address);
-                }
-              }
-            } catch (_) {}
-          }
-          String? verified;
-          for (var index = 0; index < candidates.length; index += 4) {
-            final batch = candidates.skip(index).take(4).toList();
-            final result = await Future.wait(batch.map((ip) =>
-                _pingSavedDevice(device, phone, atHost: ip)));
-            for (var i = 0; i < batch.length; i++) {
-              if (result[i]) { verified = batch[i]; break; }
-            }
-            if (verified != null) break;
-          }
-          // UDP and Bonjour can be blocked by local-network policy. Probe
-          // only TCP 48321 on this Wi-Fi CIDR, at most once per four minutes
-          // unless the user explicitly taps Refresh. An open port remains an
-          // untrusted candidate until the saved TLS pin AND authenticated
-          // phone pairing succeed.
-          if (verified == null && eligibleForTcp) {
-            if (tcpHints == null) {
-              _lastTcpRecoveryNetwork = thisNetwork;
-              _lastTcpRecoveryAt = now;
-              tcpHints = await probeAgentControlPorts(wifi);
-            }
-            final tried = candidates.toSet();
-            final extra = tcpHints.where((ip) =>
-                ip != device.host && !tried.contains(ip)).toList();
-            for (var index = 0; index < extra.length; index += 4) {
-              final batch = extra.skip(index).take(4).toList();
-              final results = await Future.wait(batch.map((ip) =>
-                  _pingSavedDevice(device, phone, atHost: ip)));
-              for (var i = 0; i < batch.length; i++) {
-                if (results[i]) {
-                  verified = batch[i];
-                  break;
-                }
-              }
-              if (verified != null) break;
-            }
-          }
-          if (verified == null || !mounted) continue;
-          // Reuse the previously paired computer, never create an extra row.
-          final moved = movedDevice(device, verified,
-              currentLocation: _detectedLocation);
-          try {
-            final saved = await deviceStore.upsert(moved);
-            if (!mounted) break;
-            setState(() {
-              savedComputers = saved;
-              _online[moved.id] = true;
-            });
-            if (_activeDeviceId == moved.id && agent.configured) {
-              unawaited(connectSaved(moved));
-            }
-          } catch (_) {}
-        }
-      }
+      final savedSnapshot = savedComputers.toList();
+      // Start every saved host immediately instead of waiting for discovery
+      // broadcasts, subnet probes, or a preceding batch to time out.
+      await Future.wait(savedSnapshot.map((device) async {
+        final reachable = await _pingSavedDevice(device, phone);
+        if (!mounted || generation != _heartbeatGeneration) return;
+        // Device may have been renamed/repaired while this ping was in flight.
+        final stillSaved = savedComputers.any(
+          (current) => current.id == device.id &&
+              current.host == device.host &&
+              current.fingerprint == device.fingerprint);
+        if (!stillSaved) return;
+        setState(() => _online[device.id] = reachable);
+      }));
     } finally {
-      _checkingHeartbeat = false;
-      if (mounted) setState(() {});
+      if (generation == _heartbeatGeneration) {
+        _checkingHeartbeat = false;
+        if (mounted) setState(() {});
+      }
     }
   }
 
@@ -1130,13 +1049,19 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> connectSaved(SavedComputer device) async {
-    host.text = device.host;
-    token.text = device.token;
-    pin.text = device.fingerprint;
-    discoveredName = device.name;
-    _connectedPlatform = device.platform;
-    _macShortcuts = device.platform == 'darwin';
-    await connect(existingId: device.id, deviceId: device.deviceId);
+    if (_connectingDeviceId != null) return;
+    setState(() => _connectingDeviceId = device.id);
+    try {
+      host.text = device.host;
+      token.text = device.token;
+      pin.text = device.fingerprint;
+      discoveredName = device.name;
+      _connectedPlatform = device.platform;
+      _macShortcuts = device.platform == 'darwin';
+      await connect(existingId: device.id, deviceId: device.deviceId);
+    } finally {
+      if (mounted) setState(() => _connectingDeviceId = null);
+    }
   }
 
   Future<void> updateSavedAgent(SavedComputer device) async {
@@ -1404,6 +1329,35 @@ class _RemoteScreenState extends State<RemoteScreen>
     )),
   );
 
+  Widget _deviceStatus(String id) {
+    final state = _online[id];
+    final busy = _connectingDeviceId == id;
+    final color = state == true
+        ? Colors.green.shade700
+        : state == false
+            ? Theme.of(context).colorScheme.outline
+            : Theme.of(context).colorScheme.secondary;
+    final label = busy
+        ? 'CONNECTING' : state == true
+            ? 'ONLINE' : state == false ? 'OFFLINE' : 'CHECKING';
+    return Semantics(
+      label: 'Computer ${busy ? 'connecting' : label.toLowerCase()}',
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (busy)
+          SizedBox(width: 13, height: 13,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color))
+        else
+          Icon(state == true ? Icons.check_circle :
+              state == false ? Icons.circle_outlined : Icons.circle,
+              size: 15, color: color),
+        const SizedBox(width: 5),
+        Text(label, style: TextStyle(color: color,
+            fontSize: 11, fontWeight: FontWeight.w800,
+            letterSpacing: 0.35)),
+      ]),
+    );
+  }
+
   Widget deviceDashboard() {
     final visibleDevices = visibleSavedDevices(
       savedComputers,
@@ -1450,7 +1404,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           IconButton(
             tooltip: 'Check online computers',
             onPressed: _checkingHeartbeat ? null : () =>
-                _refreshHeartbeats(forceRecovery: true),
+                _refreshHeartbeats(),
             icon: const Icon(Icons.refresh),
           ),
         ]),
@@ -1462,26 +1416,24 @@ class _RemoteScreenState extends State<RemoteScreen>
           ),
           const Text('Show offline'),
           const Spacer(),
-          TextButton.icon(
-            onPressed: _wifiRange == null ? null : _labelCurrentNetwork,
-            icon: const Icon(Icons.location_on_outlined, size: 17),
-            label: const Text('Label network'),
+          Text(
+            '${_online.values.where((value) => value).length} online',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600),
           ),
         ]),
-        if (_wifiRange != null)
-          Text('Wi-Fi: ${_wifiRange!.cidr}'
-              '${_detectedLocation == null ? ' · Unassigned' : ' · ${deviceLocations[_detectedLocation]!}'}',
-              style: Theme.of(context).textTheme.bodySmall),
         if (_checkingHeartbeat)
-          const LinearProgressIndicator(),
+          Text('Checking saved devices…',
+            style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 8),
         if (visibleDevices.isEmpty)
           Padding(
             padding: const EdgeInsets.all(14),
             child: Text(_checkingHeartbeat
-                ? 'Checking which computers are online…'
-                : 'No online computers for this location. Select Show offline '
-                  'to see saved devices or change the location filter.'),
+                ? 'Checking saved devices…'
+                : 'No saved devices match this filter. Change the location '
+                  'or enable Show offline.'),
           ),
       ],
       if (savedComputers.isEmpty)
@@ -1508,74 +1460,104 @@ class _RemoteScreenState extends State<RemoteScreen>
         ))
       else
         for (final device in visibleDevices)
-          Card(child: ListTile(
-            leading: Icon(device.platform == 'darwin'
-                ? Icons.laptop_mac : Icons.computer),
-            title: Text(device.name, maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
-                ' · ${_online[device.id] == true ? 'Online' : _online[device.id] == false ? 'Offline' : 'Checking…'}',
-                maxLines: 2, overflow: TextOverflow.ellipsis),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (device.platform == 'linux' ||
-                  device.platform == 'darwin' ||
-                  device.platform == 'windows')
-                IconButton(
-                  tooltip: 'Check agent update',
-                  onPressed: () => updateSavedAgent(device),
-                  icon: const Icon(Icons.system_update_alt),
-                ),
-              Icon(Icons.circle, size: 13,
-                  color: _online[device.id] == true
-                      ? Colors.green : Theme.of(context)
-                          .colorScheme.outline),
-            ]),
-            onTap: () => connectSaved(device),
-          )),
-      for (final nearby in nearbyComputers)
-        Card(child: ListTile(
-          leading: const Icon(Icons.radar),
-          title: Text(nearby.name),
-          subtitle: Text('${nearby.host} · ${nearby.platform}'),
-          trailing: const Icon(Icons.add_link),
-          onTap: () => selectDiscovered(nearby),
-        )),
-      const SizedBox(height: 20),
-      Text('Quick actions', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 6),
-      Wrap(spacing: 8, runSpacing: 4, children: [
-        ActionChip(
-          avatar: const Icon(Icons.add, size: 18),
-          label: const Text('Pair'),
-          onPressed: showPairForm,
+          Card(
+            key: ValueKey('saved-device-${device.id}'),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 5),
+              leading: Icon(device.platform == 'darwin'
+                  ? Icons.laptop_mac : Icons.computer,
+                  size: 29),
+              title: Text(device.name,
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                '${device.host} · ${deviceLocations[device.location] ?? 'Other'}',
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (device.platform == 'linux' ||
+                    device.platform == 'darwin' ||
+                    device.platform == 'windows')
+                  IconButton(
+                    tooltip: 'Check agent update',
+                    onPressed: () => updateSavedAgent(device),
+                    icon: const Icon(Icons.system_update_alt),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                const SizedBox(width: 4),
+                _deviceStatus(device.id),
+              ]),
+              onTap: _connectingDeviceId != null
+                  ? null : () => connectSaved(device),
+            ),
+          ),
+
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          key: const ValueKey('quick-actions-toggle'),
+          onPressed: () => setState(
+              () => _showQuickActions = !_showQuickActions),
+          icon: Icon(_showQuickActions
+              ? Icons.expand_less : Icons.add_circle_outline),
+          label: Text(_showQuickActions
+              ? 'Hide add & discovery tools' : 'Add / Discover'),
         ),
-        ActionChip(
-          avatar: const Icon(Icons.qr_code_scanner, size: 18),
-          label: const Text('Scan QR'),
-          onPressed: scanQrPairing,
-        ),
-        ActionChip(
-          avatar: const Icon(Icons.radar, size: 18),
-          label: Text(searching ? 'Searching…' : 'Discover'),
-          onPressed: searching ? null : searchNearby,
-        ),
-        ActionChip(
-          avatar: const Icon(Icons.network_check, size: 18),
-          label: const Text('Scan IPs'),
-          onPressed: scanNetwork,
-        ),
-        ActionChip(
-          avatar: const Icon(Icons.install_desktop, size: 18),
-          label: const Text('Install agent'),
-          onPressed: installingAgent ? null : openAgentInstaller,
-        ),
-      ]),
-      const SizedBox(height: 14),
-      ScanReportPanel(
-        title: 'Full Discover Output',
-        report: _discoveryReport,
       ),
-      const SizedBox(height: 14),
+      if (_showQuickActions) ...[
+        const SizedBox(height: 4),
+        if (_wifiRange != null)
+          Row(children: [
+            Expanded(child: Text('Wi-Fi: ${_wifiRange!.cidr}',
+              style: Theme.of(context).textTheme.bodySmall)),
+            TextButton.icon(
+              onPressed: _labelCurrentNetwork,
+              icon: const Icon(Icons.location_on_outlined, size: 16),
+              label: const Text('Label network'),
+            ),
+          ]),
+        for (final nearby in nearbyComputers)
+          Card(child: ListTile(
+            leading: const Icon(Icons.radar),
+            title: Text(nearby.name),
+            subtitle: Text('${nearby.host} · ${nearby.platform}'),
+            trailing: const Icon(Icons.add_link),
+            onTap: () => selectDiscovered(nearby),
+          )),
+        Wrap(spacing: 8, runSpacing: 4, children: [
+          ActionChip(
+            avatar: const Icon(Icons.add, size: 18),
+            label: const Text('Pair'),
+            onPressed: showPairForm,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.qr_code_scanner, size: 18),
+            label: const Text('Scan QR'),
+            onPressed: scanQrPairing,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.radar, size: 18),
+            label: Text(searching ? 'Searching…' : 'Discover'),
+            onPressed: searching ? null : searchNearby,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.network_check, size: 18),
+            label: const Text('Scan IPs'),
+            onPressed: scanNetwork,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.install_desktop, size: 18),
+            label: const Text('Install agent'),
+            onPressed: installingAgent ? null : openAgentInstaller,
+          ),
+        ]),
+        if (searching || !_discoveryReport.isEmpty)
+          ScanReportPanel(
+            title: 'Discovery results',
+            report: _discoveryReport,
+          ),
+      ],
     ],
    );
   }
@@ -1935,11 +1917,18 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (mounted) {
         setState(() => _remoteLayout = const RemoteLayoutSettings());
       }
-      final phone = await PhoneIdentity.loadOrCreate();
+      // Reuse the cached Ed25519 phone identity on saved reconnects.
+      final phone = await _phoneIdentity();
       agent.configure(host.text, token.text, pin.text,
         identity: deviceId != null && deviceId.isNotEmpty ? phone : null,
         deviceId: deviceId != null && deviceId.isNotEmpty ? deviceId : null);
-      await agent.send('ping');
+      // One authenticated /api/info request replaces the separate ping +
+      // version round trip on modern agents. Fall back to ping for legacy
+      // agents that lack /api/info.
+      String? currentAgent = await agent.agentVersion();
+      if (currentAgent == null) {
+        await agent.send('ping');
+      }
       // Upgrade legacy token pairing to a device-specific signed identity.
       var enrolledId = deviceId ?? '';
       if (enrolledId.isEmpty) {
@@ -1954,11 +1943,11 @@ class _RemoteScreenState extends State<RemoteScreen>
           enrolledId = '';
         }
       }
-      final currentAgent = await agent.agentVersion();
+      currentAgent ??= await agent.agentVersion();
       String? verifiedName = agent.reportedHostname;
       // Older agents do not yet report hostname; reverse DNS is only a
       // display hint after a successful authenticated, TLS-pinned ping.
-      if (verifiedName == null) {
+      if (verifiedName == null && existingId == null) {
         try {
           final ip = InternetAddress(host.text.trim());
           final reverse = await ip.reverse()
@@ -2021,13 +2010,32 @@ class _RemoteScreenState extends State<RemoteScreen>
           customName: existing?.customName ?? false,
           macAddress: agent.reportedMacAddress ?? existing?.macAddress ?? '',
         );
-        final updated = await deviceStore.upsert(device);
-        if (mounted) {
-          setState(() {
-            savedComputers = updated;
-            _online[device.id] = true;
-            _activeDeviceId = device.id;
-          });
+        // For an already-saved, certificate-verified computer, show the
+        // remote immediately. Secure-storage writes and layout restore can
+        // finish asynchronously, without holding up one-tap launching.
+        if (existingId != null && existing != null) {
+          if (mounted) {
+            setState(() {
+              _online[device.id] = true;
+            });
+          }
+          unawaited(() async {
+            try {
+              final updated = await deviceStore.upsert(device);
+              if (mounted) setState(() => savedComputers = updated);
+            } catch (_) {
+              // Saved pairing remains available even if its display metadata
+              // could not be refreshed in secure storage.
+            }
+          }());
+        } else {
+          final updated = await deviceStore.upsert(device);
+          if (mounted) {
+            setState(() {
+              savedComputers = updated;
+              _online[device.id] = true;
+            });
+          }
         }
         unawaited(_loadLayoutForHost(host.text.trim()));
         // Refresh this OS's agent-only feed after the authenticated
@@ -2725,29 +2733,11 @@ class _RemoteScreenState extends State<RemoteScreen>
                         unawaited(_showLandscapeControls());
                       },
                       icon: const Icon(Icons.keyboard_outlined)),
-                    PopupMenuButton<String>(
-                      tooltip: 'Computer options',
-                      onSelected: (selection) {
-                        _hideImmersiveDock();
-                        if (selection == 'switch' ||
-                            selection == 'disconnect') {
-                          _stopScreen();
-                          agent.disconnect();
-                          setState(() {
-                            _connectionLost = false;
-                            status = selection == 'switch'
-                                ? 'Select a device to connect.'
-                                : 'Disconnected';
-                          });
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'switch',
-                            child: Text('Switch computer')),
-                        PopupMenuItem(value: 'disconnect',
-                            child: Text('Disconnect')),
-                      ],
-                      icon: const Icon(Icons.more_horiz),
+                    IconButton(
+                      key: const ValueKey('immersive-back-to-devices'),
+                      tooltip: 'Back to My Devices',
+                      onPressed: _backToMyDevices,
+                      icon: const Icon(Icons.arrow_back),
                     ),
                   ]),
                 ),
@@ -2795,6 +2785,18 @@ class _RemoteScreenState extends State<RemoteScreen>
     },
   );
 
+  void _backToMyDevices() {
+    _stopScreen();
+    agent.disconnect();
+    setState(() {
+      _connectionLost = false;
+      _agentInputDenied = false;
+      _connectionTechnical = null;
+      status = 'Select a saved device to connect.';
+    });
+    unawaited(_refreshHeartbeats());
+  }
+
   Widget _connectedControls() {
     final colors = Theme.of(context).colorScheme;
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -2806,20 +2808,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         Expanded(child: Text(discoveredName ?? host.text.trim(),
             maxLines: 1, overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium)),
-        IconButton(
-          tooltip: 'Switch computer',
-          onPressed: () {
-            _stopScreen();
-            agent.disconnect();
-            setState(() {
-              _connectionLost = false;
-              _agentInputDenied = false;
-              _connectionTechnical = null;
-              status = 'Select a device to connect.';
-            });
-          },
-          icon: const Icon(Icons.swap_horiz, size: 20),
-        ),
+
       ]),
       if (_connectionLost) _connectionBanner(),
       if (_agentInputDenied && !_connectionLost)
@@ -2923,22 +2912,25 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   @override
   Widget build(BuildContext context) {
-    final connected = agent.configured;
+    // Keep the dashboard visible until a tapped saved device has completed
+    // TLS pin verification and authenticated its control session.
+    final connected = agent.configured && _connectingDeviceId == null;
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       key: _scaffoldKey,
       drawer: appDrawer(),
       appBar: connected && landscape ? null : AppBar(
         leading: IconButton(
-          tooltip: 'Open navigation',
-          icon: const Icon(Icons.menu),
-          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+          key: ValueKey(connected ? 'back-to-devices' : 'open-navigation'),
+          tooltip: connected ? 'Back to My Devices' : 'Open navigation',
+          icon: Icon(connected ? Icons.arrow_back : Icons.menu),
+          onPressed: connected
+              ? _backToMyDevices
+              : () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        title: const Text('TapTether'), actions: [
-        IconButton(tooltip: 'Disconnect', onPressed: connected ? () {
-          _stopScreen(); agent.disconnect(); setState(() => status = 'Disconnected');
-        } : null, icon: const Icon(Icons.link_off)),
-      ]),
+        title: Text(connected ? (discoveredName ?? 'Remote') : 'TapTether',
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
       body: connected && landscape
           ? SafeArea(child: _landscapeImmersive())
           : SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
