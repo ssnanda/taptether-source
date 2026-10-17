@@ -411,9 +411,15 @@ class _RemoteScreenState extends State<RemoteScreen>
   Timer? _heartbeatTimer;
   DetectedLanRange? _wifiRange;
   String? _detectedLocation;
-  String _locationFilter = 'automatic';
-  bool _showOffline = false;
+  // Saved devices appear immediately; the user can filter by location or hide offline.
+  String _locationFilter = 'all';
+  bool _showOffline = true;
   bool _checkingHeartbeat = false;
+  int _heartbeatGeneration = 0;
+  String? _connectingDeviceId;
+  Future<PhoneIdentity>? _cachedPhoneIdentity;
+  Future<PhoneIdentity> _phoneIdentity() =>
+      _cachedPhoneIdentity ??= PhoneIdentity.loadOrCreate();
   bool _scanningToReconcile = false;
   final Set<String> _scanVerifiedDeviceIds = {};
   final ScanReport _discoveryReport = ScanReport();
@@ -631,6 +637,9 @@ class _RemoteScreenState extends State<RemoteScreen>
         _detectedLocation = label;
       });
       if (changed && savedComputers.isNotEmpty) {
+        // Invalidate probes started on the previous Wi-Fi before refreshing.
+        _heartbeatGeneration++;
+        _checkingHeartbeat = false;
         unawaited(_refreshHeartbeats());
       }
     }
@@ -652,132 +661,42 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
-  Future<void> _refreshHeartbeats({bool forceRecovery = false}) async {
+  /// My Devices is a saved-pairings dashboard, never a network scanner.
+  /// Heartbeats contact ONLY the persisted hosts using the saved certificate
+  /// fingerprint and authenticated phone identity. DHCP address discovery
+  /// remains an explicit user action under Discover / Scan IPs.
+  Future<void> _refreshHeartbeats() async {
     if (_checkingHeartbeat || _scanningToReconcile ||
-        savedComputers.isEmpty) {
-      return;
-    }
+        savedComputers.isEmpty) return;
     _checkingHeartbeat = true;
+    final generation = ++_heartbeatGeneration;
     if (mounted) setState(() {});
     try {
       PhoneIdentity? phone;
       try {
-        if (savedComputers.any((d) => d.deviceId.isNotEmpty)) {
-          phone = await PhoneIdentity.loadOrCreate();
+        if (savedComputers.any((device) => device.deviceId.isNotEmpty)) {
+          phone = await _phoneIdentity();
         }
       } catch (_) {}
-      final snapshot = savedComputers.toList();
-      final missing = <SavedComputer>[];
-      for (var start = 0; start < snapshot.length; start += 4) {
-        final chunk = snapshot.skip(start).take(4).toList();
-        final values = await Future.wait(
-          chunk.map((d) => _pingSavedDevice(d, phone)),
-        );
-        if (!mounted) break;
-        setState(() {
-          for (var i = 0; i < chunk.length; i++) {
-            _online[chunk[i].id] = values[i];
-            if (!values[i]) missing.add(chunk[i]);
-          }
-        });
-      }
-
-      final wifi = _wifiRange ?? await detectLanRange();
-      if (wifi != null && missing.isNotEmpty && mounted) {
-        final thisNetwork = wifi.cidr;
-        final now = DateTime.now();
-        final eligibleForTcp = forceRecovery ||
-            _lastTcpRecoveryNetwork != thisNetwork ||
-            _lastTcpRecoveryAt == null ||
-            now.difference(_lastTcpRecoveryAt!) >
-                const Duration(minutes: 4);
-        List<String>? tcpHints;
-        List<DiscoveredDevice> replies = [];
-        try {
-          replies = await findNearbyDevices(
-            scanPrefixes: wifi.scanPrefixes.take(8).toList(),
-            duration: const Duration(milliseconds: 1400),
-          );
-        } catch (_) {}
-        for (final device in missing) {
-          if (!mounted) break;
-          final candidates = recoveryCandidates(device, wifi, replies)
-              .where((ip) => ip != device.host).toList();
-          // Bonjour addresses and UDP announcements are untrusted hints.
-          final label = device.name.trim().replaceFirst(
-              RegExp(r'\.local\.?$', caseSensitive: false), '');
-          if (RegExp(r'^[A-Za-z0-9][A-Za-z0-9-]{0,62}$')
-              .hasMatch(label)) {
-            try {
-              final addresses = await InternetAddress.lookup('$label.local',
-                  type: InternetAddressType.IPv4)
-                  .timeout(const Duration(milliseconds: 1250));
-              for (final address in addresses) {
-                if (lanRangeContains(wifi, address.address) &&
-                    !candidates.contains(address.address) &&
-                    address.address != device.host) {
-                  candidates.insert(0, address.address);
-                }
-              }
-            } catch (_) {}
-          }
-          String? verified;
-          for (var index = 0; index < candidates.length; index += 4) {
-            final batch = candidates.skip(index).take(4).toList();
-            final result = await Future.wait(batch.map((ip) =>
-                _pingSavedDevice(device, phone, atHost: ip)));
-            for (var i = 0; i < batch.length; i++) {
-              if (result[i]) { verified = batch[i]; break; }
-            }
-            if (verified != null) break;
-          }
-          // UDP and Bonjour can be blocked by local-network policy. Probe
-          // only TCP 48321 on this Wi-Fi CIDR, at most once per four minutes
-          // unless the user explicitly taps Refresh. An open port remains an
-          // untrusted candidate until the saved TLS pin AND authenticated
-          // phone pairing succeed.
-          if (verified == null && eligibleForTcp) {
-            if (tcpHints == null) {
-              _lastTcpRecoveryNetwork = thisNetwork;
-              _lastTcpRecoveryAt = now;
-              tcpHints = await probeAgentControlPorts(wifi);
-            }
-            final tried = candidates.toSet();
-            final extra = tcpHints.where((ip) =>
-                ip != device.host && !tried.contains(ip)).toList();
-            for (var index = 0; index < extra.length; index += 4) {
-              final batch = extra.skip(index).take(4).toList();
-              final results = await Future.wait(batch.map((ip) =>
-                  _pingSavedDevice(device, phone, atHost: ip)));
-              for (var i = 0; i < batch.length; i++) {
-                if (results[i]) {
-                  verified = batch[i];
-                  break;
-                }
-              }
-              if (verified != null) break;
-            }
-          }
-          if (verified == null || !mounted) continue;
-          // Reuse the previously paired computer, never create an extra row.
-          final moved = movedDevice(device, verified,
-              currentLocation: _detectedLocation);
-          try {
-            final saved = await deviceStore.upsert(moved);
-            if (!mounted) break;
-            setState(() {
-              savedComputers = saved;
-              _online[moved.id] = true;
-            });
-            if (_activeDeviceId == moved.id && agent.configured) {
-              unawaited(connectSaved(moved));
-            }
-          } catch (_) {}
-        }
-      }
+      final savedSnapshot = savedComputers.toList();
+      // Start every saved host immediately instead of waiting for discovery
+      // broadcasts, subnet probes, or a preceding batch to time out.
+      await Future.wait(savedSnapshot.map((device) async {
+        final reachable = await _pingSavedDevice(device, phone);
+        if (!mounted || generation != _heartbeatGeneration) return;
+        // Device may have been renamed/repaired while this ping was in flight.
+        final stillSaved = savedComputers.any(
+          (current) => current.id == device.id &&
+              current.host == device.host &&
+              current.fingerprint == device.fingerprint);
+        if (!stillSaved) return;
+        setState(() => _online[device.id] = reachable);
+      }));
     } finally {
-      _checkingHeartbeat = false;
-      if (mounted) setState(() {});
+      if (generation == _heartbeatGeneration) {
+        _checkingHeartbeat = false;
+        if (mounted) setState(() {});
+      }
     }
   }
 
@@ -1450,7 +1369,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           IconButton(
             tooltip: 'Check online computers',
             onPressed: _checkingHeartbeat ? null : () =>
-                _refreshHeartbeats(forceRecovery: true),
+                _refreshHeartbeats(),
             icon: const Icon(Icons.refresh),
           ),
         ]),
