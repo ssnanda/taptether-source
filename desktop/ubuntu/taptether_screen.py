@@ -6,7 +6,6 @@ the latest JPEG through a private same-UID Unix socket; no frames are written
 to disk or sent to an external server. Ubuntu GNOME Wayland uses the standard
 ScreenCast portal + PipeWire; X11 uses GStreamer ximagesrc.
 """
-import io
 import os
 from pathlib import Path
 import signal
@@ -22,11 +21,9 @@ from urllib.parse import urlparse
 try:
     import gi
     gi.require_version("Gst", "1.0")
-    gi.require_version("GstVideo", "1.0")
-    from gi.repository import Gio, GLib, Gst, GstVideo
-    from PIL import Image
+    from gi.repository import Gio, GLib, Gst
 except (ImportError, ValueError) as exc:
-    sys.exit("TapTether screen: missing GStreamer/PipeWire/Pillow packages: " + str(exc))
+    sys.exit("TapTether screen: missing GStreamer or PyGObject packages: " + str(exc))
 
 MAX_W, MAX_H = 1280, 720
 MAX_JPEG = 2 << 20
@@ -54,35 +51,40 @@ class ScreenService:
         self.mainloop = GLib.MainLoop()
 
     def save_frame(self, sample):
+        """Accept only already-compressed, bounded JPEG buffers.
+
+        The old path mapped RGB GstVideo buffers, passed their native stride
+        to Pillow and resized/encoded them in a GStreamer streaming thread.
+        That mixed native-memory path is suspect after Ubuntu reported
+        malloc(): invalid size (unsorted). Instead the GStreamer pipeline
+        itself scales and JPEG-encodes; Python only copies the finished JPEG.
+        """
         try:
+            if sample is None:
+                raise ValueError("JPEG sample is unavailable")
             caps = sample.get_caps()
-            info = GstVideo.VideoInfo()
-            if not info.from_caps(caps):
-                return Gst.FlowReturn.OK
-            width, height = int(info.width), int(info.height)
-            if not 0 < width <= 16384 or not 0 < height <= 16384:
-                return Gst.FlowReturn.OK
+            if caps is None or caps.get_size() != 1:
+                raise ValueError("JPEG caps missing")
+            structure = caps.get_structure(0)
+            if structure.get_name() != "image/jpeg":
+                raise ValueError("Expected encoded JPEG screen frame")
             buffer = sample.get_buffer()
-            ok, mapped = buffer.map(Gst.MapFlags.READ)
-            if not ok:
-                return Gst.FlowReturn.OK
-            try:
-                picture = Image.frombytes("RGB", (width, height),
-                                          bytes(mapped.data), "raw", "RGB",
-                                          info.stride[0])
-                picture.thumbnail((MAX_W, MAX_H), getattr(Image, "Resampling", Image).BILINEAR)
-                output = io.BytesIO()
-                picture.save(output, "JPEG", quality=65)
-            finally:
-                buffer.unmap(mapped)
-            jpeg = output.getvalue()
-            if len(jpeg) > MAX_JPEG:
-                return Gst.FlowReturn.OK
+            if buffer is None:
+                raise ValueError("JPEG buffer is missing")
+            size = buffer.get_size()
+            if size < 4 or size > MAX_JPEG:
+                raise ValueError("JPEG frame size outside safe bounds")
+            # extract_dup copies only the encoded JPEG payload; no Gst.MapInfo,
+            # manually supplied row stride or Pillow C decoder is involved.
+            jpeg = buffer.extract_dup(0, size)
+            if (len(jpeg) != size or jpeg[:2] != b"\\xff\\xd8"
+                    or jpeg[-2:] != b"\\xff\\xd9"):
+                raise ValueError("Invalid JPEG frame boundaries")
             with self.lock:
-                self.frame = (picture.width, picture.height, jpeg, time.monotonic())
+                self.frame = (MAX_W, MAX_H, jpeg, time.monotonic())
                 self.error = ""
         except Exception as exc:
-            message = "Ubuntu video frame conversion failed: " + str(exc)
+            message = "Ubuntu encoded screen frame rejected: " + str(exc)
             with self.lock:
                 changed = self.error != message
                 self.error = message
@@ -191,10 +193,16 @@ class ScreenService:
                 source = "ximagesrc use-damage=false show-pointer=true"
             else:
                 source = self.launch_portal()
+            # All raw pixel conversion, scaling and JPEG encoding must
+            # happen inside GStreamer. The Python callback handles encoded
+            # bytes only. Add borders when needed rather than stretch the
+            # screen; this also bounds the dimensions sent over the socket.
             pipeline = Gst.parse_launch(
                 source + " ! queue leaky=downstream max-size-buffers=1 "
-                "! videorate ! video/x-raw,framerate=12/1 "
-                "! videoconvert ! video/x-raw,format=RGB "
+                "! videorate ! video/x-raw,framerate=10/1 "
+                "! videoconvert ! videoscale add-borders=true "
+                "! video/x-raw,width=1280,height=720,format=I420 "
+                "! jpegenc quality=65 "
                 "! appsink name=screen sync=false emit-signals=true "
                 "max-buffers=1 drop=true")
             sink = pipeline.get_by_name("screen")
