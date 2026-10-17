@@ -47,6 +47,7 @@ class ScreenService:
         self.last_request = 0.0
         self.launching = False
         self.pipeline = None
+        self.capture_paused = False
         self.session = None
         self.bus = None
         self.fd = None
@@ -81,8 +82,12 @@ class ScreenService:
                 self.frame = (picture.width, picture.height, jpeg, time.monotonic())
                 self.error = ""
         except Exception as exc:
+            message = "Ubuntu video frame conversion failed: " + str(exc)
             with self.lock:
-                self.error = "Ubuntu video frame conversion failed: " + str(exc)
+                changed = self.error != message
+                self.error = message
+            if changed:
+                self.log_error(message)
         return Gst.FlowReturn.OK
 
     def portal_request(self, method, arguments):
@@ -201,10 +206,12 @@ class ScreenService:
             pipeline.set_state(Gst.State.PLAYING)
             with self.lock:
                 self.pipeline = pipeline
+                self.capture_paused = False
                 self.error = ""
         except Exception as exc:
             with self.lock:
                 self.error = str(exc)[:180]
+            self.log_error("ScreenCast startup failed: " + str(exc))
             self.close_stream()
         finally:
             with self.lock:
@@ -216,11 +223,13 @@ class ScreenService:
         with self.lock:
             self.error = "Ubuntu screen stream stopped: " + detail[:160]
             self.frame = None
+        self.log_error(self.error)
         self.close_stream()
 
     def close_stream(self):
         pipeline = self.pipeline
         self.pipeline = None
+        self.capture_paused = False
         if pipeline is not None:
             pipeline.set_state(Gst.State.NULL)
         if self.session and self.bus:
@@ -235,12 +244,33 @@ class ScreenService:
             os.close(self.fd)
             self.fd = None
 
+    def resume_pipeline_once(self, pipeline):
+        # GLib.idle_add runs again whenever a callback returns truthy.
+        # Gst.StateChangeReturn.SUCCESS / ASYNC / NO_PREROLL are truthy!
+        # Returning Gst's value directly causes a permanent busy idle callback
+        # on every /api/live frame, starving the portal and screen pipeline.
+        if pipeline is self.pipeline:
+            result = pipeline.set_state(Gst.State.PLAYING)
+            if result == Gst.StateChangeReturn.FAILURE:
+                self.log_error("Ubuntu screen stream could not resume")
+        return False
+
+    def log_error(self, message):
+        # Only diagnostic status. Never log pixels, portal tokens, pairing
+        # secrets or any content from the remote screen.
+        print("TapTether screen: " + str(message)[:240],
+              file=sys.stderr, flush=True)
+
     def check_idle(self):
         with self.lock:
             inactive = time.monotonic() - self.last_request > 35
             pipeline = self.pipeline
-        if pipeline is not None and inactive:
-            # Portal consent remains; no screen pixels are captured at rest.
+            should_pause = pipeline is not None and inactive and not self.capture_paused
+            if should_pause:
+                self.capture_paused = True
+        if should_pause:
+            # Expected for Snapshot/idle: stop recording until next request.
+            # Live generates frequent requests, so it must remain running.
             pipeline.set_state(Gst.State.PAUSED)
         return True
 
@@ -314,8 +344,9 @@ class ScreenService:
                 if pipeline is None and not launching:
                     self.launching = True
                     GLib.idle_add(self.start)
-                elif pipeline is not None:
-                    GLib.idle_add(pipeline.set_state, Gst.State.PLAYING)
+                elif pipeline is not None and self.capture_paused:
+                    self.capture_paused = False
+                    GLib.idle_add(self.resume_pipeline_once, pipeline)
             # Keep the agent's 8-second HTTP write timeout and phone's
             # 7-second request timeout below their limits. Permission dialogs
             # can remain open; the user can retry after approving them.
