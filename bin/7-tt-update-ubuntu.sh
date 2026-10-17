@@ -39,8 +39,8 @@ install -D -m 0644 "$bundle/TapTether-icon.png" "$HOME/.local/share/icons/hicolo
 # graphical screen helper immediately when a desktop session is available.
 if [[ -s "$bundle/taptether_screen.py" ]]; then
   sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    python3-gi python3-pil gir1.2-gstreamer-1.0 \
-    gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \
+    python3-gi gir1.2-gstreamer-1.0 \
+    gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
     gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \
     echo 'Screen dependencies may need manual installation.' >&2
   bash "$bundle/10-tt-ubuntu-screen-session.sh" install
