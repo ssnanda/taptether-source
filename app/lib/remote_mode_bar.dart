@@ -28,13 +28,12 @@ class RemoteModeBar extends StatelessWidget {
       String label) {
     final scheme = Theme.of(context).colorScheme;
     final selected = primaryMode == mode;
-    return Expanded(child: Semantics(
+    return Expanded(flex: 4, child: Semantics(
       selected: selected,
       button: true,
       label: label,
       child: Material(
-        color: selected ? scheme.primaryContainer :
-            scheme.surfaceContainerLow,
+        color: selected ? scheme.primaryContainer : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           key: ValueKey('primary-mode-$mode'),
@@ -62,56 +61,82 @@ class RemoteModeBar extends StatelessWidget {
     ));
   }
 
+  /// Remote's main touch target and view selector share one connected
+  /// surface. The mode picker is never disabled on Slides or Media: choosing
+  /// Trackpad/Snapshot/Live activates Remote in the parent's callback.
+  Widget _remoteSplitTab(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = primaryMode == 'remote';
+    final foreground = selected
+        ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    return Expanded(flex: 7, child: Material(
+      color: selected ? scheme.primaryContainer : scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(height: 44, child: Row(children: [
+        Expanded(child: Semantics(
+          button: true, selected: selected, label: 'Remote',
+          child: InkWell(
+            key: const ValueKey('primary-mode-remote'),
+            onTap: () => onPrimaryMode('remote'),
+            child: SizedBox(height: 44,
+              child: Row(mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.mouse_outlined, size: 18, color: foreground),
+                  const SizedBox(width: 5),
+                  Flexible(child: Text('Remote', maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: foreground))),
+                ])),
+          ),
+        )),
+        SizedBox(height: 25, child: VerticalDivider(
+          width: 1, thickness: 1,
+          color: foreground.withValues(alpha: 0.3))),
+        PopupMenuButton<String>(
+          key: const ValueKey('screen-view-mode-switcher'),
+          tooltip: 'Remote view: Trackpad, Snapshot, Live',
+          initialValue: visualMode,
+          onSelected: onVisualMode,
+          itemBuilder: (_) => [
+            const PopupMenuItem<String>(
+              value: 'trackpad',
+              child: ListTile(dense: true, contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.mouse_outlined), title: Text('Trackpad'))),
+            PopupMenuItem<String>(
+              value: 'snapshot', enabled: captureAvailable,
+              child: const ListTile(dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.photo_outlined),
+                title: Text('Snapshot'))),
+            PopupMenuItem<String>(
+              value: 'live', enabled: captureAvailable,
+              child: const ListTile(dense: true, contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.live_tv_outlined), title: Text('Live'))),
+          ],
+          child: SizedBox(width: 34, height: 44,
+            child: Row(mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(_visualIcon, size: 17, color: foreground),
+                Icon(Icons.arrow_drop_down, size: 13, color: foreground),
+              ]),
+          ),
+        ),
+      ])),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Row(key: const ValueKey('one-row-remote-navigation'),
       children: [
-        _tab(context, 'remote', Icons.mouse_outlined, 'Remote'),
+        _remoteSplitTab(context),
         const SizedBox(width: 3),
         _tab(context, 'presentation', Icons.slideshow_outlined, 'Slides'),
         const SizedBox(width: 3),
         _tab(context, 'media', Icons.smart_display_outlined, 'Media'),
-        const SizedBox(width: 6),
-        Material(
-          color: primaryMode == 'remote'
-              ? scheme.primaryContainer : scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(12),
-          child: PopupMenuButton<String>(
-            key: const ValueKey('screen-view-mode-switcher'),
-            tooltip: 'Trackpad, Snapshot or Live',
-            enabled: primaryMode == 'remote',
-            initialValue: visualMode,
-            onSelected: onVisualMode,
-            itemBuilder: (_) => [
-              const PopupMenuItem<String>(
-                value: 'trackpad',
-                child: ListTile(dense: true, contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.mouse_outlined), title: Text('Trackpad')),
-              ),
-              PopupMenuItem<String>(
-                value: 'snapshot', enabled: captureAvailable,
-                child: const ListTile(dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.photo_outlined),
-                  title: Text('Snapshot')),
-              ),
-              PopupMenuItem<String>(
-                value: 'live', enabled: captureAvailable,
-                child: const ListTile(dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.live_tv_outlined), title: Text('Live')),
-              ),
-            ],
-            child: SizedBox(width: 52, height: 44,
-              child: Row(mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(_visualIcon, size: 19),
-                  const Icon(Icons.arrow_drop_down, size: 16),
-                ]),
-            ),
-          ),
-        ),
       ],
     );
   }
