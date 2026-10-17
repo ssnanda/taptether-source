@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import uuid
+from urllib.parse import urlparse
 
 try:
     import gi
@@ -233,6 +234,46 @@ class ScreenService:
             pipeline.set_state(Gst.State.PAUSED)
         return True
 
+    def open_media(self, client):
+        # Desktop browser actions are initiated only by the already paired
+        # agent, through the private same-UID socket; never invoke a shell.
+        address = bytearray()
+        while len(address) < 300:
+            data = client.recv(1)
+            if data == b"\\n":
+                break
+            if not data:
+                return
+            address.extend(data)
+        try:
+            uri = address.decode("ascii")
+            parsed = urlparse(uri)
+            if (parsed.scheme != "https" or parsed.username or parsed.password
+                    or parsed.port is not None or parsed.fragment
+                    or parsed.hostname not in ("www.youtube.com", "www.netflix.com")
+                    or len(uri) > 256):
+                raise ValueError("Media destination is not allowed")
+            if parsed.hostname == "www.youtube.com" and parsed.path not in ("", "/", "/results"):
+                raise ValueError("Invalid YouTube path")
+            if parsed.hostname == "www.netflix.com" and parsed.path not in ("", "/", "/search"):
+                raise ValueError("Invalid Netflix path")
+            done = threading.Event()
+            answer = [False]
+            def dispatch():
+                try:
+                    Gio.AppInfo.launch_default_for_uri(uri, None)
+                    answer[0] = True
+                except GLib.Error:
+                    pass
+                done.set()
+                return False
+            GLib.idle_add(dispatch)
+            if not done.wait(timeout=6):
+                raise RuntimeError("Ubuntu graphical browser unavailable")
+            client.sendall(b"Y" if answer[0] else b"N")
+        except (ValueError, UnicodeError, OSError, RuntimeError):
+            client.sendall(b"N")
+
     def respond(self, client):
         try:
             credentials = client.getsockopt(socket.SOL_SOCKET,
@@ -241,7 +282,11 @@ class ScreenService:
             if uid != os.getuid():
                 return
             client.settimeout(9)
-            if client.recv(1) != b"G":
+            request = client.recv(1)
+            if request == b"O":
+                self.open_media(client)
+                return
+            if request != b"G":
                 return  # Capability probe must not request screen permission.
             with self.lock:
                 self.last_request = time.monotonic()
