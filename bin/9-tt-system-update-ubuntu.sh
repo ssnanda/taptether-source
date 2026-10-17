@@ -81,31 +81,24 @@ install -D -o "$owner" -g "$group" -m 0755 \
 install -D -o "$owner" -g "$group" -m 0644 \
   "$bundle/TapTether-icon.png" \
   "$home/.local/share/icons/hicolor/512x512/apps/taptether.png"
-# Carry the new screen helper forward on ordinary user-approved upgrades,
-# without replacing any input or screen permission state.
+# Screen support is installed as the graphical desktop owner, not as root.
+# Preserve the existing socket, consent token, pairing identity and uinput.
 screen="$bundle/taptether_screen.py"
 if [[ -s "$screen" ]]; then
-  autostart="$home/.config/autostart/taptether-screen.desktop"
-  install -d -o "$owner" -g "$group" -m 0755 "$(dirname "$autostart")"
-  cat >"$tmp/taptether-screen.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=TapTether Screen Helper
-Comment=On-demand private screen capture for the logged-in Ubuntu desktop
-Exec=/usr/bin/python3 /usr/share/taptether/taptether_screen.py
-Terminal=false
-X-GNOME-Autostart-enabled=true
-NoDisplay=true
-EOF
-  install -o "$owner" -g "$group" -m 0644 \
-    "$tmp/taptether-screen.desktop" "$autostart"
-  # Installing optional graphics packages is safe only outside dpkg; a failure
-  # must not break the agent's existing keyboard, pairing or input paths.
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     python3-gi python3-pil gir1.2-gstreamer-1.0 \
     gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \
     gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \
     echo 'TapTether screen dependencies need manual installation.' >&2
+  runtime="/run/user/$(id -u "$owner")"
+  if [[ -S "$runtime/bus" ]]; then
+    runuser -u "$owner" -- env HOME="$home" XDG_RUNTIME_DIR="$runtime" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" \
+      bash "$bundle/10-tt-ubuntu-screen-session.sh" install
+  else
+    runuser -u "$owner" -- env HOME="$home" \
+      bash "$bundle/10-tt-ubuntu-screen-session.sh" install
+  fi
 fi
 # Install the refreshed root helper for the next user-approved update.
 install -D -m 0755 "$bundle/9-tt-system-update-ubuntu.sh" \
