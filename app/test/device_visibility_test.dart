@@ -65,4 +65,27 @@ void main() {
       currentNetwork: network, showOffline: false);
     expect(visible.map((d) => d.id), ['here']);
   });
+  test('all saved devices remain visible and online ones lead the list', () {
+    final saved = [
+      host('offline', '192.168.68.80', 'home'),
+      host('checking', '192.168.68.81', 'home'),
+      host('online', '192.168.68.82', 'home'),
+      host('office-offline', '10.0.118.22', 'office'),
+    ];
+    final visible = visibleSavedDevices(saved,
+      online: {'online': true, 'offline': false, 'office-offline': false},
+      locationFilter: 'all', currentLocation: 'home',
+      currentNetwork: rangeFromWifi('192.168.68.25', '255.255.252.0'),
+      showOffline: true);
+    expect(visible.map((device) => device.id),
+      ['online', 'checking', 'offline', 'office-offline']);
+    // The default dashboard does not require a subnet scan to show saved
+    // entries; online means exclusively authenticated saved-host checks.
+    final initial = visibleSavedDevices(saved,
+      online: {}, locationFilter: 'all', currentLocation: null,
+      currentNetwork: null, showOffline: true);
+    expect(initial.map((device) => device.id),
+      ['offline', 'checking', 'online', 'office-offline']);
+  });
+
 }
