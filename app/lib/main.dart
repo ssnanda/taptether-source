@@ -426,6 +426,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   final ScanReport _discoveryReport = ScanReport();
   String? _lastNetworkId;
   final Map<String, bool> _online = {};
+  // Installed versions verified only from authenticated saved-host agent info.
+  final Map<String, String> _savedAgentVersions = {};
   RemoteLayoutSettings _remoteLayout = const RemoteLayoutSettings();
   String? _connectedPlatform;
   bool _connectionLost = false;
@@ -629,7 +631,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (mounted) {
       final changed = _lastNetworkId != identity;
       setState(() {
-        if (changed) _online.clear();
+        if (changed) {
+          _online.clear();
+          _savedAgentVersions.clear();
+        }
         _lastNetworkId = identity;
         _wifiRange = current;
         _detectedLocation = label;
@@ -643,21 +648,30 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
-  Future<bool> _pingSavedDevice(
+  /// Fetch the version on a TLS-pinned, authenticated saved address.
+  /// Never use subnet discovery to decide update badge visibility.
+  Future<({bool online, String? version})> _probeSavedDevice(
       SavedComputer device, PhoneIdentity? phone, {String? atHost}) async {
     final connection = LocalAgent();
     try {
       connection.configure(atHost ?? device.host, device.token, device.fingerprint,
           identity: device.deviceId.isNotEmpty ? phone : null,
           deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
+      final version = await connection.agentVersion()
+          .timeout(const Duration(seconds: 3));
+      if (version != null) return (online: true, version: version);
       await connection.send('ping').timeout(const Duration(seconds: 3));
-      return true;
+      return (online: true, version: null);
     } catch (_) {
-      return false;
+      return (online: false, version: null);
     } finally {
       connection.disconnect();
     }
   }
+
+  Future<bool> _pingSavedDevice(
+      SavedComputer device, PhoneIdentity? phone, {String? atHost}) async =>
+      (await _probeSavedDevice(device, phone, atHost: atHost)).online;
 
   /// My Devices is a saved-pairings dashboard, never a network scanner.
   /// Heartbeats contact ONLY the persisted hosts using the saved certificate
@@ -682,7 +696,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       // Start every saved host immediately instead of waiting for discovery
       // broadcasts, subnet probes, or a preceding batch to time out.
       await Future.wait(savedSnapshot.map((device) async {
-        final reachable = await _pingSavedDevice(device, phone);
+        final probe = await _probeSavedDevice(device, phone);
         if (!mounted || generation != _heartbeatGeneration) return;
         // Device may have been renamed/repaired while this ping was in flight.
         final stillSaved = savedComputers.any(
@@ -690,7 +704,14 @@ class _RemoteScreenState extends State<RemoteScreen>
               current.host == device.host &&
               current.fingerprint == device.fingerprint);
         if (!stillSaved) return;
-        setState(() => _online[device.id] = reachable);
+        setState(() {
+          _online[device.id] = probe.online;
+          if (probe.online && probe.version != null) {
+            _savedAgentVersions[device.id] = probe.version!;
+          } else {
+            _savedAgentVersions.remove(device.id);
+          }
+        });
       }));
     } finally {
       if (generation == _heartbeatGeneration) {
@@ -784,8 +805,23 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> loadComputers() async {
     try {
       final devices = await deviceStore.read();
-      if (mounted) setState(() => savedComputers = devices);
+      if (mounted) {
+        setState(() {
+          savedComputers = devices;
+          final savedIds = devices.map((device) => device.id).toSet();
+          _savedAgentVersions.removeWhere((id, _) => !savedIds.contains(id));
+          _online.removeWhere((id, _) => !savedIds.contains(id));
+        });
+      }
       unawaited(_refreshHeartbeats());
+      // Published metadata is fetched once per saved platform (only GitHub
+      // release metadata, never a LAN discovery or computer-wide scan).
+      for (final platform in devices.map((device) => device.platform).toSet()) {
+        if (platform == 'linux' || platform == 'darwin' ||
+            platform == 'windows') {
+          unawaited(checkForUpdates(agentPlatform: platform));
+        }
+      }
     } catch (_) {
       if (mounted) {
         setState(() =>
@@ -1085,6 +1121,9 @@ class _RemoteScreenState extends State<RemoteScreen>
           identity: phone,
           deviceId: device.deviceId.isEmpty ? null : device.deviceId);
       installedAgentVersion = await inspector.agentVersion();
+      if (mounted && installedAgentVersion != null) {
+        setState(() => _savedAgentVersions[device.id] = installedAgentVersion!);
+      }
     } catch (_) {
       // An unreachable or legacy agent has an unknown version.
     } finally {
@@ -1475,9 +1514,16 @@ class _RemoteScreenState extends State<RemoteScreen>
                 '${device.host} · ${deviceLocations[device.location] ?? 'Other'}',
                 maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                if (device.platform == 'linux' ||
-                    device.platform == 'darwin' ||
-                    device.platform == 'windows')
+                if (_online[device.id] == true &&
+                    (device.platform == 'linux' ||
+                     device.platform == 'darwin' ||
+                     device.platform == 'windows') &&
+                    showSavedAgentUpdate(
+                      online: _online[device.id],
+                      installed: _savedAgentVersions[device.id],
+                      published: _latestAgentByPlatform[device.platform] ??
+                          _latestReleaseVersion,
+                    ))
                   IconButton(
                     tooltip: 'Check agent update',
                     onPressed: () => updateSavedAgent(device),
@@ -1971,6 +2017,9 @@ class _RemoteScreenState extends State<RemoteScreen>
         _agentInputDenied = false;
         _connectionTechnical = null;
         connectedAgentVersion = currentAgent;
+        if (existingId != null && currentAgent != null) {
+          _savedAgentVersions[existingId] = currentAgent;
+        }
         availableAgentVersion = currentAgent != null &&
                 (_latestAgentByPlatform[_connectedPlatform] ??
                     _latestReleaseVersion) != null &&
@@ -2478,8 +2527,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     captureAvailable: agent.screenCaptureSupported,
     onPrimaryMode: (mode) => _setLayout(_changedLayout(
       presenting: mode == 'presentation', mediaMode: mode == 'media')),
-    onVisualMode: (mode) =>
-        _setLayout(_changedLayout(visualMode: mode)),
+    // A selection inside the Remote split-button activates Remote even if
+    // the user is currently on Slides or Media.
+    onVisualMode: (mode) => _setLayout(_changedLayout(
+        presenting: false, mediaMode: false, visualMode: mode)),
   );
 
   Future<void> _searchMedia(MediaService service, String text) async {
