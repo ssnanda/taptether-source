@@ -87,8 +87,14 @@ status_helper() {
     say "graphical-session.target: $(systemctl --user is-active graphical-session.target 2>/dev/null || echo unavailable)"
     say "screen service: $(systemctl --user is-active "$UNIT" 2>/dev/null || echo unavailable)"
     systemctl --user --no-pager status "$UNIT" 2>&1 | tail -n 12 || true
+    say "recent screen-helper journal entries (no frames or tokens):"
+    journalctl --user -u "$UNIT" -n 18 --no-pager -o cat 2>/dev/null | tail -n 18 || true
   else
     say "desktop session bus: unavailable (log into Ubuntu locally)"
+  fi
+  if [[ -r "$HOME/.cache/taptether/screen-helper.log" ]]; then
+    say "recent tray-launched screen errors:"
+    tail -n 12 "$HOME/.cache/taptether/screen-helper.log" || true
   fi
 }
 case "${1:-}" in
