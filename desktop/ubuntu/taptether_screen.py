@@ -240,7 +240,7 @@ class ScreenService:
         address = bytearray()
         while len(address) < 300:
             data = client.recv(1)
-            if data == b"\\n":
+            if data == b"\n":
                 break
             if not data:
                 return
