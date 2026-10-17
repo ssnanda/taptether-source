@@ -1417,16 +1417,13 @@ class _RemoteScreenState extends State<RemoteScreen>
           ),
           const Text('Show offline'),
           const Spacer(),
-          TextButton.icon(
-            onPressed: _wifiRange == null ? null : _labelCurrentNetwork,
-            icon: const Icon(Icons.location_on_outlined, size: 17),
-            label: const Text('Label network'),
+          Text(
+            '${_online.values.where((value) => value).length} online',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600),
           ),
         ]),
-        if (_wifiRange != null)
-          Text('Wi-Fi: ${_wifiRange!.cidr}'
-              '${_detectedLocation == null ? ' · Unassigned' : ' · ${deviceLocations[_detectedLocation]!}'}',
-              style: Theme.of(context).textTheme.bodySmall),
         if (_checkingHeartbeat)
           Text('Checking saved devices…',
             style: Theme.of(context).textTheme.bodySmall),
@@ -1511,6 +1508,16 @@ class _RemoteScreenState extends State<RemoteScreen>
       ),
       if (_showQuickActions) ...[
         const SizedBox(height: 4),
+        if (_wifiRange != null)
+          Row(children: [
+            Expanded(child: Text('Wi-Fi: ${_wifiRange!.cidr}',
+              style: Theme.of(context).textTheme.bodySmall)),
+            TextButton.icon(
+              onPressed: _labelCurrentNetwork,
+              icon: const Icon(Icons.location_on_outlined, size: 16),
+              label: const Text('Label network'),
+            ),
+          ]),
         for (final nearby in nearbyComputers)
           Card(child: ListTile(
             leading: const Icon(Icons.radar),
@@ -2014,11 +2021,15 @@ class _RemoteScreenState extends State<RemoteScreen>
               _activeDeviceId = device.id;
             });
           }
-          unawaited(deviceStore.upsert(device).then((updated) {
-            if (mounted) setState(() => savedComputers = updated);
-          }).catchError((Object _) {
-            // Original pairing is still retained in secure storage.
-          }));
+          unawaited(() async {
+            try {
+              final updated = await deviceStore.upsert(device);
+              if (mounted) setState(() => savedComputers = updated);
+            } catch (_) {
+              // Saved pairing remains available even if its display metadata
+              // could not be refreshed in secure storage.
+            }
+          }());
         } else {
           final updated = await deviceStore.upsert(device);
           if (mounted) {
