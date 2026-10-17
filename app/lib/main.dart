@@ -2022,6 +2022,10 @@ class _RemoteScreenState extends State<RemoteScreen>
           });
         }
         unawaited(_loadLayoutForHost(host.text.trim()));
+        // Refresh this OS's agent-only feed after the authenticated
+        // connection identifies its real platform. Mobile app versions
+        // remain governed by the separate full AltStore release.
+        unawaited(checkForUpdates(agentPlatform: device.platform));
         return true;
       } catch (_) {
         if (mounted) {
