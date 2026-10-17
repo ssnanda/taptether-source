@@ -58,7 +58,17 @@ install -D -m 0700 "$bundle/4-ubuntu-desktop-setup.sh" "$HOME/.local/bin/tapteth
 install -D -m 0700 "$bundle/7-tt-update-ubuntu.sh" "$HOME/.local/bin/taptether-agent-update"
 install -D -m 0755 "$bundle/taptether_tray.py" "$HOME/.local/share/taptether/taptether_tray.py"
 install -D -m 0644 "$bundle/TapTether-icon.png" "$HOME/.local/share/icons/hicolor/512x512/apps/taptether.png"
+# Upgrading the .deb is not enough: register/start the logged-in user's
+# graphical screen helper immediately when a desktop session is available.
+if [[ -s "$bundle/taptether_screen.py" ]]; then
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3-gi python3-pil gir1.2-gstreamer-1.0 \
+    gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-good \
+    gstreamer1.0-pipewire xdg-desktop-portal >/dev/null 2>&1 || \
+    echo 'Screen dependencies may need manual installation.' >&2
+  bash "$bundle/10-tt-ubuntu-screen-session.sh" install
+fi
 sudo systemctl restart taptether-agent.service
 sudo systemctl is-active --quiet taptether-agent.service
 echo "Upgraded and restarted: $latest. Existing pairing identity was preserved."
-echo "Updated tray resources will load at the next desktop login."
+echo "Updated screen helper is installed. Reconnect your phone; first Wayland capture needs local approval."
