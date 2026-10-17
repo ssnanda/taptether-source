@@ -8,6 +8,7 @@ import argparse
 import fcntl
 import signal
 import os
+import socket
 import threading
 import time
 from pathlib import Path
@@ -33,6 +34,98 @@ for module_name in ("AyatanaAppIndicator3", "AppIndicator3"):
 CTL = Path.home() / ".local" / "bin" / "taptetherctl"
 ICON = Path.home() / ".local" / "share" / "icons" / "hicolor" / "512x512" / "apps" / "taptether.png"
 SHUTDOWN_DISABLED = Path.home() / ".config" / "taptether" / "remote-shutdown-disabled"
+SCREEN_HELPER = Path("/usr/share/taptether/taptether_screen.py")
+SCREEN_SOCKET = Path("/run/user") / str(os.getuid()) / "taptether-screen.sock"
+
+
+
+def screen_request(command):
+    """Private, owner-only Unix socket; never starts capture on status probe."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(0.4)
+            connection.connect(str(SCREEN_SOCKET))
+            connection.sendall(command)
+            return connection.recv(1) == b"Y"
+    except (OSError, TimeoutError):
+        return False
+
+
+def screen_running():
+    return screen_request(b"P")
+
+
+def start_screen_helper():
+    if screen_running():
+        return "Screen Helper is already running."
+    if not SCREEN_HELPER.is_file():
+        raise RuntimeError("Screen Helper is not installed. Run Install / Repair agent.")
+    # Launch directly from the tray (GNOME/X11 GUI session), preserving its
+    # Wayland DISPLAY and user D-Bus environment. No root or sudo involved.
+    cache = Path.home() / ".cache" / "taptether"
+    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+    logfile = cache / "screen-helper.log"
+    with logfile.open("wb") as output:
+        logfile.chmod(0o600)
+        subprocess.Popen(["/usr/bin/python3", str(SCREEN_HELPER)],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=output, start_new_session=True, close_fds=True)
+    for _ in range(30):
+        if screen_running():
+            return "Screen Helper started. Screen sharing is requested only when your phone opens Snapshot or Live."
+        time.sleep(0.1)
+    raise RuntimeError(
+        "Screen Helper did not start. Open Screen Helper → Diagnostics to check "
+        "dependencies and the graphical session. See ~/.cache/taptether/screen-helper.log."
+    )
+
+
+def stop_screen_helper():
+    if not screen_running():
+        return "Screen Helper is already stopped."
+    if not screen_request(b"Q"):
+        raise RuntimeError("Could not stop Screen Helper. Check its diagnostics.")
+    for _ in range(30):
+        if not screen_running():
+            return "Screen Helper stopped. Snapshot and Live are unavailable until restarted."
+        time.sleep(0.1)
+    raise RuntimeError("Screen Helper did not stop. Check its diagnostics.")
+
+
+def manage_screen_helper(action, update_menu=None):
+    """Run control off the GTK UI thread; keep existing 5-item tray layout."""
+    if update_menu is not None:
+        update_menu.set_sensitive(False)
+
+    def finished(ok, detail):
+        if update_menu is not None:
+            update_menu.set_sensitive(True)
+        message("Ubuntu Screen Helper", detail, error=not ok)
+        return False
+
+    def worker():
+        try:
+            if action == "start":
+                detail = start_screen_helper()
+            elif action == "stop":
+                detail = stop_screen_helper()
+            elif action == "restart":
+                stop_screen_helper()
+                detail = start_screen_helper()
+            elif action == "status":
+                proc = subprocess.run(
+                    [str(CTL), "screen-status"], capture_output=True,
+                    text=True, timeout=12, check=False)
+                detail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+                if proc.returncode != 0:
+                    raise RuntimeError(detail or "Screen Helper diagnostics failed.")
+            else:
+                raise RuntimeError("Unsupported Screen Helper action")
+            GLib.idle_add(finished, True, detail[:2000])
+        except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+            GLib.idle_add(finished, False, str(exc)[:1800])
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def agent_version():
@@ -150,6 +243,14 @@ def update_from_tray(item):
         item.set_label("Check for Updates…")
         message("TapTether update complete" if ok else "Update needs attention",
                 details, error=not ok)
+        if ok:
+            # The installed tray script was updated in place. Relaunch this
+            # same process so new menu actions appear without logging out.
+            try:
+                os.execv("/usr/bin/python3",
+                         ["/usr/bin/python3", str(Path(__file__).resolve())])
+            except OSError:
+                message("Tray refresh", "Updated menu will appear at next login.")
         return False
 
     def worker():
@@ -262,6 +363,23 @@ def menu(version):
                   lambda _: message("Install / Repair TapTether",
                                     "Run ~/.local/bin/taptetherctl install in a trusted terminal. "
                                     "Administrator authorization may be required."))
+
+    # Mirror macOS privacy-helper visibility without adding a sixth top-level
+    # item. These controls manage only the owner's desktop screen source.
+    screen_item = Gtk.MenuItem(label="Screen Helper")
+    screen_menu = Gtk.Menu()
+    screen_state = Gtk.MenuItem(label="Status: Checking…")
+    screen_state.set_sensitive(False)
+    screen_menu.append(screen_state)
+    screen_toggle = add_menu_item(screen_menu, "Start Screen Helper",
+                                  lambda item: manage_screen_helper(
+                                      "stop" if screen_running() else "start", item))
+    add_menu_item(screen_menu, "Restart Screen Helper",
+                  lambda item: manage_screen_helper("restart", item))
+    add_menu_item(screen_menu, "Diagnostics…",
+                  lambda item: manage_screen_helper("status", item))
+    screen_item.set_submenu(screen_menu)
+    settings.append(screen_item)
     shutdown = Gtk.CheckMenuItem(label="Allow remote shutdown")
     shutdown.set_active(not SHUTDOWN_DISABLED.exists())
 
@@ -298,6 +416,9 @@ def menu(version):
         active = running()
         status.set_label("Status: " + ("Running" if active else "Stopped"))
         start_stop.set_label("Stop TapTether" if active else "Start TapTether")
+        helper_active = screen_running()
+        screen_state.set_label("Status: " + ("Running" if helper_active else "Stopped"))
+        screen_toggle.set_label("Stop Screen Helper" if helper_active else "Start Screen Helper")
         return True
 
     refresh()
