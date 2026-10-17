@@ -56,7 +56,7 @@ func openMediaBrowser(address string) error {
     case "windows":
         cmd = exec.CommandContext(ctx, "rundll32.exe", "url.dll,FileProtocolHandler", address)
     case "linux":
-        cmd = exec.CommandContext(ctx, "xdg-open", address)
+        return linuxDesktopBrowser(address)
     default:
         return errors.New("media browser control is not supported on this operating system")
     }
