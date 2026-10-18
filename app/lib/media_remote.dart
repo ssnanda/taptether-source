@@ -182,7 +182,7 @@ class _MediaRemoteState extends State<MediaRemote> {
   Widget _button(String label, IconData icon, String key, {Key? buttonKey}) {
     return OutlinedButton.icon(
       key: buttonKey,
-      onPressed: widget.enabled ? () => widget.onKey(key) : null,
+      onPressed: widget.enabled && !_searching ? () => widget.onKey(key) : null,
       icon: Icon(icon),
       label: Text(label),
     );
@@ -255,15 +255,19 @@ class _MediaRemoteState extends State<MediaRemote> {
               label: Text(widget.service == MediaService.netflix
                   ? 'Exit video / Browse' : 'Back to YouTube'),
             ),
-          _button('Rewind', Icons.replay_10, 'Left'),
+          _button('Rewind 10s', Icons.replay_10,
+              widget.service == MediaService.youtube ? 'j' : 'Left'),
           _button('Play / Pause', Icons.play_arrow, 'space',
               buttonKey: const ValueKey('media-play-pause')),
-          _button('Skip ahead', Icons.forward_10, 'Right'),
+          _button('Forward 10s', Icons.forward_10,
+              widget.service == MediaService.youtube ? 'l' : 'Right'),
           _button('Full screen', Icons.fullscreen, 'f'),
           _button('Exit full screen', Icons.fullscreen_exit, 'Escape'),
           if (widget.service == MediaService.youtube) ...[
             _button('Next video', Icons.skip_next, 'shift+n'),
             _button('Captions', Icons.closed_caption, 'c'),
+          ] else ...[
+            _button('Skip intro', Icons.skip_next, 's'),
           ],
         ],
       ),
