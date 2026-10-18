@@ -252,7 +252,8 @@ class _MediaRemoteState extends State<MediaRemote> {
               key: const ValueKey('media-exit-video'),
               onPressed: widget.enabled && !_searching ? _goBack : null,
               icon: const Icon(Icons.arrow_back),
-              label: const Text('Back to browsing'),
+              label: Text(widget.service == MediaService.netflix
+                  ? 'Exit video / Browse' : 'Back to YouTube'),
             ),
           _button('Rewind', Icons.replay_10, 'Left'),
           _button('Play / Pause', Icons.play_arrow, 'space',
