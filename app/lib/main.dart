@@ -343,6 +343,10 @@ class LocalAgent {
           ? 'Screen capture unavailable (HTTP ${response.statusCode}).'
           : explanation.trim());
     }
+    if (detail && response.headers.value('x-capture-detail') != 'native') {
+      await response.drain<void>();
+      throw StateError('Computer agent needs an update for high-detail Snapshot.');
+    }
     final width = int.tryParse(response.headers.value('x-screen-width') ?? '');
     final height = int.tryParse(response.headers.value('x-screen-height') ?? '');
     if (width == null || height == null || width < 1 || height < 1 ||
