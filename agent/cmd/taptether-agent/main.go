@@ -164,7 +164,7 @@ func main() {
             "version": version, "shutdownEnabled": power.Enabled(),
             "hostname": hostname, "platform": runtime.GOOS,
             "macAddress": localHardwareAddress(),
-            "screenCaptureSupported": screencap.Available(),
+            "screenCaptureSupported": screencap.Available() && screencap.PolicyAllowed(),
         })
     })
     var mu sync.Mutex
