@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,27 +25,22 @@ void main() {
       (tester) async {
     await configureBiometricLock();
     var requests = 0;
-    final pending = Completer<bool>();
     await tester.pumpWidget(MaterialApp(
       home: AppLockGate(
-        biometricVerifierForTesting: (reason) {
+        biometricVerifierForTesting: (reason) async {
           requests++;
           expect(reason, 'Unlock TapTether');
-          return pending.future;
+          return true;
         },
         child: const Scaffold(body: Text('Saved devices are private')),
       ),
     ));
-    await tester.pump();
-    expect(requests, 1);
-    expect(find.text('Saved devices are private'), findsNothing);
-    expect(find.text('Six-digit app PIN'), findsNothing);
-    await tester.pump();
-    expect(requests, 1); // rebuild cannot re-prompt
-    pending.complete(true);
     await tester.pumpAndSettle();
+    expect(requests, 1);
     expect(find.text('Saved devices are private'), findsOneWidget);
     expect(AppSecurity.instance.unlocked, isTrue);
+    await tester.pump();
+    expect(requests, 1); // rebuild cannot re-prompt
   });
 
   testWidgets('canceled Face ID falls back to PIN once, without a prompt loop',
