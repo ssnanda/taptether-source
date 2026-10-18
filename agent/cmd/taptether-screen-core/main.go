@@ -109,18 +109,20 @@ func serveCapture(conn net.Conn, token string) {
   d := json.NewDecoder(strings.NewReader(string(line)))
   d.DisallowUnknownFields()
   if d.Decode(&req) != nil || d.Decode(new(any)) != io.EOF ||
-      req.Action != "capture" || len(req.Token) != len(token) ||
+      (req.Action != "capture" && req.Action != "capture-detail") || len(req.Token) != len(token) ||
       subtle.ConstantTimeCompare([]byte(req.Token), []byte(token)) != 1 {
     sendError(conn, "capture authorization rejected")
     return
   }
   captureMutex.Lock()
-  frame, err := nativeCapture()
+  frame, err := nativeCapture(req.Action == "capture-detail")
   captureMutex.Unlock()
   if err != nil { sendError(conn, err.Error()); return }
-  if frame.Width < 1 || frame.Width > 1280 ||
-      frame.Height < 1 || frame.Height > 720 ||
-      len(frame.JPEG) == 0 || len(frame.JPEG) > 2<<20 {
+  maxW, maxH := 1280, 720
+  if req.Action == "capture-detail" { maxW, maxH = 1920, 1080 }
+  if frame.Width < 1 || frame.Width > maxW ||
+      frame.Height < 1 || frame.Height > maxH ||
+      len(frame.JPEG) == 0 || len(frame.JPEG) > 4<<20 {
     sendError(conn, "invalid capture dimensions")
     return
   }
