@@ -11,6 +11,40 @@ class ScreenFrame {
   final int height;
 }
 
+/// Observed in-memory JPEG stream usage, not Wi-Fi PHY/link capacity.
+/// Smooth over a short window without uploading or retaining screen frames.
+class LiveStreamRate {
+  final List<(DateTime, int)> _received = [];
+
+  void clear() => _received.clear();
+
+  void record(ScreenFrame frame, {DateTime? at}) {
+    final now = at ?? DateTime.now();
+    _received.add((now, frame.jpeg.length));
+    _received.removeWhere((sample) =>
+        now.difference(sample.$1) > const Duration(seconds: 4));
+  }
+
+  double? get framesPerSecond {
+    if (_received.length < 2) return null;
+    final elapsed = _received.last.$1.difference(_received.first.$1)
+        .inMicroseconds / 1000000;
+    if (elapsed <= 0) return null;
+    return (_received.length - 1) / elapsed;
+  }
+
+  double? get megabitsPerSecond {
+    if (_received.length < 2) return null;
+    final elapsed = _received.last.$1.difference(_received.first.$1)
+        .inMicroseconds / 1000000;
+    if (elapsed <= 0) return null;
+    // Ignore the first packet; its start time is the sampling origin.
+    final bytes = _received.skip(1)
+        .fold<int>(0, (total, sample) => total + sample.$2);
+    return (bytes * 8 / 1000000) / elapsed;
+  }
+}
+
 /// Aspect-fit screen previews support pinch zoom and clamped translation.
 /// Geometry is computed only on the phone: authenticated remote coordinates
 /// remain normalized against the full monitor, never the crop or viewport.
