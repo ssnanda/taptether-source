@@ -109,9 +109,25 @@ void main() {
     expect(frames.every((frame) => frame.jpeg.length == 900000), isTrue);
   });
 
+  test('HD full-screen frame is accepted without treating it as 720p', () {
+    final parser = MjpegFrameDecoder();
+    final data = <int>[
+      ...ascii.encode('--ttframe\r\nContent-Type: image/jpeg\r\n'
+          'Content-Length: 3\r\nX-Screen-Width: 1920\r\n'
+          'X-Screen-Height: 1080\r\n\r\n'),
+      1, 2, 3, 13, 10,
+    ];
+    final frames = parser.add(data);
+    expect(frames.single.width, 1920);
+    expect(frames.single.height, 1080);
+    expect(VisualGeometry.tap(const Offset(200, 150),
+        const Size(400, 300), imageWidth: 1920, imageHeight: 1080,
+        zoom: 2), (5000, 5000));
+  });
+
   test('stream refuses oversized buffers', () {
     final parser = MjpegFrameDecoder();
-    expect(() => parser.add(List.filled((2 << 20) + 1025, 1)),
+    expect(() => parser.add(List.filled((4 << 20) + 1025, 1)),
         throwsFormatException);
   });
 }
