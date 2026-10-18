@@ -379,6 +379,57 @@ class LocalAgent {
     }
   }
 
+  /// Explicit short, authenticated local-only test. Measures application
+  /// throughput from THIS paired computer to the phone, not Wi-Fi PHY speed.
+  /// Older agents return HTTP 404 and cannot be benchmarked remotely.
+  Future<({double rttMs, double downMbps})> benchmarkLan() async {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final bearer = await _bearer();
+    Future<(double, int)> transfer(int bytes) async {
+      final stopwatch = Stopwatch()..start();
+      final uri = _base!.resolve('/api/lan-benchmark?bytes=$bytes');
+      final request = await _client!.getUrl(uri)
+          .timeout(const Duration(seconds: 4));
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
+      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      final response = await request.close()
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 404) {
+        await response.drain<void>();
+        throw StateError(
+          'Computer agent needs an update for the LAN speed test.');
+      }
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        throw StateError('LAN speed test unavailable (HTTP ${response.statusCode}).');
+      }
+      var received = 0;
+      await for (final part in response.timeout(const Duration(seconds: 7))) {
+        received += part.length;
+        if (received > bytes || stopwatch.elapsed > const Duration(seconds: 10)) {
+          throw const FormatException('LAN test transfer exceeded safety limits.');
+        }
+      }
+      stopwatch.stop();
+      if (received != bytes || stopwatch.elapsedMicroseconds <= 0) {
+        throw const FormatException('LAN speed test received incomplete data.');
+      }
+      return (stopwatch.elapsedMicroseconds / 1000000, received);
+    }
+
+    final roundTrips = <double>[];
+    for (var i = 0; i < 3; i++) {
+      final (elapsed, _) = await transfer(0);
+      roundTrips.add(elapsed * 1000);
+    }
+    roundTrips.sort();
+    final (elapsed, bytes) = await transfer(4 << 20);
+    return (
+      rttMs: roundTrips[1],
+      downMbps: bytes * 8 / (elapsed * 1000000),
+    );
+  }
+
   void disconnect() {
     _client?.close(force: true);
     _client = null;
@@ -457,6 +508,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   Timer? _snapshotTimer;
   StreamSubscription<ScreenFrame>? _liveFrames;
   ScreenFrame? _currentFrame;
+  final LiveStreamRate _liveRate = LiveStreamRate();
   String? _screenError;
   bool _screenBusy = false;
   bool _appForeground = true;
@@ -489,6 +541,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       VisualModePolicy.normalize(_remoteLayout.visualMode) != 'trackpad';
 
   void _stopScreen({bool preserveFrame = false}) {
+    _liveRate.clear();
     _screenEpoch++;
     _snapshotTimer?.cancel();
     _snapshotTimer = null;
@@ -513,6 +566,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       _screenBusy = true;
       _liveFrames = agent.liveFrames().listen((frame) {
         if (!mounted || _screenEpoch != epoch || !_viewingScreen) return;
+        _liveRate.record(frame);
         setState(() {
           _currentFrame = frame;
           _screenBusy = false;
@@ -2549,6 +2603,80 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  /// A short opt-in test against only the selected, TLS-pinned computer.
+  /// This is not Wi-Fi link negotiation rate or ISP/internet speed.
+  Future<void> _showConnectionMetrics() async {
+    if (!agent.configured) return;
+    bool running = false;
+    ({double rttMs, double downMbps})? result;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, updateDialog) {
+          final frame = _currentFrame;
+          final bitrate = _liveRate.megabitsPerSecond;
+          final fps = _liveRate.framesPerSecond;
+          return AlertDialog(
+            title: const Text('Local connection'),
+            content: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Computer: ${discoveredName ?? host.text.trim()}'),
+                const SizedBox(height: 8),
+                Text('Capture: ${frame == null ? 'Waiting for frame' :
+                  '${frame.width} × ${frame.height} pixels'}'),
+                if (fps != null && bitrate != null) ...[
+                  Text('Live: ${fps.toStringAsFixed(1)} fps · '
+                      '${bitrate.toStringAsFixed(2)} Mbps JPEG'),
+                ],
+                const SizedBox(height: 10),
+                if (running) const LinearProgressIndicator(),
+                if (result != null) ...[
+                  Text('API round-trip: ${result!.rttMs.toStringAsFixed(1)} ms'),
+                  Text('LAN download: ${result!.downMbps.toStringAsFixed(1)} Mbps'),
+                ],
+                if (error != null)
+                  Text(error!, style: TextStyle(
+                      color: Theme.of(dialogContext).colorScheme.error)),
+                const SizedBox(height: 10),
+                const Text('This tests only your paired computer over '
+                    'encrypted local LAN. It is not your Wi-Fi link rate '
+                    'or internet speed. Capture is currently capped '
+                    'at 1280 × 720 by the agent.'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: running ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Close')),
+              FilledButton.icon(
+                key: const ValueKey('run-lan-benchmark'),
+                icon: const Icon(Icons.speed),
+                label: const Text('Test LAN speed'),
+                onPressed: running ? null : () async {
+                  updateDialog(() { running = true; error = null; });
+                  try {
+                    final value = await agent.benchmarkLan();
+                    if (dialogContext.mounted) {
+                      updateDialog(() { result = value; running = false; });
+                    }
+                  } catch (failure) {
+                    if (dialogContext.mounted) {
+                      updateDialog(() {
+                        error = failure.toString().replaceFirst('Bad state: ', '');
+                        running = false;
+                      });
+                    }
+                  }
+                }),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _remoteInputSurface({double height = 224,
       bool immersive = false}) {
     final showPreview = _remoteLayout.visualMode != 'trackpad' &&
@@ -2565,6 +2693,13 @@ class _RemoteScreenState extends State<RemoteScreen>
           live: _remoteLayout.visualMode == 'live',
           busy: _screenBusy,
           error: _screenError,
+          streamDetails: _remoteLayout.visualMode == 'live' &&
+                  _liveRate.framesPerSecond != null &&
+                  _liveRate.megabitsPerSecond != null
+              ? '${_liveRate.framesPerSecond!.toStringAsFixed(1)} fps · '
+                '${_liveRate.megabitsPerSecond!.toStringAsFixed(2)} Mbps'
+              : null,
+          onConnectionMetrics: () => unawaited(_showConnectionMetrics()),
           onRefresh: () => unawaited(_refreshScreenshot()),
           onTap: (x, y, button) => unawaited(
               command('tap', {'x': x, 'y': y, 'button': button})),

@@ -11,30 +11,115 @@ class ScreenFrame {
   final int height;
 }
 
-/// Maps points in an aspect-fit, center-zoomed preview to absolute normalized
-/// primary-display coordinates, consistent with the macOS Input Core.
+/// Observed in-memory JPEG stream usage, not Wi-Fi PHY/link capacity.
+/// Smooth over a short window without uploading or retaining screen frames.
+class LiveStreamRate {
+  final List<(DateTime, int)> _received = [];
+
+  void clear() => _received.clear();
+
+  void record(ScreenFrame frame, {DateTime? at}) {
+    final now = at ?? DateTime.now();
+    _received.add((now, frame.jpeg.length));
+    _received.removeWhere((sample) =>
+        now.difference(sample.$1) > const Duration(seconds: 4));
+  }
+
+  double? get framesPerSecond {
+    if (_received.length < 2) return null;
+    final elapsed = _received.last.$1.difference(_received.first.$1)
+        .inMicroseconds / 1000000;
+    if (elapsed <= 0) return null;
+    return (_received.length - 1) / elapsed;
+  }
+
+  double? get megabitsPerSecond {
+    if (_received.length < 2) return null;
+    final elapsed = _received.last.$1.difference(_received.first.$1)
+        .inMicroseconds / 1000000;
+    if (elapsed <= 0) return null;
+    // Ignore the first packet; its start time is the sampling origin.
+    final bytes = _received.skip(1)
+        .fold<int>(0, (total, sample) => total + sample.$2);
+    return (bytes * 8 / 1000000) / elapsed;
+  }
+}
+
+/// Aspect-fit screen previews support pinch zoom and clamped translation.
+/// Geometry is computed only on the phone: authenticated remote coordinates
+/// remain normalized against the full monitor, never the crop or viewport.
 class VisualGeometry {
   const VisualGeometry._();
 
-  static (int, int)? tap(Offset position, Size viewport,
-      {required int imageWidth, required int imageHeight,
-      double zoom = 1.0}) {
+  static Size fittedSize(Size viewport, int imageWidth, int imageHeight) {
     if (viewport.width <= 0 || viewport.height <= 0 ||
-        imageWidth <= 0 || imageHeight <= 0 || zoom < 1 ||
-        zoom > 5 || !zoom.isFinite) { return null; }
+        imageWidth <= 0 || imageHeight <= 0) {
+      return Size.zero;
+    }
     final scale = (viewport.width / imageWidth)
-        .clamp(0.0, viewport.height / imageHeight);
-    if (scale <= 0) { return null; }
-    final w = imageWidth * scale;
-    final h = imageHeight * scale;
-    // Undo preview zoom around the surface center before letterbox mapping.
-    final px = (position.dx - viewport.width / 2) / zoom +
-        viewport.width / 2 - (viewport.width - w) / 2;
-    final py = (position.dy - viewport.height / 2) / zoom +
-        viewport.height / 2 - (viewport.height - h) / 2;
-    if (px < 0 || py < 0 || px > w || py > h) return null;
-    return ((px / w * 10000).round().clamp(0, 10000),
-        (py / h * 10000).round().clamp(0, 10000));
+        .clamp(0.0, viewport.height / imageHeight).toDouble();
+    return Size(imageWidth * scale, imageHeight * scale);
+  }
+
+  /// Don't let the enlarged image be dragged completely out of view.
+  /// Axes that still fit the viewport remain centered, without gray gaps.
+  static Offset clampPan(Offset candidate, Size viewport, {
+    required int imageWidth,
+    required int imageHeight,
+    required double zoom,
+  }) {
+    final fit = fittedSize(viewport, imageWidth, imageHeight);
+    if (fit == Size.zero || !zoom.isFinite || zoom < 1) {
+      return Offset.zero;
+    }
+    final x = ((fit.width * zoom - viewport.width) / 2).clamp(0.0, double.infinity);
+    final y = ((fit.height * zoom - viewport.height) / 2).clamp(0.0, double.infinity);
+    return Offset(candidate.dx.clamp(-x, x).toDouble(),
+        candidate.dy.clamp(-y, y).toDouble());
+  }
+
+  /// Keep the content beneath the starting finger centroid in place while
+  /// the fingers scale and travel. startPan is the existing translation.
+  static Offset anchoredPan({
+    required Offset startFocal,
+    required Offset currentFocal,
+    required Size viewport,
+    required Offset startPan,
+    required double startZoom,
+    required double newZoom,
+    required int imageWidth,
+    required int imageHeight,
+  }) {
+    if (startZoom < 1 || !startZoom.isFinite || !newZoom.isFinite) {
+      return Offset.zero;
+    }
+    final center = Offset(viewport.width / 2, viewport.height / 2);
+    final ratio = newZoom / startZoom;
+    final candidate = currentFocal - center -
+        (startFocal - center - startPan) * ratio;
+    return clampPan(candidate, viewport,
+        imageWidth: imageWidth, imageHeight: imageHeight, zoom: newZoom);
+  }
+
+  static (int, int)? tap(Offset position, Size viewport, {
+    required int imageWidth,
+    required int imageHeight,
+    double zoom = 1.0,
+    Offset pan = Offset.zero,
+  }) {
+    if (zoom < 1 || zoom > 5 || !zoom.isFinite ||
+        !pan.dx.isFinite || !pan.dy.isFinite) {
+      return null;
+    }
+    final fit = fittedSize(viewport, imageWidth, imageHeight);
+    if (fit == Size.zero) return null;
+    final px = (position.dx - viewport.width / 2 - pan.dx) / zoom +
+        fit.width / 2;
+    final py = (position.dy - viewport.height / 2 - pan.dy) / zoom +
+        fit.height / 2;
+    if (px < 0 || py < 0 || px > fit.width || py > fit.height) return null;
+    return ((px / fit.width * 10000).round().clamp(0, 10000),
+        (py / fit.height * 10000).round().clamp(0, 10000));
   }
 }
 

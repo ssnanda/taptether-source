@@ -14,6 +14,8 @@ class VisualSurface extends StatefulWidget {
     required this.busy,
     required this.error,
     required this.onRefresh,
+    this.streamDetails,
+    this.onConnectionMetrics,
     required this.onTap,
     required this.onClick,
     required this.onMove,
@@ -27,6 +29,8 @@ class VisualSurface extends StatefulWidget {
   final bool busy;
   final String? error;
   final VoidCallback onRefresh;
+  final String? streamDetails;
+  final VoidCallback? onConnectionMetrics;
   final void Function(int x, int y, String button) onTap;
   final ValueChanged<String> onClick;
   final ValueChanged<Offset> onMove;
@@ -38,8 +42,12 @@ class VisualSurface extends StatefulWidget {
 
 class _VisualSurfaceState extends State<VisualSurface> {
   double _zoom = 1;
+  Offset _pan = Offset.zero;
   double _startZoom = 1;
+  Offset _startPan = Offset.zero;
+  Offset? _startFocal;
   Offset? _lastFocal;
+  bool _pinching = false;
   final _steppedScroll = SteppedScroll();
   // Raw pointer-up detection keeps clicks responsive even when Flutter's
   // scale gesture recognizer wins the arena after a cursor drag. Two quick
@@ -53,6 +61,18 @@ class _VisualSurfaceState extends State<VisualSurface> {
   Size _viewport = Size.zero;
 
   void _fingerDown(PointerDownEvent event) {
+    // The visual toolbar sits inside this Listener. Do not interpret zoom,
+    // fit or refresh button presses as remote taps on the computer beneath.
+    final toolbarWidth = _zoom > 1 ? 252.0 : 114.0;
+    if (widget.frame != null &&
+        ((event.localPosition.dy >= 0 &&
+          event.localPosition.dy <= 56 &&
+          event.localPosition.dx >= _viewport.width - toolbarWidth) ||
+         (widget.onConnectionMetrics != null &&
+          event.localPosition.dy >= _viewport.height - 44 &&
+          event.localPosition.dx <= 320))) {
+      return;
+    }
     if (_fingers.isEmpty) {
       _movedWithMultipleFingers = false;
       _primaryPointer = event.pointer;
@@ -77,7 +97,19 @@ class _VisualSurfaceState extends State<VisualSurface> {
     }
     if (_fingers.length != 1 || _movedWithMultipleFingers) return;
     final delta = event.localPosition - previous;
-    if (delta.distanceSquared > 0) widget.onMove(delta);
+    if (delta.distanceSquared <= 0) return;
+    if (_zoom > 1 && widget.frame != null) {
+      // At magnification, one finger moves the viewport rather than the
+      // remote mouse. A tap still clicks the correct underlying coordinate.
+      final frame = widget.frame!;
+      setState(() {
+        _pan = VisualGeometry.clampPan(_pan + delta, _viewport,
+            imageWidth: frame.width,
+            imageHeight: frame.height, zoom: _zoom);
+      });
+    } else {
+      widget.onMove(delta);
+    }
   }
 
   void _fingerUp(PointerEvent event) {
@@ -109,13 +141,48 @@ class _VisualSurfaceState extends State<VisualSurface> {
       return;
     }
     final coords = VisualGeometry.tap(local, size,
-        imageWidth: frame.width, imageHeight: frame.height, zoom: _zoom);
+        imageWidth: frame.width, imageHeight: frame.height,
+        zoom: _zoom, pan: _displayPan(size));
     if (coords != null) {
       widget.onTap(coords.$1, coords.$2, button);
     } else {
       // Letterboxed margins should still behave as a normal touchpad.
       widget.onClick(button);
     }
+  }
+
+  @override
+  void didUpdateWidget(covariant VisualSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Preserve focus across successive Live frames and Snapshot refreshes.
+    // Reset only when switching to a differently-sized source monitor.
+    final before = oldWidget.frame;
+    final after = widget.frame;
+    if (before != null && after != null &&
+        (before.width != after.width || before.height != after.height)) {
+      _zoom = 1;
+      _pan = Offset.zero;
+    }
+  }
+
+  Offset _displayPan(Size viewport) {
+    final frame = widget.frame;
+    if (frame == null) return Offset.zero;
+    return VisualGeometry.clampPan(_pan, viewport,
+        imageWidth: frame.width, imageHeight: frame.height, zoom: _zoom);
+  }
+
+  void _changeZoom(double requested) {
+    final frame = widget.frame;
+    if (frame == null) return;
+    setState(() {
+      _zoom = requested.clamp(1.0, 4.0);
+      _pan = _zoom == 1
+          ? Offset.zero
+          : VisualGeometry.clampPan(_pan, _viewport,
+              imageWidth: frame.width,
+              imageHeight: frame.height, zoom: _zoom);
+    });
   }
 
   @override
@@ -140,36 +207,60 @@ class _VisualSurfaceState extends State<VisualSurface> {
             },
             onScaleStart: (details) {
               _startZoom = _zoom;
+              _startPan = _displayPan(viewport);
+              _startFocal = details.localFocalPoint;
               _lastFocal = details.localFocalPoint;
+              _pinching = _zoom > 1;
             },
             onScaleUpdate: (details) {
               if (details.pointerCount < 2) return;
               final previous = _lastFocal;
               _lastFocal = details.localFocalPoint;
-              if ((details.scale - 1).abs() >= 0.025 ||
-                  _startZoom != 1) {
-                setState(() {
-                  _zoom = (_startZoom * details.scale).clamp(1.0, 4.0);
-                });
-              } else if (previous != null) {
-                final ticks = _steppedScroll.add(
-                    details.localFocalPoint.dy - previous.dy);
-                if (ticks != 0) widget.onScroll(ticks);
+              if ((details.scale - 1).abs() >= 0.035) _pinching = true;
+              if (!_pinching) {
+                // Retain existing two-finger desktop scrolling at 1x.
+                if (previous != null) {
+                  final ticks = _steppedScroll.add(
+                      details.localFocalPoint.dy - previous.dy);
+                  if (ticks != 0) widget.onScroll(ticks);
+                }
+                return;
               }
+              final frame = widget.frame;
+              if (frame == null || _startFocal == null) return;
+              final nextZoom = (_startZoom * details.scale).clamp(1.0, 4.0);
+              final nextPan = VisualGeometry.anchoredPan(
+                  startFocal: _startFocal!,
+                  currentFocal: details.localFocalPoint,
+                  viewport: viewport,
+                  startPan: _startPan,
+                  startZoom: _startZoom,
+                  newZoom: nextZoom,
+                  imageWidth: frame.width,
+                  imageHeight: frame.height);
+              setState(() {
+                _zoom = nextZoom;
+                _pan = nextZoom == 1 ? Offset.zero : nextPan;
+              });
             },
             onScaleEnd: (_) {
+              _startFocal = null;
               _lastFocal = null;
+              _pinching = false;
               _steppedScroll.reset();
             },
             child: ColoredBox(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               child: Stack(fit: StackFit.expand, children: [
                 if (widget.frame != null)
-                  Center(child: Transform.scale(
-                    scale: _zoom,
-                    child: Image.memory(widget.frame!.jpeg,
-                      gaplessPlayback: true, fit: BoxFit.contain,
-                      filterQuality: FilterQuality.low,
+                  Center(child: Transform.translate(
+                    offset: _displayPan(viewport),
+                    child: Transform.scale(
+                      scale: _zoom,
+                      child: Image.memory(widget.frame!.jpeg,
+                        gaplessPlayback: true, fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
+                      ),
                     ),
                   ))
                 else
@@ -187,35 +278,87 @@ class _VisualSurfaceState extends State<VisualSurface> {
                         child: Text(widget.error!, textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.white,
                             fontSize: 11))))),
-                if (!widget.immersive) Positioned(right: 8, top: 8, child: Row(
-                  mainAxisSize: MainAxisSize.min, children: [
-                    if (_zoom > 1)
+                if (widget.frame != null)
+                  Positioned(right: 8, top: 8, child: Row(
+                    mainAxisSize: MainAxisSize.min, children: [
+                      if (_zoom > 1)
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface
+                                .withValues(alpha: 0.91),
+                            borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 3),
+                            child: Text('${_zoom.toStringAsFixed(1)}×',
+                              style: const TextStyle(fontSize: 11)),
+                          ),
+                        ),
                       IconButton.filledTonal(
-                        key: const ValueKey('visual-reset-zoom'),
-                        tooltip: 'Reset zoom',
-                        onPressed: () => setState(() => _zoom = 1),
-                        icon: const Icon(Icons.center_focus_strong),
+                        key: const ValueKey('visual-zoom-in'),
+                        tooltip: 'Zoom in',
+                        iconSize: 18,
+                        onPressed: _zoom >= 4 ? null
+                            : () => _changeZoom(_zoom + 0.5),
+                        icon: const Icon(Icons.zoom_in),
                       ),
-                    if (!widget.live)
-                      IconButton.filledTonal(
-                        key: const ValueKey('visual-refresh-now'),
-                        tooltip: 'Refresh now',
-                        onPressed: widget.busy ? null : widget.onRefresh,
-                        icon: const Icon(Icons.refresh),
-                      ),
-                  ],
-                )),
+                      if (_zoom > 1) ...[
+                        IconButton.filledTonal(
+                          key: const ValueKey('visual-zoom-out'),
+                          tooltip: 'Zoom out',
+                          iconSize: 18,
+                          onPressed: () => _changeZoom(_zoom - 0.5),
+                          icon: const Icon(Icons.zoom_out),
+                        ),
+                        IconButton.filledTonal(
+                          key: const ValueKey('visual-reset-zoom'),
+                          tooltip: 'Fit whole screen',
+                          iconSize: 18,
+                          onPressed: () => _changeZoom(1),
+                          icon: const Icon(Icons.fit_screen),
+                        ),
+                      ],
+                      if (!widget.immersive && !widget.live)
+                        IconButton.filledTonal(
+                          key: const ValueKey('visual-refresh-now'),
+                          tooltip: 'Refresh now',
+                          iconSize: 18,
+                          onPressed: widget.busy ? null : widget.onRefresh,
+                          icon: const Icon(Icons.refresh),
+                        ),
+                    ],
+                  )),
                 if (widget.busy && !widget.immersive)
                   const Positioned(left: 10, top: 10,
                     child: SizedBox(width: 16, height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))),
-                if (!widget.immersive) Positioned(left: 8, bottom: 8,
-                  child: IgnorePointer(child: Text(
-                    widget.live ? 'LIVE • local only' : 'SNAPSHOT • 15s',
-                    style: const TextStyle(fontSize: 10,
-                      color: Colors.white,
-                      shadows: [Shadow(blurRadius: 3,
-                        color: Colors.black)])))),
+                if (widget.frame != null &&
+                    widget.onConnectionMetrics != null)
+                  Positioned(left: 8, bottom: 8,
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(10),
+                      child: InkWell(
+                        key: const ValueKey('visual-connection-metrics'),
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: widget.onConnectionMetrics,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 5),
+                          child: Row(mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.speed, size: 14,
+                                  color: Colors.white),
+                              const SizedBox(width: 5),
+                              Text('${widget.frame!.width}×${widget.frame!.height}'
+                                '${widget.streamDetails == null ? '' :
+                                  ' · ${widget.streamDetails}'}',
+                                style: const TextStyle(
+                                  fontSize: 10, color: Colors.white)),
+                            ]),
+                        ),
+                      ),
+                    ))
               ]),
             ),
           ),

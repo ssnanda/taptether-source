@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/visual_transport.dart';
@@ -20,6 +21,63 @@ void main() {
     expect(VisualGeometry.tap(const Offset(0, 0),
         const Size(400, 300), imageWidth: 0, imageHeight: 720),
         isNull);
+  });
+
+  test('pinch around finger position keeps same screen content underneath', () {
+    const viewport = Size(400, 300);
+    final pan = VisualGeometry.anchoredPan(
+      startFocal: const Offset(300, 150),
+      currentFocal: const Offset(300, 150),
+      viewport: viewport, startPan: Offset.zero,
+      startZoom: 1, newZoom: 2,
+      imageWidth: 1280, imageHeight: 720);
+    expect(pan, const Offset(-100, 0));
+    expect(VisualGeometry.tap(const Offset(300, 150), viewport,
+      imageWidth: 1280, imageHeight: 720, zoom: 2, pan: pan),
+      (7500, 5000));
+  });
+
+  test('pan clamps to image edges and never loses the screen', () {
+    const viewport = Size(400, 300);
+    expect(VisualGeometry.clampPan(const Offset(900, -900), viewport,
+        imageWidth: 1280, imageHeight: 720, zoom: 2),
+        const Offset(200, -75));
+    expect(VisualGeometry.clampPan(const Offset(100, 50), viewport,
+        imageWidth: 1280, imageHeight: 720, zoom: 1), Offset.zero);
+    expect(VisualGeometry.clampPan(const Offset(0, 80), viewport,
+        imageWidth: 1280, imageHeight: 720, zoom: 1.2),
+        const Offset(0, 0)); // vertical content still letterboxed
+  });
+
+  test('panned viewport taps map to actual computer coordinates', () {
+    const viewport = Size(400, 300);
+    expect(VisualGeometry.tap(const Offset(200, 150), viewport,
+      imageWidth: 1280, imageHeight: 720,
+      zoom: 2, pan: const Offset(100, -40)), (3750, 5889));
+    expect(VisualGeometry.tap(const Offset(-400, 150), viewport,
+      imageWidth: 1280, imageHeight: 720, zoom: 2), isNull);
+    expect(VisualGeometry.tap(const Offset(200, 150), viewport,
+      imageWidth: 1280, imageHeight: 720,
+      zoom: 2, pan: const Offset(double.nan, 0)), isNull);
+  });
+
+  test('Live reports actual application JPEG Mbps and FPS, not Wi-Fi rate', () {
+    final stats = LiveStreamRate();
+    final base = DateTime.utc(2026, 10, 18);
+    const jpegSize = 250000; // compressed bytes, no image contents needed
+    final frame = ScreenFrame(
+      Uint8List(jpegSize), 1280, 720);
+    stats.record(frame, at: base);
+    expect(stats.framesPerSecond, isNull);
+    expect(stats.megabitsPerSecond, isNull);
+    for (var index = 1; index <= 10; index++) {
+      stats.record(frame,
+        at: base.add(Duration(milliseconds: index * 100)));
+    }
+    expect(stats.framesPerSecond, closeTo(10, 0.001));
+    expect(stats.megabitsPerSecond, closeTo(20, 0.001));
+    stats.clear();
+    expect(stats.megabitsPerSecond, isNull);
   });
 
   test('stream frame decoding survives chunk boundaries', () {
