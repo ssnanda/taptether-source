@@ -230,8 +230,17 @@ class AppSecurity extends ChangeNotifier {
 
 /// Hides ALL device and key routes while authentication is required.
 class AppLockGate extends StatefulWidget {
-  const AppLockGate({super.key, required this.child});
+  const AppLockGate({
+    super.key,
+    required this.child,
+    this.biometricVerifierForTesting,
+  });
   final Widget child;
+
+  /// Test-only biometric callback to verify lock-screen behavior without
+  /// invoking a device's real Face ID / Touch ID enrollment.
+  @visibleForTesting
+  final Future<bool> Function(String reason)? biometricVerifierForTesting;
   @override
   State<AppLockGate> createState() => _AppLockGateState();
 }
@@ -241,8 +250,12 @@ class _AppLockGateState extends State<AppLockGate>
   final _security = AppSecurity.instance;
   DateTime? _backgroundedAt;
   final _pin = TextEditingController();
+  final _pinFocus = FocusNode();
   String? _unlockError;
   bool _unlockBusy = false;
+  bool _autoBiometricAttempted = false;
+  bool _pinFallbackVisible = false;
+  bool _wasUnlocked = true;
 
   @override
   void initState() {
@@ -253,12 +266,46 @@ class _AppLockGateState extends State<AppLockGate>
   }
 
   void _onChanged() {
+    if (_security.ready) {
+      // Reset the one-shot prompt only when transitioning to a new locked
+      // session. A failed or canceled Face ID prompt must NOT loop.
+      if (_security.unlocked || _wasUnlocked) {
+        _autoBiometricAttempted = false;
+        _pinFallbackVisible = false;
+        _unlockError = null;
+        _pin.clear();
+      }
+      _wasUnlocked = _security.unlocked;
+    }
     if (mounted) setState(() {});
+  }
+
+  void _scheduleAutomaticBiometrics() {
+    if (_autoBiometricAttempted || _unlockBusy ||
+        !_security.ready || _security.unlocked ||
+        !_security.enabled || !_security.biometricEnabled ||
+        _security.loadError != null) {
+      return;
+    }
+    _autoBiometricAttempted = true;
+    // Call local_auth only after this lock screen has been laid out.
+    // Do not invoke OS biometrics inside build(), and never repeat the
+    // automatic attempt on a rebuild or on lifecycle notifications from
+    // the native Face ID sheet.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _security.ready && !_security.unlocked &&
+          _security.enabled && _security.biometricEnabled &&
+          _security.loadError == null && !_unlockBusy) {
+        _unlockWithBiometrics();
+      }
+    });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_security.authenticating) return;
+    // Native biometric sheets can transition the app lifecycle; they are
+    // not a fresh background/foreground event requiring another unlock.
+    if (_security.authenticating || _unlockBusy) return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _backgroundedAt ??= DateTime.now();
@@ -277,6 +324,7 @@ class _AppLockGateState extends State<AppLockGate>
     WidgetsBinding.instance.removeObserver(this);
     _security.removeListener(_onChanged);
     _pin.dispose();
+    _pinFocus.dispose();
     super.dispose();
   }
 
@@ -299,13 +347,37 @@ class _AppLockGateState extends State<AppLockGate>
   }
 
   Future<void> _unlockWithBiometrics() async {
-    if (_unlockBusy) return;
+    if (_unlockBusy || _security.unlocked || !_security.biometricEnabled) {
+      return;
+    }
     setState(() { _unlockBusy = true; _unlockError = null; });
     try {
-      if (await _security.verifyBiometrics('Unlock TapTether')) {
-        _security.unlock();
+      final verify = widget.biometricVerifierForTesting ??
+          _security.verifyBiometrics;
+      if (await verify('Unlock TapTether')) {
+        if (mounted && _security.enabled && !_security.unlocked) {
+          _security.unlock();
+        }
       } else if (mounted) {
-        setState(() => _unlockError = 'Biometrics unavailable. Use your PIN.');
+        // Face ID failed, was canceled, locked out, or isn't available.
+        // Offer the existing six-digit PIN instead of retrying silently.
+        setState(() {
+          _pinFallbackVisible = true;
+          _unlockError = 'Face ID / Touch ID was not completed. Use your PIN.';
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_security.unlocked) _pinFocus.requestFocus();
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _pinFallbackVisible = true;
+          _unlockError = 'Biometric unlock unavailable. Use your PIN.';
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_security.unlocked) _pinFocus.requestFocus();
+        });
       }
     } finally {
       if (mounted) setState(() => _unlockBusy = false);
@@ -319,6 +391,8 @@ class _AppLockGateState extends State<AppLockGate>
           child: CircularProgressIndicator()));
     }
     if (!_security.unlocked) {
+      _scheduleAutomaticBiometrics();
+      final showPin = !_security.biometricEnabled || _pinFallbackVisible;
       return Material(
         color: Theme.of(context).scaffoldBackgroundColor,
         child: SafeArea(child: Center(child: SingleChildScrollView(
@@ -337,32 +411,55 @@ class _AppLockGateState extends State<AppLockGate>
               FilledButton(onPressed: _security.load,
                   child: const Text('Retry secure storage'))
             else ...[
-              if (_security.biometricEnabled)
+              if (_security.biometricEnabled && !showPin)
+                Column(mainAxisSize: MainAxisSize.min, children: [
+                  if (_unlockBusy)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: CircularProgressIndicator(),
+                    ),
+                  const Text('Checking Face ID / Touch ID…'),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _unlockBusy ? null : () {
+                      setState(() => _pinFallbackVisible = true);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _pinFocus.requestFocus();
+                      });
+                    },
+                    child: const Text('Use PIN instead'),
+                  ),
+                ]),
+              if (showPin) ...[
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  child: TextField(
+                    controller: _pin,
+                    focusNode: _pinFocus,
+                    autofocus: !_security.biometricEnabled,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(
+                        labelText: 'Six-digit app PIN', counterText: ''),
+                    onSubmitted: (_) => _unlockWithPin(),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 FilledButton.icon(
-                  onPressed: _unlockBusy ? null : _unlockWithBiometrics,
-                  icon: const Icon(Icons.fingerprint),
-                  label: const Text('Use Face ID / Touch ID'),
+                  onPressed: _unlockBusy ? null : _unlockWithPin,
+                  icon: const Icon(Icons.lock_open),
+                  label: const Text('Unlock with PIN'),
                 ),
-              const SizedBox(height: 12),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: TextField(
-                  controller: _pin,
-                  autofocus: !_security.biometricEnabled,
-                  obscureText: true,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  decoration: const InputDecoration(
-                      labelText: 'Six-digit app PIN', counterText: ''),
-                  onSubmitted: (_) => _unlockWithPin(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: _unlockBusy ? null : _unlockWithPin,
-                icon: const Icon(Icons.lock_open),
-                label: const Text('Unlock with PIN'),
-              ),
+                if (_security.biometricEnabled) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: _unlockBusy ? null : _unlockWithBiometrics,
+                    icon: const Icon(Icons.fingerprint),
+                    label: const Text('Try Face ID / Touch ID again'),
+                  ),
+                ],
+              ],
               if (_unlockError != null) Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(_unlockError!, textAlign: TextAlign.center,
