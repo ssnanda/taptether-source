@@ -140,7 +140,7 @@ class MjpegFrameDecoder {
           ? start + 65536 : bytes.length;
       _pending.addAll(bytes.sublist(start, end));
       _parseAvailable(frames);
-      if (_pending.length > (2 << 20) + 1024) {
+      if (_pending.length > (4 << 20) + 1024) {
         throw const FormatException('Video frame exceeds safe buffer size.');
       }
     }
@@ -169,8 +169,8 @@ class MjpegFrameDecoder {
         final length = readHeader('Content-Length');
         _width = readHeader('X-Screen-Width');
         _height = readHeader('X-Screen-Height');
-        if (length < 1 || length > (2 << 20) ||
-            _width < 1 || _width > 1280 || _height < 1 || _height > 720) {
+        if (length < 1 || length > (4 << 20) ||
+            _width < 1 || _width > 1920 || _height < 1 || _height > 1080) {
           throw const FormatException('Invalid local video frame dimensions.');
         }
         _expectedLength = length;
