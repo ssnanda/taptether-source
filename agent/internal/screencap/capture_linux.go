@@ -70,3 +70,11 @@ func Capture() (Frame, error) {
     }
     return Frame{JPEG:jpeg, Width:width, Height:height}, nil
 }
+
+
+// Detail mode must never silently upsample the existing 720p PipeWire frame.
+// A dedicated native 1080p session will require a separate user-consented
+// pipeline upgrade; normal Ubuntu Snapshot and Live remain fully available.
+func CaptureDetail() (Frame, error) {
+    return Frame{}, errors.New("Ubuntu high-detail capture is not available in this agent; standard 720p Snapshot and Live remain supported")
+}
