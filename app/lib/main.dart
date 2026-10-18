@@ -2587,19 +2587,58 @@ class _RemoteScreenState extends State<RemoteScreen>
         presenting: false, mediaMode: false, visualMode: mode)),
   );
 
+  bool get _mediaIsMac => _connectedPlatform == 'darwin' ||
+      (_connectedPlatform == null && _macShortcuts);
+
+  /// Navigate the current focused browser tab. Unlike /api/media/open this
+  /// does not ask the operating system to launch a new tab or browser.
+  Future<void> _mediaNavigateSameTab(String url) async {
+    if (!agent.configured) {
+      throw StateError('Connect to a paired computer first.');
+    }
+    if (url.length > 256 ||
+        !(url.startsWith('https://www.netflix.com/') ||
+          url.startsWith('https://www.youtube.com/'))) {
+      throw const FormatException('Media destination is not permitted.');
+    }
+    await agent.send('key', {'key': _mediaIsMac ? 'cmd+l' : 'ctrl+l'});
+    await agent.send('text', {'text': url});
+    await agent.send('key', {'key': 'Return'});
+  }
+
+  Future<void> _mediaSearchPage(MediaService service) =>
+      _mediaNavigateSameTab(MediaSearch.searchPageUrl(service));
+
+  Future<void> _mediaExitVideo(MediaService service) async {
+    // Browser Back takes the player back to the browsing/search page when
+    // the viewer launched a video from that page.
+    await agent.send('key', {'key': _mediaIsMac ? 'cmd+Left' : 'alt+Left'});
+  }
+
+  Future<void> _mediaProfile(MediaService service) async {
+    await _mediaNavigateSameTab(MediaSearch.browseUrl(service));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+        service == MediaService.netflix
+          ? 'Choose the profile icon in the top right of Netflix. '
+            'Select a profile using Trackpad or Live.'
+          : 'Select the YouTube avatar in the top right, then '
+            'Switch account using Trackpad or Live.',
+      )));
+    }
+  }
+
+  Future<void> _mediaCloseService(MediaService service) async {
+    // MediaRemote confirms first; only the focused browser tab closes.
+    await agent.send('key', {'key': _mediaIsMac ? 'cmd+w' : 'ctrl+w'});
+  }
+
   Future<void> _searchMedia(MediaService service, String text) async {
-    try {
-      if (text.trim().isNotEmpty) {
-        MediaSearch.url(service, text); // validate before contacting the agent
-      }
-      await agent.openMedia(service.name, text);
-    } on FormatException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message)));
-      }
-    } catch (error) {
-      _handleRemoteFailure(error);
+    if (text.trim().isEmpty) {
+      // Only explicit Open Provider uses the OS browser opener.
+      await agent.openMedia(service.name, '');
+    } else {
+      await _mediaNavigateSameTab(MediaSearch.url(service, text));
     }
   }
 
@@ -2725,6 +2764,10 @@ class _RemoteScreenState extends State<RemoteScreen>
             _setLayout(_changedLayout(mediaService: service.name)),
         onKey: (key) => unawaited(command('key', {'key': key})),
         onSearch: (service, text) => _searchMedia(service, text),
+        onSearchPage: _mediaSearchPage,
+        onExitVideo: _mediaExitVideo,
+        onProfile: _mediaProfile,
+        onCloseService: _mediaCloseService,
         onOpenService: (service) => _searchMedia(service, ''),
       ),
       const SizedBox(height: 12),
@@ -2796,6 +2839,10 @@ class _RemoteScreenState extends State<RemoteScreen>
                   },
                   onKey: (key) => unawaited(command('key', {'key': key})),
                   onSearch: _searchMedia,
+                  onSearchPage: _mediaSearchPage,
+                  onExitVideo: _mediaExitVideo,
+                  onProfile: _mediaProfile,
+                  onCloseService: _mediaCloseService,
                   onOpenService: (service) => _searchMedia(service, ''),
                 ),
               const SizedBox(height: 12),
