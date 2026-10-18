@@ -16,6 +16,7 @@ class VisualSurface extends StatefulWidget {
     required this.onRefresh,
     this.streamDetails,
     this.onConnectionMetrics,
+    this.onHighDetail,
     required this.onTap,
     required this.onClick,
     required this.onMove,
@@ -31,6 +32,7 @@ class VisualSurface extends StatefulWidget {
   final VoidCallback onRefresh;
   final String? streamDetails;
   final VoidCallback? onConnectionMetrics;
+  final VoidCallback? onHighDetail;
   final void Function(int x, int y, String button) onTap;
   final ValueChanged<String> onClick;
   final ValueChanged<Offset> onMove;
@@ -63,7 +65,7 @@ class _VisualSurfaceState extends State<VisualSurface> {
   void _fingerDown(PointerDownEvent event) {
     // The visual toolbar sits inside this Listener. Do not interpret zoom,
     // fit or refresh button presses as remote taps on the computer beneath.
-    final toolbarWidth = _zoom > 1 ? 252.0 : 114.0;
+    final toolbarWidth = _zoom > 1 ? 300.0 : 170.0;
     if (widget.frame != null &&
         ((event.localPosition.dy >= 0 &&
           event.localPosition.dy <= 56 &&
@@ -159,7 +161,8 @@ class _VisualSurfaceState extends State<VisualSurface> {
     final before = oldWidget.frame;
     final after = widget.frame;
     if (before != null && after != null &&
-        (before.width != after.width || before.height != after.height)) {
+        (before.width != after.width || before.height != after.height) &&
+        ((before.width / before.height) - (after.width / after.height)).abs() > 0.02) {
       _zoom = 1;
       _pan = Offset.zero;
     }
@@ -293,6 +296,14 @@ class _VisualSurfaceState extends State<VisualSurface> {
                             child: Text('${_zoom.toStringAsFixed(1)}×',
                               style: const TextStyle(fontSize: 11)),
                           ),
+                        ),
+                      if (widget.onHighDetail != null)
+                        IconButton.filledTonal(
+                          key: const ValueKey('visual-hd-snapshot'),
+                          tooltip: 'Sharper snapshot (pauses Live)',
+                          iconSize: 18,
+                          onPressed: widget.onHighDetail,
+                          icon: const Icon(Icons.high_quality),
                         ),
                       IconButton.filledTonal(
                         key: const ValueKey('visual-zoom-in'),
