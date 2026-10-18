@@ -1,6 +1,6 @@
 # TapTether 0.7 — Visual & Media Remote
 
-Status: **0.7.3+63 published**; **0.7.4 Ubuntu visual implementation under validation**.
+Status: **0.7.14+77 published**; **0.7.15+78 high-detail and media improvements in development**.
 This supersedes the original pre-release draft of this roadmap.
 
 ## Delivered phone experience
@@ -65,3 +65,31 @@ first-login instructions are in [ubuntu-screen-capture.md](ubuntu-screen-capture
 After visual/media stability: LG webOS local TV remote, then Remote Desktop,
 SSH controls and later optional IoT features. File transfer and clipboard
 sharing remain outside the visual remote milestone.
+
+## 0.7.15+78 in-progress follow-up (2026-10-18)
+
+- On-demand higher-detail 1920×1080 *full-frame* Snapshot when the
+  computer backend supports it. Detail is requested explicitly from the
+  Snapshot/Live surface; Live pauses and switches to Snapshot. One 1080p
+  frame never implies that the whole live MJPEG feed is 1080p.
+- Windows GDI supports high-detail primary display capture. On macOS it
+  requires an independently versioned Screen Core 2, never silently
+  replacing a user's installed Screen Core 1. See the protected-core notes.
+  Ubuntu stays at 720p until a second PipeWire quality path is designed and
+  tested against the native-memory crash regression.
+- Live remains 720p MJPEG, with bounded 8/15/30 fps requests and
+  conservative one-time client downshift/upshift using measured frame rate.
+  This does not promise hardware encoding, packet-loss telemetry or 4K.
+- Netflix exits video by leaving fullscreen then returning to the signed-in
+  browse page in the *same tab*; this does not inspect or click a
+  website-specific DOM back arrow. Search requires explicit Search-page
+  entry. Profile selection remains assisted through the browser UI.
+- Browser URL/profile awareness and a direct profile card-picker are
+  **not** claimed: browser websites do not expose these to a generic LAN
+  remote. Those would require an opt-in browser extension with separate
+  user permission and site-specific maintenance. No credentials are stored.
+- Closing a provider closes the focused browser tab after confirmation,
+  never the entire browser process, because other unrelated tabs may be open.
+
+0.7 closure still needs physical browser, Ubuntu, macOS Screen Core v2
+opt-in and image-quality testing. Windows physical testing is waived.

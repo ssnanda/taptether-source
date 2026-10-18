@@ -55,7 +55,11 @@ type bitmapInfo struct {
 
 func Available() bool { return true }
 
-func Capture() (Frame, error) {
+func Capture() (Frame, error) { return captureBounded(1280, 720) }
+
+func CaptureDetail() (Frame, error) { return captureBounded(1920, 1080) }
+
+func captureBounded(maxW, maxH int) (Frame, error) {
     widthValue, _, _ := getSystemMetrics.Call(0)
     heightValue, _, _ := getSystemMetrics.Call(1)
     width, height := int(int32(widthValue)), int(int32(heightValue))
@@ -63,10 +67,10 @@ func Capture() (Frame, error) {
         return Frame{}, errors.New("Windows has no usable primary interactive display")
     }
     ratio := 1.0
-    if p:=1280.0/float64(width); p<ratio { ratio=p }
-    if p:=720.0/float64(height); p<ratio { ratio=p }
+    if p:=float64(maxW)/float64(width); p<ratio { ratio=p }
+    if p:=float64(maxH)/float64(height); p<ratio { ratio=p }
     targetWidth, targetHeight := int(float64(width)*ratio), int(float64(height)*ratio)
-    if targetWidth < 1 || targetHeight < 1 || targetWidth > 1280 || targetHeight > 720 {
+    if targetWidth < 1 || targetHeight < 1 || targetWidth > maxW || targetHeight > maxH {
         return Frame{}, errors.New("Windows screen dimensions outside capture limits")
     }
     desktopDC, _, _ := getDC.Call(0)
@@ -101,7 +105,7 @@ func Capture() (Frame, error) {
     if ok == 0 { return Frame{}, errors.New("Windows screen read failed") }
 
     size := targetWidth*targetHeight*4
-    if size == 0 || size > 1280*720*4 {
+    if size == 0 || size > maxW*maxH*4 {
         return Frame{}, errors.New("Windows screenshot exceeds safe dimensions")
     }
     source := unsafe.Slice((*byte)(unsafe.Pointer(pixelPtr)), size)
@@ -116,7 +120,7 @@ func Capture() (Frame, error) {
     if err := jpeg.Encode(&output, rgba, &jpeg.Options{Quality:68}); err != nil {
         return Frame{}, err
     }
-    if output.Len() > 2<<20 {
+    if output.Len() > 4<<20 {
         return Frame{}, errors.New("Windows snapshot exceeds safe transfer size")
     }
     return Frame{JPEG:output.Bytes(), Width:targetWidth, Height:targetHeight}, nil

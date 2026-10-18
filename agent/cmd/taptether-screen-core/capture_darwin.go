@@ -11,7 +11,7 @@ package main
 bool tt_capture_supported(void);
 bool tt_capture_permitted(void);
 void tt_request_capture_access(void);
-void *tt_primary_display(int *outW, int *outH);
+void *tt_primary_display(int *outW, int *outH, int maxW, int maxH);
 */
 import "C"
 
@@ -34,7 +34,7 @@ type Frame struct {
 
 func nativeAvailable() bool { return bool(C.tt_capture_supported()) }
 
-func nativeCapture() (Frame, error) {
+func nativeCapture(detail bool) (Frame, error) {
     if !nativeAvailable() {
         return Frame{}, errors.New("ScreenCaptureKit screenshots require macOS 14 or newer")
     }
@@ -43,13 +43,15 @@ func nativeCapture() (Frame, error) {
         return Frame{}, errors.New("allow taptether-screen-core in System Settings > Privacy & Security > Screen & System Audio Recording, then restart TapTether")
     }
     var w, h C.int
-    ptr := C.tt_primary_display(&w, &h)
+    maxW, maxH := 1280, 720
+    if detail { maxW, maxH = 1920, 1080 }
+    ptr := C.tt_primary_display(&w, &h, C.int(maxW), C.int(maxH))
     if ptr == nil {
         return Frame{}, errors.New("ScreenCaptureKit could not capture the main display; verify the desktop session and permission")
     }
     defer C.free(ptr)
     size := int(w) * int(h) * 4
-    if size < 4 || size > 1280*720*4 {
+    if size < 4 || size > maxW*maxH*4 {
         return Frame{}, errors.New("capture dimensions outside safety limits")
     }
     pixels := C.GoBytes(unsafe.Pointer(ptr), C.int(size))
@@ -58,7 +60,7 @@ func nativeCapture() (Frame, error) {
     if err := jpeg.Encode(&buffer, picture, &jpeg.Options{Quality:68}); err != nil {
         return Frame{}, err
     }
-    if buffer.Len() > 2<<20 {
+    if buffer.Len() > 4<<20 {
         return Frame{}, errors.New("screen image exceeds transfer limit")
     }
     return Frame{JPEG:buffer.Bytes(), Width:int(w), Height:int(h)}, nil

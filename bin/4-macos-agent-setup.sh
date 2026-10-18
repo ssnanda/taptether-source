@@ -100,6 +100,44 @@ ensure_screen_payload() {
     return 1
   fi
 }
+# Never install a newer Screen Core as part of ordinary agent updates.
+# Only an explicit version-checked owner command may replace this signed,
+# Screen-Recording-approved executable; keep the original as a local backup.
+upgrade_screen_core() {
+  local authorized="$1" source="$SELF/taptether-screen-core" incoming current
+  [[ -x "$source" ]] || { notice 'Open the newest TapTether Agent.app to get the Screen Core payload.' >&2; return 1; }
+  incoming="$("$source" --version)"
+  current="$("$SCREEN" --version 2>/dev/null || true)"
+  [[ "$incoming" == "$authorized" ]] || { notice 'Screen Core authorization does not match payload.' >&2; return 1; }
+  [[ "$authorized" =~ ^[0-9]+$ ]] || { notice 'Invalid Screen Core version.' >&2; return 1; }
+  if [[ "$current" == "$authorized" ]]; then
+    notice "Screen Core $current is already installed. Permission unchanged."
+    return 0
+  fi
+  [[ -x "$SCREEN" ]] || { notice 'Screen Core is missing; run Install / Repair first.' >&2; return 1; }
+  if ! /usr/bin/codesign --verify --strict "$source" >/dev/null 2>&1; then
+    notice 'Incoming Screen Core signature verification failed.' >&2
+    return 1
+  fi
+  local staged backup
+  staged="$(mktemp "$BIN/.screen-core.XXXXXXXX")" || return 1
+  backup="$SCREEN.backup-$current"
+  if ! cp "$source" "$staged" || ! chmod 755 "$staged" ||
+     ! /usr/bin/codesign --verify --strict "$staged" >/dev/null 2>&1; then
+    rm -f "$staged"
+    notice 'Screen Core staging failed, original untouched.' >&2
+    return 1
+  fi
+  # The signed helper can be rolled back manually; routine agents never
+  # overwrite this backup or reset the Screen Recording TCC entry.
+  cp -p "$SCREEN" "$backup" || { rm -f "$staged"; return 1; }
+  mv -f "$staged" "$SCREEN" || { rm -f "$staged"; return 1; }
+  launchctl kickstart -k "$TARGET/$SCREEN_LABEL" || {
+    notice 'Screen Core replaced but failed to restart; check diagnostics and permission.' >&2
+    return 1
+  }
+  notice "Screen Core upgraded to $incoming. If macOS prompts, approve Screen Recording for the new signed helper."
+}
 # Never truncate a currently executing shell script during self-update.
 # Older taptetherctl-mac/update helper processes can still be reading the
 # original inode. Install in the same directory and rename atomically.
@@ -528,6 +566,7 @@ case "${1:-}" in
   enable-shutdown) enable_shutdown ;;
   disable-shutdown) disable_shutdown ;;
   upgrade-core) [[ "${2:-}" == --authorize && -n "${3:-}" ]] || { notice 'Usage: upgrade-core --authorize VERSION' >&2; exit 2; }; install_core "$SELF/taptether-input-core" "$3"; launchctl kickstart -k "$TARGET/$CORE_LABEL" ;;
+  upgrade-screen-core) [[ "${2:-}" == --authorize && -n "${3:-}" ]] || { notice 'Usage: upgrade-screen-core --authorize VERSION' >&2; exit 2; }; upgrade_screen_core "$3" ;;
   uninstall) uninstall_agent "${2:-}" ;;
-  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|diagnostics|pairing|devices|update|upgrade-core --authorize VERSION|uninstall --keep-pairing|uninstall --erase-pairing}' >&2; exit 2 ;;
+  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|diagnostics|pairing|devices|update|upgrade-core --authorize VERSION|upgrade-screen-core --authorize VERSION|uninstall --keep-pairing|uninstall --erase-pairing}' >&2; exit 2 ;;
 esac

@@ -31,6 +31,28 @@ macOS-permission-approved executable. They must remain independent.
 
 ## Change history
 
+### 2026-10-18 — Screen Core 2 (optional high-detail capture)
+
+- **Input Core 1.0.0: unchanged.**
+- **Screen Core 2: changed with independently versioned authorization.**
+- Adds a bounded 1920×1080 on-demand JPEG capture, preserving 1280×720
+  Live/default Snapshot. The authenticated local socket accepts a fixed
+  `capture-detail` request with the existing private token and peer checks.
+- **Routine updates never replace an installed Screen Core, even when a
+  new v2 binary is bundled.** It is explicitly installed only by:
+  `taptetherctl-mac upgrade-screen-core --authorize 2`, after installing
+  the latest Agent.app. This command verifies the incoming signature,
+  preserves the previous binary as a backup and restarts only Screen Core.
+- **macOS permission impact:** Changing the independently signed Screen
+  Core executable *may require the owner to approve Screen Recording again*.
+  The command is not run automatically. No TCC entries are deleted,
+  no pairing/certificate keys are rotated, and Input Core is not touched.
+- Existing Screen Core v1 continues to support the ordinary 720p
+  Snapshot/Live features. The new HD action explicitly reports when v2 is
+  absent. The owner requested these pending 0.7 coding improvements; replacing
+  the installed protected helper remains a distinct opt-in action.
+
+
 ### 2026-10-16 — Upcoming 0.7.2 maintenance (draft)
 
 - **Input Core 1.0.0: unchanged executable implementation and version.**

@@ -72,7 +72,7 @@ class MediaRemote extends StatefulWidget {
   final Future<void> Function(MediaService, String) onSearch;
   final Future<void> Function(MediaService)? onOpenService;
   final Future<void> Function(MediaService)? onSearchPage;
-  final Future<void> Function(MediaService)? onExitVideo;
+  final Future<void> Function(MediaService, String?)? onExitVideo;
   final Future<void> Function(MediaService)? onProfile;
   final Future<void> Function(MediaService)? onCloseService;
 
@@ -84,6 +84,7 @@ class _MediaRemoteState extends State<MediaRemote> {
   final _search = TextEditingController();
   bool _searching = false;
   bool _searchReady = false;
+  String? _lastSearch;
 
   @override
   void didUpdateWidget(covariant MediaRemote oldWidget) {
@@ -92,6 +93,7 @@ class _MediaRemoteState extends State<MediaRemote> {
         (oldWidget.enabled && !widget.enabled)) {
       _searchReady = false;
       _search.clear();
+      _lastSearch = null;
     }
   }
 
@@ -130,7 +132,12 @@ class _MediaRemoteState extends State<MediaRemote> {
       await widget.onSearch(widget.service, _search.text);
       // Explicitly re-arm Search for the next query. TapTether cannot
       // detect whether a viewer has entered a video in this browser tab.
-      if (mounted) setState(() => _searchReady = false);
+      if (mounted) {
+        setState(() {
+          _searchReady = false;
+          _lastSearch = _search.text.trim();
+        });
+      }
     } catch (error) {
       _error(error);
     } finally {
@@ -142,7 +149,7 @@ class _MediaRemoteState extends State<MediaRemote> {
     if (!widget.enabled || _searching || widget.onExitVideo == null) return;
     setState(() { _searching = true; _searchReady = false; });
     try {
-      await widget.onExitVideo!(widget.service);
+      await widget.onExitVideo!(widget.service, _lastSearch);
     } catch (error) { _error(error); }
     finally { if (mounted) setState(() => _searching = false); }
   }
@@ -182,7 +189,7 @@ class _MediaRemoteState extends State<MediaRemote> {
   Widget _button(String label, IconData icon, String key, {Key? buttonKey}) {
     return OutlinedButton.icon(
       key: buttonKey,
-      onPressed: widget.enabled ? () => widget.onKey(key) : null,
+      onPressed: widget.enabled && !_searching ? () => widget.onKey(key) : null,
       icon: Icon(icon),
       label: Text(label),
     );
@@ -252,17 +259,22 @@ class _MediaRemoteState extends State<MediaRemote> {
               key: const ValueKey('media-exit-video'),
               onPressed: widget.enabled && !_searching ? _goBack : null,
               icon: const Icon(Icons.arrow_back),
-              label: const Text('Back to browsing'),
+              label: Text(widget.service == MediaService.netflix
+                  ? 'Exit video / Browse' : 'Back to YouTube'),
             ),
-          _button('Rewind', Icons.replay_10, 'Left'),
+          _button('Rewind 10s', Icons.replay_10,
+              widget.service == MediaService.youtube ? 'j' : 'Left'),
           _button('Play / Pause', Icons.play_arrow, 'space',
               buttonKey: const ValueKey('media-play-pause')),
-          _button('Skip ahead', Icons.forward_10, 'Right'),
+          _button('Forward 10s', Icons.forward_10,
+              widget.service == MediaService.youtube ? 'l' : 'Right'),
           _button('Full screen', Icons.fullscreen, 'f'),
           _button('Exit full screen', Icons.fullscreen_exit, 'Escape'),
           if (widget.service == MediaService.youtube) ...[
             _button('Next video', Icons.skip_next, 'shift+n'),
             _button('Captions', Icons.closed_caption, 'c'),
+          ] else ...[
+            _button('Skip intro', Icons.skip_next, 's'),
           ],
         ],
       ),

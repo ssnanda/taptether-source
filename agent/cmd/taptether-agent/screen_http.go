@@ -4,6 +4,7 @@ import (
     "fmt"
     "net/http"
     "strconv"
+    "strings"
     "sync"
     "time"
 
@@ -42,13 +43,21 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
     }
     mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
         if !authorize(w, r) { return }
+        detail := r.URL.Query().Get("detail")
+        if detail != "" && detail != "1" {
+            http.Error(w, "invalid capture detail setting", http.StatusBadRequest)
+            return
+        }
         screenCaptureLock.Lock()
-        frame, err := screencap.Capture()
+        var frame screencap.Frame
+        var err error
+        if detail == "1" { frame, err = screencap.CaptureDetail() } else { frame, err = screencap.Capture() }
         screenCaptureLock.Unlock()
         if err != nil {
             http.Error(w, err.Error(), http.StatusForbidden)
             return
         }
+        if detail == "1" { w.Header().Set("X-Capture-Detail", "native") }
         w.Header().Set("Content-Type", "image/jpeg")
         w.Header().Set("Content-Length", strconv.Itoa(len(frame.JPEG)))
         w.Header().Set("X-Screen-Width", strconv.Itoa(frame.Width))
@@ -85,11 +94,26 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             http.Error(w, err.Error(), http.StatusForbidden)
             return
         }
-        // MJPEG preview targets 720p / 30 fps as an initial local transport.
+        // Authenticated viewer may request a bounded cadence, avoiding needless
+        // CPU/JPEG traffic on slower Wi-Fi. Capture source stays at 720p.
+        fps := 15
+        if value := r.URL.Query().Get("fps"); value != "" {
+            parsed, parseErr := strconv.Atoi(value)
+            if parseErr != nil || (parsed != 8 && parsed != 15 && parsed != 30) {
+                http.Error(w, "invalid live frame rate", http.StatusBadRequest)
+                return
+            }
+            fps = parsed
+        }
+        if strings.Contains(r.URL.RawQuery, "detail=") {
+            http.Error(w, "high-detail video streaming requires Snapshot mode", http.StatusBadRequest)
+            return
+        }
+        // MJPEG preview targets the selected frame cadence.
         // The loop naturally drops FPS if encoding cannot keep up.
         w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=ttframe")
         w.Header().Set("Connection", "close")
-        ticker := time.NewTicker(time.Second / 30)
+        ticker := time.NewTicker(time.Second / time.Duration(fps))
         defer ticker.Stop()
         // A long-lived connection must not outlive the paired session indefinitely.
         lifetime := time.NewTimer(14 * time.Minute)

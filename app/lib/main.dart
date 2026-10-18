@@ -332,9 +332,9 @@ class LocalAgent {
     await res.drain<void>();
   }
 
-  Future<ScreenFrame> snapshot() async {
+  Future<ScreenFrame> snapshot({bool detail = false}) async {
     if (!configured) throw StateError('Connect to a paired computer first.');
-    final req = await _client!.getUrl(_base!.resolve('/api/snapshot'));
+    final req = await _client!.getUrl(_base!.resolve(detail ? '/api/snapshot?detail=1' : '/api/snapshot'));
     req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
     final response = await req.close().timeout(const Duration(seconds: 7));
     if (response.statusCode != 200) {
@@ -343,26 +343,33 @@ class LocalAgent {
           ? 'Screen capture unavailable (HTTP ${response.statusCode}).'
           : explanation.trim());
     }
+    if (detail && response.headers.value('x-capture-detail') != 'native') {
+      await response.drain<void>();
+      throw StateError('Computer agent needs an update for high-detail Snapshot.');
+    }
     final width = int.tryParse(response.headers.value('x-screen-width') ?? '');
     final height = int.tryParse(response.headers.value('x-screen-height') ?? '');
     if (width == null || height == null || width < 1 || height < 1 ||
-        width > 1280 || height > 720) {
+        width > 1920 || height > 1080) {
       await response.drain<void>();
       throw const FormatException('Agent sent invalid screen dimensions.');
     }
     final output = BytesBuilder(copy: false);
     await for (final bytes in response.timeout(const Duration(seconds: 8))) {
       output.add(bytes);
-      if (output.length > 2 << 20) {
+      if (output.length > 4 << 20) {
         throw const FormatException('Screenshot exceeds safe transfer size.');
       }
     }
     return ScreenFrame(output.takeBytes(), width, height);
   }
 
-  Stream<ScreenFrame> liveFrames() async* {
+  Stream<ScreenFrame> liveFrames({int fps = 15}) async* {
+    if (fps != 8 && fps != 15 && fps != 30) {
+      throw const FormatException('Unsupported streaming frame rate.');
+    }
     if (!configured) throw StateError('Connect to a paired computer first.');
-    final req = await _client!.getUrl(_base!.resolve('/api/live'));
+    final req = await _client!.getUrl(_base!.resolve('/api/live?fps=$fps'));
     req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
     final response = await req.close().timeout(const Duration(seconds: 7));
     if (response.statusCode != 200) {
@@ -506,6 +513,10 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _macShortcuts = false;
   bool _haptics = true;
   Timer? _snapshotTimer;
+  Timer? _adaptiveLiveTimer;
+  int _liveFps = 15;
+  bool _liveAdjusted = false;
+  bool _requestDetailFrame = false;
   StreamSubscription<ScreenFrame>? _liveFrames;
   ScreenFrame? _currentFrame;
   final LiveStreamRate _liveRate = LiveStreamRate();
@@ -545,6 +556,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     _screenEpoch++;
     _snapshotTimer?.cancel();
     _snapshotTimer = null;
+    _adaptiveLiveTimer?.cancel();
+    _adaptiveLiveTimer = null;
     final prior = _liveFrames;
     _liveFrames = null;
     if (prior != null) unawaited(prior.cancel());
@@ -564,7 +577,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           (_) => unawaited(_refreshScreenshot()));
     } else if (_remoteLayout.visualMode == 'live') {
       _screenBusy = true;
-      _liveFrames = agent.liveFrames().listen((frame) {
+      _liveFrames = agent.liveFrames(fps: _liveFps).listen((frame) {
         if (!mounted || _screenEpoch != epoch || !_viewingScreen) return;
         _liveRate.record(frame);
         setState(() {
@@ -585,6 +598,22 @@ class _RemoteScreenState extends State<RemoteScreen>
           _screenError ??= 'Live stream stopped. Reopen Live to retry.';
         });
       }, cancelOnError: true);
+      // Conservative one-way adaptation per session. Avoid bouncing between
+      // bitrates when Ubuntu's capture source is limited to 10 fps.
+      _adaptiveLiveTimer = Timer(const Duration(seconds: 12), () {
+        if (!mounted || _screenEpoch != epoch || !_viewingScreen) return;
+        final measured = _liveRate.framesPerSecond;
+        final rate = _liveRate.megabitsPerSecond;
+        if (measured == null) return;
+        final reduced = measured < _liveFps * 0.70 && _liveFps > 8;
+        final excellent = !_liveAdjusted && _liveFps == 15 &&
+            measured >= 14 && rate != null && rate < 6;
+        if (reduced || excellent) {
+          _liveAdjusted = true;
+          _liveFps = reduced ? 8 : 30;
+          _syncScreen(preserveFrame: true);
+        }
+      });
     }
   }
 
@@ -599,7 +628,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     _screenBusy = true;
     if (mounted) setState(() {});
     try {
-      final frame = await agent.snapshot();
+      final detail = _requestDetailFrame;
+      _requestDetailFrame = false;
+      final frame = await agent.snapshot(detail: detail);
       if (!mounted || _screenEpoch != epoch) return;
       setState(() {
         _currentFrame = frame;
@@ -2609,10 +2640,15 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> _mediaSearchPage(MediaService service) =>
       _mediaNavigateSameTab(MediaSearch.searchPageUrl(service));
 
-  Future<void> _mediaExitVideo(MediaService service) async {
-    // Browser Back takes the player back to the browsing/search page when
-    // the viewer launched a video from that page.
-    await agent.send('key', {'key': _mediaIsMac ? 'cmd+Left' : 'alt+Left'});
+  Future<void> _mediaExitVideo(MediaService service, String? lastSearch) async {
+    // Netflix's in-player back arrow is not a universal keyboard shortcut.
+    // Escape HTML fullscreen, then return to the prior *search results* if
+    // this remote initiated one, otherwise return to Browse. Same tab only.
+    await agent.send('key', {'key': 'Escape'});
+    final query = lastSearch?.trim() ?? '';
+    await _mediaNavigateSameTab(query.isNotEmpty
+        ? MediaSearch.url(service, query)
+        : MediaSearch.browseUrl(service));
   }
 
   Future<void> _mediaProfile(MediaService service) async {
@@ -2681,8 +2717,9 @@ class _RemoteScreenState extends State<RemoteScreen>
                 const SizedBox(height: 10),
                 const Text('This tests only your paired computer over '
                     'encrypted local LAN. It is not your Wi-Fi link rate '
-                    'or internet speed. Capture is currently capped '
-                    'at 1280 × 720 by the agent.'),
+                    'or internet speed. Live uses 720p; compatible macOS '
+                    'Screen Core v2 and Windows agents support an on-demand '
+                    '1920 × 1080 Snapshot for zoomed detail.'),
               ],
             ),
             actions: [
@@ -2716,6 +2753,19 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  void _requestHighDetail() {
+    if (!agent.configured || _screenBusy) return;
+    _requestDetailFrame = true;
+    if (_remoteLayout.visualMode != 'snapshot') {
+      // Pause Live intentionally; never mix differently-sized screen frames
+      // or keep a 1080p encoder active during ordinary Live playback.
+      _setLayout(_changedLayout(visualMode: 'snapshot',
+          mediaMode: false, presenting: false));
+    } else {
+      unawaited(_refreshScreenshot());
+    }
+  }
+
   Widget _remoteInputSurface({double height = 224,
       bool immersive = false}) {
     final showPreview = _remoteLayout.visualMode != 'trackpad' &&
@@ -2740,6 +2790,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               : null,
           onConnectionMetrics: () => unawaited(_showConnectionMetrics()),
           onRefresh: () => unawaited(_refreshScreenshot()),
+          onHighDetail: _screenBusy ? null : _requestHighDetail,
           onTap: (x, y, button) => unawaited(
               command('tap', {'x': x, 'y': y, 'button': button})),
           onClick: (button) => unawaited(
