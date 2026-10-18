@@ -57,6 +57,7 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             http.Error(w, err.Error(), http.StatusForbidden)
             return
         }
+        if detail == "1" { w.Header().Set("X-Capture-Detail", "native") }
         w.Header().Set("Content-Type", "image/jpeg")
         w.Header().Set("Content-Length", strconv.Itoa(len(frame.JPEG)))
         w.Header().Set("X-Screen-Width", strconv.Itoa(frame.Width))
