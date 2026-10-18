@@ -6,6 +6,14 @@ import 'package:taptether/app_security.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  // Bound frame pumping: animated PIN focus/cursors should never make a
+  // security regression test wait indefinitely for a globally settled tree.
+  Future<void> pumpLockFrames(WidgetTester tester) async {
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
   Future<void> configureBiometricLock() async {
     FlutterSecureStorage.setMockInitialValues(<String, String>{});
     final security = AppSecurity.instance;
@@ -35,7 +43,7 @@ void main() {
         child: const Scaffold(body: Text('Saved devices are private')),
       ),
     ));
-    await tester.pumpAndSettle();
+    await pumpLockFrames(tester);
     expect(requests, 1);
     expect(find.text('Saved devices are private'), findsOneWidget);
     expect(AppSecurity.instance.unlocked, isTrue);
@@ -56,7 +64,7 @@ void main() {
         child: const Scaffold(body: Text('Devices dashboard')),
       ),
     ));
-    await tester.pumpAndSettle();
+    await pumpLockFrames(tester);
     expect(requests, 1);
     expect(find.text('Six-digit app PIN'), findsOneWidget);
     expect(find.text('Unlock with PIN'), findsOneWidget);
@@ -66,7 +74,7 @@ void main() {
     expect(requests, 1);
     await tester.enterText(find.byType(TextField), '427915');
     await tester.tap(find.text('Unlock with PIN'));
-    await tester.pumpAndSettle();
+    await pumpLockFrames(tester);
     expect(find.text('Devices dashboard'), findsOneWidget);
     expect(AppSecurity.instance.unlocked, isTrue);
   });
@@ -84,11 +92,11 @@ void main() {
         child: const Scaffold(body: Text('Unlocked remote')),
       ),
     ));
-    await tester.pumpAndSettle();
+    await pumpLockFrames(tester);
     expect(requests, 1);
     expect(find.text('Unlocked remote'), findsOneWidget);
     AppSecurity.instance.lock();
-    await tester.pumpAndSettle();
+    await pumpLockFrames(tester);
     expect(requests, 2);
     expect(find.text('Unlocked remote'), findsOneWidget);
   });
