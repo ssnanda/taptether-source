@@ -34,6 +34,20 @@ RUNTIME = Path("/run/user") / str(os.getuid())
 SOCKET = RUNTIME / "taptether-screen.sock"
 STATE_DIR = Path.home() / ".config" / "taptether"
 TOKEN = STATE_DIR / "screen-restore.token"
+SCREEN_DISABLED = STATE_DIR / "screen-sharing-disabled"
+
+
+def sharing_allowed():
+    # Same per-desktop-user marker as the system agent's PolicyAllowed().
+    # Broken symlinks and unexpected filesystem access fail closed.
+    try:
+        SCREEN_DISABLED.lstat()
+        return False
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+
 
 
 class ScreenService:
@@ -60,6 +74,8 @@ class ScreenService:
         itself scales and JPEG-encodes; Python only copies the finished JPEG.
         """
         try:
+            if not sharing_allowed():
+                return Gst.FlowReturn.OK
             if sample is None:
                 raise ValueError("JPEG sample is unavailable")
             caps = sample.get_caps()
@@ -181,6 +197,13 @@ class ScreenService:
         return "pipewiresrc fd=%d path=%d do-timestamp=true" % (self.fd, node)
 
     def start(self):
+        if not sharing_allowed():
+            with self.lock:
+                self.error = "Screen sharing is disabled in the Ubuntu TapTether tray"
+                self.frame = None
+                self.launching = False
+            self.close_stream()
+            return False
         with self.lock:
             if self.pipeline is not None:
                 self.pipeline.set_state(Gst.State.PLAYING)
@@ -216,6 +239,10 @@ class ScreenService:
                 self.pipeline = pipeline
                 self.capture_paused = False
                 self.error = ""
+            # The tray could have blocked sharing while GNOME's portal
+            # prompt was still visible. Do not leave that session open.
+            if not sharing_allowed():
+                self.close_stream()
         except Exception as exc:
             with self.lock:
                 self.error = str(exc)[:180]
@@ -235,6 +262,8 @@ class ScreenService:
         self.close_stream()
 
     def close_stream(self):
+        with self.lock:
+            self.frame = None
         pipeline = self.pipeline
         self.pipeline = None
         self.capture_paused = False
@@ -270,6 +299,10 @@ class ScreenService:
               file=sys.stderr, flush=True)
 
     def check_idle(self):
+        if not sharing_allowed():
+            if self.pipeline is not None or self.session is not None:
+                self.close_stream()
+            return True
         with self.lock:
             inactive = time.monotonic() - self.last_request > 35
             pipeline = self.pipeline
@@ -281,6 +314,13 @@ class ScreenService:
             # Live generates frequent requests, so it must remain running.
             pipeline.set_state(Gst.State.PAUSED)
         return True
+
+    def disable_capture(self):
+        with self.lock:
+            self.frame = None
+            self.error = "Screen sharing is disabled in the Ubuntu TapTether tray"
+        self.close_stream()
+        return False
 
     def open_media(self, client):
         # Desktop browser actions are initiated only by the already paired
@@ -336,6 +376,13 @@ class ScreenService:
             if request == b"P":
                 client.sendall(b"Y")
                 return
+            if request == b"D":
+                # Owner toggled sharing OFF: release the PipeWire portal
+                # immediately, rather than waiting for the idle timeout.
+                if not sharing_allowed():
+                    GLib.idle_add(self.disable_capture)
+                client.sendall(b"Y")
+                return
             if request == b"Q":
                 client.sendall(b"Y")
                 GLib.idle_add(self.mainloop.quit)
@@ -345,6 +392,11 @@ class ScreenService:
                 return
             if request != b"G":
                 return  # Capability probe must not request screen permission.
+            if not sharing_allowed():
+                message = b"Ubuntu screen sharing is blocked in the TapTether tray"
+                client.sendall(struct.pack(">III", 0, 0, len(message)) + message)
+                GLib.idle_add(self.disable_capture)
+                return
             with self.lock:
                 self.last_request = time.monotonic()
                 launching = self.launching
@@ -364,6 +416,11 @@ class ScreenService:
                     frame = self.frame
                     error = self.error
                     running = self.launching
+                if not sharing_allowed():
+                    message = b"Ubuntu screen sharing is blocked in the TapTether tray"
+                    client.sendall(struct.pack(">III", 0, 0, len(message)) + message)
+                    GLib.idle_add(self.disable_capture)
+                    return
                 if frame and time.monotonic() - frame[3] < 2:
                     width, height, jpeg, _at = frame
                     client.sendall(struct.pack(">III", width, height, len(jpeg)) + jpeg)

@@ -36,6 +36,37 @@ ICON = Path.home() / ".local" / "share" / "icons" / "hicolor" / "512x512" / "app
 SHUTDOWN_DISABLED = Path.home() / ".config" / "taptether" / "remote-shutdown-disabled"
 SCREEN_HELPER = Path("/usr/share/taptether/taptether_screen.py")
 SCREEN_SOCKET = Path("/run/user") / str(os.getuid()) / "taptether-screen.sock"
+SCREEN_DISABLED = Path.home() / ".config" / "taptether" / "screen-sharing-disabled"
+
+
+def screen_sharing_allowed():
+    try:
+        SCREEN_DISABLED.lstat()
+        return False
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+
+
+def change_screen_sharing_policy(allowed):
+    """Store the desktop owner's choice; cannot be changed from the phone."""
+    if allowed:
+        SCREEN_DISABLED.unlink(missing_ok=True)
+    else:
+        SCREEN_DISABLED.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            fd = os.open(str(SCREEN_DISABLED),
+                         os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600)
+            os.close(fd)
+        except FileExistsError:
+            pass
+        SCREEN_DISABLED.chmod(0o600)
+        # Stop any active portal immediately. The agent also checks each
+        # authenticated snapshot/live request and ongoing stream frame.
+        screen_request(b"D")
+
 
 
 
@@ -379,6 +410,24 @@ def menu(version):
     screen_state = Gtk.MenuItem(label="Status: Checking…")
     screen_state.set_sensitive(False)
     screen_menu.append(screen_state)
+    sharing = Gtk.CheckMenuItem(label="Allow screen sharing (Snapshot / Live)")
+    sharing.set_active(screen_sharing_allowed())
+
+    def toggle_sharing(item):
+        try:
+            change_screen_sharing_policy(item.get_active())
+            refresh()
+        except OSError:
+            item.handler_block_by_func(toggle_sharing)
+            item.set_active(screen_sharing_allowed())
+            item.handler_unblock_by_func(toggle_sharing)
+            message("Screen sharing",
+                    "Could not change local sharing permission.",
+                    error=True)
+
+    sharing.connect("toggled", toggle_sharing)
+    screen_menu.append(sharing)
+    screen_menu.append(Gtk.SeparatorMenuItem())
     screen_toggle = add_menu_item(screen_menu, "Start Screen Helper",
                                   lambda item: manage_screen_helper(
                                       "stop" if screen_running() else "start", item))
@@ -425,7 +474,11 @@ def menu(version):
         status.set_label("Status: " + ("Running" if active else "Stopped"))
         start_stop.set_label("Stop TapTether" if active else "Start TapTether")
         helper_active = screen_running()
-        screen_state.set_label("Status: " + ("Running" if helper_active else "Stopped"))
+        allowed = screen_sharing_allowed()
+        screen_state.set_label("Screen sharing: " + ("Allowed" if allowed else "Blocked"))
+        sharing.handler_block_by_func(toggle_sharing)
+        sharing.set_active(allowed)
+        sharing.handler_unblock_by_func(toggle_sharing)
         screen_toggle.set_label("Stop Screen Helper" if helper_active else "Start Screen Helper")
         return True
 
