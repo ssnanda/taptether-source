@@ -38,6 +38,12 @@ func Available() bool {
 }
 
 func Capture() (Frame, error) {
+    // Defense-in-depth: never request a frame from the logged-in desktop
+    // when its owner blocked Screen Sharing, even if a handler forgets
+    // to enforce the HTTP policy.
+    if !PolicyAllowed() {
+        return Frame{}, errors.New("Ubuntu screen sharing is disabled in the TapTether tray")
+    }
     conn, err := net.DialTimeout("unix", screenSocket(), 1*time.Second)
     if err != nil {
         return Frame{}, errors.New("Ubuntu Screen helper is unavailable: sign in to the desktop and run the TapTether screen helper")
