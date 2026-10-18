@@ -105,6 +105,7 @@ jobs:
           python3 bin/4-test-deb-packaging.py
           python3 bin/4-test-agent-release-feeds.py
           python3 bin/4-test-ubuntu-screen-lifecycle.py
+          python3 bin/4-test-ubuntu-screen-policy.py
           python3 bin/4-test-saved-devices-dashboard.py
           python3 bin/4-test-macos-uninstall.py
           python3 bin/4-test-macos-input-core.py
@@ -411,6 +412,7 @@ jobs:
           python3 -m py_compile bin/7b-tt-ubuntu-release-info.py desktop/ubuntu/taptether_tray.py
           python3 bin/4-test-agent-release-feeds.py
           python3 bin/4-test-ubuntu-screen-lifecycle.py
+          python3 bin/4-test-ubuntu-screen-policy.py
           python3 bin/4-test-saved-devices-dashboard.py
           python3 bin/4-test-deb-packaging.py
           python3 bin/4-check-release-pipeline.py
