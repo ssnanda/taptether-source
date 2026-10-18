@@ -160,7 +160,7 @@ class _MediaRemoteState extends State<MediaRemote> {
     final shouldClose = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
-        title: Text('Close ' + widget.service.label + ' tab?'),
+        title: Text('Close ${widget.service.label} tab?'),
         content: const Text('This closes the currently focused browser '
             'tab on your computer. TapTether cannot verify its URL. '
             'You will remain signed in.'),
@@ -219,7 +219,7 @@ class _MediaRemoteState extends State<MediaRemote> {
         key: const ValueKey('media-search-page'),
         onPressed: widget.enabled && !_searching ? _openSearchPage : null,
         icon: const Icon(Icons.manage_search),
-        label: Text('Go to ' + widget.service.label + ' search page'),
+        label: Text('Go to ${widget.service.label} search page'),
       ),
       const SizedBox(height: 8),
       TextField(
@@ -292,7 +292,7 @@ class _MediaRemoteState extends State<MediaRemote> {
               key: const ValueKey('media-close'),
               onPressed: widget.enabled && !_searching ? _closeTab : null,
               icon: const Icon(Icons.close),
-              label: Text('Close ' + widget.service.label + ' tab'),
+              label: Text('Close ${widget.service.label} tab'),
             ),
         ],
       ),
