@@ -61,7 +61,7 @@ test_module = ast.Module(body=[method], type_ignores=[])
 namespace = {
     "Gst": SimpleNamespace(FlowReturn=SimpleNamespace(OK=0)),
     "MAX_W": 1280, "MAX_H": 720, "MAX_JPEG": 2 << 20,
-    "time": time,
+    "time": time, "sharing_allowed": lambda: True,
 }
 exec(compile(ast.fix_missing_locations(test_module), str(path), "exec"),
      namespace)
