@@ -1,7 +1,6 @@
 package main
 
 import (
-    "fmt"
     "net/http"
     "strconv"
     "sync/atomic"
@@ -68,7 +67,3 @@ func registerLanProbeEndpoint(mux *http.ServeMux, access *identityAPI) {
         }
     })
 }
-
-// Compile-time check: ensure this file has no accidental private information
-// dependencies or HTTP handler that listens beyond the existing TLS agent.
-var _ = fmt.Sprintf
