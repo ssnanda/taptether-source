@@ -2641,9 +2641,12 @@ class _RemoteScreenState extends State<RemoteScreen>
       _mediaNavigateSameTab(MediaSearch.searchPageUrl(service));
 
   Future<void> _mediaExitVideo(MediaService service) async {
-    // Browser Back takes the player back to the browsing/search page when
-    // the viewer launched a video from that page.
-    await agent.send('key', {'key': _mediaIsMac ? 'cmd+Left' : 'alt+Left'});
+    // Site-specific player back arrows have no stable keyboard shortcut and
+    // browser history does not reliably leave Netflix's SPA player.
+    // Escape HTML fullscreen first, then navigate the *same* browser tab to
+    // the signed-in browse page. Never claim to click an inaccessible DOM arrow.
+    await agent.send('key', {'key': 'Escape'});
+    await _mediaNavigateSameTab(MediaSearch.browseUrl(service));
   }
 
   Future<void> _mediaProfile(MediaService service) async {
