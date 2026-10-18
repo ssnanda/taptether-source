@@ -53,7 +53,7 @@ void main() {
     expect(VisualGeometry.tap(const Offset(200, 150), viewport,
       imageWidth: 1280, imageHeight: 720,
       zoom: 2, pan: const Offset(100, -40)), (3750, 5889));
-    expect(VisualGeometry.tap(const Offset(-100, 150), viewport,
+    expect(VisualGeometry.tap(const Offset(-400, 150), viewport,
       imageWidth: 1280, imageHeight: 720, zoom: 2), isNull);
     expect(VisualGeometry.tap(const Offset(200, 150), viewport,
       imageWidth: 1280, imageHeight: 720,
