@@ -132,10 +132,12 @@ class _MediaRemoteState extends State<MediaRemote> {
       await widget.onSearch(widget.service, _search.text);
       // Explicitly re-arm Search for the next query. TapTether cannot
       // detect whether a viewer has entered a video in this browser tab.
-      if (mounted) setState(() {
-        _searchReady = false;
-        _lastSearch = _search.text.trim();
-      });
+      if (mounted) {
+        setState(() {
+          _searchReady = false;
+          _lastSearch = _search.text.trim();
+        });
+      }
     } catch (error) {
       _error(error);
     } finally {
