@@ -30,6 +30,10 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             http.Error(w, "not paired", http.StatusUnauthorized)
             return false
         }
+        if !screencap.PolicyAllowed() {
+            http.Error(w, "Screen sharing is disabled on the Ubuntu computer. Enable it in the TapTether tray.", http.StatusForbidden)
+            return false
+        }
         if !screencap.Available() {
             http.Error(w, "screen capture not supported on this agent yet", http.StatusNotImplemented)
             return false
@@ -96,6 +100,10 @@ func registerScreenEndpoints(mux *http.ServeMux, access *identityAPI) {
             case <-lifetime.C: return
             default:
             }
+            // Recheck local consent for every MJPEG frame. Turning off
+            // sharing in the Ubuntu tray terminates an already-active Live
+            // stream, rather than only preventing new sessions.
+            if !screencap.PolicyAllowed() { return }
             if err := deadlines.SetWriteDeadline(time.Now().Add(5*time.Second)); err != nil { return }
             header := fmt.Sprintf("--ttframe\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nX-Screen-Width: %d\r\nX-Screen-Height: %d\r\n\r\n", len(frame.JPEG), frame.Width, frame.Height)
             if _, err := w.Write([]byte(header)); err != nil { return }
