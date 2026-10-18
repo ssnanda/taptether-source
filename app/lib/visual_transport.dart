@@ -23,7 +23,7 @@ class VisualGeometry {
       return Size.zero;
     }
     final scale = (viewport.width / imageWidth)
-        .clamp(0.0, viewport.height / imageHeight);
+        .clamp(0.0, viewport.height / imageHeight).toDouble();
     return Size(imageWidth * scale, imageHeight * scale);
   }
 
@@ -40,7 +40,8 @@ class VisualGeometry {
     }
     final x = ((fit.width * zoom - viewport.width) / 2).clamp(0.0, double.infinity);
     final y = ((fit.height * zoom - viewport.height) / 2).clamp(0.0, double.infinity);
-    return Offset(candidate.dx.clamp(-x, x), candidate.dy.clamp(-y, y));
+    return Offset(candidate.dx.clamp(-x, x).toDouble(),
+        candidate.dy.clamp(-y, y).toDouble());
   }
 
   /// Keep the content beneath the starting finger centroid in place while
