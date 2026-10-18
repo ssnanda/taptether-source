@@ -14,6 +14,8 @@ class VisualSurface extends StatefulWidget {
     required this.busy,
     required this.error,
     required this.onRefresh,
+    this.streamDetails,
+    this.onConnectionMetrics,
     required this.onTap,
     required this.onClick,
     required this.onMove,
@@ -27,6 +29,8 @@ class VisualSurface extends StatefulWidget {
   final bool busy;
   final String? error;
   final VoidCallback onRefresh;
+  final String? streamDetails;
+  final VoidCallback? onConnectionMetrics;
   final void Function(int x, int y, String button) onTap;
   final ValueChanged<String> onClick;
   final ValueChanged<Offset> onMove;
@@ -60,9 +64,13 @@ class _VisualSurfaceState extends State<VisualSurface> {
     // The visual toolbar sits inside this Listener. Do not interpret zoom,
     // fit or refresh button presses as remote taps on the computer beneath.
     final toolbarWidth = _zoom > 1 ? 252.0 : 114.0;
-    if (widget.frame != null && event.localPosition.dy >= 0 &&
-        event.localPosition.dy <= 56 &&
-        event.localPosition.dx >= _viewport.width - toolbarWidth) {
+    if (widget.frame != null &&
+        ((event.localPosition.dy >= 0 &&
+          event.localPosition.dy <= 56 &&
+          event.localPosition.dx >= _viewport.width - toolbarWidth) ||
+         (widget.onConnectionMetrics != null &&
+          event.localPosition.dy >= _viewport.height - 44 &&
+          event.localPosition.dx <= 320))) {
       return;
     }
     if (_fingers.isEmpty) {
@@ -324,13 +332,33 @@ class _VisualSurfaceState extends State<VisualSurface> {
                   const Positioned(left: 10, top: 10,
                     child: SizedBox(width: 16, height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))),
-                if (!widget.immersive) Positioned(left: 8, bottom: 8,
-                  child: IgnorePointer(child: Text(
-                    widget.live ? 'LIVE • local only' : 'SNAPSHOT • 15s',
-                    style: const TextStyle(fontSize: 10,
-                      color: Colors.white,
-                      shadows: [Shadow(blurRadius: 3,
-                        color: Colors.black)])))),
+                if (widget.frame != null &&
+                    widget.onConnectionMetrics != null)
+                  Positioned(left: 8, bottom: 8,
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(10),
+                      child: InkWell(
+                        key: const ValueKey('visual-connection-metrics'),
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: widget.onConnectionMetrics,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 5),
+                          child: Row(mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.speed, size: 14,
+                                  color: Colors.white),
+                              const SizedBox(width: 5),
+                              Text('${widget.frame!.width}×${widget.frame!.height}'
+                                '${widget.streamDetails == null ? '' :
+                                  ' · ${widget.streamDetails}'}',
+                                style: const TextStyle(
+                                  fontSize: 10, color: Colors.white)),
+                            ]),
+                        ),
+                      ),
+                    ))
               ]),
             ),
           ),
