@@ -22,6 +22,44 @@ void main() {
         isNull);
   });
 
+  test('pinch around finger position keeps same screen content underneath', () {
+    const viewport = Size(400, 300);
+    final pan = VisualGeometry.anchoredPan(
+      startFocal: const Offset(300, 150),
+      currentFocal: const Offset(300, 150),
+      viewport: viewport, startPan: Offset.zero,
+      startZoom: 1, newZoom: 2,
+      imageWidth: 1280, imageHeight: 720);
+    expect(pan, const Offset(-100, 0));
+    expect(VisualGeometry.tap(const Offset(300, 150), viewport,
+      imageWidth: 1280, imageHeight: 720, zoom: 2, pan: pan),
+      (7500, 5000));
+  });
+
+  test('pan clamps to image edges and never loses the screen', () {
+    const viewport = Size(400, 300);
+    expect(VisualGeometry.clampPan(const Offset(900, -900), viewport,
+        imageWidth: 1280, imageHeight: 720, zoom: 2),
+        const Offset(200, -75));
+    expect(VisualGeometry.clampPan(const Offset(100, 50), viewport,
+        imageWidth: 1280, imageHeight: 720, zoom: 1), Offset.zero);
+    expect(VisualGeometry.clampPan(const Offset(0, 80), viewport,
+        imageWidth: 1280, imageHeight: 720, zoom: 1.2),
+        const Offset(0, 0)); // vertical content still letterboxed
+  });
+
+  test('panned viewport taps map to actual computer coordinates', () {
+    const viewport = Size(400, 300);
+    expect(VisualGeometry.tap(const Offset(200, 150), viewport,
+      imageWidth: 1280, imageHeight: 720,
+      zoom: 2, pan: const Offset(100, -40)), (3750, 5889));
+    expect(VisualGeometry.tap(const Offset(-100, 150), viewport,
+      imageWidth: 1280, imageHeight: 720, zoom: 2), isNull);
+    expect(VisualGeometry.tap(const Offset(200, 150), viewport,
+      imageWidth: 1280, imageHeight: 720,
+      zoom: 2, pan: const Offset(double.nan, 0)), isNull);
+  });
+
   test('stream frame decoding survives chunk boundaries', () {
     final parser = MjpegFrameDecoder();
     final payload = <int>[
