@@ -84,6 +84,7 @@ func registerMediaEndpoint(mux *http.ServeMux, access *identityAPI) {
         var request struct {
             Service string `json:"service"`
             Query string `json:"query"`
+            Focus bool `json:"focus"`
         }
         decoder := json.NewDecoder(r.Body)
         decoder.DisallowUnknownFields()
@@ -94,6 +95,18 @@ func registerMediaEndpoint(mux *http.ServeMux, access *identityAPI) {
         destination, err := mediaDestination(request.Service, request.Query)
         if err != nil {
             http.Error(w, err.Error(), http.StatusBadRequest)
+            return
+        }
+        if request.Focus {
+            if request.Query != "" {
+                http.Error(w, "focus cannot include media search", http.StatusBadRequest)
+                return
+            }
+            if err := focusMediaBrowser(); err != nil {
+                http.Error(w, "could not focus the existing desktop browser", http.StatusUnprocessableEntity)
+                return
+            }
+            w.WriteHeader(http.StatusNoContent)
             return
         }
         if err := openMediaBrowser(destination); err != nil {
