@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/visual_transport.dart';
@@ -58,6 +59,25 @@ void main() {
     expect(VisualGeometry.tap(const Offset(200, 150), viewport,
       imageWidth: 1280, imageHeight: 720,
       zoom: 2, pan: const Offset(double.nan, 0)), isNull);
+  });
+
+  test('Live reports actual application JPEG Mbps and FPS, not Wi-Fi rate', () {
+    final stats = LiveStreamRate();
+    final base = DateTime.utc(2026, 10, 18);
+    const jpegSize = 250000; // compressed bytes, no image contents needed
+    final frame = ScreenFrame(
+      Uint8List(jpegSize), 1280, 720);
+    stats.record(frame, at: base);
+    expect(stats.framesPerSecond, isNull);
+    expect(stats.megabitsPerSecond, isNull);
+    for (var index = 1; index <= 10; index++) {
+      stats.record(frame,
+        at: base.add(Duration(milliseconds: index * 100)));
+    }
+    expect(stats.framesPerSecond, closeTo(10, 0.001));
+    expect(stats.megabitsPerSecond, closeTo(20, 0.001));
+    stats.clear();
+    expect(stats.megabitsPerSecond, isNull);
   });
 
   test('stream frame decoding survives chunk boundaries', () {
