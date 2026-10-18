@@ -57,6 +57,14 @@ class _VisualSurfaceState extends State<VisualSurface> {
   Size _viewport = Size.zero;
 
   void _fingerDown(PointerDownEvent event) {
+    // The visual toolbar sits inside this Listener. Do not interpret zoom,
+    // fit or refresh button presses as remote taps on the computer beneath.
+    final toolbarWidth = _zoom > 1 ? 252.0 : 114.0;
+    if (widget.frame != null && event.localPosition.dy >= 0 &&
+        event.localPosition.dy <= 56 &&
+        event.localPosition.dx >= _viewport.width - toolbarWidth) {
+      return;
+    }
     if (_fingers.isEmpty) {
       _movedWithMultipleFingers = false;
       _primaryPointer = event.pointer;
