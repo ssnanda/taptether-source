@@ -78,7 +78,7 @@ void main() {
         onServiceChanged: (_) {},
         onKey: (_) {},
         onSearch: (_, __) async {},
-        onExitVideo: (_) async { actions.add('back'); },
+        onExitVideo: (_, __) async { actions.add('back'); },
         onProfile: (_) async { actions.add('profile'); },
         onCloseService: (_) async { actions.add('close'); },
       )),
