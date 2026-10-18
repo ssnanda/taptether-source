@@ -379,6 +379,57 @@ class LocalAgent {
     }
   }
 
+  /// Explicit short, authenticated local-only test. Measures application
+  /// throughput from THIS paired computer to the phone, not Wi-Fi PHY speed.
+  /// Older agents return HTTP 404 and cannot be benchmarked remotely.
+  Future<({double rttMs, double downMbps})> benchmarkLan() async {
+    if (!configured) throw StateError('Connect to a paired computer first.');
+    final bearer = await _bearer();
+    Future<(double, int)> transfer(int bytes) async {
+      final stopwatch = Stopwatch()..start();
+      final uri = _base!.resolve('/api/lan-benchmark?bytes=$bytes');
+      final request = await _client!.getUrl(uri)
+          .timeout(const Duration(seconds: 4));
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
+      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      final response = await request.close()
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 404) {
+        await response.drain<void>();
+        throw StateError(
+          'Computer agent needs an update for the LAN speed test.');
+      }
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        throw StateError('LAN speed test unavailable (HTTP ${response.statusCode}).');
+      }
+      var received = 0;
+      await for (final part in response.timeout(const Duration(seconds: 7))) {
+        received += part.length;
+        if (received > bytes || stopwatch.elapsed > const Duration(seconds: 10)) {
+          throw const FormatException('LAN test transfer exceeded safety limits.');
+        }
+      }
+      stopwatch.stop();
+      if (received != bytes || stopwatch.elapsedMicroseconds <= 0) {
+        throw const FormatException('LAN speed test received incomplete data.');
+      }
+      return (stopwatch.elapsedMicroseconds / 1000000, received);
+    }
+
+    final roundTrips = <double>[];
+    for (var i = 0; i < 3; i++) {
+      final (elapsed, _) = await transfer(0);
+      roundTrips.add(elapsed * 1000);
+    }
+    roundTrips.sort();
+    final (elapsed, bytes) = await transfer(4 << 20);
+    return (
+      rttMs: roundTrips[1],
+      downMbps: bytes * 8 / (elapsed * 1000000),
+    );
+  }
+
   void disconnect() {
     _client?.close(force: true);
     _client = null;
