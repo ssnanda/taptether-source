@@ -15,14 +15,17 @@ void main() {
   }
 
   Future<void> configureBiometricLock() async {
-    FlutterSecureStorage.setMockInitialValues(<String, String>{});
+    // A non-secret PBKDF2-HMAC-SHA256 test vector for PIN 427915 with salt
+    // 00..0f, 180000 iterations. Avoid recomputing the deliberately costly
+    // KDF during each widget test; verifyPin still checks it normally.
+    // Emulates an existing enrolled PIN + Face ID configuration.
+    FlutterSecureStorage.setMockInitialValues(<String, String>{
+      'taptether.lock.enabled.v1': 'true',
+      'taptether.lock.bio.v1': 'true',
+      'taptether.lock.salt.v1': 'AAECAwQFBgcICQoLDA0ODw==',
+      'taptether.lock.hash.v1': 'BRiwTQZU4RM38V3CaCRoQJuE3jiZuggsuWiueR0jyXs=',
+    });
     final security = AppSecurity.instance;
-    await security.load();
-    await security.setPin('427915');
-    // Emulate a previously enrolled/confirmed Face ID setting. Production
-    // setBiometrics requires actual OS enrollment and verification.
-    await const FlutterSecureStorage().write(
-      key: 'taptether.lock.bio.v1', value: 'true');
     await security.load();
     expect(security.enabled, isTrue);
     expect(security.biometricEnabled, isTrue);
