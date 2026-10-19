@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 """TapTether desktop menu. UI only; the input agent remains a systemd service.
 
-Starts at graphical login without splash; launching it from the dock displays a
-brief splash. Never reads or displays pairing secrets.
+Starts silently in the tray. No splash or confirmation popups.
+Never reads or displays pairing secrets.
 """
 import argparse
 import fcntl
@@ -182,48 +182,13 @@ def running():
 
 
 def message(title, body, error=False):
-    dialog = Gtk.MessageDialog(
-        None, Gtk.DialogFlags.MODAL, Gtk.MessageType.ERROR if error else Gtk.MessageType.INFO,
-        Gtk.ButtonsType.OK, title)
-    dialog.format_secondary_text(body)
-    dialog.run()
-    dialog.destroy()
+    # Diagnostics only. Do not display blocking desktop popups.
+    print("TapTether " + title + ": " + body[:300], file=sys.stderr)
 
 
 def show_splash(version):
-    window = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
-    window.set_title("TapTether Agent")
-    window.set_default_size(340, 260)
-    window.set_resizable(False)
-    window.set_position(Gtk.WindowPosition.CENTER)
-    window.set_decorated(False)
-    window.set_skip_taskbar_hint(True)
-    window.set_skip_pager_hint(True)
-    window.set_type_hint(Gdk.WindowTypeHint.UTILITY)
-    window.set_keep_above(True)
-    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-    outer.set_border_width(24)
-    if ICON.exists():
-        try:
-            picture = Gtk.Image.new_from_file(str(ICON))
-            picture.set_pixel_size(88)
-            # Pixbuf scale rather than Gtk image pixel-size on file-based images.
-            from gi.repository import GdkPixbuf
-            pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(ICON), 88, 88, True)
-            picture.set_from_pixbuf(pix)
-            outer.pack_start(picture, False, False, 6)
-        except GLib.Error:
-            pass
-    title = Gtk.Label()
-    title.set_markup("<span size='xx-large' weight='bold'>TapTether Agent</span>")
-    outer.pack_start(title, False, False, 4)
-    outer.pack_start(Gtk.Label(label="Your devices. Your control. Your network."), False, False, 4)
-    outer.pack_start(Gtk.Label(label="v" + version), False, False, 4)
-    outer.pack_start(Gtk.Label(label="Running in the background" if running()
-                               else "Agent is currently stopped"), False, False, 4)
-    window.add(outer)
-    window.show_all()
-    GLib.timeout_add(2200, lambda: (window.destroy(), False)[1])
+    # Legacy launcher --splash is intentionally a no-op.
+    return False
 
 
 def run_command(args, title):
@@ -257,18 +222,6 @@ def service_control(action):
 
 def update_from_tray(item):
     """Run the fixed, privileged update service after explicit confirmation."""
-    dialog = Gtk.MessageDialog(
-        None, Gtk.DialogFlags.MODAL, Gtk.MessageType.QUESTION,
-        Gtk.ButtonsType.NONE, "Update TapTether Agent?")
-    dialog.format_secondary_text(
-        "Download and install the latest verified release if available. "
-        "The agent may briefly disconnect. Pairing and settings remain.")
-    dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-    dialog.add_button("Update Agent", Gtk.ResponseType.OK)
-    approved = dialog.run() == Gtk.ResponseType.OK
-    dialog.destroy()
-    if not approved:
-        return
     if not Path("/etc/systemd/system/taptether-update.service").is_file():
         message("Update service unavailable",
                 "This computer needs the current TapTether installer once "
@@ -280,8 +233,8 @@ def update_from_tray(item):
     def finished(ok, details):
         item.set_sensitive(True)
         item.set_label("Check for Updates…")
-        message("TapTether update complete" if ok else "Update needs attention",
-                details, error=not ok)
+        if not ok:
+            message("Update needs attention", details, error=True)
         if ok:
             # The installed tray script was updated in place. Relaunch this
             # same process so new menu actions appear without logging out.
@@ -374,7 +327,8 @@ def pair_device(_item):
 def menu(version):
     m = Gtk.Menu()
     version_item = add_menu_item(m, "TapTether Agent v" + version,
-                                 lambda _: show_splash(agent_version()))
+                                  lambda _: None)
+    version_item.set_sensitive(False)
     status = add_menu_item(m, "", lambda _: None)
     status.set_sensitive(False)
     m.append(Gtk.SeparatorMenuItem())
@@ -390,8 +344,6 @@ def menu(version):
 
     settings_item = Gtk.MenuItem(label="Settings")
     settings = Gtk.Menu()
-    add_menu_item(settings, "Show TapTether",
-                  lambda _: show_splash(agent_version()))
     add_menu_item(settings, "Restart agent",
                   lambda _: (service_control("restart"), refresh()))
     add_menu_item(settings, "Agent status",
@@ -468,10 +420,30 @@ def menu(version):
 
     add_menu_item(m, "Quit TapTether", quit_taptether)
 
+    previous_lan_ips = None
+    ip_changed_until = 0.0
+
+    def current_lan_ips():
+        try:
+            result = subprocess.run(
+                ["ip", "-o", "-4", "addr", "show", "scope", "global"],
+                capture_output=True, text=True, timeout=2, check=False)
+            return tuple(sorted(line.split(" inet ", 1)[1].split("/", 1)[0]
+                for line in result.stdout.splitlines() if " inet " in line))
+        except (OSError, subprocess.SubprocessError, IndexError):
+            return ()
+
     def refresh():
+        nonlocal previous_lan_ips, ip_changed_until
+        ips = current_lan_ips()
+        if previous_lan_ips is not None and ips and ips != previous_lan_ips:
+            ip_changed_until = time.monotonic() + 3600
+        if ips:
+            previous_lan_ips = ips
         version_item.set_label("TapTether Agent v" + agent_version())
         active = running()
-        status.set_label("Status: " + ("Running" if active else "Stopped"))
+        status.set_label("Status: " + ("Running" if active else "Stopped") +
+                         (" 🔴 IP changed" if time.monotonic() < ip_changed_until else ""))
         start_stop.set_label("Stop TapTether" if active else "Start TapTether")
         helper_active = screen_running()
         allowed = screen_sharing_allowed()
@@ -501,18 +473,12 @@ def main():
     try:
         fcntl.flock(lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        if args.splash:
-            try:
-                lockfile.seek(0)
-                os.kill(int(lockfile.read().strip()), signal.SIGUSR1)
-            except (ValueError, OSError, ProcessLookupError):
-                pass
         return
     lockfile.seek(0)
     lockfile.truncate()
     lockfile.write(str(os.getpid()))
     lockfile.flush()
-    signal.signal(signal.SIGUSR1, lambda *_: GLib.idle_add(show_splash, version))
+    # Clicking the app launcher just focuses the already-running tray.
 
     if Indicator is not None:
         indicator = Indicator.Indicator.new(
@@ -544,8 +510,6 @@ def main():
         icon.connect("popup-menu", lambda tray, button, activate: popup.popup(
             None, None, Gtk.StatusIcon.position_menu, tray, button, activate))
 
-    if args.splash:
-        GLib.idle_add(show_splash, version)
     Gtk.main()
 
 

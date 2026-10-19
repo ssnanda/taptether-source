@@ -175,6 +175,14 @@ bool lanRangeContains(DetectedLanRange range, String ip) {
   );
 }
 
+/// Directed broadcast for this exact Wi-Fi CIDR. One datagram,
+/// not an address-range scan; valid for /24 as well as /22.
+String lanBroadcastAddress(DetectedLanRange network) {
+  final addr = _ipv4Number(network.ip)!;
+  final mask = _ipv4Number(network.subnetMask)!;
+  return _formatIpv4((addr & mask) | ((~mask) & 0xffffffff));
+}
+
 /// Return the current phone Wi-Fi CIDR, not a remembered host's old IP.
 /// SSID is optional because iOS may withhold it without Wi-Fi entitlements.
 Future<DetectedLanRange?> detectLanRange() async {

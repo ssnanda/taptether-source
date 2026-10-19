@@ -180,8 +180,9 @@ assert "$settingsItem = [System.Windows.Forms.ToolStripMenuItem]::new('Settings'
 assert "$quitItem = $menu.Items.Add('Quit TapTether')" in win_tray
 assert 'if (Stop-ManagedAgent)' in win_tray
 
-# Full subnet recovery is an explicit Discover / Scan IPs action only.
-# My Devices' automatic heartbeat must contact only saved paired hosts.
+# Full TCP range scans remain explicit Discover / Scan IPs actions.
+# My Devices checks saved hosts first, then may perform one *UDP broadcast*
+# on the current Wi-Fi subnet only if no saved agent is responding.
 recovery = (ROOT / "app" / "lib" / "device_recovery.dart").read_text(
     encoding="utf-8")
 mobile = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
@@ -189,11 +190,17 @@ assert "probeAgentControlPorts" in recovery
 assert "Socket.connect(ip, 48321" in recovery
 heartbeat = mobile.split(
     "  Future<void> _refreshHeartbeats() async {", 1)[1].split(
-    "  Future<void> _labelCurrentNetwork()", 1)[0]
+    "  // Passive zero-online recovery.", 1)[0]
 assert "_probeSavedDevice(device, phone)" in heartbeat
 assert "probeAgentControlPorts(" not in heartbeat
 assert "findNearbyDevices(" not in heartbeat
-assert "forceRecovery" not in heartbeat
+assert "unawaited(_recoverSavedDevices())" in heartbeat
+recovery_call = mobile.split("  Future<void> _recoverSavedDevices(", 1)[1].split(
+    "  Future<void> _labelCurrentNetwork()", 1)[0]
+assert "broadcastOnly: true" in recovery_call
+assert "lanBroadcastAddress(network)" in recovery_call
+assert "scanPrivate24(" not in recovery_call
+assert "probeAgentControlPorts(" not in recovery_call
 
 # Explicit Scan IPs/Discover must reconcile saved computers immediately.
 # Background agents never need to poll the phone.

@@ -474,6 +474,11 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _showOffline = true;
   bool _showQuickActions = false;
   bool _checkingHeartbeat = false;
+  bool _recoveringDiscovery = false;
+  DateTime? _lastPassiveDiscovery;
+  RawDatagramSocket? _announcementSocket;
+  StreamSubscription<RawSocketEvent>? _announcementSubscription;
+  final Map<String, DateTime> _recentAnnouncements = {};
   int _heartbeatGeneration = 0;
   String? _connectingDeviceId;
   String? _dashboardNotice;
@@ -659,6 +664,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
     unawaited(loadComputers());
+    unawaited(_listenForAgentAnnouncements());
     unawaited(_refreshNetworkLocation());
     WidgetsBinding.instance.addObserver(this);
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
@@ -759,10 +765,8 @@ class _RemoteScreenState extends State<RemoteScreen>
       SavedComputer device, PhoneIdentity? phone, {String? atHost}) async =>
       (await _probeSavedDevice(device, phone, atHost: atHost)).online;
 
-  /// My Devices is a saved-pairings dashboard, never a network scanner.
-  /// Heartbeats contact ONLY the persisted hosts using the saved certificate
-  /// fingerprint and authenticated phone identity. DHCP address discovery
-  /// remains an explicit user action under Discover / Scan IPs.
+  /// Display saved pairings first; heartbeat checks their existing IPs.
+  /// Only a zero-online result triggers quiet UDP discovery.
   Future<void> _refreshHeartbeats() async {
     if (_checkingHeartbeat || _scanningToReconcile ||
         savedComputers.isEmpty) {
@@ -806,7 +810,99 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (generation == _heartbeatGeneration) {
         _checkingHeartbeat = false;
         if (mounted) setState(() {});
+        if (mounted && savedComputers.isNotEmpty &&
+            !_online.values.any((online) => online)) {
+          unawaited(_recoverSavedDevices());
+        }
       }
+    }
+  }
+
+  // Passive zero-online recovery. One broadcast; no /24 sweep or TCP scan.
+  // Every candidate still needs the saved TLS pin and phone authentication.
+  Future<void> _recoverSavedDevices({bool force = false}) async {
+    if (!mounted || !_appForeground || savedComputers.isEmpty ||
+        _recoveringDiscovery || _scanningToReconcile) {
+      return;
+    }
+    final now = DateTime.now();
+    if (!force && _lastPassiveDiscovery != null &&
+        now.difference(_lastPassiveDiscovery!) <
+            const Duration(minutes: 10)) {
+      return;
+    }
+    _lastPassiveDiscovery = now;
+    _recoveringDiscovery = true;
+    if (mounted) setState(() {});
+    try {
+      final network = _wifiRange ?? await detectLanRange();
+      if (network == null || !mounted) {
+        return;
+      }
+      final candidates = await findNearbyDevices(
+        duration: const Duration(seconds: 2),
+        scanPrefixes: [network.activePrefix],
+        broadcastOnly: true,
+        broadcastAddress: lanBroadcastAddress(network),
+      );
+      for (final candidate in candidates.take(8)) {
+        if (!mounted || !_appForeground) {
+          break;
+        }
+        if (lanRangeContains(network, candidate.host)) {
+          await _reconcileScannedAgent(candidate.host, passive: true);
+        }
+      }
+    } catch (_) {
+      // Broadcast might be restricted; no prompts, credentials or telemetry.
+    } finally {
+      _recoveringDiscovery = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _refreshDevicesManually() async {
+    if (_checkingHeartbeat || _recoveringDiscovery) return;
+    await _refreshHeartbeats();
+    await _recoverSavedDevices(force: true);
+  }
+
+  // Listen only in the foreground; iOS can suspend background sockets.
+  // Unsolicited agent announcements are *hints*, never trusted pairings.
+  Future<void> _listenForAgentAnnouncements() async {
+    try {
+      final socket = await RawDatagramSocket.bind(
+          InternetAddress.anyIPv4, 48322);
+      if (!mounted) { socket.close(); return; }
+      _announcementSocket = socket;
+      _announcementSubscription = socket.listen((event) {
+        if (event != RawSocketEvent.read || !_appForeground) {
+          return;
+        }
+        Datagram? packet;
+        while ((packet = socket.receive()) != null) {
+          final candidate = DiscoveredDevice.parse(packet!);
+          final network = _wifiRange;
+          if (candidate == null || network == null ||
+              !lanRangeContains(network, candidate.host) ||
+              savedComputers.isEmpty || _scanningToReconcile ||
+              _recoveringDiscovery) {
+            continue;
+          }
+          final now = DateTime.now();
+          final last = _recentAnnouncements[candidate.host];
+          if (last != null &&
+              now.difference(last) < const Duration(minutes: 10)) {
+            continue;
+          }
+          _recentAnnouncements[candidate.host] = now;
+          if (_recentAnnouncements.length > 24) _recentAnnouncements.clear();
+          unawaited(_reconcileScannedAgent(candidate.host,
+              passive: true).then((_) {}));
+        }
+      });
+    } catch (_) {
+      // No permission or availability: foreground discovery is fallback.
     }
   }
 
@@ -950,7 +1046,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// A scan discovers IP addresses, never trusted identities. This verifies
   /// each candidate against the original saved certificate and authenticated
   /// pairing before immediately replacing an outdated DHCP address.
-  Future<String?> _reconcileScannedAgent(String ip) async {
+  Future<String?> _reconcileScannedAgent(String ip,
+      {bool passive = false}) async {
     if (!mounted || !isPrivateIPv4(ip) || savedComputers.isEmpty) {
       return null;
     }
@@ -966,10 +1063,10 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (!mounted || !(await _pingSavedDevice(saved, phone, atHost: ip))) {
         continue;
       }
-      if (_scanVerifiedDeviceIds.contains(saved.id)) {
+      if (!passive && _scanVerifiedDeviceIds.contains(saved.id)) {
         return saved.name;
       }
-      _scanVerifiedDeviceIds.add(saved.id);
+      if (!passive) _scanVerifiedDeviceIds.add(saved.id);
       if (saved.host == ip) {
         if (mounted) setState(() => _online[saved.id] = true);
         return saved.name;
@@ -1562,8 +1659,8 @@ class _RemoteScreenState extends State<RemoteScreen>
           )),
           IconButton(
             tooltip: 'Check online computers',
-            onPressed: _checkingHeartbeat ? null : () =>
-                _refreshHeartbeats(),
+            onPressed: (_checkingHeartbeat || _recoveringDiscovery)
+                 ? null : _refreshDevicesManually,
             icon: const Icon(Icons.refresh),
           ),
         ]),
@@ -1582,6 +1679,9 @@ class _RemoteScreenState extends State<RemoteScreen>
               fontWeight: FontWeight.w600),
           ),
         ]),
+        if (_recoveringDiscovery)
+          Text('Finding paired computers on this Wi-Fi…',
+            style: Theme.of(context).textTheme.bodySmall),
         if (_checkingHeartbeat)
           Text('Checking saved devices…',
             style: Theme.of(context).textTheme.bodySmall),
@@ -2060,6 +2160,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     WidgetsBinding.instance.removeObserver(this);
     _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
+    final listener = _announcementSubscription;
+    if (listener != null) unawaited(listener.cancel());
+    _announcementSocket?.close();
     _immersiveDockTimer?.cancel();
     host.dispose(); token.dispose(); pin.dispose(); typing.dispose();
     _movementTimer?.cancel();

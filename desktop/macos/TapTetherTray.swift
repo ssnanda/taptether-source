@@ -18,7 +18,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     private var updateMenuItem: NSMenuItem!
     private var updateInProgress = false
     private var remoteShutdownItem: NSMenuItem!
-    private var splashWindow: NSPanel?
+    private var lastLANAddress = ""
+    private var ipChangeUntil: Date?
     private var activeVersion = "unknown"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -26,8 +27,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         activeVersion = versionFromAgent()
         let menu = NSMenu()
         let version = NSMenuItem(title: "TapTether Agent v" + activeVersion,
-                                 action: #selector(showSplash), keyEquivalent: "")
-        version.target = self
+                                 action: nil, keyEquivalent: "")
+        version.isEnabled = false
         versionMenuItem = version
         menu.addItem(version)
         statusLabel = NSMenuItem(title: "Status: checking…", action: nil, keyEquivalent: "")
@@ -47,7 +48,6 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
 
         let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
         let settingsMenu = NSMenu(title: "Settings")
-        add(settingsMenu, "Show TapTether", #selector(showSplash))
         add(settingsMenu, "Install / Repair agent…", #selector(installAgent))
         add(settingsMenu, "Restart agent", #selector(restartAgent))
         remoteShutdownItem = NSMenuItem(
@@ -94,10 +94,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async { self.refreshStatus() }
             }
         }
-        if !FileManager.default.isExecutableFile(atPath: controller),
-           Bundle.main.path(forResource: "taptetherctl-mac", ofType: nil) != nil {
-            DispatchQueue.main.async { [weak self] in self?.promptSetup() }
-        }
+        // No setup prompts or windows automatically on opening the tray.
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.refreshStatus()
         }
@@ -105,16 +102,14 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             self, selector: #selector(receiveSplash(_:)),
             name: splashNotice, object: nil,
             suspensionBehavior: .deliverImmediately)
-        if CommandLine.arguments.contains("--splash") {
-            showSplash()
-        }
+        // --splash is ignored; activating the app simply shows its tray.
     }
 
     // macOS may reactivate the already-running Login Item rather than start a
     // second process when the user opens TapTether Agent.app from Finder.
     func applicationShouldHandleReopen(_ sender: NSApplication,
                                        hasVisibleWindows flag: Bool) -> Bool {
-        showSplash()
+        refreshStatus()
         return true
     }
 
@@ -163,6 +158,16 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
 
     private func refreshStatus() {
         let installedVersion = versionFromAgent()
+        let ips = output("/sbin/ifconfig", ["-a"]).components(separatedBy: .newlines)
+            .filter { line in
+                line.contains("inet ") && !line.contains("127.0.0.1") &&
+                (line.contains("192.168.") || line.contains("10.") ||
+                 line.contains("172."))
+            }.joined(separator: "|")
+        if !lastLANAddress.isEmpty && !ips.isEmpty && ips != lastLANAddress {
+            ipChangeUntil = Date().addingTimeInterval(3600)
+        }
+        if !ips.isEmpty { lastLANAddress = ips }
         if installedVersion != activeVersion {
             activeVersion = installedVersion
             versionMenuItem?.title = "TapTether Agent v" + installedVersion
@@ -176,18 +181,15 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         startStopItem?.title = isRunning ? "Stop TapTether" : "Start TapTether"
         statusItem?.button?.toolTip = "TapTether Agent v" + activeVersion
             + (isRunning ? " — Running" : " — Stopped")
+        let changed = ipChangeUntil.map { $0 > Date() } ?? false
         statusLabel?.title = "Status: " + (isRunning ? "Running" :
             (installed ? "Stopped — use Start / Repair" : "Not installed"))
+            + (changed ? " 🔴 IP changed" : "")
     }
 
     private func showNotice(_ title: String, _ body: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = body
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+        // No blocking popups; users can choose Agent diagnostics on demand.
+        statusLabel?.title = "Status: " + title
     }
 
     private func runControl(_ verb: String) {
@@ -204,17 +206,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     }
 
     private func promptSetup() {
-        let prompt = NSAlert()
-        prompt.messageText = "Install TapTether Agent?"
-        prompt.informativeText = "This installs a background agent that starts at login, "
-            + "and keeps the menu-bar app available without a Terminal window. "
-            + "Approve Input Core for Accessibility and Screen Core for Screen Recording once."
-        prompt.addButton(withTitle: "Install & Start")
-        prompt.addButton(withTitle: "Not now")
-        NSApp.activate(ignoringOtherApps: true)
-        if prompt.runModal() == .alertFirstButtonReturn {
-            installAgent()
-        }
+        // An explicit Start/Update click is enough; no separate pop-up.
+        installAgent()
     }
 
     @objc private func installAgent() {
@@ -244,17 +237,6 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 self.refreshStatus()
                 if ok {
                     self.activeVersion = self.versionFromAgent()
-                    let alert = NSAlert()
-                    alert.messageText = "TapTether installed / repaired"
-                    alert.informativeText = "Agent, Input Core and Screen Core are configured. "
-                        + "For this one-time migration, allow taptether-input-core "
-                        + "in Accessibility. Future agent updates preserve the core."
-                    alert.addButton(withTitle: "Open Accessibility…")
-                    alert.addButton(withTitle: "Later")
-                    NSApp.activate(ignoringOtherApps: true)
-                    if alert.runModal() == .alertFirstButtonReturn {
-                        self.openAccessibilitySettings()
-                    }
                 } else {
                     self.showNotice("Installation needs attention",
                         "The agent could not be installed or started. "
@@ -286,15 +268,6 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             promptSetup()
             return
         }
-        let prompt = NSAlert()
-        prompt.messageText = "Update TapTether Agent?"
-        prompt.informativeText = "Check the latest published release and install it " +
-            "if a newer version is available. The agent may briefly disconnect. " +
-            "Your paired phones and local settings will be preserved."
-        prompt.addButton(withTitle: "Update Agent")
-        prompt.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        if prompt.runModal() != .alertFirstButtonReturn { return }
         updateInProgress = true
         updateMenuItem.isEnabled = false
         statusLabel?.title = "Status: Updating…"
@@ -320,11 +293,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 self.updateInProgress = false
                 self.updateMenuItem.isEnabled = true
                 self.refreshStatus()
-                if succeeded {
-                    self.showNotice("TapTether update complete",
-                        "Installed version: " + self.activeVersion +
-                        ". The agent and menu may restart briefly.")
-                } else {
+                if !succeeded {
                     self.showNotice("Update could not finish",
                         "The previously installed agent remains available. " +
                         "Try Update Agent again; if it still fails, " +
@@ -358,8 +327,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             let clipboard = NSPasteboard.general
             clipboard.clearContents()
             clipboard.setString(message, forType: .string)
-            showNotice("Diagnostics copied",
-                "Paste the report into ChatGPT to troubleshoot this Mac without Terminal.")
+
         }
     }
     @objc private func repairAccessibility() {
@@ -557,46 +525,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         showSplash()
     }
 
-    @objc private func showSplash() {
-        if let window = splashWindow {
-            window.orderFrontRegardless()
-            return
-        }
-        let width: CGFloat = 380, height: CGFloat = 260
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-                            styleMask: [.titled, .fullSizeContentView],
-                            backing: .buffered, defer: false)
-        panel.title = "TapTether Agent"
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.level = .floating
-        panel.center()
-        if let image = NSImage(contentsOfFile: Bundle.main.path(
-            forResource: "TapTether", ofType: "icns") ?? "") {
-            let view = NSImageView(frame: NSRect(x: 146, y: 137, width: 88, height: 88))
-            view.image = image
-            view.imageScaling = .scaleProportionallyUpOrDown
-            panel.contentView?.addSubview(view)
-        }
-        func label(_ text: String, y: CGFloat, size: CGFloat, bold: Bool = false) {
-            let textField = NSTextField(labelWithString: text)
-            textField.frame = NSRect(x: 15, y: y, width: width - 30, height: 30)
-            textField.alignment = .center
-            textField.font = bold
-                ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size)
-            panel.contentView?.addSubview(textField)
-        }
-        label("TapTether Agent", y: 105, size: 22, bold: true)
-        label("Your devices. Your control. Your network.", y: 75, size: 12)
-        label("Version " + activeVersion, y: 44, size: 12)
-        splashWindow = panel
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self, weak panel] in
-            panel?.orderOut(nil)
-            self?.splashWindow = nil
-        }
-    }
+    @objc private func showSplash() { refreshStatus() }
 }
 
 // Only one menu-bar process per desktop user. Clicking the installed

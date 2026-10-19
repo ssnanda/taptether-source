@@ -203,8 +203,8 @@ install() {
   fi
   local launcher_exec launcher_comment
   if [[ -s "$TRAY" ]]; then
-    launcher_exec="/usr/bin/python3 $TRAY --splash"
-    launcher_comment='Open TapTether desktop splash and tray'
+    launcher_exec="/usr/bin/python3 $TRAY"
+    launcher_comment='TapTether controls in tray, no popups'
   else
     launcher_exec="$CTL start"
     launcher_comment='Start TapTether background agent'

@@ -26,6 +26,18 @@ if (Test-Path $brandIcon) {
     } catch { }
 }
 $script:runningIcon = $script:tray.Icon
+$script:previousLanIPs = $null
+$script:lastIPCheck = [datetime]::MinValue
+$script:ipChangedUntil = [datetime]::MinValue
+
+function Get-LocalLANIPs {
+    try {
+        @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+          Where-Object { $_.AddressState -eq 'Preferred' -and
+            $_.IPAddress -match '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' } |
+          ForEach-Object { $_.IPAddress } | Sort-Object) -join ','
+    } catch { '' }
+}
 $script:tray.Text = 'TapTether Agent'
 $menu = [System.Windows.Forms.ContextMenuStrip]::new()
 $versionItem = $menu.Items.Add('TapTether Agent')
@@ -55,9 +67,7 @@ function Stop-ManagedAgent {
 
 function Start-ManagedAgent {
     if (!(Test-Path $agentExe)) {
-        [System.Windows.Forms.MessageBox]::Show(
-            'TapTether is not installed. Reinstall the Windows agent.',
-            'TapTether Agent') | Out-Null
+        $statusItem.Text = 'Status: Agent not installed'
         return
     }
     try {
@@ -65,9 +75,7 @@ function Start-ManagedAgent {
             Start-Process -FilePath $agentExe -WindowStyle Hidden -ErrorAction Stop
         }
     } catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            'TapTether could not start. Open Settings to inspect agent status.',
-            'TapTether Agent') | Out-Null
+        $statusItem.Text = 'Status: Could not start agent'
     }
 }
 
@@ -75,8 +83,7 @@ $startStopItem = $menu.Items.Add('Start TapTether')
 $startStopItem.Add_Click({
     if ((Get-ManagedAgentProcesses).Count -gt 0) {
         if (!(Stop-ManagedAgent)) {
-            [System.Windows.Forms.MessageBox]::Show(
-                'TapTether could not be stopped.', 'TapTether Agent') | Out-Null
+            $statusItem.Text = 'Status: Could not stop agent'
         }
     } else {
         Start-ManagedAgent
@@ -88,25 +95,15 @@ $pairingItem.Add_Click({
     if (Test-Path $cmd) {
         Start-Process -FilePath $cmd
     } else {
-        [System.Windows.Forms.MessageBox]::Show(
-            'Pairing helper unavailable. Reinstall TapTether.',
-            'TapTether Agent') | Out-Null
+        $statusItem.Text = 'Status: Pairing helper missing'
     }
 })
 [void]$menu.Items.Add([System.Windows.Forms.ToolStripSeparator]::new())
 $updateItem = $menu.Items.Add('Check for Updates...')
 $updateItem.Add_Click({
     if ($script:updating) { return }
-    $answer = [System.Windows.Forms.MessageBox]::Show(
-        'Check for the latest verified TapTether agent release and install it if newer? The agent may briefly disconnect; pairing is preserved.',
-        'Update TapTether Agent',
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
-        [System.Windows.Forms.MessageBoxIcon]::Question)
-    if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     if (!(Test-Path $updateHelper)) {
-        [System.Windows.Forms.MessageBox]::Show(
-            'The installed agent predates one-click updates. Run the downloaded TapTether installer once.',
-            'Updater unavailable') | Out-Null
+        $statusItem.Text = 'Status: Update helper unavailable'
         return
     }
     try {
@@ -118,31 +115,22 @@ $updateItem.Add_Click({
         $script:updating = $true
         $updateItem.Enabled = $false
         $updateItem.Text = 'Updating...'
-        $script:tray.ShowBalloonTip(2500, 'TapTether',
-            'Checking and installing the verified agent release.',
-            [System.Windows.Forms.ToolTipIcon]::Info)
+
     } catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            'Could not launch the trusted update helper.',
-            'TapTether Update', [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+        $statusItem.Text = 'Status: Could not start update'
     }
 })
 $settingsItem = [System.Windows.Forms.ToolStripMenuItem]::new('Settings')
 $restartItem = $settingsItem.DropDownItems.Add('Restart agent')
 $restartItem.Add_Click({
     if (Stop-ManagedAgent) { Start-ManagedAgent } else {
-        [System.Windows.Forms.MessageBox]::Show(
-            'TapTether could not be restarted.', 'TapTether Agent') | Out-Null
+        $statusItem.Text = 'Status: Could not restart agent'
     }
 })
 $agentStatusItem = $settingsItem.DropDownItems.Add('Agent status')
 $agentStatusItem.Add_Click({
     $state = if ((Get-ManagedAgentProcesses).Count -gt 0) { 'Running' } else { 'Stopped' }
-    [System.Windows.Forms.MessageBox]::Show(
-        ('Agent status: ' + $state + [Environment]::NewLine +
-         'Installed version: ' + $versionItem.Text),
-        'TapTether Agent') | Out-Null
+    $statusItem.Text = 'Status: ' + $state
 })
 $shutdownItem = [System.Windows.Forms.ToolStripMenuItem]::new('Allow remote shutdown')
 $shutdownItem.CheckOnClick = $true
@@ -156,8 +144,7 @@ $shutdownItem.Add_CheckedChanged({
             New-Item -ItemType File -Path $disabledShutdown -Force | Out-Null
         }
     } catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            'Unable to change the local shutdown setting.', 'TapTether') | Out-Null
+        $statusItem.Text = 'Status: Shutdown setting failed'
     }
 })
 [void]$settingsItem.DropDownItems.Add($shutdownItem)
@@ -168,9 +155,7 @@ $quitItem.Add_Click({
     if (Stop-ManagedAgent) {
         [System.Windows.Forms.Application]::Exit()
     } else {
-        [System.Windows.Forms.MessageBox]::Show(
-            'TapTether agent is still running. Stop it before quitting.',
-            'TapTether Agent') | Out-Null
+        $statusItem.Text = 'Status: Stop agent before quit'
     }
 })
 $script:tray.ContextMenuStrip = $menu
@@ -187,7 +172,20 @@ $timer.Add_Tick({
     } catch {}
     $versionItem.Text = 'TapTether Agent v' + $ver
     $isRunning = (Get-ManagedAgentProcesses).Count -gt 0
-    $statusItem.Text = if ($isRunning) { 'Status: Running' } else { 'Status: Stopped' }
+    # Query local interfaces only once a minute; never scan the LAN.
+    if (((Get-Date) - $script:lastIPCheck).TotalSeconds -ge 60) {
+        $script:lastIPCheck = Get-Date
+        $ips = Get-LocalLANIPs
+        if ($null -ne $script:previousLanIPs -and $ips -and
+            $ips -ne $script:previousLanIPs) {
+            $script:ipChangedUntil = (Get-Date).AddHours(1)
+        }
+        if ($ips) { $script:previousLanIPs = $ips }
+    }
+    $baseStatus = if ($isRunning) { 'Status: Running' } else { 'Status: Stopped' }
+    $statusItem.Text = $baseStatus + $(if ((Get-Date) -lt $script:ipChangedUntil) {
+        ' 🔴 IP changed'
+    } else { '' })
     $startStopItem.Text = if ($isRunning) { 'Stop TapTether' } else { 'Start TapTether' }
     $script:tray.Text = if ($isRunning) { 'TapTether Agent - Running' } else { 'TapTether Agent - Stopped' }
     $script:tray.Icon = if ($isRunning) {
@@ -204,15 +202,7 @@ $timer.Add_Tick({
             $script:updating = $false
             $updateItem.Text = 'Check for Updates...'
             $updateItem.Enabled = $true
-            $message = if ($success) {
-                'Update complete. Current agent version: ' + $ver
-            } else {
-                'Update failed. Your previous agent remains available.'
-            }
-            $script:tray.ShowBalloonTip(6000,
-                'TapTether Agent', $message,
-                $(if ($success) { [System.Windows.Forms.ToolTipIcon]::Info }
-                  else { [System.Windows.Forms.ToolTipIcon]::Warning }))
+            if (!$success) { $statusItem.Text = 'Status: Update failed' }
         }
     }
 })

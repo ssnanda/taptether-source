@@ -32,3 +32,16 @@ func TestAcceptProbeLANOnly(t *testing.T) {
         if got!=tc.want {t.Errorf("%s got %v want %v",tc.ip,got,tc.want)}
     }
 }
+
+func TestChangeDetectionOnlyWhenIPActuallyChanges(t *testing.T) {
+    original := []string{"192.168.68.87"}
+    if changedAddresses(original, original) {
+        t.Fatal("stable IP should never trigger a broadcast")
+    }
+    if !changedAddresses(original, []string{"192.168.68.112"}) {
+        t.Fatal("DHCP address change must trigger recovery broadcast")
+    }
+    if !changedAddresses(original, nil) {
+        t.Fatal("interface loss should be detected, but no broadcast sent offline")
+    }
+}
