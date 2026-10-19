@@ -332,8 +332,7 @@ class _MediaRemoteState extends State<MediaRemote> {
       if (widget.onOpenLink != null)
         ExpansionTile(
           key: const ValueKey('media-link-expansion'),
-          dense: true,
-          tilePadding: EdgeInsets.zero,
+            tilePadding: EdgeInsets.zero,
           childrenPadding: const EdgeInsets.only(bottom: 6),
           leading: const Icon(Icons.link),
           title: Text('Play from shared ' + widget.service.label + ' link'),
@@ -408,7 +407,6 @@ class _MediaRemoteState extends State<MediaRemote> {
       ExpansionTile(
         key: const ValueKey('media-more'),
         tilePadding: EdgeInsets.zero,
-        dense: true,
         leading: const Icon(Icons.tune),
         title: const Text('More video controls'),
         children: [
