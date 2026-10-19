@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'computer_store.dart';
+import 'device_visibility.dart';
 import 'discovery.dart';
 import 'network_location.dart';
 
@@ -7,8 +8,10 @@ import 'network_location.dart';
 /// Discovery alone is never treated as trusted pairing.
 class DeviceManagerScreen extends StatefulWidget {
   const DeviceManagerScreen({super.key, required this.store,
-    required this.onConnect, required this.onUpdate});
+    required this.onConnect, required this.onUpdate,
+    this.online = const {}});
   final ComputerStore store;
+  final Map<String, bool> online;
   final Future<void> Function(SavedComputer) onConnect;
   final Future<void> Function(SavedComputer) onUpdate;
   @override
@@ -126,6 +129,8 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
   Future<void> _action(SavedComputer device, String action) async {
     switch (action) {
       case 'connect':
+        if (!canConnectSavedDevice(widget.online[device.id],
+            connecting: _busy)) return;
         await widget.onConnect(device);
         if (mounted) Navigator.pop(context);
         return;
@@ -182,14 +187,21 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                 ? Icons.laptop_mac : Icons.computer),
             title: Text(device.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}',
+            subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
+                 ' · ${widget.online[device.id] == true ? 'Online' :
+                    widget.online[device.id] == false ? 'Offline' : 'Checking'}',
                 maxLines: 1, overflow: TextOverflow.ellipsis),
-            onTap: _busy ? null : () => _action(device, 'connect'),
+            onTap: canConnectSavedDevice(widget.online[device.id],
+                 connecting: _busy)
+                 ? () => _action(device, 'connect') : null,
             trailing: PopupMenuButton<String>(
               tooltip: 'Manage ${device.name}', enabled: !_busy,
               onSelected: (action) => _action(device, action),
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'connect', child: Text('Connect')),
+                PopupMenuItem(value: 'connect',
+                  enabled: canConnectSavedDevice(widget.online[device.id],
+                      connecting: _busy),
+                  child: const Text('Connect')),
                 if (device.platform == 'linux' || device.platform == 'darwin' ||
                     device.platform == 'windows')
                   const PopupMenuItem(
