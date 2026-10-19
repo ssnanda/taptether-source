@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 
 /// Consumer video playback is a separate mode from presentation controls.
 /// Commands are sent only to the already-authenticated desktop agent.
@@ -49,28 +49,56 @@ class MediaSearch {
   }
 }
 
-/// Normalize a user-copied public share URL. Tracking parameters are discarded;
-/// arbitrary URLs, credentials, schemes and redirects are never forwarded.
+/// Restricts copied Netflix/YouTube links to canonical first-party video URLs.
 class MediaSharedLink {
   const MediaSharedLink._();
-  
   static String destination(MediaService service, String input,
       {required bool play}) {
-    final text = input.trim();
-    if (text.length > 2048 || text.contains(RegExp(r'[\x00-\x1F\x7F]'))) {
-      throw const FormatException('Paste a valid Netflix or YouTube share link.');
+    final raw = input.trim();
+    if (raw.length > 2048 || raw.contains(RegExp(r'[\x00-\x1F\x7F]'))) {
+      throw const FormatException('Paste a valid Netflix or YouTube link.');
     }
-    final uri = Uri.tryParse(text);
+    final uri = Uri.tryParse(raw);
     if (uri == null || uri.scheme != 'https' || uri.userInfo.isNotEmpty ||
         uri.hasPort || uri.fragment.isNotEmpty) {
-      throw const FormatException('Only HTTPS Netflix/YouTube links are accepted.');
+      throw const FormatException('Only HTTPS video links are accepted.');
     }
     final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
     if (service == MediaService.netflix) {
-      if (uri.host != 'www.netflix.com' && uri.host != 'netflix.com') {
+      if (uri.host != 'netflix.com' && uri.host != 'www.netflix.com') {
         throw const FormatException('Paste a Netflix share link.');
       }
-      if (parts.length == 3 && RegExp(r'^[a-z]{2}(-[a-z]{2})?
+      if (parts.length == 3 &&
+          RegExp(r'^[a-z]{2}(-[a-z]{2})?$', caseSensitive: false)
+              .hasMatch(parts.first)) {
+        parts.removeAt(0);
+      }
+      if (parts.length != 2 ||
+          (parts.first != 'title' && parts.first != 'watch') ||
+          !RegExp(r'^\d{5,12}$').hasMatch(parts.last)) {
+        throw const FormatException('Netflix link needs a title or watch ID.');
+      }
+      return 'https://www.netflix.com/' +
+          (play ? 'watch/' : 'title/') + parts.last;
+    }
+    final allowed = uri.host == 'www.youtube.com' ||
+        uri.host == 'youtube.com' || uri.host == 'm.youtube.com';
+    final short = uri.host == 'youtu.be';
+    String? id;
+    if (short && parts.length == 1) {
+      id = parts.first;
+    } else if (allowed && parts.length == 1 && parts.first == 'watch') {
+      id = uri.queryParameters['v'];
+    } else if (allowed && parts.length == 2 && parts.first == 'shorts') {
+      id = parts.last;
+    }
+    if (id == null || !RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(id)) {
+      throw const FormatException('Paste a YouTube video or Shorts link.');
+    }
+    return 'https://www.youtube.com/watch?v=' + id;
+  }
+}
+class MediaRemote extends StatefulWidget {
   const MediaRemote({
     super.key,
     required this.service,
