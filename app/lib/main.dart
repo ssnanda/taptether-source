@@ -1342,6 +1342,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => DeviceManagerScreen(
         store: deviceStore,
+        online: Map<String, bool>.of(_online),
         onConnect: connectSaved,
         onUpdate: updateSavedAgent,
       ),
