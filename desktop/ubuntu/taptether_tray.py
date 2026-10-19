@@ -327,7 +327,8 @@ def pair_device(_item):
 def menu(version):
     m = Gtk.Menu()
     version_item = add_menu_item(m, "TapTether Agent v" + version,
-                                 lambda _: show_splash(agent_version()))
+                                  lambda _: None)
+    version_item.set_sensitive(False)
     status = add_menu_item(m, "", lambda _: None)
     status.set_sensitive(False)
     m.append(Gtk.SeparatorMenuItem())
@@ -343,8 +344,6 @@ def menu(version):
 
     settings_item = Gtk.MenuItem(label="Settings")
     settings = Gtk.Menu()
-    add_menu_item(settings, "Show TapTether",
-                  lambda _: show_splash(agent_version()))
     add_menu_item(settings, "Restart agent",
                   lambda _: (service_control("restart"), refresh()))
     add_menu_item(settings, "Agent status",
