@@ -790,6 +790,9 @@ class _RemoteScreenState extends State<RemoteScreen>
               current.host == device.host &&
               current.fingerprint == device.fingerprint);
         if (!stillSaved) return;
+        // A concurrent background heartbeat must not change an actively
+        // connecting device to OFFLINE while its foreground login completes.
+        if (_connectingDeviceId == device.id) return;
         setState(() {
           _online[device.id] = probe.online;
           if (probe.online && probe.version != null) {
@@ -1517,6 +1520,11 @@ class _RemoteScreenState extends State<RemoteScreen>
       currentNetwork: _wifiRange,
       showOffline: _showOffline,
     );
+    final availabilityHint = savedDeviceAvailabilityHint(
+      savedCount: savedComputers.length,
+      onlineCount: savedComputers.where((d) => _online[d.id] == true).length,
+      checking: _checkingHeartbeat,
+    );
     return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -1585,13 +1593,10 @@ class _RemoteScreenState extends State<RemoteScreen>
                 color: Theme.of(context).colorScheme.error),
             ),
           ),
-        if (savedDeviceAvailabilityHint(
-          savedCount: savedComputers.length,
-          onlineCount: savedComputers.where((d) => _online[d.id] == true).length,
-          checking: _checkingHeartbeat) case final hint?)
+        if (availabilityHint != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(hint,
+            child: Text(availabilityHint,
               key: const ValueKey('devices-offline-hint'),
               style: Theme.of(context).textTheme.bodySmall),
           ),
