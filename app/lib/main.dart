@@ -837,11 +837,12 @@ class _RemoteScreenState extends State<RemoteScreen>
         duration: const Duration(seconds: 2),
         scanPrefixes: [network.activePrefix],
         broadcastOnly: true,
+        broadcastAddress: lanBroadcastAddress(network),
       );
       for (final candidate in candidates.take(8)) {
         if (!mounted || !_appForeground) break;
         if (lanRangeContains(network, candidate.host)) {
-          await _reconcileScannedAgent(candidate.host);
+          await _reconcileScannedAgent(candidate.host, passive: true);
         }
       }
     } catch (_) {
@@ -882,7 +883,8 @@ class _RemoteScreenState extends State<RemoteScreen>
               now.difference(last) < const Duration(minutes: 10)) continue;
           _recentAnnouncements[candidate.host] = now;
           if (_recentAnnouncements.length > 24) _recentAnnouncements.clear();
-          unawaited(_reconcileScannedAgent(candidate.host));
+          unawaited(_reconcileScannedAgent(candidate.host,
+              passive: true));
         }
       });
     } catch (_) {
@@ -1030,7 +1032,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// A scan discovers IP addresses, never trusted identities. This verifies
   /// each candidate against the original saved certificate and authenticated
   /// pairing before immediately replacing an outdated DHCP address.
-  Future<String?> _reconcileScannedAgent(String ip) async {
+  Future<String?> _reconcileScannedAgent(String ip,
+      {bool passive = false}) async {
     if (!mounted || !isPrivateIPv4(ip) || savedComputers.isEmpty) {
       return null;
     }
@@ -1046,10 +1049,10 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (!mounted || !(await _pingSavedDevice(saved, phone, atHost: ip))) {
         continue;
       }
-      if (_scanVerifiedDeviceIds.contains(saved.id)) {
+      if (!passive && _scanVerifiedDeviceIds.contains(saved.id)) {
         return saved.name;
       }
-      _scanVerifiedDeviceIds.add(saved.id);
+      if (!passive) _scanVerifiedDeviceIds.add(saved.id);
       if (saved.host == ip) {
         if (mounted) setState(() => _online[saved.id] = true);
         return saved.name;
