@@ -884,7 +884,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           _recentAnnouncements[candidate.host] = now;
           if (_recentAnnouncements.length > 24) _recentAnnouncements.clear();
           unawaited(_reconcileScannedAgent(candidate.host,
-              passive: true));
+              passive: true).then((_) {}));
         }
       });
     } catch (_) {
