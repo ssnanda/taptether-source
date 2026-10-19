@@ -43,7 +43,8 @@ func privateLANInterfaces() []string {
     if err != nil { return nil }
     var addresses []string
     for _, iface := range interfaces {
-        if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 { continue }
+        if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 ||
+            iface.Flags&net.FlagPointToPoint != 0 { continue }
         entries, err := iface.Addrs()
         if err != nil { continue }
         for _, entry := range entries {
