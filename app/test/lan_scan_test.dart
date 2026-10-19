@@ -26,6 +26,15 @@ void main() {
     expect(lanRangeContains(range, '192.168.72.2'), isFalse);
   });
 
+  test('passive discovery uses one directed broadcast on current subnet', () {
+    final home = rangeFromWifi('192.168.68.101', '255.255.252.0')!;
+    expect(lanBroadcastAddress(home), '192.168.71.255');
+    expect(lanRangeContains(home, '192.168.71.150'), isTrue);
+    expect(lanRangeContains(home, '192.168.72.1'), isFalse);
+    final office = rangeFromWifi('10.8.9.40', '255.255.255.0')!;
+    expect(lanBroadcastAddress(office), '10.8.9.255');
+  });
+
   test('full /23 scan includes internal .0 and .255 endpoints', () {
     final range = rangeFromWifi(
         '192.168.21.252', '255.255.254.0')!;
