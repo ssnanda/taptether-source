@@ -2676,8 +2676,19 @@ class _RemoteScreenState extends State<RemoteScreen>
       _mediaNavigateSameTab(text.trim().isEmpty
           ? MediaSearch.browseUrl(service) : MediaSearch.url(service, text));
 
-  Future<void> _openMediaLink(MediaService service, String url) =>
-      _mediaNavigateSameTab(url);
+  Future<void> _openMediaLink(MediaService service, String url) async {
+    if (service == MediaService.netflix) {
+      // A previous Netflix video can own Firefox's HTML-fullscreen focus.
+      // Leave the old fullscreen player BEFORE opening a new watch URL.
+      // Otherwise the first Cmd+L can be consumed by the player, so a
+      // second tap appears necessary. Do not send Space/Enter/M here:
+      // those are TOGGLES and can pause/mute an already playing video.
+      await agent.openMedia('netflix', '', focusOnly: true);
+      await agent.send('key', {'key': 'Escape'});
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    await _mediaNavigateSameTab(url);
+  }
 
   /// A short opt-in test against only the selected, TLS-pinned computer.
   /// This is not Wi-Fi link negotiation rate or ISP/internet speed.
