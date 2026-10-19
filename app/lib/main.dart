@@ -2816,6 +2816,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             _setLayout(_changedLayout(mediaService: service.name)),
         onKey: (key) => unawaited(command('key', {'key': key})),
         onSearch: (service, text) => _searchMedia(service, text),
+        onOpenLink: _openMediaLink,
         onSearchPage: _mediaSearchPage,
         onExitVideo: _mediaExitVideo,
         onProfile: _mediaProfile,
