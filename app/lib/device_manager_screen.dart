@@ -130,7 +130,9 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
     switch (action) {
       case 'connect':
         if (!canConnectSavedDevice(widget.online[device.id],
-            connecting: _busy)) return;
+            connecting: _busy)) {
+          return;
+        }
         await widget.onConnect(device);
         if (mounted) Navigator.pop(context);
         return;
