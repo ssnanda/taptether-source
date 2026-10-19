@@ -476,6 +476,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _checkingHeartbeat = false;
   int _heartbeatGeneration = 0;
   String? _connectingDeviceId;
+  String? _dashboardNotice;
   Future<PhoneIdentity>? _cachedPhoneIdentity;
   Future<PhoneIdentity> _phoneIdentity() =>
       _cachedPhoneIdentity ??= PhoneIdentity.loadOrCreate();
@@ -769,7 +770,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
     _checkingHeartbeat = true;
     final generation = ++_heartbeatGeneration;
-    if (mounted) setState(() {});
+    if (mounted) setState(() => _dashboardNotice = null);
     try {
       PhoneIdentity? phone;
       try {
@@ -789,6 +790,9 @@ class _RemoteScreenState extends State<RemoteScreen>
               current.host == device.host &&
               current.fingerprint == device.fingerprint);
         if (!stillSaved) return;
+        // A concurrent background heartbeat must not change an actively
+        // connecting device to OFFLINE while its foreground login completes.
+        if (_connectingDeviceId == device.id) return;
         setState(() {
           _online[device.id] = probe.online;
           if (probe.online && probe.version != null) {
@@ -1170,8 +1174,18 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> connectSaved(SavedComputer device) async {
-    if (_connectingDeviceId != null) return;
-    setState(() => _connectingDeviceId = device.id);
+    // Dashboard taps never initiate a network request to a known-offline
+    // machine. Refresh conducts a bounded, authenticated reachability test;
+    // an online result is required before opening the remote.
+    if (!canConnectSavedDevice(_online[device.id],
+        connecting: _connectingDeviceId != null)) {
+      return;
+    }
+    setState(() {
+      _connectingDeviceId = device.id;
+      _dashboardNotice = null;
+    });
+    var succeeded = false;
     try {
       host.text = device.host;
       token.text = device.token;
@@ -1179,9 +1193,24 @@ class _RemoteScreenState extends State<RemoteScreen>
       discoveredName = device.name;
       _connectedPlatform = device.platform;
       _macShortcuts = device.platform == 'darwin';
-      await connect(existingId: device.id, deviceId: device.deviceId);
+      succeeded = await connect(existingId: device.id, deviceId: device.deviceId);
+    } catch (_) {
+      // Saved device connection failures should not dump exception strings
+      // containing LAN address/port onto the main dashboard.
+      agent.disconnect();
     } finally {
-      if (mounted) setState(() => _connectingDeviceId = null);
+      if (mounted) {
+        setState(() {
+          _connectingDeviceId = null;
+          if (!succeeded) {
+            agent.disconnect();
+            _online[device.id] = false;
+            _savedAgentVersions.remove(device.id);
+            _dashboardNotice = '${device.name} did not respond. '
+                'Check TapTether Agent on that computer and tap Refresh.';
+          }
+        });
+      }
     }
   }
 
@@ -1313,6 +1342,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => DeviceManagerScreen(
         store: deviceStore,
+        online: Map<String, bool>.of(_online),
         onConnect: connectSaved,
         onUpdate: updateSavedAgent,
       ),
@@ -1455,7 +1485,7 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Widget _deviceStatus(String id) {
     final state = _online[id];
-    final busy = _connectingDeviceId == id;
+    final busy = _connectingDeviceId == id && state == true;
     final color = state == true
         ? Colors.green.shade700
         : state == false
@@ -1490,6 +1520,11 @@ class _RemoteScreenState extends State<RemoteScreen>
       currentLocation: _detectedLocation,
       currentNetwork: _wifiRange,
       showOffline: _showOffline,
+    );
+    final availabilityHint = savedDeviceAvailabilityHint(
+      savedCount: savedComputers.length,
+      onlineCount: savedComputers.where((d) => _online[d.id] == true).length,
+      checking: _checkingHeartbeat,
     );
     return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1550,6 +1585,22 @@ class _RemoteScreenState extends State<RemoteScreen>
         if (_checkingHeartbeat)
           Text('Checking saved devices…',
             style: Theme.of(context).textTheme.bodySmall),
+        if (_dashboardNotice != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(_dashboardNotice!,
+              key: const ValueKey('device-connection-notice'),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        if (availabilityHint != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(availabilityHint,
+              key: const ValueKey('devices-offline-hint'),
+              style: Theme.of(context).textTheme.bodySmall),
+          ),
         const SizedBox(height: 8),
         if (visibleDevices.isEmpty)
           Padding(
@@ -1618,8 +1669,9 @@ class _RemoteScreenState extends State<RemoteScreen>
                 const SizedBox(width: 4),
                 _deviceStatus(device.id),
               ]),
-              onTap: _connectingDeviceId != null
-                  ? null : () => connectSaved(device),
+              onTap: canConnectSavedDevice(_online[device.id],
+                      connecting: _connectingDeviceId != null)
+                  ? () => connectSaved(device) : null,
             ),
           ),
 
@@ -3264,9 +3316,13 @@ class _RemoteScreenState extends State<RemoteScreen>
         ],
         const SizedBox(height: 16),
         if (!connected) ...[
-          Text(status, style: TextStyle(fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          const SizedBox(height: 12),
+          if ((_showPairForm || _showQuickActions || savedComputers.isEmpty) &&
+              status.isNotEmpty && status != 'Not connected' &&
+              status != 'Select a saved device to connect.') ...[
+            Text(status, style: TextStyle(fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 12),
+          ],
           Center(child: Text('TapTether v$installedVersion',
             style: TextStyle(fontSize: 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant))),

@@ -36,3 +36,22 @@ List<SavedComputer> visibleSavedDevices(
   filtered.sort((a, b) => priority(a.id).compareTo(priority(b.id)));
   return filtered;
 }
+
+
+/// A saved pairing isn't evidence that its computer is reachable.
+/// Only a current authenticated TLS-pinned heartbeat permits one-tap remote.
+/// 'Checking' (null) and confirmed offline (false) cannot start a connection.
+bool canConnectSavedDevice(bool? confirmedOnline, {required bool connecting}) =>
+    confirmedOnline == true && !connecting;
+
+/// Actionable dashboard guidance when no paired computer answered its last
+/// authenticated check. Do not confuse "none online" with "nothing paired".
+String? savedDeviceAvailabilityHint({
+  required int savedCount,
+  required int onlineCount,
+  required bool checking,
+}) {
+  if (savedCount == 0 || checking || onlineCount > 0) return null;
+  return 'No computers are responding. Check that your phone is on the '
+      'same network and TapTether Agent is running, then tap Refresh.';
+}
