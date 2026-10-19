@@ -13,6 +13,7 @@ void main() {
     await tester.pumpWidget(const TapTetherApp());
     await tester.pumpAndSettle();
     expect(find.text('My Devices'), findsOneWidget);
+    expect(find.text('Not connected'), findsNothing);
     expect(find.text('Pair with a computer agent'), findsNothing);
     await tester.tap(find.text('Pair computer').first);
     await tester.pump();
