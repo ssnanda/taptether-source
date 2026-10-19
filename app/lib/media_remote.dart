@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 
 /// Consumer video playback is a separate mode from presentation controls.
@@ -48,6 +49,54 @@ class MediaSearch {
   }
 }
 
+/// Restricts copied Netflix/YouTube links to canonical first-party video URLs.
+class MediaSharedLink {
+  const MediaSharedLink._();
+  static String destination(MediaService service, String input,
+      {required bool play}) {
+    final raw = input.trim();
+    if (raw.length > 2048 || raw.contains(RegExp(r'[\x00-\x1F\x7F]'))) {
+      throw const FormatException('Paste a valid Netflix or YouTube link.');
+    }
+    final uri = Uri.tryParse(raw);
+    if (uri == null || uri.scheme != 'https' || uri.userInfo.isNotEmpty ||
+        uri.hasPort || uri.fragment.isNotEmpty) {
+      throw const FormatException('Only HTTPS video links are accepted.');
+    }
+    final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+    if (service == MediaService.netflix) {
+      if (uri.host != 'netflix.com' && uri.host != 'www.netflix.com') {
+        throw const FormatException('Paste a Netflix share link.');
+      }
+      if (parts.length == 3 &&
+          RegExp(r'^[a-z]{2}(-[a-z]{2})?$', caseSensitive: false)
+              .hasMatch(parts.first)) {
+        parts.removeAt(0);
+      }
+      if (parts.length != 2 ||
+          (parts.first != 'title' && parts.first != 'watch') ||
+          !RegExp(r'^\d{5,12}$').hasMatch(parts.last)) {
+        throw const FormatException('Netflix link needs a title or watch ID.');
+      }
+      return 'https://www.netflix.com/${play ? 'watch' : 'title'}/${parts.last}';
+    }
+    final allowed = uri.host == 'www.youtube.com' ||
+        uri.host == 'youtube.com' || uri.host == 'm.youtube.com';
+    final short = uri.host == 'youtu.be';
+    String? id;
+    if (short && parts.length == 1) {
+      id = parts.first;
+    } else if (allowed && parts.length == 1 && parts.first == 'watch') {
+      id = uri.queryParameters['v'];
+    } else if (allowed && parts.length == 2 && parts.first == 'shorts') {
+      id = parts.last;
+    }
+    if (id == null || !RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(id)) {
+      throw const FormatException('Paste a YouTube video or Shorts link.');
+    }
+    return 'https://www.youtube.com/watch?v=$id';
+  }
+}
 class MediaRemote extends StatefulWidget {
   const MediaRemote({
     super.key,
@@ -62,6 +111,7 @@ class MediaRemote extends StatefulWidget {
     this.onExitVideo,
     this.onProfile,
     this.onCloseService,
+    this.onOpenLink,
   });
 
   final MediaService service;
@@ -75,6 +125,7 @@ class MediaRemote extends StatefulWidget {
   final Future<void> Function(MediaService, String?)? onExitVideo;
   final Future<void> Function(MediaService)? onProfile;
   final Future<void> Function(MediaService)? onCloseService;
+  final Future<void> Function(MediaService, String)? onOpenLink;
 
   @override
   State<MediaRemote> createState() => _MediaRemoteState();
@@ -82,6 +133,7 @@ class MediaRemote extends StatefulWidget {
 
 class _MediaRemoteState extends State<MediaRemote> {
   final _search = TextEditingController();
+  final _link = TextEditingController();
   bool _searching = false;
   bool _searchReady = false;
   String? _lastSearch;
@@ -93,6 +145,7 @@ class _MediaRemoteState extends State<MediaRemote> {
         (oldWidget.enabled && !widget.enabled)) {
       _searchReady = false;
       _search.clear();
+      _link.clear();
       _lastSearch = null;
     }
   }
@@ -100,6 +153,7 @@ class _MediaRemoteState extends State<MediaRemote> {
   @override
   void dispose() {
     _search.dispose();
+    _link.dispose();
     super.dispose();
   }
 
@@ -186,6 +240,51 @@ class _MediaRemoteState extends State<MediaRemote> {
     finally { if (mounted) setState(() => _searching = false); }
   }
 
+  Future<void> _pasteLink() async {
+    try {
+      final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+      final raw = clipboard?.text?.trim() ?? '';
+      // Validate *before* placing it into the field; never transmit pasted
+      // content other than allowlisted canonical video destinations.
+      MediaSharedLink.destination(widget.service, raw, play: false);
+      if (mounted) setState(() => _link.text = raw);
+    } catch (error) { _error(error); }
+  }
+
+  Future<void> _sendLink({required bool play}) async {
+    if (!widget.enabled || _searching || widget.onOpenLink == null) return;
+    setState(() => _searching = true);
+    try {
+      final canonical = MediaSharedLink.destination(widget.service,
+          _link.text, play: play);
+      await widget.onOpenLink!(widget.service, canonical);
+      if (mounted) {
+        setState(() {
+          _searchReady = false;
+          _lastSearch = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(play ? 'Sent playback link to computer. ' 
+              'Your Netflix profile or episode selection may still be needed.'
+              : 'Opened title on computer.')));
+      }
+    } catch (error) { _error(error); }
+    finally { if (mounted) setState(() => _searching = false); }
+  }
+
+  Widget _compact(String tooltip, IconData icon, String key,
+      {Key? buttonKey, bool primary = false}) {
+    return IconButton(
+      key: buttonKey,
+      tooltip: tooltip,
+      icon: Icon(icon, size: primary ? 29 : 23),
+      style: primary ? IconButton.styleFrom(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer) : null,
+      onPressed: widget.enabled && !_searching ? () => widget.onKey(key) : null,
+    );
+  }
+
   Widget _button(String label, IconData icon, String key, {Key? buttonKey}) {
     return OutlinedButton.icon(
       key: buttonKey,
@@ -197,115 +296,171 @@ class _MediaRemoteState extends State<MediaRemote> {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = widget.enabled && !_searching;
+    final netflix = widget.service == MediaService.netflix;
+    final theme = Theme.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SegmentedButton<MediaService>(
         key: const ValueKey('media-provider-selector'),
         showSelectedIcon: false,
         segments: const [
           ButtonSegment(value: MediaService.youtube,
-              label: Text('YouTube'), icon: Icon(Icons.play_circle_outline)),
+            label: Text('YouTube'), icon: Icon(Icons.play_circle_outline)),
           ButtonSegment(value: MediaService.netflix,
-              label: Text('Netflix'), icon: Icon(Icons.movie_outlined)),
+            label: Text('Netflix'), icon: Icon(Icons.movie_outlined)),
         ],
         selected: {widget.service},
-        onSelectionChanged: (selection) =>
-            widget.onServiceChanged(selection.first),
+        onSelectionChanged: (set) => widget.onServiceChanged(set.first),
       ),
-      if (widget.onOpenService != null)
-        Align(alignment: Alignment.centerRight, child: TextButton.icon(
-          key: const ValueKey('media-open-provider'),
-          onPressed: widget.enabled && !_searching ? () {
-            setState(() => _searchReady = false);
-            widget.onOpenService!(widget.service).catchError(_error);
-          } : null,
-          icon: const Icon(Icons.open_in_browser),
-          label: Text('Open ${widget.service.label} on computer'),
-        )),
-      const SizedBox(height: 12),
-      OutlinedButton.icon(
-        key: const ValueKey('media-search-page'),
-        onPressed: widget.enabled && !_searching ? _openSearchPage : null,
-        icon: const Icon(Icons.manage_search),
-        label: Text('Go to ${widget.service.label} search page'),
-      ),
-      const SizedBox(height: 8),
+      const SizedBox(height: 4),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        if (widget.onOpenService != null)
+          TextButton.icon(
+            key: const ValueKey('media-open-provider'),
+            onPressed: enabled ? () async {
+              setState(() { _searching = true; _searchReady = false; });
+              try { await widget.onOpenService!(widget.service); }
+              catch (error) { _error(error); }
+              finally { if (mounted) setState(() => _searching = false); }
+            } : null,
+            icon: const Icon(Icons.open_in_browser, size: 18),
+            label: const Text('Open on computer'),
+          ),
+        TextButton.icon(
+          key: const ValueKey('media-search-page'),
+          onPressed: enabled && widget.onSearchPage != null
+              ? _openSearchPage : null,
+          icon: Icon(_searchReady ? Icons.check_circle_outline
+              : Icons.search, size: 18),
+          label: Text(_searchReady ? 'Search ready' : 'Search page'),
+        ),
+      ]),
       TextField(
         key: const ValueKey('media-search-text'),
         controller: _search,
-        enabled: widget.enabled && !_searching && _searchReady,
+        enabled: enabled && _searchReady,
         autocorrect: false,
+        textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           isDense: true,
-          labelText: _searchReady ? 'Search ${widget.service.label} videos' : 'Open search page first',
-          prefixIcon: const Icon(Icons.search),
+          hintText: _searchReady ? 'Search ${widget.service.label}'
+              : 'Tap Search page above to search',
+          prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: IconButton(
             key: const ValueKey('media-search-submit'),
-            tooltip: 'Search in current computer tab',
-            onPressed: widget.enabled && !_searching && _searchReady ? _submitSearch : null,
+            tooltip: 'Search in current tab',
             icon: const Icon(Icons.arrow_forward),
+            onPressed: enabled && _searchReady ? _submitSearch : null,
           ),
         ),
         onSubmitted: (_) => _submitSearch(),
       ),
-      const SizedBox(height: 6),
-      Text('Search navigates within the focused browser tab. '
-          'It never opens a new search tab.',
-          style: Theme.of(context).textTheme.bodySmall),
-      const SizedBox(height: 16),
-      Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
-        children: [
-          if (widget.onExitVideo != null)
-            OutlinedButton.icon(
-              key: const ValueKey('media-exit-video'),
-              onPressed: widget.enabled && !_searching ? _goBack : null,
-              icon: const Icon(Icons.arrow_back),
-              label: Text(widget.service == MediaService.netflix
-                  ? 'Exit video / Browse' : 'Back to YouTube'),
-            ),
-          _button('Rewind 10s', Icons.replay_10,
-              widget.service == MediaService.youtube ? 'j' : 'Left'),
-          _button('Play / Pause', Icons.play_arrow, 'space',
-              buttonKey: const ValueKey('media-play-pause')),
-          _button('Forward 10s', Icons.forward_10,
-              widget.service == MediaService.youtube ? 'l' : 'Right'),
-          _button('Full screen', Icons.fullscreen, 'f'),
-          _button('Exit full screen', Icons.fullscreen_exit, 'Escape'),
-          if (widget.service == MediaService.youtube) ...[
-            _button('Next video', Icons.skip_next, 'shift+n'),
-            _button('Captions', Icons.closed_caption, 'c'),
-          ] else ...[
-            _button('Skip intro', Icons.skip_next, 's'),
+      const SizedBox(height: 8),
+      if (widget.onOpenLink != null)
+        ExpansionTile(
+          key: const ValueKey('media-link-expansion'),
+            tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 6),
+          leading: const Icon(Icons.link),
+          title: Text('Play from shared ${widget.service.label} link'),
+          subtitle: Text('Copy in ${widget.service.label}, then paste here',
+              style: theme.textTheme.bodySmall),
+          children: [
+            Row(children: [
+              Expanded(child: TextField(
+                key: const ValueKey('media-link-text'),
+                controller: _link,
+                enabled: enabled,
+                autocorrect: false,
+                maxLines: 1,
+                decoration: const InputDecoration(
+                  isDense: true, hintText: 'https://www.netflix.com/…',
+                  prefixIcon: Icon(Icons.link),
+                ),
+              )),
+              IconButton(
+                key: const ValueKey('media-link-paste'),
+                tooltip: 'Paste copied link',
+                icon: const Icon(Icons.content_paste),
+                onPressed: enabled ? _pasteLink : null,
+              ),
+            ]),
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              if (netflix)
+                TextButton(
+                  key: const ValueKey('media-link-details'),
+                  onPressed: enabled ? () => _sendLink(play: false) : null,
+                  child: const Text('Open details'),
+                ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                key: const ValueKey('media-link-play'),
+                onPressed: enabled ? () => _sendLink(play: true) : null,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Play on computer'),
+              ),
+            ]),
           ],
-        ],
-      ),
-      const SizedBox(height: 12),
-      Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
+        ),
+      const SizedBox(height: 6),
+      Text('PLAYBACK', style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant)),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+        IconButton(
+          key: const ValueKey('media-exit-video'),
+          tooltip: 'Back to browsing',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: enabled && widget.onExitVideo != null ? _goBack : null,
+        ),
+        _compact('Rewind 10 seconds', Icons.replay_10,
+            netflix ? 'Left' : 'j'),
+        _compact('Play or pause', Icons.play_arrow, 'space',
+            buttonKey: const ValueKey('media-play-pause'), primary: true),
+        _compact('Forward 10 seconds', Icons.forward_10,
+            netflix ? 'Right' : 'l'),
+        _compact('Exit full screen', Icons.fullscreen_exit, 'Escape'),
+      ]),
+      const SizedBox(height: 1),
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        _compact('Volume down', Icons.volume_down, 'XF86AudioLowerVolume',
+            buttonKey: const ValueKey('media-volume-down')),
+        const SizedBox(width: 18),
+        _compact('Mute or unmute', Icons.volume_off, 'XF86AudioMute'),
+        const SizedBox(width: 18),
+        _compact('Volume up', Icons.volume_up, 'XF86AudioRaiseVolume',
+            buttonKey: const ValueKey('media-volume-up')),
+      ]),
+      ExpansionTile(
+        key: const ValueKey('media-more'),
+        tilePadding: EdgeInsets.zero,
+        leading: const Icon(Icons.tune),
+        title: const Text('More video controls'),
         children: [
-          _button('Lower', Icons.volume_down, 'XF86AudioLowerVolume',
-              buttonKey: const ValueKey('media-volume-down')),
-          _button('Mute', Icons.volume_off, 'XF86AudioMute'),
-          _button('Raise', Icons.volume_up, 'XF86AudioRaiseVolume',
-              buttonKey: const ValueKey('media-volume-up')),
-        ],
-      ),
-      const SizedBox(height: 12),
-      Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
-        children: [
-          if (widget.onProfile != null)
-            OutlinedButton.icon(
-              key: const ValueKey('media-profile'),
-              onPressed: widget.enabled && !_searching ? _chooseProfile : null,
-              icon: const Icon(Icons.account_circle_outlined),
-              label: Text(widget.service == MediaService.netflix
-                  ? 'Choose profile' : 'Switch account'),
-            ),
-          if (widget.onCloseService != null)
-            OutlinedButton.icon(
-              key: const ValueKey('media-close'),
-              onPressed: widget.enabled && !_searching ? _closeTab : null,
-              icon: const Icon(Icons.close),
-              label: Text('Close ${widget.service.label} tab'),
-            ),
+          Wrap(alignment: WrapAlignment.center,
+              spacing: 6, runSpacing: 4, children: [
+            _button('Full screen', Icons.fullscreen, 'f'),
+            if (netflix)
+              _button('Skip intro (if supported)', Icons.skip_next, 's')
+            else ...[
+              _button('Next video', Icons.skip_next, 'shift+n'),
+              _button('Captions', Icons.closed_caption, 'c'),
+            ],
+            if (widget.onProfile != null)
+              OutlinedButton.icon(
+                key: const ValueKey('media-profile'),
+                onPressed: enabled ? _chooseProfile : null,
+                icon: const Icon(Icons.account_circle_outlined),
+                label: Text(netflix ? 'Choose profile' : 'Switch account'),
+              ),
+            if (widget.onCloseService != null)
+              OutlinedButton.icon(
+                key: const ValueKey('media-close'),
+                onPressed: enabled ? _closeTab : null,
+                icon: const Icon(Icons.close),
+                label: Text('Close ${widget.service.label} tab'),
+              ),
+          ]),
         ],
       ),
     ]);

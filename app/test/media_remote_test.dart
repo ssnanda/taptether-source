@@ -21,6 +21,64 @@ void main() {
         throwsFormatException);
   });
 
+  test('Netflix share links normalize and strip tracking parameters', () {
+    const shared = 'https://www.netflix.com/us/title/81676409?'
+        's=i&trkid=13747225&shareType=Title&shareUuid=abc';
+    expect(MediaSharedLink.destination(MediaService.netflix, shared,
+        play: false), 'https://www.netflix.com/title/81676409');
+    expect(MediaSharedLink.destination(MediaService.netflix, shared,
+        play: true), 'https://www.netflix.com/watch/81676409');
+    expect(MediaSharedLink.destination(MediaService.netflix,
+        'https://www.netflix.com/watch/81215567?track=abc', play: true),
+        'https://www.netflix.com/watch/81215567');
+    expect(() => MediaSharedLink.destination(MediaService.netflix,
+        'https://evil.com/title/81676409', play: true), throwsFormatException);
+    expect(() => MediaSharedLink.destination(MediaService.netflix,
+        'javascript:alert(1)', play: true), throwsFormatException);
+    expect(() => MediaSharedLink.destination(MediaService.netflix,
+        'https://www.netflix.com/title/81676409/redirect', play: true),
+        throwsFormatException);
+  });
+
+  test('YouTube shared video links reuse the official watch destination', () {
+    expect(MediaSharedLink.destination(MediaService.youtube,
+        'https://youtu.be/dQw4w9WgXcQ?si=abc', play: true),
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    expect(MediaSharedLink.destination(MediaService.youtube,
+        'https://www.youtube.com/shorts/dQw4w9WgXcQ', play: true),
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    expect(() => MediaSharedLink.destination(MediaService.youtube,
+        'https://www.netflix.com/title/81676409', play: true),
+        throwsFormatException);
+  });
+
+  testWidgets('copied Netflix link opens selected title or watch page',
+      (tester) async {
+    final opened = <String>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body:
+      SingleChildScrollView(child: MediaRemote(
+        service: MediaService.netflix, enabled: true, landscape: false,
+        onServiceChanged: (_) {}, onKey: (_) {},
+        onSearch: (_, __) async {},
+        onOpenLink: (_, url) async { opened.add(url); },
+      )),
+    )));
+    await tester.tap(find.byKey(const ValueKey('media-link-expansion')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('media-link-text')),
+        'https://www.netflix.com/us/title/81676409?s=i');
+    await tester.ensureVisible(find.byKey(const ValueKey('media-link-details')));
+    await tester.tap(find.byKey(const ValueKey('media-link-details')));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const ValueKey('media-link-play')));
+    await tester.tap(find.byKey(const ValueKey('media-link-play')));
+    await tester.pump();
+    expect(opened, [
+      'https://www.netflix.com/title/81676409',
+      'https://www.netflix.com/watch/81676409',
+    ]);
+  });
+
   test('snapshot cadence and mode normalization are stable', () {
     expect(VisualModePolicy.snapshotInterval, const Duration(seconds: 15));
     expect(VisualModePolicy.normalize('live'), 'live');
@@ -85,6 +143,8 @@ void main() {
     )));
     await tester.tap(find.byKey(const ValueKey('media-exit-video')));
     await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('media-more')));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('media-profile')));
     await tester.tap(find.byKey(const ValueKey('media-profile')));
     await tester.pump();
