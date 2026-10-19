@@ -136,6 +136,7 @@ class _MediaRemoteState extends State<MediaRemote> {
   final _link = TextEditingController();
   bool _searching = false;
   bool _searchReady = false;
+  bool _linkReady = false;
   String? _lastSearch;
 
   @override
@@ -146,6 +147,7 @@ class _MediaRemoteState extends State<MediaRemote> {
       _searchReady = false;
       _search.clear();
       _link.clear();
+      _linkReady = false;
       _lastSearch = null;
     }
   }
@@ -247,7 +249,12 @@ class _MediaRemoteState extends State<MediaRemote> {
       // Validate *before* placing it into the field; never transmit pasted
       // content other than allowlisted canonical video destinations.
       MediaSharedLink.destination(widget.service, raw, play: false);
-      if (mounted) setState(() => _link.text = raw);
+      if (mounted) {
+        setState(() {
+          _link.text = raw;
+          _linkReady = false;
+        });
+      }
     } catch (error) { _error(error); }
   }
 
@@ -262,11 +269,13 @@ class _MediaRemoteState extends State<MediaRemote> {
         setState(() {
           _searchReady = false;
           _lastSearch = null;
+          _linkReady = play;
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(play ? 'Sent playback link to computer. ' 
-              'Your Netflix profile or episode selection may still be needed.'
-              : 'Opened title on computer.')));
+          content: Text(play
+              ? 'Watch link sent. If Firefox blocks autoplay, wait until '
+                'the player loads and use Start / resume (not Paste again).'
+              : 'Opened title details on computer.')));
       }
     } catch (error) { _error(error); }
     finally { if (mounted) setState(() => _searching = false); }
@@ -372,6 +381,9 @@ class _MediaRemoteState extends State<MediaRemote> {
                 controller: _link,
                 enabled: enabled,
                 autocorrect: false,
+                onChanged: (_) {
+                  if (_linkReady) setState(() => _linkReady = false);
+                },
                 maxLines: 1,
                 decoration: const InputDecoration(
                   isDense: true, hintText: 'https://www.netflix.com/…',
@@ -401,6 +413,20 @@ class _MediaRemoteState extends State<MediaRemote> {
                 label: const Text('Play on computer'),
               ),
             ]),
+            if (_linkReady) ...[
+              const SizedBox(height: 8),
+              Align(alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  key: const ValueKey('media-link-resume'),
+                  onPressed: enabled ? () => widget.onKey('Return') : null,
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start / resume if paused'),
+                ),
+              ),
+              Text('Wait for the video player to appear. This uses '
+                  'Netflix Play/Pause; it does not reload the link.',
+                  style: theme.textTheme.bodySmall),
+            ],
           ],
         ),
       const SizedBox(height: 6),
@@ -419,18 +445,25 @@ class _MediaRemoteState extends State<MediaRemote> {
             buttonKey: const ValueKey('media-play-pause'), primary: true),
         _compact('Forward 10 seconds', Icons.forward_10,
             netflix ? 'Right' : 'l'),
-        _compact('Exit full screen', Icons.fullscreen_exit, 'Escape'),
+        _compact('Enter video full screen', Icons.fullscreen, 'f',
+            buttonKey: const ValueKey('media-enter-fullscreen')),
       ]),
       const SizedBox(height: 1),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        _compact('Volume down', Icons.volume_down, 'XF86AudioLowerVolume',
+      Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+        _compact('Exit video full screen', Icons.fullscreen_exit, 'Escape',
+            buttonKey: const ValueKey('media-exit-fullscreen')),
+        _compact('Player volume down', Icons.volume_down, 'Down',
             buttonKey: const ValueKey('media-volume-down')),
-        const SizedBox(width: 18),
-        _compact('Mute or unmute', Icons.volume_off, 'XF86AudioMute'),
-        const SizedBox(width: 18),
-        _compact('Volume up', Icons.volume_up, 'XF86AudioRaiseVolume',
+        _compact('Mute or unmute the video player', Icons.volume_off, 'm',
+            buttonKey: const ValueKey('media-player-mute')),
+        _compact('Player volume up', Icons.volume_up, 'Up',
             buttonKey: const ValueKey('media-volume-up')),
       ]),
+      Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 3),
+        child: Text('Player audio · System volume is under More',
+          textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+      ),
       ExpansionTile(
         key: const ValueKey('media-more'),
         tilePadding: EdgeInsets.zero,
@@ -439,13 +472,18 @@ class _MediaRemoteState extends State<MediaRemote> {
         children: [
           Wrap(alignment: WrapAlignment.center,
               spacing: 6, runSpacing: 4, children: [
-            _button('Full screen', Icons.fullscreen, 'f'),
             if (netflix)
               _button('Skip intro (if supported)', Icons.skip_next, 's')
             else ...[
               _button('Next video', Icons.skip_next, 'shift+n'),
               _button('Captions', Icons.closed_caption, 'c'),
             ],
+            _button('System volume -', Icons.volume_down,
+                'XF86AudioLowerVolume'),
+            _button('System mute', Icons.volume_off,
+                'XF86AudioMute'),
+            _button('System volume +', Icons.volume_up,
+                'XF86AudioRaiseVolume'),
             if (widget.onProfile != null)
               OutlinedButton.icon(
                 key: const ValueKey('media-profile'),

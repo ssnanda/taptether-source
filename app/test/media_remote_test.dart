@@ -96,7 +96,55 @@ void main() {
     )));
     await tester.tap(find.byKey(const ValueKey('media-play-pause')));
     await tester.tap(find.byKey(const ValueKey('media-volume-up')));
-    expect(commands, ['space', 'XF86AudioRaiseVolume']);
+    expect(commands, ['space', 'Up']);
+  });
+
+  testWidgets('Netflix player audio and full screen are distinct from system',
+      (tester) async {
+    final commands = <String>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body:
+      SingleChildScrollView(child: MediaRemote(
+        service: MediaService.netflix, enabled: true, landscape: false,
+        onServiceChanged: (_) {}, onKey: commands.add,
+        onSearch: (_, __) async {},
+      )),
+    )));
+    await tester.tap(find.byKey(const ValueKey('media-enter-fullscreen')));
+    await tester.tap(find.byKey(const ValueKey('media-exit-fullscreen')));
+    await tester.tap(find.byKey(const ValueKey('media-player-mute')));
+    await tester.tap(find.byKey(const ValueKey('media-volume-up')));
+    await tester.tap(find.byKey(const ValueKey('media-volume-down')));
+    expect(commands, ['f', 'Escape', 'm', 'Up', 'Down']);
+    await tester.tap(find.byKey(const ValueKey('media-more')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('System volume +'));
+    await tester.tap(find.text('System volume +'));
+    expect(commands.last, 'XF86AudioRaiseVolume');
+  });
+
+  testWidgets('watch link exposes resume action without navigating twice',
+      (tester) async {
+    final actions = <String>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body:
+      SingleChildScrollView(child: MediaRemote(
+        service: MediaService.netflix, enabled: true, landscape: false,
+        onServiceChanged: (_) {}, onKey: actions.add,
+        onSearch: (_, __) async {},
+        onOpenLink: (_, url) async { actions.add(url); },
+      )),
+    )));
+    await tester.tap(find.byKey(const ValueKey('media-link-expansion')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('media-link-text')),
+        'https://www.netflix.com/title/81676409');
+    await tester.ensureVisible(find.byKey(const ValueKey('media-link-play')));
+    await tester.tap(find.byKey(const ValueKey('media-link-play')));
+    await tester.pump();
+    expect(actions, ['https://www.netflix.com/watch/81676409']);
+    await tester.ensureVisible(find.byKey(const ValueKey('media-link-resume')));
+    await tester.tap(find.byKey(const ValueKey('media-link-resume')));
+    await tester.pump();
+    expect(actions, ['https://www.netflix.com/watch/81676409', 'Return']);
   });
 
   testWidgets('media search forwards provider and typed query', (tester) async {

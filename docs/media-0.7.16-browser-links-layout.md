@@ -49,3 +49,31 @@ Exit full screen) and compact volume controls. Hide profile, close tab,
 Full screen, Skip Intro, next/captions in **More video controls**.
 Retain the shared Mouse and keyboard trackpad immediately below.
 No protected macOS Input Core or Screen Core source/versions changed.
+
+## 0.7.17+80 — First link, Netflix player volume, fullscreen
+
+- When a new **Netflix watch link** is sent, TapTether first activates the
+  existing default browser and sends Escape to release any previous
+  fullscreen player. After a short settle, it navigates the SAME selected
+  tab to the canonical Netflix /watch ID. This reduces the chance that the
+  first link send only exits the previous video. It does not scrape the
+  Netflix page or claim to know when the DRM player has started loading.
+- **Do not automatically send Enter/Space/M** after navigation: these
+  player controls *toggle* state and may pause/mute a video that already
+  autoplayed. Once a link was sent, the expanded shared-link area offers
+  **Start / resume if paused**, which sends one Netflix player Enter key
+  without sending the URL a second time. Wait until the player is visible.
+- **F** (enter player fullscreen) is now beside the primary transport
+  buttons; **Escape** (exit player fullscreen) stays visible separately.
+  These are separate actions, NOT the macOS/Firefox window fullscreen mode.
+  If the browser/player does not focus its playback surface, these
+  shortcuts may still require a click inside the video.
+- Main audio controls now send Netflix's supported **Up/Down** player-volume
+  and **M** player-mute shortcuts, not OS media keys. Audio controls for
+  the computer itself are under **More video controls**, explicitly labeled
+  System volume. These two audio states, plus browser tab/site mute,
+  can be independent. Firefox's mute-tab or autoplay restrictions may
+  require browser-side interaction.
+- Neither macOS protected Input Core nor Screen Core is changed; this is
+  app/agent workflow only. No DRM bypass, browser DOM integration, cloud,
+  telemetry or credential access.
