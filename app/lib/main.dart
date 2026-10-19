@@ -316,12 +316,12 @@ class LocalAgent {
   }
 
 
-  Future<void> openMedia(String service, String query) async {
+  Future<void> openMedia(String service, String query, {bool focusOnly = false}) async {
     if (!configured) throw StateError('Connect to a paired computer first.');
     final req = await _client!.postUrl(_base!.resolve('/api/media/open'));
     req.headers.contentType = ContentType.json;
     req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${await _bearer()}');
-    req.write(jsonEncode({'service': service, 'query': query}));
+    req.write(jsonEncode({'service': service, 'query': query, 'focus': focusOnly}));
     final res = await req.close().timeout(const Duration(seconds: 8));
     if (res.statusCode != 204) {
       final explanation = await utf8.decoder.bind(res).join();
@@ -2632,6 +2632,9 @@ class _RemoteScreenState extends State<RemoteScreen>
           url.startsWith('https://www.youtube.com/'))) {
       throw const FormatException('Media destination is not permitted.');
     }
+    // Activate the existing default browser without creating an extra tab.
+    await agent.openMedia(url.contains('netflix.com/') ? 'netflix' : 'youtube',
+        '', focusOnly: true);
     await agent.send('key', {'key': _mediaIsMac ? 'cmd+l' : 'ctrl+l'});
     await agent.send('text', {'text': url});
     await agent.send('key', {'key': 'Return'});
@@ -2669,14 +2672,12 @@ class _RemoteScreenState extends State<RemoteScreen>
     await agent.send('key', {'key': _mediaIsMac ? 'cmd+w' : 'ctrl+w'});
   }
 
-  Future<void> _searchMedia(MediaService service, String text) async {
-    if (text.trim().isEmpty) {
-      // Only explicit Open Provider uses the OS browser opener.
-      await agent.openMedia(service.name, '');
-    } else {
-      await _mediaNavigateSameTab(MediaSearch.url(service, text));
-    }
-  }
+  Future<void> _searchMedia(MediaService service, String text) =>
+      _mediaNavigateSameTab(text.trim().isEmpty
+          ? MediaSearch.browseUrl(service) : MediaSearch.url(service, text));
+
+  Future<void> _openMediaLink(MediaService service, String url) =>
+      _mediaNavigateSameTab(url);
 
   /// A short opt-in test against only the selected, TLS-pinned computer.
   /// This is not Wi-Fi link negotiation rate or ISP/internet speed.
@@ -2890,6 +2891,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   },
                   onKey: (key) => unawaited(command('key', {'key': key})),
                   onSearch: _searchMedia,
+                  onOpenLink: _openMediaLink,
                   onSearchPage: _mediaSearchPage,
                   onExitVideo: _mediaExitVideo,
                   onProfile: _mediaProfile,
