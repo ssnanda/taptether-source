@@ -58,6 +58,7 @@ Future<List<DiscoveredDevice>> findNearbyDevices({
   String? scanPrefix,
   String? targetIp,
   List<String>? scanPrefixes,
+  bool broadcastOnly = false,
 }) async {
   if (scanPrefix != null && !isPrivateIPv4('$scanPrefix.1')) {
     throw const FormatException('Discovery requires a private /24 prefix');
@@ -126,12 +127,14 @@ Future<List<DiscoveredDevice>> findNearbyDevices({
         if (prefixes.length >= 2) break;
       }
     }
-    for (final prefix in prefixes) {
-      for (var last = 1; last <= 254; last++) {
-        try {
-          socket.send(probe, InternetAddress('$prefix.$last'), 48322);
-        } on SocketException {
-          // Continue probing other on-link hosts.
+    if (!broadcastOnly) {
+      for (final prefix in prefixes) {
+        for (var last = 1; last <= 254; last++) {
+          try {
+            socket.send(probe, InternetAddress('$prefix.$last'), 48322);
+          } on SocketException {
+            // Full-range discovery remains a separate, explicit action.
+          }
         }
       }
     }
