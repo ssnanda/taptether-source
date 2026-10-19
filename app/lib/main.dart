@@ -822,17 +822,23 @@ class _RemoteScreenState extends State<RemoteScreen>
   // Every candidate still needs the saved TLS pin and phone authentication.
   Future<void> _recoverSavedDevices({bool force = false}) async {
     if (!mounted || !_appForeground || savedComputers.isEmpty ||
-        _recoveringDiscovery || _scanningToReconcile) return;
+        _recoveringDiscovery || _scanningToReconcile) {
+      return;
+    }
     final now = DateTime.now();
     if (!force && _lastPassiveDiscovery != null &&
         now.difference(_lastPassiveDiscovery!) <
-            const Duration(minutes: 10)) return;
+            const Duration(minutes: 10)) {
+      return;
+    }
     _lastPassiveDiscovery = now;
     _recoveringDiscovery = true;
     if (mounted) setState(() {});
     try {
       final network = _wifiRange ?? await detectLanRange();
-      if (network == null || !mounted) return;
+      if (network == null || !mounted) {
+        return;
+      }
       final candidates = await findNearbyDevices(
         duration: const Duration(seconds: 2),
         scanPrefixes: [network.activePrefix],
@@ -840,7 +846,9 @@ class _RemoteScreenState extends State<RemoteScreen>
         broadcastAddress: lanBroadcastAddress(network),
       );
       for (final candidate in candidates.take(8)) {
-        if (!mounted || !_appForeground) break;
+        if (!mounted || !_appForeground) {
+          break;
+        }
         if (lanRangeContains(network, candidate.host)) {
           await _reconcileScannedAgent(candidate.host, passive: true);
         }
@@ -868,7 +876,9 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (!mounted) { socket.close(); return; }
       _announcementSocket = socket;
       _announcementSubscription = socket.listen((event) {
-        if (event != RawSocketEvent.read || !_appForeground) return;
+        if (event != RawSocketEvent.read || !_appForeground) {
+          return;
+        }
         Datagram? packet;
         while ((packet = socket.receive()) != null) {
           final candidate = DiscoveredDevice.parse(packet!);
@@ -876,11 +886,15 @@ class _RemoteScreenState extends State<RemoteScreen>
           if (candidate == null || network == null ||
               !lanRangeContains(network, candidate.host) ||
               savedComputers.isEmpty || _scanningToReconcile ||
-              _recoveringDiscovery) continue;
+              _recoveringDiscovery) {
+            continue;
+          }
           final now = DateTime.now();
           final last = _recentAnnouncements[candidate.host];
           if (last != null &&
-              now.difference(last) < const Duration(minutes: 10)) continue;
+              now.difference(last) < const Duration(minutes: 10)) {
+            continue;
+          }
           _recentAnnouncements[candidate.host] = now;
           if (_recentAnnouncements.length > 24) _recentAnnouncements.clear();
           unawaited(_reconcileScannedAgent(candidate.host,
