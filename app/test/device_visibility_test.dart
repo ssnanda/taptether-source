@@ -65,6 +65,26 @@ void main() {
       currentNetwork: network, showOffline: false);
     expect(visible.map((d) => d.id), ['here']);
   });
+  test('offline and unverified devices never start connection attempts', () {
+    expect(canConnectSavedDevice(false, connecting: false), isFalse);
+    expect(canConnectSavedDevice(null, connecting: false), isFalse);
+    expect(canConnectSavedDevice(true, connecting: true), isFalse);
+    expect(canConnectSavedDevice(true, connecting: false), isTrue);
+    // A user-visible OFFLINE label must never be paired with CONNECTING.
+  });
+
+  test('offline dashboard distinguishes saved pairings from online agents', () {
+    expect(savedDeviceAvailabilityHint(
+      savedCount: 5, onlineCount: 0, checking: false),
+      contains('TapTether Agent'));
+    expect(savedDeviceAvailabilityHint(
+      savedCount: 5, onlineCount: 0, checking: true), isNull);
+    expect(savedDeviceAvailabilityHint(
+      savedCount: 5, onlineCount: 1, checking: false), isNull);
+    expect(savedDeviceAvailabilityHint(
+      savedCount: 0, onlineCount: 0, checking: false), isNull);
+  });
+
   test('all saved devices remain visible and online ones lead the list', () {
     final saved = [
       host('offline', '192.168.68.80', 'home'),
