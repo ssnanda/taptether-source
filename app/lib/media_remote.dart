@@ -78,8 +78,7 @@ class MediaSharedLink {
           !RegExp(r'^\d{5,12}$').hasMatch(parts.last)) {
         throw const FormatException('Netflix link needs a title or watch ID.');
       }
-      return 'https://www.netflix.com/' +
-          (play ? 'watch/' : 'title/') + parts.last;
+      return 'https://www.netflix.com/${play ? 'watch' : 'title'}/${parts.last}';
     }
     final allowed = uri.host == 'www.youtube.com' ||
         uri.host == 'youtube.com' || uri.host == 'm.youtube.com';
@@ -95,7 +94,7 @@ class MediaSharedLink {
     if (id == null || !RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(id)) {
       throw const FormatException('Paste a YouTube video or Shorts link.');
     }
-    return 'https://www.youtube.com/watch?v=' + id;
+    return 'https://www.youtube.com/watch?v=$id';
   }
 }
 class MediaRemote extends StatefulWidget {
@@ -344,7 +343,7 @@ class _MediaRemoteState extends State<MediaRemote> {
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           isDense: true,
-          hintText: _searchReady ? 'Search ' + widget.service.label
+          hintText: _searchReady ? 'Search ${widget.service.label}'
               : 'Tap Search page above to search',
           prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: IconButton(
@@ -363,9 +362,9 @@ class _MediaRemoteState extends State<MediaRemote> {
             tilePadding: EdgeInsets.zero,
           childrenPadding: const EdgeInsets.only(bottom: 6),
           leading: const Icon(Icons.link),
-          title: Text('Play from shared ' + widget.service.label + ' link'),
-          subtitle: Text('Copy in ' + widget.service.label +
-              ', then paste here', style: theme.textTheme.bodySmall),
+          title: Text('Play from shared ${widget.service.label} link'),
+          subtitle: Text('Copy in ${widget.service.label}, then paste here',
+              style: theme.textTheme.bodySmall),
           children: [
             Row(children: [
               Expanded(child: TextField(
@@ -459,7 +458,7 @@ class _MediaRemoteState extends State<MediaRemote> {
                 key: const ValueKey('media-close'),
                 onPressed: enabled ? _closeTab : null,
                 icon: const Icon(Icons.close),
-                label: Text('Close ' + widget.service.label + ' tab'),
+                label: Text('Close ${widget.service.label} tab'),
               ),
           ]),
         ],
