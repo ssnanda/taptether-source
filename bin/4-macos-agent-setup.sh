@@ -354,7 +354,7 @@ EOF
     exit 1
   fi
   notice 'Background agent installed, running and enabled at login.'
-  notice 'TapTether Agent.app displays the splash on demand; the menu bar tray starts silently at login.'
+  notice 'TapTether Agent.app operates only from the menu bar; no splash or completion popups.'
   notice 'Accessibility: allow Input Core once. Screen Recording: allow Screen Core once. Agent updates preserve both.'
   # Never print pairing tokens in routine install/update logs. The owner can
   # deliberately reveal them from the menu bar or the pairing subcommand.
