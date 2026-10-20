@@ -23,7 +23,8 @@ class MediaSearch {
   };
 
   static String profileUrl(MediaService service) => switch (service) {
-    MediaService.netflix => 'https://www.netflix.com/profiles/manage',
+    // Profile chooser (Who's watching?), not /profiles/manage (edit mode).
+    MediaService.netflix => 'https://www.netflix.com/ProfilesGate',
     MediaService.youtube => 'https://www.youtube.com/',
   };
 
@@ -521,7 +522,7 @@ class _MediaRemoteState extends State<MediaRemote> {
                 key: const ValueKey('media-profile'),
                 onPressed: enabled ? _chooseProfile : null,
                 icon: const Icon(Icons.account_circle_outlined),
-                label: Text(netflix ? 'Manage profiles' : 'Open account'),
+                label: Text(netflix ? 'Choose profile' : 'Open account'),
               ),
             if (widget.onCloseService != null)
               OutlinedButton.icon(

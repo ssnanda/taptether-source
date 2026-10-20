@@ -2821,7 +2821,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> _mediaProfile(MediaService service) async {
     // Generic browser control cannot inspect the selected Netflix profile
     // or click its avatar. Open the actual first-party profile management
-    // screen instead of silently reopening /browse, where nothing changes.
+    // chooser screen instead of /profiles/manage, which edits profiles.
     if (service == MediaService.netflix) {
       await agent.openMedia('netflix', '', focusOnly: true);
       await agent.send('key', {'key': 'Escape'});
@@ -2831,8 +2831,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
         service == MediaService.netflix
-          ? 'Netflix profiles opened. Use Trackpad to choose or manage a '
-            'profile on the computer.'
+          ? 'Netflix profile selection opened. Select a profile using '
+            'Trackpad. If Netflix redirects to Browse, use the '
+            'profile avatar in the top right.'
           : 'Choose your YouTube account in the browser using Trackpad.',
       )));
     }
