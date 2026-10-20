@@ -78,8 +78,10 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
             : 'Select a TV to approve pairing on its screen.';
       });
     } catch (_) {
-      if (mounted) setState(() =>
-          _error = 'TV discovery was blocked. Enter the TV IP manually.');
+      if (mounted) {
+        setState(() =>
+            _error = 'TV discovery was blocked. Enter the TV IP manually.');
+      }
     } finally {
       if (mounted) setState(() => _discovering = false);
     }
@@ -166,8 +168,10 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
       if (!mounted) return;
       setState(() => _error = null);
     } catch (e) {
-      if (mounted) setState(() => _error =
-          e.toString().replaceFirst('Bad state: ', ''));
+      if (mounted) {
+        setState(() => _error =
+            e.toString().replaceFirst('Bad state: ', ''));
+      }
     }
   }
 
@@ -197,13 +201,15 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
         TextButton.icon(
           onPressed: () async {
             await _session?.disconnect();
-            if (mounted) setState(() {
-              _session = null;
-              _connected = null;
-              _apps = [];
-              _app = null;
-              _status = 'Disconnected';
-            });
+            if (mounted) {
+              setState(() {
+                _session = null;
+                _connected = null;
+                _apps = [];
+                _app = null;
+                _status = 'Disconnected';
+              });
+            }
           },
           icon: const Icon(Icons.link_off),
           label: const Text('Disconnect'),
