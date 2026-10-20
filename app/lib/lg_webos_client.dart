@@ -132,6 +132,39 @@ Future<List<LgTvDevice>> discoverLgTvs({
     await sub.cancel();
     socket.close();
   }
+  // iOS and some routers block SSDP multicast. A tap-initiated scan checks
+  // ONLY the current Wi-Fi /24, at most 12 connections at once, never
+  // background-scanning unrelated network adapters or internet addresses.
+  if (found.isEmpty) {
+    final prefix = range.activePrefix;
+    var next = 1;
+    Future<void> worker() async {
+      while (next <= 254) {
+        final suffix = next++;
+        final host = '$prefix.$suffix';
+        if (!lanRangeContains(range, host) || host == range.ip) continue;
+        for (final port in [3001, 3000]) {
+          try {
+            final socket = await Socket.connect(
+              host, port,
+              timeout: const Duration(milliseconds: 250),
+            );
+            socket.destroy();
+            found[host] = LgTvDevice(
+              host: host,
+              name: 'Possible LG webOS TV',
+            );
+            break;
+          } on SocketException {
+            // Not a TV candidate on this port.
+          } on TimeoutException {
+            // Unreachable TV or no responder.
+          }
+        }
+      }
+    }
+    await Future.wait(List.generate(12, (_) => worker()));
+  }
   return found.values.toList()..sort((a, b) => a.host.compareTo(b.host));
 }
 
