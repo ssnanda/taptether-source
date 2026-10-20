@@ -29,6 +29,7 @@ case "$1" in
     fi ;;
   bootstrap) : > "$TT_LOADED" ;;
   kickstart) : > "$TT_LOADED"; : > "$TT_RUNNING" ;;
+  enable) : ;;
   bootout) rm -f "$TT_LOADED" "$TT_RUNNING" ;;
   *) exit 7 ;;
 esac
@@ -36,7 +37,7 @@ esac
         mock.chmod(0o755)
         binary = home / ".local" / "bin" / "taptether-agent"
         binary.parent.mkdir(parents=True)
-        binary.write_text("#!/bin/sh\\nexit 0\\n")
+        binary.write_text("#!/bin/sh\nexit 0\n")
         binary.chmod(0o755)
         plist = home / "Library" / "LaunchAgents" / "com.taptether.agent.plist"
         plist.parent.mkdir(parents=True)
