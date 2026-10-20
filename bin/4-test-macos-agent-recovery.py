@@ -37,7 +37,7 @@ esac
         mock.chmod(0o755)
         binary = home / ".local" / "bin" / "taptether-agent"
         binary.parent.mkdir(parents=True)
-        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.write_text("\n".join(["#!/bin/sh", "exit 0", ""]))
         binary.chmod(0o755)
         plist = home / "Library" / "LaunchAgents" / "com.taptether.agent.plist"
         plist.parent.mkdir(parents=True)
