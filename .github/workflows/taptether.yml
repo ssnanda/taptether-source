@@ -109,6 +109,7 @@ jobs:
           python3 bin/4-test-saved-devices-dashboard.py
           python3 bin/4-test-macos-uninstall.py
           python3 bin/4-test-macos-input-core.py
+          python3 bin/4-test-macos-agent-recovery.py
       - name: Go agent tests and vet
         run: |
           cd agent
