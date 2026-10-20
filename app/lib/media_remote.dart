@@ -521,7 +521,7 @@ class _MediaRemoteState extends State<MediaRemote> {
                 key: const ValueKey('media-profile'),
                 onPressed: enabled ? _chooseProfile : null,
                 icon: const Icon(Icons.account_circle_outlined),
-                label: Text(netflix ? 'Open profiles' : 'Open account'),
+                label: Text(netflix ? 'Manage profiles' : 'Open account'),
               ),
             if (widget.onCloseService != null)
               OutlinedButton.icon(
