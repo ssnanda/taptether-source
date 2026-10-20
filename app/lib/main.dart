@@ -2844,6 +2844,19 @@ class _RemoteScreenState extends State<RemoteScreen>
     await agent.send('key', {'key': _mediaIsMac ? 'cmd+w' : 'ctrl+w'});
   }
 
+  /// Explicit Open on computer must not inject Cmd+L/text/Return.
+  /// If a browser is not the frontmost app, those keystrokes can trigger
+  /// macOS Open dialogs in another application. Use the authenticated agent's
+  /// allowlisted OS-default-browser URL opener instead. This explicit Open
+  /// action may create a browser tab; same-tab navigation remains available
+  /// for Search, video links, Browse history and profile selection.
+  Future<void> _openMediaService(MediaService service) async {
+    if (!agent.configured) {
+      throw StateError('Connect to a paired computer first.');
+    }
+    await agent.openMedia(service.name, '');
+  }
+
   Future<void> _searchMedia(MediaService service, String text) =>
       _mediaNavigateSameTab(text.trim().isEmpty
           ? MediaSearch.browseUrl(service) : MediaSearch.url(service, text));
@@ -3005,7 +3018,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           onFullscreen: _mediaFullscreen,
         onProfile: _mediaProfile,
         onCloseService: _mediaCloseService,
-        onOpenService: (service) => _searchMedia(service, ''),
+        onOpenService: _openMediaService,
       ),
       const SizedBox(height: 12),
       Text('Mouse and keyboard',
@@ -3082,7 +3095,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           onFullscreen: _mediaFullscreen,
                   onProfile: _mediaProfile,
                   onCloseService: _mediaCloseService,
-                  onOpenService: (service) => _searchMedia(service, ''),
+                  onOpenService: _openMediaService,
                 ),
               const SizedBox(height: 12),
               _landscapeTyping(),
