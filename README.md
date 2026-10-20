@@ -71,6 +71,32 @@ This registers the background login LaunchAgent and displays the LAN IP, token a
     ~/.local/bin/taptetherctl-mac status
     ~/.local/bin/taptetherctl-mac restart
 
+## LG webOS (0.8.1 — phone remote, no TV agent)
+
+The iPhone app now includes an LG webOS remote inside **My Devices**.
+Tap **Add LG webOS TV**, use on-demand LAN discovery or enter the TV's
+private IP, and approve the one-time pairing prompt shown on the TV.
+The app stores the TV's issued client key in Keychain/secure storage.
+Paired televisions appear alongside desktop agents in My Devices.
+
+Supported initial controls: directional navigation, OK, Home, Back,
+volume/mute, channel, playback, power off, and launching applications
+the TV advertises as installed. Power *on* via Wake-on-LAN is not part
+of the initial release; it requires TV/model support and a verified MAC.
+
+Connection order: encrypted SSAP on WSS/3001 first, plaintext
+WS/3000 only for older devices that cannot negotiate TLS.
+A previously pinned TLS identity will not silently downgrade.
+The TV's pairing approval is always required the first time.
+On-demand discovery uses SSDP or a bounded scan of the active Wi-Fi /24
+when multicast is blocked. No TV app, root, Developer Mode, external
+service, or cloud connection is necessary.
+
+The older optional `tv/lg-webos` companion proof of concept remains in
+the repository, but is **not** required for remote control and does not
+provide system-wide TV input interception. Test real hardware and
+firmware variants before claiming full compatibility.
+
 ## LG webOS
 
 With LG webOS CLI installed (providing ares-package):
