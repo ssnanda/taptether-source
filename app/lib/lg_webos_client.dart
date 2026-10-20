@@ -125,9 +125,13 @@ Future<List<LgTvDevice>> discoverLgTvs({
         'MAN: "ssdp:discover"\r\n'
         'MX: 1\r\n'
         'ST: urn:lge-com:service:webos-second-screen:1\r\n\r\n';
-    socket.send(utf8.encode(request),
-        InternetAddress('239.255.255.250'), 1900);
-    await Future<void>.delayed(timeout);
+    try {
+      socket.send(utf8.encode(request),
+          InternetAddress('239.255.255.250'), 1900);
+      await Future<void>.delayed(timeout);
+    } on SocketException {
+      // Multicast is restricted on some iOS devices. Fall back below.
+    }
   } finally {
     await sub.cancel();
     socket.close();
