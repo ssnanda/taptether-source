@@ -343,6 +343,7 @@ EOF
     fi
   fi
   launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
+  launchctl enable "$TARGET/$LABEL" >/dev/null 2>&1 || true
   launchctl bootstrap "$TARGET" "$PLIST"
   launchctl kickstart -k "$TARGET/$LABEL"
   if [[ -s "$TRAY_PLIST" ]]; then
@@ -480,6 +481,7 @@ start_agent() {
       launchctl kickstart "$TARGET/$SCREEN_LABEL" || return 1
     fi
   fi
+  launchctl enable "$TARGET/$LABEL" >/dev/null 2>&1 || true
   if ! launchctl print "$TARGET/$LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$PLIST" || {
       notice 'Could not load the LaunchAgent. Choose Agent diagnostics / Repair.' >&2
@@ -509,6 +511,10 @@ ensure_agent_running() {
   local state
   state="$(launchctl print "$TARGET/$LABEL" 2>/dev/null || true)"
   [[ "$state" == *'state = running'* ]] && return 0
+  # launchctl disable can survive an OS upgrade. Explicitly re-enable the
+  # agent label; never touch the protected helper service labels.
+  launchctl enable "$TARGET/$LABEL" >/dev/null 2>&1 || true
+  if [[ -f "$AGENT_STOPPED" ]]; then return 0; fi
   if [[ -z "$state" ]]; then
     launchctl bootstrap "$TARGET" "$PLIST" >/dev/null 2>&1 || return 1
   fi
