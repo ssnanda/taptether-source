@@ -1750,7 +1750,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   'or enable Show offline.'),
           ),
       ],
-      if (savedComputers.isEmpty)
+      if (savedComputers.isEmpty && savedLgTvs.isEmpty)
         Card(child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
