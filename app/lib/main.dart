@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
+import 'lg_webos_client.dart';
+import 'lg_webos_screen.dart';
 import 'remote_layout_settings.dart';
 import 'remote_mode_bar.dart';
 import 'stepped_scroll.dart';
@@ -499,6 +501,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   String? _connectionTechnical;
   bool _retryingConnection = false;
   List<SavedComputer> savedComputers = [];
+  List<LgTvDevice> savedLgTvs = [];
   List<DiscoveredDevice> nearbyComputers = [];
   bool searching = false;
   bool installingAgent = false;
@@ -664,6 +667,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
     unawaited(loadComputers());
+    unawaited(loadLgTvs());
     unawaited(_listenForAgentAnnouncements());
     unawaited(_refreshNetworkLocation());
     WidgetsBinding.instance.addObserver(this);
@@ -1435,6 +1439,25 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  Future<void> loadLgTvs() async {
+    try {
+      final tvs = await LgTvStore().read();
+      if (mounted) setState(() => savedLgTvs = tvs);
+    } catch (_) {
+      // TV remote storage may be unavailable until iOS Keychain unlocks.
+    }
+  }
+
+  Future<void> openLgWebOs({String? host}) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => LgWebOsScreen(
+        initialHost: host,
+        onSaved: loadLgTvs,
+      ),
+    ));
+    if (mounted) await loadLgTvs();
+  }
+
   Future<void> openDeviceManager() async {
     final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => DeviceManagerScreen(
@@ -1506,6 +1529,14 @@ class _RemoteScreenState extends State<RemoteScreen>
           },
         ),
         ListTile(
+          leading: const Icon(Icons.tv_outlined),
+          title: const Text('LG webOS TV'),
+          onTap: () {
+            Navigator.pop(context);
+            openLgWebOs();
+          },
+        ),
+        ListTile(
           leading: const Icon(Icons.key_outlined),
           title: const Text('SSH Keys'),
           onTap: () {
@@ -1524,6 +1555,14 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () {
                 Navigator.pop(context);
                 showPairForm();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.tv_outlined),
+              title: const Text('Add LG webOS TV'),
+              onTap: () {
+                Navigator.pop(context);
+                openLgWebOs();
               },
             ),
             ListTile(
@@ -1775,6 +1814,30 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
 
+      if (savedLgTvs.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Text('LG webOS TVs', style: Theme.of(context).textTheme.titleMedium),
+        for (final tv in savedLgTvs)
+          Card(
+            key: ValueKey('lg-tv-${tv.host}'),
+            child: ListTile(
+              leading: const Icon(Icons.tv_outlined, size: 29),
+              title: Text(tv.name),
+              subtitle: Text('${tv.host} · Paired'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => openLgWebOs(host: tv.host),
+            ),
+          ),
+      ],
+      if (savedLgTvs.isEmpty)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => openLgWebOs(),
+            icon: const Icon(Icons.tv_outlined),
+            label: const Text('Add LG webOS TV'),
+          ),
+        ),
       const SizedBox(height: 12),
       Align(
         alignment: Alignment.centerLeft,
