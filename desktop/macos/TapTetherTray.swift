@@ -17,6 +17,14 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     private var versionMenuItem: NSMenuItem!
     private var updateMenuItem: NSMenuItem!
     private var updateInProgress = false
+    private var installInProgress = false
+    private var manualControlInProgress = false
+    private var recoveryInProgress = false
+    private var lastRecoveryAttempt = Date.distantPast
+    // Quiet self-healing is deliberately throttled to avoid a crash loop.
+    private let recoveryInterval: TimeInterval = 300
+    private let deliberateStopMarker = NSHomeDirectory()
+        + "/Library/Application Support/taptether/agent-stopped-by-user"
     private var remoteShutdownItem: NSMenuItem!
     private var lastLANAddress = ""
     private var ipChangeUntil: Date?
@@ -80,20 +88,9 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         }
         statusItem.menu = menu
         refreshStatus()
-        // Installed user agents sometimes remain unloaded after first login
-        // or an app update. Re-establish the LaunchAgent once, off the UI
-        // thread, without opening Terminal or showing unwanted popups.
-        if FileManager.default.isExecutableFile(atPath: controller) {
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                guard let self = self else { return }
-                let target = "gui/" + String(getuid()) + "/" + agentLabel
-                let state = self.output("/bin/launchctl", ["print", target])
-                if !state.contains("state = running") {
-                    _ = self.output(controller, ["start"])
-                }
-                DispatchQueue.main.async { self.refreshStatus() }
-            }
-        }
+        // Startup and 15-second status checks recover only the agent's
+        // LaunchAgent, never the independently signed Input/Screen Cores.
+        // A deliberate user Stop suppresses this quiet auto-recovery.
         // No setup prompts or windows automatically on opening the tray.
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.refreshStatus()
@@ -185,6 +182,32 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         statusLabel?.title = "Status: " + (isRunning ? "Running" :
             (installed ? "Stopped — use Start / Repair" : "Not installed"))
             + (changed ? " 🔴 IP changed" : "")
+        if !isRunning { recoverAgentIfNeeded() }
+    }
+
+    private func recoverAgentIfNeeded() {
+        guard !updateInProgress && !installInProgress &&
+              !manualControlInProgress && !recoveryInProgress &&
+              FileManager.default.isExecutableFile(atPath: controller) &&
+              FileManager.default.fileExists(atPath: NSHomeDirectory()
+                  + "/Library/LaunchAgents/com.taptether.agent.plist") &&
+              !FileManager.default.fileExists(atPath: deliberateStopMarker) &&
+              Date().timeIntervalSince(lastRecoveryAttempt) >= recoveryInterval
+        else { return }
+        lastRecoveryAttempt = Date()
+        recoveryInProgress = true
+        statusLabel?.title = "Status: Checking agent…"
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            // This helper touches only com.taptether.agent, not Input Core
+            // or Screen Core, and will not override an explicit Stop.
+            _ = self.output(controller, ["ensure-running"])
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.recoveryInProgress = false
+                self.refreshStatus()
+            }
+        }
     }
 
     private func showNotice(_ title: String, _ body: String) {
@@ -193,14 +216,17 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     }
 
     private func runControl(_ verb: String) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = self.output(controller, [verb])
-            DispatchQueue.main.async {
+        guard !manualControlInProgress else { return }
+        manualControlInProgress = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            _ = self.output(controller, [verb])
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.manualControlInProgress = false
+                // Never replace the real launchd state with a generic
+                // "TapTether start" status after the button was clicked.
                 self.refreshStatus()
-                let observed = self.statusLabel?.title ?? "Status unavailable"
-                self.showNotice("TapTether " + verb,
-                    result.isEmpty ? observed + ". If stopped, choose Install / Repair agent."
-                                   : String(result.prefix(1000)))
             }
         }
     }
@@ -217,6 +243,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 "Use the TapTether Agent.app bundled in the current macOS release.")
             return
         }
+        installInProgress = true
         statusLabel?.title = "Status: Installing…"
         DispatchQueue.global(qos: .userInitiated).async {
             let task = Process()
@@ -234,6 +261,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                 ok = false
             }
             DispatchQueue.main.async {
+                self.installInProgress = false
                 self.refreshStatus()
                 if ok {
                     self.activeVersion = self.versionFromAgent()
