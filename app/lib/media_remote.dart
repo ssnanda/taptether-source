@@ -22,6 +22,11 @@ class MediaSearch {
     MediaService.youtube => 'https://www.youtube.com/results?search_query=',
   };
 
+  static String profileUrl(MediaService service) => switch (service) {
+    MediaService.netflix => 'https://www.netflix.com/profiles/manage',
+    MediaService.youtube => 'https://www.youtube.com/',
+  };
+
   static String browseUrl(MediaService service) => switch (service) {
     MediaService.netflix => 'https://www.netflix.com/browse',
     MediaService.youtube => 'https://www.youtube.com/',
@@ -110,6 +115,7 @@ class MediaRemote extends StatefulWidget {
     this.onSearchPage,
     this.onExitVideo,
     this.onProfile,
+    this.onFullscreen,
     this.onCloseService,
     this.onOpenLink,
   });
@@ -124,6 +130,8 @@ class MediaRemote extends StatefulWidget {
   final Future<void> Function(MediaService)? onSearchPage;
   final Future<void> Function(MediaService, String?)? onExitVideo;
   final Future<void> Function(MediaService)? onProfile;
+  /// User-initiated browser/player fullscreen shortcuts, with browser focus.
+  final Future<void> Function(MediaService, bool)? onFullscreen;
   final Future<void> Function(MediaService)? onCloseService;
   final Future<void> Function(MediaService, String)? onOpenLink;
 
@@ -216,6 +224,22 @@ class _MediaRemoteState extends State<MediaRemote> {
     try { await widget.onProfile!(widget.service); }
     catch (error) { _error(error); }
     finally { if (mounted) setState(() => _searching = false); }
+  }
+
+  Future<void> _setFullscreen(bool enter) async {
+    if (!widget.enabled || _searching) return;
+    if (widget.onFullscreen == null) {
+      widget.onKey(enter ? 'f' : 'Escape');
+      return;
+    }
+    setState(() => _searching = true);
+    try {
+      await widget.onFullscreen!(widget.service, enter);
+    } catch (error) {
+      _error(error);
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
   }
 
   Future<void> _closeTab() async {
@@ -435,7 +459,7 @@ class _MediaRemoteState extends State<MediaRemote> {
       Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
         IconButton(
           key: const ValueKey('media-exit-video'),
-          tooltip: 'Back to browsing',
+          tooltip: 'Back to previous Netflix page',
           icon: const Icon(Icons.arrow_back),
           onPressed: enabled && widget.onExitVideo != null ? _goBack : null,
         ),
@@ -445,13 +469,21 @@ class _MediaRemoteState extends State<MediaRemote> {
             buttonKey: const ValueKey('media-play-pause'), primary: true),
         _compact('Forward 10 seconds', Icons.forward_10,
             netflix ? 'Right' : 'l'),
-        _compact('Enter video full screen', Icons.fullscreen, 'f',
-            buttonKey: const ValueKey('media-enter-fullscreen')),
+        IconButton(
+          key: const ValueKey('media-enter-fullscreen'),
+          tooltip: 'Enter Netflix video fullscreen',
+          icon: const Icon(Icons.fullscreen, size: 23),
+          onPressed: enabled ? () => _setFullscreen(true) : null,
+        ),
       ]),
       const SizedBox(height: 1),
       Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-        _compact('Exit video full screen', Icons.fullscreen_exit, 'Escape',
-            buttonKey: const ValueKey('media-exit-fullscreen')),
+        IconButton(
+          key: const ValueKey('media-exit-fullscreen'),
+          tooltip: 'Exit Netflix video fullscreen',
+          icon: const Icon(Icons.fullscreen_exit, size: 23),
+          onPressed: enabled ? () => _setFullscreen(false) : null,
+        ),
         _compact('Player volume down', Icons.volume_down, 'Down',
             buttonKey: const ValueKey('media-volume-down')),
         _compact('Mute or unmute the video player', Icons.volume_off, 'm',
@@ -489,7 +521,7 @@ class _MediaRemoteState extends State<MediaRemote> {
                 key: const ValueKey('media-profile'),
                 onPressed: enabled ? _chooseProfile : null,
                 icon: const Icon(Icons.account_circle_outlined),
-                label: Text(netflix ? 'Choose profile' : 'Switch account'),
+                label: Text(netflix ? 'Open profiles' : 'Open account'),
               ),
             if (widget.onCloseService != null)
               OutlinedButton.icon(
