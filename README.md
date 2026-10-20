@@ -97,7 +97,7 @@ the repository, but is **not** required for remote control and does not
 provide system-wide TV input interception. Test real hardware and
 firmware variants before claiming full compatibility.
 
-## LG webOS
+## Optional legacy LG webOS companion prototype
 
 With LG webOS CLI installed (providing ares-package):
 
