@@ -14,6 +14,8 @@ SCREEN_PLIST="$HOME/Library/LaunchAgents/com.taptether.screen-core.plist"
 LOGDIR="$HOME/Library/Logs/TapTether"
 CONF="$HOME/Library/Application Support/taptether"
 SHUTDOWN_DISABLED="$HOME/Library/Application Support/taptether/remote-shutdown-disabled"
+# A deliberate Stop must not be undone by quiet tray recovery.
+AGENT_STOPPED="$HOME/Library/Application Support/taptether/agent-stopped-by-user"
 SCREEN_DIR="$CONF/screen-core"
 LABEL=com.taptether.agent
 CORE_LABEL=com.taptether.input-core
@@ -182,6 +184,8 @@ install_agent() {
   # Persist an explicit OFF toggle across reinstall and agent updates.
   local shutdown_enabled=1
   [[ -f "$SHUTDOWN_DISABLED" ]] && shutdown_enabled=0
+  # Install/Repair or explicit update is an intentional start request.
+  rm -f "$AGENT_STOPPED"
   mkdir -p "$BIN" "$(dirname "$PLIST")" "$LOGDIR"
   chmod 700 "$LOGDIR"
   mkdir -p "$CONF/input-core" "$SCREEN_DIR"
@@ -421,6 +425,11 @@ diagnostics() {
   fi
   local state
   state="$(launchctl print "$TARGET/$LABEL" 2>/dev/null || true)"
+  if [[ -f "$AGENT_STOPPED" ]]; then
+    printf 'Auto-start: disabled by intentional Stop; choose Start to enable\n'
+  else
+    printf 'Auto-start: enabled (launchd KeepAlive + tray recovery)\n'
+  fi
   if [[ -z "$state" ]]; then
     printf 'LaunchAgent: not loaded\n'
   elif [[ "$state" == *'state = running'* ]]; then
@@ -459,6 +468,8 @@ diagnostics() {
 
 start_agent() {
   [[ -f "$PLIST" ]] || { notice 'Agent not installed. Choose Install / Repair agent first.' >&2; return 1; }
+  # An explicit Start clears the opt-out; passive checks never do.
+  rm -f "$AGENT_STOPPED"
   if ! launchctl print "$TARGET/$CORE_LABEL" >/dev/null 2>&1; then
     launchctl bootstrap "$TARGET" "$CORE_PLIST" || return 1
     launchctl kickstart "$TARGET/$CORE_LABEL" || return 1
@@ -487,6 +498,32 @@ start_agent() {
     return 1
   fi
   notice 'TapTether agent is running. Use Show pairing details in the menu bar.'
+}
+
+# Tray-only recovery: never reinstall, re-sign, boot or restart either
+# protected macOS Input Core or Screen Core. launchd KeepAlive handles
+# ordinary crashes. The tray bounds attempts to once every five minutes.
+ensure_agent_running() {
+  [[ -f "$AGENT_STOPPED" ]] && return 0
+  [[ -x "$APP" && -f "$PLIST" ]] || return 1
+  local state
+  state="$(launchctl print "$TARGET/$LABEL" 2>/dev/null || true)"
+  [[ "$state" == *'state = running'* ]] && return 0
+  if [[ -z "$state" ]]; then
+    launchctl bootstrap "$TARGET" "$PLIST" >/dev/null 2>&1 || return 1
+  fi
+  launchctl kickstart "$TARGET/$LABEL" >/dev/null 2>&1 || return 1
+}
+
+stop_agent() {
+  # Persist manual Stop so status polling never undoes user intent.
+  # Independently-approved Input/Screen Core helpers remain loaded.
+  mkdir -p "$CONF"
+  chmod 700 "$CONF"
+  (umask 077; : > "$AGENT_STOPPED")
+  chmod 600 "$AGENT_STOPPED"
+  launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true
+  notice 'TapTether remote agent stopped. Select Start to re-enable autostart.'
 }
 
 check_update() {
@@ -552,7 +589,8 @@ uninstall_agent() {
 case "${1:-}" in
   install) install_agent ;;
   start) start_agent ;;
-  stop) launchctl bootout "$TARGET/$LABEL" >/dev/null 2>&1 || true; launchctl bootout "$TARGET/$SCREEN_LABEL" >/dev/null 2>&1 || true; launchctl bootout "$TARGET/$CORE_LABEL" ;;
+  stop) stop_agent ;;
+  ensure-running) ensure_agent_running ;;
   restart) start_agent ;;
   status) launchctl print "$TARGET/$LABEL" ;;
   pairing) pairing ;;
@@ -568,5 +606,5 @@ case "${1:-}" in
   upgrade-core) [[ "${2:-}" == --authorize && -n "${3:-}" ]] || { notice 'Usage: upgrade-core --authorize VERSION' >&2; exit 2; }; install_core "$SELF/taptether-input-core" "$3"; launchctl kickstart -k "$TARGET/$CORE_LABEL" ;;
   upgrade-screen-core) [[ "${2:-}" == --authorize && -n "${3:-}" ]] || { notice 'Usage: upgrade-screen-core --authorize VERSION' >&2; exit 2; }; upgrade_screen_core "$3" ;;
   uninstall) uninstall_agent "${2:-}" ;;
-  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|status|diagnostics|pairing|devices|update|upgrade-core --authorize VERSION|upgrade-screen-core --authorize VERSION|uninstall --keep-pairing|uninstall --erase-pairing}' >&2; exit 2 ;;
+  *) echo 'Usage: taptetherctl-mac {install|start|stop|restart|ensure-running|status|diagnostics|pairing|devices|update|upgrade-core --authorize VERSION|upgrade-screen-core --authorize VERSION|uninstall --keep-pairing|uninstall --erase-pairing}' >&2; exit 2 ;;
 esac
