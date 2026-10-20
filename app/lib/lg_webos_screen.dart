@@ -270,7 +270,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
       if (_apps.isNotEmpty) ...[
         const SizedBox(height: 18),
         DropdownButtonFormField<String>(
-          value: _apps.any((item) => item.id == _app) ? _app : null,
+          initialValue: _apps.any((item) => item.id == _app) ? _app : null,
           decoration: const InputDecoration(
               labelText: 'Launch installed TV app',
               border: OutlineInputBorder()),
