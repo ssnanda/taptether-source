@@ -89,6 +89,25 @@ void main() {
     expect(VisualModePolicy.normalize('anything-else'), 'trackpad');
   });
 
+  testWidgets('Open on computer uses provider action, not keyboard injection',
+      (tester) async {
+    final opened = <MediaService>[];
+    final keys = <String>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body:
+      SingleChildScrollView(child: MediaRemote(
+        service: MediaService.netflix, enabled: true, landscape: false,
+        onServiceChanged: (_) {}, onKey: keys.add,
+        onSearch: (_, __) async {},
+        onOpenService: (service) async { opened.add(service); },
+      )),
+    )));
+    await tester.tap(find.byKey(const ValueKey('media-open-provider')));
+    await tester.pump();
+    expect(opened, [MediaService.netflix]);
+    expect(keys, isEmpty, reason:
+        'Opening Netflix must not type shortcuts into an unfocused Mac app');
+  });
+
   testWidgets('media buttons dispatch ordinary agent keys', (tester) async {
     final commands = <String>[];
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:
