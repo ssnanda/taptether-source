@@ -74,7 +74,8 @@ class LgTvStore {
   }
 
   Future<void> remove(String host) async {
-    final all = await read()..removeWhere((tv) => tv.host == host);
+    final all = await read();
+    all.removeWhere((tv) => tv.host == host);
     await _storage.write(key: key, value: jsonEncode(
       all.map((tv) => tv.toJson()).toList(),
     ));
@@ -327,13 +328,14 @@ class LgWebOsClient {
     _pointer!.add('type:button\nname:$name\n\n');
   }
 
-  Future<void> volumeUp() async => request('ssap://audio/volumeUp');
-  Future<void> volumeDown() async => request('ssap://audio/volumeDown');
-  Future<void> mute(bool value) async =>
-      request('ssap://audio/setMute', {'mute': value});
-  Future<void> channelUp() async => request('ssap://tv/channelUp');
-  Future<void> channelDown() async => request('ssap://tv/channelDown');
-  Future<void> powerOff() async => request('ssap://system/turnOff');
+  Future<void> volumeUp() async { await request('ssap://audio/volumeUp'); }
+  Future<void> volumeDown() async { await request('ssap://audio/volumeDown'); }
+  Future<void> mute(bool value) async {
+    await request('ssap://audio/setMute', {'mute': value});
+  }
+  Future<void> channelUp() async { await request('ssap://tv/channelUp'); }
+  Future<void> channelDown() async { await request('ssap://tv/channelDown'); }
+  Future<void> powerOff() async { await request('ssap://system/turnOff'); }
 
   Future<List<({String id, String title})>> apps() async {
     final payload = await request(
