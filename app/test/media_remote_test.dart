@@ -15,6 +15,8 @@ void main() {
         'https://www.youtube.com/results?search_query=');
     expect(MediaSearch.browseUrl(MediaService.netflix),
         'https://www.netflix.com/browse');
+    expect(MediaSearch.profileUrl(MediaService.netflix),
+        'https://www.netflix.com/profiles/manage');
     expect(() => MediaSearch.url(MediaService.youtube, ''),
         throwsFormatException);
     expect(() => MediaSearch.url(MediaService.netflix, List.filled(80, 'a').join()),
@@ -120,6 +122,38 @@ void main() {
     await tester.ensureVisible(find.text('System volume +'));
     await tester.tap(find.text('System volume +'));
     expect(commands.last, 'XF86AudioRaiseVolume');
+  });
+
+  testWidgets('Netflix Back, fullscreen and Manage profiles call their actions',
+      (tester) async {
+    final actions = <String>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body:
+      SingleChildScrollView(child: MediaRemote(
+        service: MediaService.netflix, enabled: true, landscape: false,
+        onServiceChanged: (_) {},
+        onKey: (key) => actions.add('key:$key'),
+        onSearch: (_, __) async {},
+        onExitVideo: (_, __) async { actions.add('back'); },
+        onFullscreen: (_, enter) async {
+          actions.add(enter ? 'enter-fullscreen' : 'exit-fullscreen');
+        },
+        onProfile: (_) async { actions.add('profiles'); },
+      )),
+    )));
+    await tester.tap(find.byKey(const ValueKey('media-exit-video')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('media-enter-fullscreen')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('media-exit-fullscreen')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('media-more')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('media-profile')));
+    expect(find.text('Manage profiles'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('media-profile')));
+    await tester.pump();
+    expect(actions,
+        ['back', 'enter-fullscreen', 'exit-fullscreen', 'profiles']);
   });
 
   testWidgets('watch link exposes resume action without navigating twice',
