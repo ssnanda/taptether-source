@@ -2822,6 +2822,11 @@ class _RemoteScreenState extends State<RemoteScreen>
     // Generic browser control cannot inspect the selected Netflix profile
     // or click its avatar. Open the actual first-party profile management
     // screen instead of silently reopening /browse, where nothing changes.
+    if (service == MediaService.netflix) {
+      await agent.openMedia('netflix', '', focusOnly: true);
+      await agent.send('key', {'key': 'Escape'});
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
     await _mediaNavigateSameTab(MediaSearch.profileUrl(service));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
