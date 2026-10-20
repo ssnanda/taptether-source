@@ -2799,25 +2799,36 @@ class _RemoteScreenState extends State<RemoteScreen>
       _mediaNavigateSameTab(MediaSearch.searchPageUrl(service));
 
   Future<void> _mediaExitVideo(MediaService service, String? lastSearch) async {
-    // Netflix's in-player back arrow is not a universal keyboard shortcut.
-    // Escape HTML fullscreen, then return to the prior *search results* if
-    // this remote initiated one, otherwise return to Browse. Same tab only.
+    // Unlike returning to /browse, browser Back preserves the page that led
+    // to the video: Netflix results, a title page, or the browse list.
+    // First escape HTML fullscreen, then use the browser's history shortcut.
+    // Both macOS Firefox (Cmd+Left) and Windows/Linux (Alt+Left) support it.
+    await agent.openMedia(service.name, '', focusOnly: true);
     await agent.send('key', {'key': 'Escape'});
-    final query = lastSearch?.trim() ?? '';
-    await _mediaNavigateSameTab(query.isNotEmpty
-        ? MediaSearch.url(service, query)
-        : MediaSearch.browseUrl(service));
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await agent.send('key',
+        {'key': _mediaIsMac ? 'cmd+left' : 'alt+left'});
+  }
+
+  Future<void> _mediaFullscreen(MediaService service, bool enter) async {
+    // Netflix shortcuts can go to the wrong desktop app if the browser was
+    // not frontmost. Focus its existing window, without opening a new tab.
+    await agent.openMedia(service.name, '', focusOnly: true);
+    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await agent.send('key', {'key': enter ? 'f' : 'Escape'});
   }
 
   Future<void> _mediaProfile(MediaService service) async {
-    await _mediaNavigateSameTab(MediaSearch.browseUrl(service));
+    // Generic browser control cannot inspect the selected Netflix profile
+    // or click its avatar. Open the actual first-party profile management
+    // screen instead of silently reopening /browse, where nothing changes.
+    await _mediaNavigateSameTab(MediaSearch.profileUrl(service));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
         service == MediaService.netflix
-          ? 'Choose the profile icon in the top right of Netflix. '
-            'Select a profile using Trackpad or Live.'
-          : 'Select the YouTube avatar in the top right, then '
-            'Switch account using Trackpad or Live.',
+          ? 'Netflix profiles opened. Use Trackpad to choose or manage a '
+            'profile on the computer.'
+          : 'Choose your YouTube account in the browser using Trackpad.',
       )));
     }
   }
@@ -2985,6 +2996,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         onOpenLink: _openMediaLink,
         onSearchPage: _mediaSearchPage,
         onExitVideo: _mediaExitVideo,
+          onFullscreen: _mediaFullscreen,
         onProfile: _mediaProfile,
         onCloseService: _mediaCloseService,
         onOpenService: (service) => _searchMedia(service, ''),
@@ -3061,6 +3073,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   onOpenLink: _openMediaLink,
                   onSearchPage: _mediaSearchPage,
                   onExitVideo: _mediaExitVideo,
+          onFullscreen: _mediaFullscreen,
                   onProfile: _mediaProfile,
                   onCloseService: _mediaCloseService,
                   onOpenService: (service) => _searchMedia(service, ''),
