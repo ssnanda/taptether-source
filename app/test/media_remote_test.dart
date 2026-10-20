@@ -16,7 +16,9 @@ void main() {
     expect(MediaSearch.browseUrl(MediaService.netflix),
         'https://www.netflix.com/browse');
     expect(MediaSearch.profileUrl(MediaService.netflix),
-        'https://www.netflix.com/profiles/manage');
+        'https://www.netflix.com/ProfilesGate');
+    expect(MediaSearch.profileUrl(MediaService.netflix),
+        isNot(contains('/profiles/manage')));
     expect(() => MediaSearch.url(MediaService.youtube, ''),
         throwsFormatException);
     expect(() => MediaSearch.url(MediaService.netflix, List.filled(80, 'a').join()),
@@ -149,7 +151,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('media-more')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('media-profile')));
-    expect(find.text('Manage profiles'), findsOneWidget);
+    expect(find.text('Choose profile'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('media-profile')));
     await tester.pump();
     expect(actions,
