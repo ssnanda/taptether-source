@@ -73,6 +73,9 @@ assert "python3 bin/4-test-deb-packaging.py" in workflow, (
 assert "python3 bin/4-test-macos-uninstall.py" in workflow, (
     "Run safe macOS uninstall regression test before builds"
 )
+assert "python3 bin/4-test-macos-agent-recovery.py" in workflow, (
+    "Verify macOS LaunchAgent self-healing respects manual Stop and protected cores"
+)
 assert "python3 bin/4-test-macos-input-core.py" in workflow
 assert "run: bash bin/2b-tt-ubuntu.sh" in workflow
 assert "run: bash bin/2b-tt-macos.sh" in workflow
