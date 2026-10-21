@@ -34,7 +34,20 @@ List<SavedComputer> visibleSavedDevices(
   int priority(String id) => online[id] == true ? 0
       : online[id] == null ? 1 : 2;
   filtered.sort((a, b) => priority(a.id).compareTo(priority(b.id)));
-  return filtered;
+  // A stale pairing may still point at an IP now occupied by a *verified*
+  // online device. Hide that conflicting offline/checking alias on the
+  // dashboard, but never delete or merge its saved credentials: an address
+  // alone is not a trusted device identity. Manage Devices retains both.
+  final verifiedHosts = filtered
+      .where((device) => online[device.id] == true)
+      .map((device) => device.host)
+      .toSet();
+  final visibleVerifiedHosts = <String>{};
+  return filtered.where((device) {
+    if (!verifiedHosts.contains(device.host)) return true;
+    return online[device.id] == true &&
+        visibleVerifiedHosts.add(device.host);
+  }).toList();
 }
 
 
