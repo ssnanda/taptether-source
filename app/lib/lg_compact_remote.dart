@@ -36,8 +36,10 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
     try {
       await command();
     } catch (error) {
-      if (mounted) widget.onError(error.toString()
-          .replaceFirst('Bad state: ', ''));
+      if (mounted) {
+        widget.onError(error.toString()
+            .replaceFirst('Bad state: ', ''));
+      }
     }
   }
 
@@ -90,7 +92,9 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
     if (text.contains('youtube')) return Icons.smart_display_outlined;
     if (text.contains('netflix')) return Icons.movie_outlined;
     if (text.contains('prime') || text.contains('disney') ||
-        text.contains('apple')) return Icons.live_tv_outlined;
+        text.contains('apple')) {
+      return Icons.live_tv_outlined;
+    }
     if (text.contains('plex') || text.contains('jellyfin')) {
       return Icons.video_library_outlined;
     }
@@ -294,12 +298,13 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
         Row(children: [
           const Icon(Icons.graphic_eq, size: 17),
           const SizedBox(width: 7),
-          Expanded(child: Text('Now: ' + _appName() +
-                  (_channel == null ? '' : ' · ' + _channel!),
+          Expanded(child: Text(_channel == null
+                  ? 'Now: ${_appName()}'
+                  : 'Now: ${_appName()} · $_channel',
               maxLines: 1, overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall)),
           if (_volume != null)
-            Text('Vol ' + _volume.toString(),
+            Text('Vol $_volume',
                 style: Theme.of(context).textTheme.labelSmall),
           IconButton(
             iconSize: 19, tooltip: 'Refresh now playing',
