@@ -65,6 +65,26 @@ void main() {
       currentNetwork: network, showOffline: false);
     expect(visible.map((d) => d.id), ['here']);
   });
+  test('verified device hides stale alias sharing its IP without deleting it', () {
+    final primary = host('mac', '192.168.68.81', 'home');
+    final stale = host('old-ip-entry', '192.168.68.81', 'home');
+    final unrelated = host('lenovo', '192.168.68.86', 'home');
+    final all = [stale, primary, unrelated];
+    final visible = visibleSavedDevices(all,
+      online: {'mac': true, 'old-ip-entry': false, 'lenovo': false},
+      locationFilter: 'all', currentLocation: 'home',
+      currentNetwork: null, showOffline: true);
+    expect(visible.map((device) => device.id), ['mac', 'lenovo']);
+    expect(all.length, 3); // Never mutate/delete saved credentials.
+    final noVerified = visibleSavedDevices(all,
+      online: {'mac': false, 'old-ip-entry': false, 'lenovo': false},
+      locationFilter: 'all', currentLocation: 'home',
+      currentNetwork: null, showOffline: true);
+    // Same-IP offline devices may be different historical machines;
+    // retain both in absence of proof.
+    expect(noVerified.length, 3);
+  });
+
   test('offline and unverified devices never start connection attempts', () {
     expect(canConnectSavedDevice(false, connecting: false), isFalse);
     expect(canConnectSavedDevice(null, connecting: false), isFalse);
