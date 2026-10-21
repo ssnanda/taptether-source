@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Protect instant saved-device loading while allowing bounded UDP recovery.
 
-No automatic TCP subnet scanning or unicast sweeps. Manual discovery is separate.
+No TCP sweep during heartbeats. After zero online, throttle a bounded\nagent-port-only TCP recovery across the current Wi-Fi CIDR.
 """
 from pathlib import Path
 
@@ -34,5 +34,14 @@ recovery = main.split('  Future<void> _recoverSavedDevices(', 1)[1].split(
     '  Future<void> _labelCurrentNetwork()', 1)[0]
 assert 'broadcastOnly: true' in recovery
 assert 'scanPrivate24(' not in recovery
-assert 'probeAgentControlPorts(' not in recovery
-print('PASS saved-only heartbeat, passive bounded UDP recovery, no TCP sweep')
+assert 'probeAgentControlPorts(' in recovery
+assert 'parallelism: 24' in recovery
+assert 'maxHits: 16' in recovery
+assert 'Duration(minutes: 10)' in recovery
+assert '_online.values.any((online) => online)' in recovery
+assert '_reconcileScannedAgent(address, passive: true)' in recovery
+assert 'if (_probingOfflineAgents)' not in recovery
+assert 'checking: _checkingHeartbeat || _recoveringDiscovery' in main
+assert "Checking TapTether agent addresses on this Wi-Fi" in main
+assert '_lastPassiveDiscovery = null;' in main
+print('PASS saved-only heartbeat, passive UDP plus throttled TCP recovery')
