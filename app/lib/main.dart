@@ -477,6 +477,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _showQuickActions = false;
   bool _checkingHeartbeat = false;
   bool _recoveringDiscovery = false;
+  bool _probingOfflineAgents = false;
   DateTime? _lastPassiveDiscovery;
   RawDatagramSocket? _announcementSocket;
   StreamSubscription<RawSocketEvent>? _announcementSubscription;
@@ -730,6 +731,9 @@ class _RemoteScreenState extends State<RemoteScreen>
         if (changed) {
           _online.clear();
           _savedAgentVersions.clear();
+          // Recovery cooldown belongs to a network, not the lifetime of the
+          // phone app. Recheck promptly after a Wi-Fi/subnet change.
+          _lastPassiveDiscovery = null;
         }
         _lastNetworkId = identity;
         _wifiRange = current;
@@ -822,8 +826,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
-  // Passive zero-online recovery. One broadcast; no /24 sweep or TCP scan.
-  // Every candidate still needs the saved TLS pin and phone authentication.
+  // Recover saved pairings quietly when ALL saved hosts fail authenticated
+  // heartbeats. UDP first, then a throttled, bounded TCP agent-port probe
+  // when broadcast discovery is blocked by iOS or the Wi-Fi router.
+  // Raw TCP acceptance is NEVER evidence of identity or an online device.
   Future<void> _recoverSavedDevices({bool force = false}) async {
     if (!mounted || !_appForeground || savedComputers.isEmpty ||
         _recoveringDiscovery || _scanningToReconcile) {
@@ -839,7 +845,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     _recoveringDiscovery = true;
     if (mounted) setState(() {});
     try {
-      final network = _wifiRange ?? await detectLanRange();
+      // Do not scan a stale cached CIDR if the user switched Wi-Fi.
+      final network = await detectLanRange() ?? _wifiRange;
       if (network == null || !mounted) {
         return;
       }
@@ -851,16 +858,59 @@ class _RemoteScreenState extends State<RemoteScreen>
       );
       for (final candidate in candidates.take(8)) {
         if (!mounted || !_appForeground) {
-          break;
+          return;
         }
         if (lanRangeContains(network, candidate.host)) {
           await _reconcileScannedAgent(candidate.host, passive: true);
         }
       }
+      if (!mounted || !_appForeground ||
+          _online.values.any((online) => online)) {
+        return;
+      }
+      // A zero-online Wi-Fi is the only automatic TCP scan trigger.
+      // At most 24 concurrent, 300ms per host and once every ten minutes.
+      // Unlike manual discovery this scans ONLY the TapTether agent port.
+      setState(() => _probingOfflineAgents = true);
+      final responders = await probeAgentControlPorts(
+        network,
+        parallelism: 24,
+        maxHits: 16,
+        timeout: const Duration(milliseconds: 300),
+      );
+      var authenticated = 0;
+      var unverifiedSavedAddress = false;
+      final savedIps = savedComputers.map((device) => device.host).toSet();
+      for (final address in responders) {
+        if (!mounted || !_appForeground ||
+            _online.values.any((online) => online)) {
+          break;
+        }
+        if (_wifiRange != null &&
+            !lanRangeContains(_wifiRange!, address)) {
+          break;
+        }
+        final name = await _reconcileScannedAgent(address, passive: true);
+        if (name != null) {
+          authenticated++;
+        } else if (savedIps.contains(address)) {
+          unverifiedSavedAddress = true;
+        }
+      }
+      if (mounted && authenticated == 0 &&
+          !_online.values.any((online) => online) &&
+          unverifiedSavedAddress) {
+        setState(() {
+          _dashboardNotice = 'An agent port responded at a saved address, '
+              'but pairing authentication failed. Check or re-pair that '
+              'computer from Manage.';
+        });
+      }
     } catch (_) {
-      // Broadcast might be restricted; no prompts, credentials or telemetry.
+      // No prompts, credential disclosure, or fatal errors during recovery.
     } finally {
       _recoveringDiscovery = false;
+      _probingOfflineAgents = false;
       if (mounted) setState(() {});
     }
   }
@@ -1660,7 +1710,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     final availabilityHint = savedDeviceAvailabilityHint(
       savedCount: savedComputers.length,
       onlineCount: savedComputers.where((d) => _online[d.id] == true).length,
-      checking: _checkingHeartbeat,
+      checking: _checkingHeartbeat || _recoveringDiscovery,
     );
     return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1719,7 +1769,9 @@ class _RemoteScreenState extends State<RemoteScreen>
           ),
         ]),
         if (_recoveringDiscovery)
-          Text('Finding paired computers on this Wi-Fi…',
+          Text(_probingOfflineAgents
+              ? 'Checking TapTether agent addresses on this Wi-Fi…'
+              : 'Finding paired computers on this Wi-Fi…',
             style: Theme.of(context).textTheme.bodySmall),
         if (_checkingHeartbeat)
           Text('Checking saved devices…',
