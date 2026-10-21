@@ -67,6 +67,29 @@ void main() {
     expect(lgDiscoveryHosts(range, maxAddresses: 10).length, 10);
   });
 
+  test('LG TV MAC address normalization rejects invalid hardware IDs', () {
+    expect(canonicalLgMac('aa-bb-cc-dd-ee-ff'), 'AA:BB:CC:DD:EE:FF');
+    expect(canonicalLgMac('AABBCCDDEEFF'), 'AA:BB:CC:DD:EE:FF');
+    expect(canonicalLgMac('00:00:00:00:00:00'), isNull);
+    expect(canonicalLgMac('FF:FF:FF:FF:FF:FF'), isNull);
+    expect(canonicalLgMac('192.168.68.62'), isNull);
+  });
+
+  test('TV nickname, MAC and UUID survive secure-storage round trip', () {
+    const tv = LgTvDevice(host: '192.168.68.62',
+      name: 'Family Room TV',
+      clientKey: 'saved-key',
+      macAddress: 'AA:BB:CC:DD:EE:FF',
+      deviceUuid: 'uuid-family-room',
+    );
+    final restored = LgTvDevice.fromJson(
+        Map<String, dynamic>.from(tv.toJson()));
+    expect(restored.name, 'Family Room TV');
+    expect(restored.macAddress, 'AA:BB:CC:DD:EE:FF');
+    expect(restored.deviceUuid, 'uuid-family-room');
+    expect(restored.copyWith(name: 'Living Room').clientKey, 'saved-key');
+  });
+
   test('LG registration reuses saved key and grants pointer control', () {
     final device = LgTvDevice(
         host: '192.168.1.5', name: 'Living Room', clientKey: 'known-key');
