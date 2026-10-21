@@ -92,10 +92,11 @@ bool safeLgPointerUri(Uri uri, String host) =>
     uri.userInfo.isEmpty && uri.fragment.isEmpty;
 
 bool isLgSsdpResponse(String response) {
-  final message = response.toLowerCase();
-  return message.contains('webos-second-screen') ||
-      message.contains('urn:lge-com:service') ||
-      (message.contains('webos') && message.contains('location:'));
+  // The vendor's second-screen service is evidence of LG webOS.
+  // A generic LG UPnP device, a hostname, or an open TCP port is not.
+  final normalized = response.toLowerCase();
+  return normalized.startsWith('http/1.1 200') &&
+      normalized.contains('urn:lge-com:service:webos-second-screen:');
 }
 
 /// A short, on-demand SSDP query. Does not require broad LAN scanning.
@@ -136,39 +137,10 @@ Future<List<LgTvDevice>> discoverLgTvs({
     await sub.cancel();
     socket.close();
   }
-  // iOS and some routers block SSDP multicast. A tap-initiated scan checks
-  // ONLY the current Wi-Fi /24, at most 12 connections at once, never
-  // background-scanning unrelated network adapters or internet addresses.
-  if (found.isEmpty) {
-    final prefix = range.activePrefix;
-    var next = 1;
-    Future<void> worker() async {
-      while (next <= 254) {
-        final suffix = next++;
-        final host = '$prefix.$suffix';
-        if (!lanRangeContains(range, host) || host == range.ip) continue;
-        for (final port in [3001, 3000]) {
-          try {
-            final socket = await Socket.connect(
-              host, port,
-              timeout: const Duration(milliseconds: 250),
-            );
-            socket.destroy();
-            found[host] = LgTvDevice(
-              host: host,
-              name: 'Possible LG webOS TV',
-            );
-            break;
-          } on SocketException {
-            // Not a TV candidate on this port.
-          } on TimeoutException {
-            // Unreachable TV or no responder.
-          }
-        }
-      }
-    }
-    await Future.wait(List.generate(12, (_) => worker()));
-  }
+  // SSDP may be unavailable on isolated networks. Do not label hosts as
+  // TVs solely because TCP 3000/3001 is open: those ports also belong to
+  // development servers and ordinary computers. Manual LAN IP pairing
+  // remains available when a TV does not advertise its SSAP service.
   return found.values.toList()..sort((a, b) => a.host.compareTo(b.host));
 }
 
