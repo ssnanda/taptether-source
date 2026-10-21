@@ -20,6 +20,7 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
   String? _appId;
   String? _channel;
   int? _volume;
+  bool _muted = false;
   DateTime _lastPan = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -349,9 +350,11 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
             unawaited(_run(() => widget.client.button('HOME')))),
           _actionIcon('Back', Icons.arrow_back, () =>
             unawaited(_run(() => widget.client.button('BACK')))),
-          FilledButton.tonalIcon(
+          IconButton.filledTonal(
+            tooltip: 'Arrows and OK',
             icon: const Icon(Icons.gamepad_outlined),
-            label: const Text('Arrows · OK'), onPressed: _openDpad),
+            onPressed: _openDpad,
+          ),
           _actionIcon('Keyboard', Icons.keyboard_outlined, _openKeyboard),
           _actionIcon('More controls', Icons.more_horiz, _moreControls),
         ]),
@@ -359,8 +362,12 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
         Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
           _actionIcon('Volume down', Icons.volume_down_outlined, () =>
             unawaited(_run(widget.client.volumeDown))),
-          _actionIcon('Mute', Icons.volume_off_outlined, () =>
-            unawaited(_run(() => widget.client.mute(true)))),
+          _actionIcon(_muted ? 'Unmute' : 'Mute',
+              _muted ? Icons.volume_up_outlined : Icons.volume_off_outlined,
+              () => unawaited(_run(() async {
+                await widget.client.mute(!_muted);
+                if (mounted) setState(() => _muted = !_muted);
+              }))),
           _actionIcon('Volume up', Icons.volume_up_outlined, () =>
             unawaited(_run(widget.client.volumeUp))),
           _actionIcon('Play', Icons.play_arrow, () =>
