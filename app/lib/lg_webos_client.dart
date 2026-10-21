@@ -100,7 +100,9 @@ bool isLgSsdpResponse(String response) {
   }
   return lines.skip(1).any((line) {
     final separator = line.indexOf(':');
-    if (separator < 1) return false;
+    if (separator < 1) {
+      return false;
+    }
     final header = line.substring(0, separator).trim();
     final value = line.substring(separator + 1).trim();
     return (header == 'st' || header == 'usn') &&
