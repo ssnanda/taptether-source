@@ -271,6 +271,7 @@ class LgWebOsClient {
   WebSocket? _pointer;
   StreamSubscription<dynamic>? _mainSubscription;
   final Map<String, Completer<Map<String, dynamic>>> _waiting = {};
+  String? _registrationRequestId;
   int _id = 0;
   bool _pinMismatch = false;
   String? _observedPin;
@@ -374,7 +375,22 @@ class LgWebOsClient {
       if (raw is! String) return;
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return;
-      final id = decoded['id']?.toString();
+      final kind = decoded['type']?.toString();
+      final data = decoded['payload'];
+      // Some LG models first acknowledge the registration request with
+      // pairingType PROMPT, then send "registered" after TV approval.
+      // Do not fail pairing when that intermediate acknowledgement arrives.
+      if (_registrationRequestId != null &&
+          kind == 'response' && data is Map &&
+          data['pairingType'] is String) {
+        return;
+      }
+      var id = decoded['id']?.toString();
+      if ((kind == 'registered' || kind == 'error') &&
+          _registrationRequestId != null &&
+          (id == null || !_waiting.containsKey(id))) {
+        id = _registrationRequestId;
+      }
       final pending = _waiting.remove(id);
       if (pending != null && !pending.isCompleted) {
         pending.complete(Map<String, dynamic>.from(decoded));
@@ -391,6 +407,7 @@ class LgWebOsClient {
       }
     }
     _waiting.clear();
+    _registrationRequestId = null;
   }
 
   Future<Map<String, dynamic>> _send(Map<String, Object> command, {
@@ -403,11 +420,18 @@ class LgWebOsClient {
     final id = 'tt-${++_id}';
     final waiting = Completer<Map<String, dynamic>>();
     _waiting[id] = waiting;
+    final registering = command['type'] == 'register';
+    if (registering) {
+      _registrationRequestId = id;
+    }
     socket.add(jsonEncode({'id': id, ...command}));
     try {
       return await waiting.future.timeout(timeout);
     } finally {
       _waiting.remove(id);
+      if (_registrationRequestId == id) {
+        _registrationRequestId = null;
+      }
     }
   }
 
