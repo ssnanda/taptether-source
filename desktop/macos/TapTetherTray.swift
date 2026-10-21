@@ -26,7 +26,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
     private let deliberateStopMarker = NSHomeDirectory()
         + "/Library/Application Support/taptether/agent-stopped-by-user"
     private var remoteShutdownItem: NSMenuItem!
-    private var lastLANAddress = ""
+    private var lastLANAddress: String?
     private var ipChangeUntil: Date?
     private var activeVersion = "unknown"
 
@@ -153,18 +153,50 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         return vars["TAPTETHER_ENABLE_SHUTDOWN"] as? String == "1"
     }
 
+    // Track one primary physical LAN IPv4, not all ifconfig interfaces.
+    // Virtual interfaces, VPNs, and interface reordering must not look
+    // like a DHCP address change on the Mac.
+    private func primaryLANIPv4() -> String? {
+        let route = output("/sbin/route", ["-n", "get", "default"])
+        let routeInterface = route.components(separatedBy: .newlines)
+            .first { $0.trimmingCharacters(in: .whitespaces)
+                .hasPrefix("interface:") }?
+            .split(separator: ":", maxSplits: 1).last?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var candidates: [String] = []
+        if let name = routeInterface,
+           name.range(of: #"^en[0-9]+$"#,
+                      options: .regularExpression) != nil {
+            candidates.append(name)
+        }
+        // When a VPN owns the default route, still use the Mac's local
+        // Ethernet/Wi-Fi address. Ordinary macOS Wi-Fi is typically en0.
+        candidates.append(contentsOf: ["en0", "en1", "en2", "en3"])
+        var checked = Set<String>()
+        for name in candidates where checked.insert(name).inserted {
+            let address = output("/usr/sbin/ipconfig", ["getifaddr", name])
+            let octets = address.split(separator: ".").compactMap {
+                UInt8($0)
+            }
+            guard octets.count == 4 else { continue }
+            if octets[0] == 10 ||
+                (octets[0] == 192 && octets[1] == 168) ||
+                (octets[0] == 172 && (16...31).contains(Int(octets[1]))) {
+                return address
+            }
+        }
+        return nil
+    }
+
     private func refreshStatus() {
         let installedVersion = versionFromAgent()
-        let ips = output("/sbin/ifconfig", ["-a"]).components(separatedBy: .newlines)
-            .filter { line in
-                line.contains("inet ") && !line.contains("127.0.0.1") &&
-                (line.contains("192.168.") || line.contains("10.") ||
-                 line.contains("172."))
-            }.joined(separator: "|")
-        if !lastLANAddress.isEmpty && !ips.isEmpty && ips != lastLANAddress {
-            ipChangeUntil = Date().addingTimeInterval(3600)
+        if let ip = primaryLANIPv4() {
+            if let previous = lastLANAddress, previous != ip {
+                ipChangeUntil = Date().addingTimeInterval(3600)
+            }
+            // First observation establishes a baseline, not a change.
+            lastLANAddress = ip
         }
-        if !ips.isEmpty { lastLANAddress = ips }
         if installedVersion != activeVersion {
             activeVersion = installedVersion
             versionMenuItem?.title = "TapTether Agent v" + installedVersion
