@@ -112,9 +112,13 @@ bool isLgSsdpResponse(String response) {
 
 /// LG SSAP hello identifies a webOS TV without requesting registration.
 bool isLgHelloResponse(Object? message) {
-  if (message is! Map || message['type'] != 'hello') return false;
+  if (message is! Map || message['type'] != 'hello') {
+    return false;
+  }
   final payload = message['payload'];
-  if (payload is! Map) return false;
+  if (payload is! Map) {
+    return false;
+  }
   return payload['deviceType']?.toString().toLowerCase() == 'tv' &&
       payload['deviceOS']?.toString().toLowerCase() == 'webos';
 }
@@ -125,7 +129,9 @@ Future<bool> probeLgWebOsHello(String host, {
   Duration connectTimeout = const Duration(milliseconds: 300),
   Duration replyTimeout = const Duration(seconds: 2),
 }) async {
-  if (!validLgHost(host)) return false;
+  if (!validLgHost(host)) {
+    return false;
+  }
   for (final port in [3001, 3000]) {
     try {
       final tcp = await Socket.connect(host, port, timeout: connectTimeout);
@@ -189,7 +195,9 @@ List<String> lgDiscoveryHosts(DetectedLanRange network, {
         continue;
       }
       hosts.add(host);
-      if (hosts.length >= maxAddresses) return hosts;
+      if (hosts.length >= maxAddresses) {
+        return hosts;
+      }
     }
   }
   return hosts;
@@ -202,36 +210,40 @@ Future<List<LgTvDevice>> discoverLgTvs({
 }) async {
   final range = await detectLanRange();
   if (range == null) return [];
-  final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
   final found = <String, LgTvDevice>{};
-  final sub = socket.listen((event) {
-    if (event != RawSocketEvent.read) return;
-    Datagram? data;
-    while ((data = socket.receive()) != null) {
-      final host = data!.address.address;
-      if (!validLgHost(host) || !lanRangeContains(range, host)) continue;
-      final text = latin1.decode(data.data, allowInvalid: true);
-      if (isLgSsdpResponse(text)) {
-        found[host] = LgTvDevice(host: host, name: 'LG webOS TV');
-      }
-    }
-  });
+  RawDatagramSocket? socket;
+  StreamSubscription<RawSocketEvent>? sub;
   try {
+    socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+    sub = socket.listen((event) {
+      if (event != RawSocketEvent.read) {
+        return;
+      }
+      Datagram? data;
+      while ((data = socket!.receive()) != null) {
+        final host = data!.address.address;
+        if (!validLgHost(host) || !lanRangeContains(range, host)) {
+          continue;
+        }
+        final text = latin1.decode(data.data, allowInvalid: true);
+        if (isLgSsdpResponse(text)) {
+          found[host] = LgTvDevice(host: host, name: 'LG webOS TV');
+        }
+      }
+    });
     final request = 'M-SEARCH * HTTP/1.1\r\n'
         'HOST: 239.255.255.250:1900\r\n'
         'MAN: "ssdp:discover"\r\n'
         'MX: 1\r\n'
         'ST: urn:lge-com:service:webos-second-screen:1\r\n\r\n';
-    try {
-      socket.send(utf8.encode(request),
-          InternetAddress('239.255.255.250'), 1900);
-      await Future<void>.delayed(timeout);
-    } on SocketException {
-      // Multicast is restricted on some iOS devices. Fall back below.
-    }
+    socket.send(utf8.encode(request),
+        InternetAddress('239.255.255.250'), 1900);
+    await Future<void>.delayed(timeout);
+  } on SocketException {
+    // iOS can block UDP multicast. Continue to verified SSAP hello below.
   } finally {
-    await sub.cancel();
-    socket.close();
+    await sub?.cancel();
+    socket?.close();
   }
   // When multicast is unavailable, a manual tap triggers a bounded,
   // read-only SSAP hello check on the phone's current Wi-Fi CIDR.
