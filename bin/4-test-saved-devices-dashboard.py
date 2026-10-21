@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 main = (root / 'app/lib/main.dart').read_text()
 a = main.index('  Future<void> _refreshHeartbeats() async {')
-b = main.index('  // Passive zero-online recovery.', a)
+b = main.index('  // Recover saved pairings quietly', a)
 body = main[a:b]
 for forbidden in ('findNearbyDevices(', 'probeAgentControlPorts(',
                   'scanPrefixes', 'InternetAddress.lookup(',
