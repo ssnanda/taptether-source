@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/lg_webos_client.dart';
+import 'package:taptether/lan_scan.dart';
 
 void main() {
   test('LG hosts must be on private IPv4 LANs', () {
@@ -31,6 +32,39 @@ void main() {
         'LOCATION: http://device.local/webos.xml\r\n'), isFalse);
     expect(isLgSsdpResponse('HTTP/1.1 200 OK\r\n'
         'SERVER: Linux/3.0 webos-second-screen unrelated\r\n'), isFalse);
+  });
+
+  test('LG SSAP hello identifies TV without a pairing request', () {
+    expect(isLgHelloResponse({
+      'type': 'hello',
+      'payload': {
+        'protocolVersion': 1, 'deviceType': 'tv',
+        'deviceOS': 'webOS', 'deviceUUID': 'tv123',
+      },
+    }), isTrue);
+    expect(isLgHelloResponse({
+      'type': 'hello', 'payload': {'deviceType': 'computer', 'deviceOS': 'webOS'},
+    }), isFalse);
+    expect(isLgHelloResponse({
+      'type': 'hello', 'payload': {'deviceType': 'tv', 'deviceOS': 'linux'},
+    }), isFalse);
+    expect(isLgHelloResponse({'type': 'registered', 'payload': {}}), isFalse);
+    expect(isLgHelloResponse({'type': 'hello', 'payload': {}}), isFalse);
+    expect(isLgHelloResponse('not JSON'), isFalse);
+  });
+
+  test('LG discovery checks active /24 then remaining real Wi-Fi CIDR', () {
+    final range = rangeFromWifi('192.168.68.70', '255.255.252.0')!;
+    final targets = lgDiscoveryHosts(range);
+    expect(targets, contains('192.168.68.62'));
+    expect(targets.first, '192.168.68.1');
+    expect(targets, contains('192.168.71.254'));
+    expect(targets, isNot(contains('192.168.68.70')));
+    expect(targets, isNot(contains('192.168.68.0')));
+    expect(targets, isNot(contains('192.168.71.255')));
+    expect(targets, isNot(contains('192.168.72.1')));
+    expect(targets.length, 1021);
+    expect(lgDiscoveryHosts(range, maxAddresses: 10).length, 10);
   });
 
   test('LG registration reuses saved key and grants pointer control', () {
