@@ -164,8 +164,11 @@ Future<bool> probeLgWebOsHello(String host, {
       // Non-LG services, bad TLS, and timeouts are not TV matches.
     } finally {
       if (ws != null) {
-        unawaited(ws.close().timeout(const Duration(milliseconds: 400))
-            .catchError((Object _) {}));
+        try {
+          await ws.close().timeout(const Duration(milliseconds: 400));
+        } catch (_) {
+          // The read-only probe is finished even if the peer won't close.
+        }
       }
       client?.close(force: true);
     }
