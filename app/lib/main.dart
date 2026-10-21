@@ -1672,6 +1672,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   Widget _deviceStatus(String id) {
     final state = _online[id];
     final busy = _connectingDeviceId == id && state == true;
+    final checking = state != true &&
+        (_checkingHeartbeat || _recoveringDiscovery);
     final color = state == true
         ? Colors.green.shade700
         : state == false
@@ -1679,7 +1681,9 @@ class _RemoteScreenState extends State<RemoteScreen>
             : Theme.of(context).colorScheme.secondary;
     final label = busy
         ? 'CONNECTING' : state == true
-            ? 'ONLINE' : state == false ? 'OFFLINE' : 'CHECKING';
+            ? 'ONLINE' : checking
+                ? (_probingOfflineAgents ? 'LOCATING' : 'CHECKING')
+                : state == false ? 'OFFLINE' : 'CHECKING';
     return Semantics(
       label: 'Computer ${busy ? 'connecting' : label.toLowerCase()}',
       child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1762,7 +1766,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           const Text('Show offline'),
           const Spacer(),
           Text(
-            '${_online.values.where((value) => value).length} online',
+            '${_online.values.where((value) => value).length} computers online',
             style: TextStyle(
               color: Theme.of(context).colorScheme.primary,
               fontWeight: FontWeight.w600),
@@ -1838,7 +1842,11 @@ class _RemoteScreenState extends State<RemoteScreen>
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(
-                '${device.host} · ${deviceLocations[device.location] ?? 'Other'}',
+                savedComputers.where((other) =>
+                    other.host == device.host && other.id != device.id)
+                    .isNotEmpty && _online[device.id] != true
+                    ? '${device.host} · Shared/stale IP · Verify identity'
+                    : '${device.host} · ${deviceLocations[device.location] ?? 'Other'}',
                 maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (_online[device.id] == true &&
@@ -1866,21 +1874,31 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
 
-      if (savedLgTvs.isNotEmpty) ...[
-        const SizedBox(height: 12),
-        Text('LG webOS TVs', style: Theme.of(context).textTheme.titleMedium),
-        for (final tv in savedLgTvs)
-          Card(
-            key: ValueKey('lg-tv-${tv.host}'),
-            child: ListTile(
-              leading: const Icon(Icons.tv_outlined, size: 29),
-              title: Text(tv.name),
-              subtitle: Text('${tv.host} · Paired'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => openLgWebOs(host: tv.host),
-            ),
+      // TVs share the same device-card surface; their authenticated pairing
+      // is preserved independently of desktop agent credentials.
+      for (final tv in savedLgTvs)
+        Card(
+          key: ValueKey('lg-tv-${tv.deviceUuid.isNotEmpty
+              ? tv.deviceUuid : tv.host}'),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 5),
+            leading: const Icon(Icons.tv_outlined, size: 29),
+            title: Text(tv.name,
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text('${tv.host} · LG webOS',
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.link, size: 14),
+              SizedBox(width: 4),
+              Text('PAIRED', style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w700)),
+              Icon(Icons.chevron_right),
+            ]),
+            onTap: () => openLgWebOs(host: tv.host),
           ),
-      ],
+        ),
       if (savedLgTvs.isEmpty)
         Align(
           alignment: Alignment.centerLeft,
