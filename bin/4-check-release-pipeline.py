@@ -183,9 +183,9 @@ assert "$settingsItem = [System.Windows.Forms.ToolStripMenuItem]::new('Settings'
 assert "$quitItem = $menu.Items.Add('Quit TapTether')" in win_tray
 assert 'if (Stop-ManagedAgent)' in win_tray
 
-# Full TCP range scans remain explicit Discover / Scan IPs actions.
-# My Devices checks saved hosts first, then may perform one *UDP broadcast*
-# on the current Wi-Fi subnet only if no saved agent is responding.
+# My Devices probes saved hosts first. If all are offline, passive recovery
+# uses one Wi-Fi UDP discovery plus a throttled bounded agent-port-only
+# TCP fallback. An open port never changes identity without saved TLS auth.
 recovery = (ROOT / "app" / "lib" / "device_recovery.dart").read_text(
     encoding="utf-8")
 mobile = (ROOT / "app" / "lib" / "main.dart").read_text(encoding="utf-8")
@@ -193,7 +193,7 @@ assert "probeAgentControlPorts" in recovery
 assert "Socket.connect(ip, 48321" in recovery
 heartbeat = mobile.split(
     "  Future<void> _refreshHeartbeats() async {", 1)[1].split(
-    "  // Passive zero-online recovery.", 1)[0]
+    "  // Recover saved pairings quietly", 1)[0]
 assert "_probeSavedDevice(device, phone)" in heartbeat
 assert "probeAgentControlPorts(" not in heartbeat
 assert "findNearbyDevices(" not in heartbeat
@@ -203,7 +203,11 @@ recovery_call = mobile.split("  Future<void> _recoverSavedDevices(", 1)[1].split
 assert "broadcastOnly: true" in recovery_call
 assert "lanBroadcastAddress(network)" in recovery_call
 assert "scanPrivate24(" not in recovery_call
-assert "probeAgentControlPorts(" not in recovery_call
+assert "probeAgentControlPorts(" in recovery_call
+assert "parallelism: 24" in recovery_call
+assert "maxHits: 16" in recovery_call
+assert "Duration(minutes: 10)" in recovery_call
+assert "_reconcileScannedAgent(address, passive: true)" in recovery_call
 
 # Explicit Scan IPs/Discover must reconcile saved computers immediately.
 # Background agents never need to poll the phone.
