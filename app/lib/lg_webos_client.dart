@@ -94,9 +94,18 @@ bool safeLgPointerUri(Uri uri, String host) =>
 bool isLgSsdpResponse(String response) {
   // The vendor's second-screen service is evidence of LG webOS.
   // A generic LG UPnP device, a hostname, or an open TCP port is not.
-  final normalized = response.toLowerCase();
-  return normalized.startsWith('http/1.1 200') &&
-      normalized.contains('urn:lge-com:service:webos-second-screen:');
+  final lines = response.toLowerCase().split(RegExp(r'\r?\n'));
+  if (lines.isEmpty || !lines.first.startsWith('http/1.1 200')) {
+    return false;
+  }
+  return lines.skip(1).any((line) {
+    final separator = line.indexOf(':');
+    if (separator < 1) return false;
+    final header = line.substring(0, separator).trim();
+    final value = line.substring(separator + 1).trim();
+    return (header == 'st' || header == 'usn') &&
+        value.contains('urn:lge-com:service:webos-second-screen:');
+  });
 }
 
 /// A short, on-demand SSDP query. Does not require broad LAN scanning.
