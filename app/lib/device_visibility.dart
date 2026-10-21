@@ -44,7 +44,9 @@ List<SavedComputer> visibleSavedDevices(
       .toSet();
   final visibleVerifiedHosts = <String>{};
   return filtered.where((device) {
-    if (!verifiedHosts.contains(device.host)) return true;
+    if (!verifiedHosts.contains(device.host)) {
+      return true;
+    }
     return online[device.id] == true &&
         visibleVerifiedHosts.add(device.host);
   }).toList();
