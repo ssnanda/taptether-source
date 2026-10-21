@@ -71,6 +71,26 @@ This registers the background login LaunchAgent and displays the LAN IP, token a
     ~/.local/bin/taptetherctl-mac status
     ~/.local/bin/taptetherctl-mac restart
 
+## LG remote redesign (0.8.5)
+
+Version 0.8.5 adds a one-screen iPhone remote without numeric keypad or a
+scrolling button list. The center touchpad supports pointer movement and tap
+to click. Separate compact icons open on-demand arrow/OK navigation, the TV
+keyboard, additional media/channel controls, and an installed-app picker.
+Apps exposed by webOS appear as launch tiles. The top-right power control
+says **Off** only while a paired TV is actively connected; when disconnected,
+**On** sends a local Wake-on-LAN packet if a valid MAC is saved and the phone
+is on the same local Wi-Fi. Power-on requires compatible TV settings and
+hardware and may not work on every set.
+
+Rename any TV from its remote menu (e.g. **Family Room TV**). The display name
+and TV-provided MAC/UUID, where available, remain in encrypted phone storage;
+manual MAC entry is available when LG doesn't expose it. IP alone is not a
+reliable identity across DHCP changes. The compact **Now** row reports the
+foreground app/channel if webOS exposes them; Netflix/YouTube movie titles
+are generally not exposed by TV SSAP. Status polling happens only while the
+remote is open; TapTether keeps no playback history.
+
 ## LG webOS (0.8.1 — phone remote, no TV agent)
 
 The iPhone app now includes an LG webOS remote inside **My Devices**.
