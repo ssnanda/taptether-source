@@ -110,6 +110,91 @@ bool isLgSsdpResponse(String response) {
   });
 }
 
+/// LG SSAP hello identifies a webOS TV without requesting registration.
+bool isLgHelloResponse(Object? message) {
+  if (message is! Map || message['type'] != 'hello') return false;
+  final payload = message['payload'];
+  if (payload is! Map) return false;
+  return payload['deviceType']?.toString().toLowerCase() == 'tv' &&
+      payload['deviceOS']?.toString().toLowerCase() == 'webos';
+}
+
+/// An open TCP port is never proof of a TV. TLS verification is bypassed
+/// only for this short read-only hello; pairing pins the TV certificate.
+Future<bool> probeLgWebOsHello(String host, {
+  Duration connectTimeout = const Duration(milliseconds: 300),
+  Duration replyTimeout = const Duration(seconds: 2),
+}) async {
+  if (!validLgHost(host)) return false;
+  for (final port in [3001, 3000]) {
+    try {
+      final tcp = await Socket.connect(host, port, timeout: connectTimeout);
+      tcp.destroy();
+    } on SocketException {
+      continue;
+    } on TimeoutException {
+      continue;
+    }
+
+    WebSocket? ws;
+    HttpClient? client;
+    try {
+      final secure = port == 3001;
+      if (secure) {
+        client = HttpClient(context: SecurityContext(withTrustedRoots: false));
+        client.badCertificateCallback = (_, certificateHost, certificatePort) =>
+            certificateHost == host && certificatePort == port;
+      }
+      final endpoint = Uri(scheme: secure ? 'wss' : 'ws',
+          host: host, port: port);
+      ws = await WebSocket.connect(endpoint.toString(),
+          customClient: client).timeout(replyTimeout);
+      ws.add(jsonEncode({'id': 'hello', 'type': 'hello', 'payload': {}}));
+      final answer = await ws.first.timeout(replyTimeout);
+      if (answer is String && isLgHelloResponse(jsonDecode(answer))) {
+        return true;
+      }
+    } catch (_) {
+      // Non-LG services, bad TLS, and timeouts are not TV matches.
+    } finally {
+      if (ws != null) {
+        unawaited(ws.close().timeout(const Duration(milliseconds: 400))
+            .catchError((Object _) {}));
+      }
+      client?.close(force: true);
+    }
+  }
+  return false;
+}
+
+/// Prioritize the phone's /24 while respecting the entire current Wi-Fi CIDR.
+List<String> lgDiscoveryHosts(DetectedLanRange network, {
+  int maxAddresses = 1024,
+}) {
+  final prefixes = [
+    network.activePrefix,
+    ...network.scanPrefixes.where((p) => p != network.activePrefix),
+  ];
+  final networkAddress = network.cidr.split('/').first;
+  final mask = network.subnetMask.split('.').map(int.parse).toList();
+  final ip = network.ip.split('.').map(int.parse).toList();
+  final broadcast = List.generate(4,
+      (i) => ip[i] | (255 ^ mask[i])).join('.');
+  final hosts = <String>[];
+  for (final prefix in prefixes) {
+    for (var suffix = 0; suffix <= 255; suffix++) {
+      final host = '$prefix.$suffix';
+      if (host == networkAddress || host == broadcast || host == network.ip ||
+          !lanRangeContains(network, host)) {
+        continue;
+      }
+      hosts.add(host);
+      if (hosts.length >= maxAddresses) return hosts;
+    }
+  }
+  return hosts;
+}
+
 /// A short, on-demand SSDP query. Does not require broad LAN scanning.
 /// Multicast can be blocked by iOS/router permissions; manual IP still works.
 Future<List<LgTvDevice>> discoverLgTvs({
@@ -148,10 +233,22 @@ Future<List<LgTvDevice>> discoverLgTvs({
     await sub.cancel();
     socket.close();
   }
-  // SSDP may be unavailable on isolated networks. Do not label hosts as
-  // TVs solely because TCP 3000/3001 is open: those ports also belong to
-  // development servers and ordinary computers. Manual LAN IP pairing
-  // remains available when a TV does not advertise its SSAP service.
+  // When multicast is unavailable, a manual tap triggers a bounded,
+  // read-only SSAP hello check on the phone's current Wi-Fi CIDR.
+  // A TCP or WebSocket connection alone is not a TV match.
+  if (found.isEmpty) {
+    final hosts = lgDiscoveryHosts(range);
+    var next = 0;
+    Future<void> worker() async {
+      while (next < hosts.length) {
+        final host = hosts[next++];
+        if (await probeLgWebOsHello(host)) {
+          found[host] = LgTvDevice(host: host, name: 'LG webOS TV');
+        }
+      }
+    }
+    await Future.wait(List.generate(24, (_) => worker()));
+  }
   return found.values.toList()..sort((a, b) => a.host.compareTo(b.host));
 }
 
