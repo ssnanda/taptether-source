@@ -75,15 +75,20 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
     });
     try {
       final candidates = await discoverLgTvs();
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _discovered = candidates;
         _status = candidates.isEmpty
             ? 'No TV found. Enter its local IP address.'
             : 'Choose your TV to pair.';
-      });
+
+        });
+      }
     } catch (_) {
-      if (mounted) setState(() =>
-          _error = 'Discovery unavailable. Pair using the TV IP address.');
+      if (mounted) {
+        setState(() =>
+            _error = 'Discovery unavailable. Pair using the TV IP address.');
+      }
     } finally {
       if (mounted) setState(() => _discovering = false);
     }
@@ -113,18 +118,21 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
         _session = client;
         _connected = paired;
         _busy = false;
-        _status = 'Connected · ' + client.transport;
+        _status = 'Connected · ${client.transport}';
       });
       await _reloadSaved();
       // Optional identifiers must not delay opening the remote.
       unawaited(_identify(client, paired));
     } catch (error) {
       await client.disconnect();
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _busy = false;
         _error = error.toString().replaceFirst('Bad state: ', '');
         _status = 'Not connected';
-      });
+
+        });
+      }
     }
   }
 
@@ -141,7 +149,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
 
   Future<void> _reloadSaved() async {
     final devices = await _store.read();
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _saved = devices;
       if (_connected != null) {
         for (final item in devices) {
@@ -151,7 +160,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
           }
         }
       }
-    });
+
+      });
+    }
     await widget.onSaved?.call();
   }
 
@@ -219,9 +230,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
       builder: (dialog) => AlertDialog(
         title: const Text('TV identity & power on'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Local IP: ' + tv.host),
+          Text('Local IP: ${tv.host}'),
           if (tv.deviceUuid.isNotEmpty)
-            Text('TV ID: ' + tv.deviceUuid,
+            Text('TV ID: ${tv.deviceUuid}',
                 maxLines: 1, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 12),
           TextField(
@@ -274,34 +285,45 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
       try {
         await _session!.powerOff();
         await _session!.disconnect();
-        if (mounted) setState(() {
+        if (mounted) {
+          setState(() {
           _connected = null;
           _status = 'Power-off requested';
-        });
+
+          });
+        }
       } catch (error) {
         if (mounted) setState(() => _error = error.toString());
       }
     } else {
       try {
         await wakeLgTv(current);
-        if (mounted) setState(() {
+        if (mounted) {
+          setState(() {
           _status = 'Power-on signal sent. TV may take a moment.';
           _error = null;
-        });
+
+          });
+        }
       } catch (error) {
-        if (mounted) setState(() =>
-            _error = error.toString().replaceFirst('Bad state: ', ''));
+        if (mounted) {
+          setState(() =>
+              _error = error.toString().replaceFirst('Bad state: ', ''));
+        }
       }
     }
   }
 
   Future<void> _disconnect() async {
     await _session?.disconnect();
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _session = null;
       _connected = null;
       _status = 'Disconnected';
-    });
+
+      });
+    }
   }
 
   @override
