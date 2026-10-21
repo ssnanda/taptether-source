@@ -135,6 +135,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
   }
 
   Future<void> _manualConnect() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final host = _ip.text.trim();
     if (!validLgHost(host)) {
       setState(() => _error = 'Enter the TV private IPv4 address.');
@@ -143,6 +144,17 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
     final existing = _saved.where((tv) => tv.host == host);
     await _connect(existing.isNotEmpty
         ? existing.first : LgTvDevice(host: host, name: 'LG webOS TV'));
+  }
+
+  void _insertIpDot() {
+    final text = _ip.text;
+    final cursor = _ip.selection;
+    final start = cursor.isValid ? cursor.start : text.length;
+    final end = cursor.isValid ? cursor.end : text.length;
+    _ip.value = TextEditingValue(
+      text: text.replaceRange(start, end, '.'),
+      selection: TextSelection.collapsed(offset: start + 1),
+    );
   }
 
   Future<void> _forget(LgTvDevice device) async {
@@ -356,11 +368,19 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
           TextField(
             controller: _ip,
             autocorrect: false,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
+            keyboardType: const TextInputType.numberWithOptions(
+                decimal: true),
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
               labelText: 'Or enter TV LAN IP address',
               hintText: '192.168.1.100',
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                tooltip: 'Insert IP address dot',
+                icon: const Text('.',
+                    style: TextStyle(fontSize: 28)),
+                onPressed: _insertIpDot,
+              ),
             ),
             onSubmitted: (_) => _manualConnect(),
           ),
