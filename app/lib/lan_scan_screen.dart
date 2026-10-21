@@ -187,15 +187,18 @@ class _LanScanScreenState extends State<LanScanScreen> {
         final bound = bounds[index];
         _report.add('Scanning $target.0/24 '
             '(host suffixes ${bound.startHost}-${bound.endHost})');
+        var closedOrFiltered = 0;
         final group = await (widget.scanRange ?? scanPrivate24)(target,
           startHost: bound.startHost,
           endHost: bound.endHost,
           cancelled: () => _cancel,
           onAgentFound: _showAgentCandidate,
           onProbe: (ip, ports) {
-            _report.add('$ip: ${ports.isEmpty
-                ? "no tested TCP port accepted (not proof of offline)"
-                : "TCP open ${ports.join(", ")}"}');
+            if (ports.isEmpty) {
+              closedOrFiltered++;
+            } else {
+              _report.add('$ip: TCP open ${ports.join(", ")}');
+            }
           },
           onProgress: (done, _) {
             if (mounted) {
@@ -204,7 +207,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
           },
         );
         _report.add('Range $target.0/24 finished: '
-            '${group.length} responsive/announced device(s)');
+            '${group.length} responsive/announced device(s) · '
+            '$closedOrFiltered without an open tested TCP port '
+            '(not proof of offline)');
         scannedBefore += bound.endHost - bound.startHost + 1;
         for (final computer in group) {
           found[computer.ip] = computer;
