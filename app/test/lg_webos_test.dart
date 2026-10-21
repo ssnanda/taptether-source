@@ -24,6 +24,13 @@ void main() {
         'ST: urn:lge-com:service:webos-second-screen:1\r\n'), isTrue);
     expect(isLgSsdpResponse('HTTP/1.1 200 OK\r\n'
         'ST: urn:schemas-upnp-org:device:MediaServer:1\r\n'), isFalse);
+    // LG's generic UPnP service or webOS string is not SSAP proof.
+    expect(isLgSsdpResponse('HTTP/1.1 200 OK\r\n'
+        'ST: urn:lge-com:service:other:1\r\n'), isFalse);
+    expect(isLgSsdpResponse('HTTP/1.1 200 OK\r\n'
+        'LOCATION: http://device.local/webos.xml\r\n'), isFalse);
+    expect(isLgSsdpResponse('HTTP/1.1 200 OK\r\n'
+        'SERVER: Linux/3.0 webos-second-screen unrelated\r\n'), isFalse);
   });
 
   test('LG registration reuses saved key and grants pointer control', () {
