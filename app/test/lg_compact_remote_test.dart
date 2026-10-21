@@ -43,13 +43,13 @@ void main() {
     await tester.pump();
     expect(find.byType(ListView), findsNothing);
     expect(find.text('Touchpad'), findsOneWidget);
-    expect(find.text('Arrows · OK'), findsOneWidget);
+    expect(find.byTooltip('Arrows and OK'), findsOneWidget);
     expect(find.byTooltip('Keyboard'), findsOneWidget);
     expect(find.text('1'), findsNothing);
     await tester.tap(find.text('Touchpad'));
     await tester.pump();
     expect(fake.clicks, 1);
-    await tester.tap(find.text('Arrows · OK'));
+    await tester.tap(find.byTooltip('Arrows and OK'));
     await tester.pumpAndSettle();
     expect(find.text('Navigation'), findsOneWidget);
     expect(find.text('OK'), findsOneWidget);
