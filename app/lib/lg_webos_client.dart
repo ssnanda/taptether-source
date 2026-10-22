@@ -138,14 +138,19 @@ class LgTvStore {
       throw const FormatException('Invalid LG TV pairing details');
     }
     final all = await read();
-    final matching = all.where((saved) =>
-        saved.host == device.host ||
-        (device.deviceUuid.isNotEmpty &&
+    // An IP can be reassigned by DHCP. Never merge credentials or identity
+    // solely because two different TVs have occupied the same address.
+    bool sameIdentity(LgTvDevice saved) =>
+        (device.deviceUuid.isNotEmpty && saved.deviceUuid.isNotEmpty &&
             saved.deviceUuid == device.deviceUuid) ||
-        (device.macAddress.isNotEmpty &&
-            saved.macAddress == device.macAddress) ||
-        (device.tlsPin.isNotEmpty &&
-            saved.tlsPin.toUpperCase() == device.tlsPin.toUpperCase()));
+        (device.macAddress.isNotEmpty && saved.macAddress.isNotEmpty &&
+            canonicalLgMac(saved.macAddress) ==
+                canonicalLgMac(device.macAddress)) ||
+        (device.tlsPin.isNotEmpty && saved.tlsPin.isNotEmpty &&
+            saved.tlsPin.toUpperCase() == device.tlsPin.toUpperCase()) ||
+        (saved.host == device.host && saved.clientKey == device.clientKey &&
+            saved.tlsPin == device.tlsPin);
+    final matching = all.where(sameIdentity);
     final previous = matching.isEmpty ? null : matching.first;
     // Preserve user-entered nicknames, older keys and MAC/UUID metadata.
     final merged = device.copyWith(
@@ -158,13 +163,7 @@ class LgTvStore {
       location: device.location == 'other'
           ? (previous?.location ?? 'other') : device.location,
     );
-    all.removeWhere((saved) => saved.host == device.host ||
-        (merged.deviceUuid.isNotEmpty &&
-            saved.deviceUuid == merged.deviceUuid) ||
-        (merged.macAddress.isNotEmpty &&
-            saved.macAddress == merged.macAddress) ||
-        (merged.tlsPin.isNotEmpty &&
-            saved.tlsPin.toUpperCase() == merged.tlsPin.toUpperCase()));
+    all.removeWhere(sameIdentity);
     all.insert(0, merged);
     await _storage.write(
       key: key,
