@@ -395,6 +395,7 @@ List<String> lgDiscoveryHosts(DetectedLanRange network, {
 /// Multicast can be blocked by iOS/router permissions; manual IP still works.
 Future<List<LgTvDevice>> discoverLgTvs({
   Duration timeout = const Duration(seconds: 2),
+  bool scanEntireLan = false,
 }) async {
   final range = await detectLanRange();
   if (range == null) return [];
@@ -436,12 +437,13 @@ Future<List<LgTvDevice>> discoverLgTvs({
   // When multicast is unavailable, a manual tap triggers a bounded,
   // read-only SSAP hello check on the phone's current Wi-Fi CIDR.
   // A TCP or WebSocket connection alone is not a TV match.
-  if (found.isEmpty) {
+  if (found.isEmpty || scanEntireLan) {
     final hosts = lgDiscoveryHosts(range);
     var next = 0;
     Future<void> worker() async {
       while (next < hosts.length) {
         final host = hosts[next++];
+        if (found.containsKey(host)) { continue; }
         final tv = await readLgWebOsHello(host);
         if (tv != null) {
           found[host] = tv;
