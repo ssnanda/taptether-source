@@ -1935,7 +1935,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         ),
       ]),
       const SizedBox(height: 8),
-      if (savedComputers.isNotEmpty) ...[
+      if (savedComputers.isNotEmpty || savedLgTvs.isNotEmpty ||
+          savedSamsungTvs.isNotEmpty) ...[
         Row(children: [
           Expanded(child: DropdownButtonFormField<String>(
             key: const ValueKey('device-location-filter'),
@@ -1957,8 +1958,9 @@ class _RemoteScreenState extends State<RemoteScreen>
             },
           )),
           IconButton(
-            tooltip: 'Check online computers',
-            onPressed: (_checkingHeartbeat || _recoveringDiscovery)
+            tooltip: 'Refresh computers and TVs',
+            onPressed: (_checkingHeartbeat || _recoveringDiscovery ||
+                _checkingTvStatus || _recoveringTvAddresses)
                  ? null : _refreshDevicesManually,
             icon: const Icon(Icons.refresh),
           ),
@@ -1972,12 +1974,19 @@ class _RemoteScreenState extends State<RemoteScreen>
           const Text('Show offline'),
           const Spacer(),
           Text(
-            '${_online.values.where((value) => value).length} computers online',
+            '$onlineComputerCount computer${onlineComputerCount == 1 ? '' : 's'}'
+             ' · $onlineTvCount TV${onlineTvCount == 1 ? '' : 's'} online',
             style: TextStyle(
               color: Theme.of(context).colorScheme.primary,
               fontWeight: FontWeight.w600),
           ),
         ]),
+        if (_recoveringTvAddresses)
+          Text('Locating saved TVs by verified identity…',
+            style: Theme.of(context).textTheme.bodySmall),
+        if (_checkingTvStatus && !_checkingHeartbeat)
+          Text('Checking saved TVs…',
+            style: Theme.of(context).textTheme.bodySmall),
         if (_recoveringDiscovery)
           Text(_probingOfflineAgents
               ? 'Checking TapTether agent addresses on this Wi-Fi…'
@@ -2003,7 +2012,8 @@ class _RemoteScreenState extends State<RemoteScreen>
               style: Theme.of(context).textTheme.bodySmall),
           ),
         const SizedBox(height: 8),
-        if (visibleDevices.isEmpty)
+        if (visibleDevices.isEmpty && savedComputers.isNotEmpty &&
+            savedLgTvs.isEmpty && savedSamsungTvs.isEmpty)
           Padding(
             padding: const EdgeInsets.all(14),
             child: Text(_checkingHeartbeat
@@ -2012,7 +2022,8 @@ class _RemoteScreenState extends State<RemoteScreen>
                   'or enable Show offline.'),
           ),
       ],
-      if (savedComputers.isEmpty && savedLgTvs.isEmpty)
+      if (savedComputers.isEmpty && savedLgTvs.isEmpty &&
+          savedSamsungTvs.isEmpty)
         Card(child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
