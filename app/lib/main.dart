@@ -936,9 +936,14 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> _refreshDevicesManually() async {
-    if (_checkingHeartbeat || _recoveringDiscovery) return;
-    await _refreshHeartbeats();
+    if (_checkingHeartbeat || _recoveringDiscovery ||
+        _recoveringTvAddresses || _checkingTvStatus) return;
+    await Future.wait([
+      _refreshHeartbeats(),
+      _refreshTvStatuses(),
+    ]);
     await _recoverSavedDevices(force: true);
+    await _recoverTvAddresses(force: true);
   }
 
   // Listen only in the foreground; iOS can suspend background sockets.
@@ -1512,7 +1517,10 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> loadLgTvs() async {
     try {
       final tvs = await LgTvStore().read();
-      if (mounted) setState(() => savedLgTvs = tvs);
+      if (mounted) {
+        setState(() => savedLgTvs = tvs);
+        unawaited(_refreshTvStatuses());
+      }
     } catch (_) {
       // TV remote storage may be unavailable until iOS Keychain unlocks.
     }
@@ -1521,7 +1529,10 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> loadSamsungTvs() async {
     try {
       final tvs = await SamsungTvStore().read();
-      if (mounted) setState(() => savedSamsungTvs = tvs);
+      if (mounted) {
+        setState(() => savedSamsungTvs = tvs);
+        unawaited(_refreshTvStatuses());
+      }
     } catch (_) {
       // Samsung pairing tokens stay in the device secure store.
     }
