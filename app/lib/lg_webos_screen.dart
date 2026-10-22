@@ -53,7 +53,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     unawaited(_load());
     _connectionTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted || !_foreground || _busy || _recovering ||
-          _suspended) return;
+          _suspended) { return; }
       if (_ready) {
         unawaited(_checkSession());
       } else if (_selected?.clientKey.isNotEmpty == true) {
@@ -80,7 +80,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   Future<void> _checkSession() async {
     final client = _session;
     if (client == null || !client.connected || _healthChecking ||
-        _busy || _recovering || !_foreground || _suspended) return;
+        _busy || _recovering || !_foreground || _suspended) { return; }
     _healthChecking = true;
     try {
       await client.request(
@@ -104,40 +104,40 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   /// Only move an IP when a stable UUID or pinned TLS certificate matches.
   Future<void> _recover({bool force = false}) async {
     if (!mounted || !_foreground || _busy || _recovering ||
-        _ready || _suspended) return;
+        _ready || _suspended) { return; }
     final tv = _selected;
-    if (tv == null || tv.clientKey.isEmpty) return;
+    if (tv == null || tv.clientKey.isEmpty) { return; }
     final now = DateTime.now();
     if (!force && now.difference(_lastRecovery) <
-        const Duration(seconds: 90)) return;
+        const Duration(seconds: 90)) { return; }
     _lastRecovery = now;
     _recovering = true;
     try {
-      if (mounted) setState(() {
+      if (mounted) { setState(() {
         _status = 'Reconnecting to ${tv.name}…';
         _error = null;
-      });
+      }); }
       // First try the last known address; most reconnects do not need a scan.
-      if (await _tryRecoveryHost(tv, tv.host)) return;
-      if (!mounted || !_foreground) return;
-      if (mounted) setState(() =>
-          _status = 'Finding ${tv.name} on Wi-Fi…');
+      if (await _tryRecoveryHost(tv, tv.host)) { return; }
+      if (!mounted || !_foreground) { return; }
+      if (mounted) { setState(() =>
+          _status = 'Finding ${tv.name} on Wi-Fi…'); }
       final candidates = await discoverLgTvs();
       for (final candidate in candidates) {
-        if (!mounted || !_foreground) return;
-        if (candidate.host == tv.host) continue;
+        if (!mounted || !_foreground) { return; }
+        if (candidate.host == tv.host) { continue; }
         final sameUuid = tv.deviceUuid.isNotEmpty &&
             candidate.deviceUuid.isNotEmpty &&
             tv.deviceUuid == candidate.deviceUuid;
         final sameTls = tv.tlsPin.isNotEmpty &&
             await matchesLgTlsPin(candidate.host, tv.tlsPin);
-        if (!sameUuid && !sameTls) continue;
-        if (await _tryRecoveryHost(tv, candidate.host)) return;
+        if (!sameUuid && !sameTls) { continue; }
+        if (await _tryRecoveryHost(tv, candidate.host)) { return; }
       }
-      if (mounted) setState(() {
+      if (mounted) { setState(() {
         _status = 'TV unavailable · will retry automatically';
         _error = null;
-      });
+      }); }
     } finally {
       _recovering = false;
     }
@@ -146,9 +146,11 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   Future<bool> _tryRecoveryHost(LgTvDevice tv, String host) async {
     // Never send a stored client key to an unverified new address.
     if (host != tv.host && tv.tlsPin.isNotEmpty &&
-        !await matchesLgTlsPin(host, tv.tlsPin)) return false;
+        !await matchesLgTlsPin(host, tv.tlsPin)) { return false; }
     if (host == tv.host && tv.tlsPin.isNotEmpty &&
         !await matchesLgTlsPin(host, tv.tlsPin)) return false;
+    // Never migrate a stored key to a different IP without a trusted TLS pin.
+    if (host != tv.host && tv.tlsPin.isEmpty) { return false; }
     final updated = tv.copyWith(host: host);
     final client = LgWebOsClient(updated);
     try {
