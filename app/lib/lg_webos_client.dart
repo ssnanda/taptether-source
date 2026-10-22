@@ -215,12 +215,12 @@ bool isLgHelloResponse(Object? message) {
 
 /// An open TCP port is never proof of a TV. TLS verification is bypassed
 /// only for this short read-only hello; pairing pins the TV certificate.
-Future<bool> probeLgWebOsHello(String host, {
+Future<LgTvDevice?> readLgWebOsHello(String host, {
   Duration connectTimeout = const Duration(milliseconds: 300),
   Duration replyTimeout = const Duration(seconds: 2),
 }) async {
   if (!validLgHost(host)) {
-    return false;
+    return null;
   }
   for (final port in [3001, 3000]) {
     try {
@@ -247,8 +247,13 @@ Future<bool> probeLgWebOsHello(String host, {
           customClient: client).timeout(replyTimeout);
       ws.add(jsonEncode({'id': 'hello', 'type': 'hello', 'payload': {}}));
       final answer = await ws.first.timeout(replyTimeout);
-      if (answer is String && isLgHelloResponse(jsonDecode(answer))) {
-        return true;
+      if (answer is String) {
+        final parsed = jsonDecode(answer);
+        if (isLgHelloResponse(parsed)) {
+          final payload = parsed['payload'] as Map;
+          return LgTvDevice(host: host, name: 'LG webOS TV',
+              deviceUuid: payload['deviceUUID']?.toString() ?? '');
+        }
       }
     } catch (_) {
       // Non-LG services, bad TLS, and timeouts are not TV matches.
@@ -263,8 +268,14 @@ Future<bool> probeLgWebOsHello(String host, {
       client?.close(force: true);
     }
   }
-  return false;
+  return null;
 }
+
+Future<bool> probeLgWebOsHello(String host, {
+  Duration connectTimeout = const Duration(milliseconds: 300),
+  Duration replyTimeout = const Duration(seconds: 2),
+}) async => (await readLgWebOsHello(host,
+    connectTimeout: connectTimeout, replyTimeout: replyTimeout)) != null;
 
 /// Prioritize the phone's /24 while respecting the entire current Wi-Fi CIDR.
 List<String> lgDiscoveryHosts(DetectedLanRange network, {
@@ -347,8 +358,9 @@ Future<List<LgTvDevice>> discoverLgTvs({
     Future<void> worker() async {
       while (next < hosts.length) {
         final host = hosts[next++];
-        if (await probeLgWebOsHello(host)) {
-          found[host] = LgTvDevice(host: host, name: 'LG webOS TV');
+        final tv = await readLgWebOsHello(host);
+        if (tv != null) {
+          found[host] = tv;
         }
       }
     }
