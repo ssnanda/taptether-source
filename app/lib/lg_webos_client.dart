@@ -285,7 +285,37 @@ Future<bool> probeLgWebOsHello(String host, {
 /// without sending a registration request or displaying a pairing prompt.
 Future<bool> matchesLgTlsPin(String host, String expectedPin) async {
   if (!validLgHost(host) ||
-      !RegExp(r'^[0-9a-fA-F]{64}
+      expectedPin.length != 64 ||
+      !RegExp(r'^[0-9a-fA-F]{64}').hasMatch(expectedPin)) {
+    return false;
+  }
+  final client = HttpClient(
+      context: SecurityContext(withTrustedRoots: false));
+  var same = false;
+  client.badCertificateCallback = (cert, certificateHost, port) {
+    if (certificateHost != host || port != 3001) {
+      return false;
+    }
+    same = sha256.convert(cert.der).toString().toUpperCase() ==
+        expectedPin.toUpperCase();
+    return same;
+  };
+  WebSocket? connection;
+  try {
+    connection = await WebSocket.connect('wss://$host:3001',
+        customClient: client).timeout(const Duration(seconds: 2));
+    return same;
+  } catch (_) {
+    return false;
+  } finally {
+    try {
+      await connection?.close().timeout(const Duration(milliseconds: 350));
+    } catch (_) {}
+    client.close(force: true);
+  }
+}
+
+/// Prioritize the phone's /24 while respecting the entire current Wi-Fi CIDR.
 List<String> lgDiscoveryHosts(DetectedLanRange network, {
   int maxAddresses = 1024,
 }) {
