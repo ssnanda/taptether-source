@@ -54,14 +54,20 @@ class _LgSnapshotPadState extends State<LgSnapshotPad>
 
   void _startAuto() {
     _timer?.cancel();
-    if (!_snapshot || !_automatic || !_foreground) return;
+    if (!_snapshot || !_automatic || !_foreground) {
+      return;
+    }
     _timer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (!_busy) unawaited(_refresh());
+      if (!_busy) {
+        unawaited(_refresh());
+      }
     });
   }
 
   void _select(bool snapshot) {
-    if (_snapshot == snapshot) return;
+    if (_snapshot == snapshot) {
+      return;
+    }
     _timer?.cancel();
     _timer = null;
     setState(() {
@@ -70,7 +76,9 @@ class _LgSnapshotPadState extends State<LgSnapshotPad>
       _error = null;
       if (!snapshot) _frame = null;
     });
-    if (snapshot) unawaited(_refresh());
+    if (snapshot) {
+      unawaited(_refresh());
+    }
   }
 
   void _toggleAuto() {
@@ -79,17 +87,23 @@ class _LgSnapshotPadState extends State<LgSnapshotPad>
   }
 
   Future<void> _refresh() async {
-    if (!_snapshot || !_foreground || _busy) return;
+    if (!_snapshot || !_foreground || _busy) {
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       final frame = await widget.capture();
-      if (!mounted || !_snapshot) return;
+      if (!mounted || !_snapshot) {
+        return;
+      }
       setState(() => _frame = frame);
     } catch (error) {
-      if (!mounted || !_snapshot) return;
+      if (!mounted || !_snapshot) {
+        return;
+      }
       setState(() {
         _error = error.toString().replaceFirst('Bad state: ', '');
         _automatic = false;
@@ -97,7 +111,9 @@ class _LgSnapshotPadState extends State<LgSnapshotPad>
       _timer?.cancel();
       _timer = null;
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
