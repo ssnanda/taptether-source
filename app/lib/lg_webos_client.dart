@@ -67,6 +67,7 @@ class LgTvDevice {
     this.macAddress = '',
     this.deviceUuid = '',
     this.location = 'other',
+    this.about = const {},
   });
 
   final String host;
@@ -78,11 +79,14 @@ class LgTvDevice {
   final String macAddress;
   final String deviceUuid;
   final String location;
+  /// Bounded, non-secret device details captured over an authenticated
+  /// pairing. Never store raw SSAP payloads, tokens or network credentials.
+  final Map<String, String> about;
 
   LgTvDevice copyWith({
     String? host, String? name, String? clientKey,
     String? tlsPin, bool? secure, String? macAddress,
-    String? deviceUuid, String? location,
+    String? deviceUuid, String? location, Map<String, String>? about,
   }) => LgTvDevice(
     host: host ?? this.host, name: name ?? this.name,
     clientKey: clientKey ?? this.clientKey, tlsPin: tlsPin ?? this.tlsPin,
@@ -90,6 +94,7 @@ class LgTvDevice {
     macAddress: macAddress ?? this.macAddress,
     deviceUuid: deviceUuid ?? this.deviceUuid,
     location: location ?? this.location,
+    about: about ?? this.about,
   );
 
   Map<String, Object> toJson() => {
@@ -101,6 +106,7 @@ class LgTvDevice {
     'macAddress': macAddress,
     'deviceUuid': deviceUuid,
     'location': location,
+    'about': about,
   };
 
   static LgTvDevice fromJson(Map<String, dynamic> json) => LgTvDevice(
@@ -112,6 +118,13 @@ class LgTvDevice {
     macAddress: (json['macAddress'] as String?) ?? '',
     deviceUuid: (json['deviceUuid'] as String?) ?? '',
     location: (json['location'] as String?) ?? 'other',
+    about: json['about'] is Map
+        ? Map<String, String>.fromEntries(
+            (json['about'] as Map).entries
+                .where((e) => e.key is String && e.value is String)
+                .take(32)
+                .map((e) => MapEntry(e.key as String, e.value as String)))
+        : const {},
   );
 }
 
@@ -161,6 +174,7 @@ class LgTvStore {
           ? (previous?.deviceUuid ?? '') : device.deviceUuid,
       location: device.location == 'other'
           ? (previous?.location ?? 'other') : device.location,
+      about: {...?previous?.about, ...device.about},
     );
     all.removeWhere(sameIdentity);
     all.insert(0, merged);
@@ -714,6 +728,55 @@ class LgWebOsClient implements TvRemoteController {
         {'text': text, 'replace': 0});
   }
 
+  /// Best-effort, read-only TV inventory gathered after explicit pairing.
+  /// Whitelist only known non-secret fields; unsupported services are normal.
+  /// No AI capability is inferred from a model name or firmware string.
+  Future<Map<String, String>> readAboutTv() async {
+    if (!connected || device.clientKey.isEmpty) return const {};
+    final about = <String, String>{};
+    void record(String label, Object? raw) {
+      if (raw is! String && raw is! num && raw is! bool) return;
+      final value = raw.toString().trim();
+      if (value.isEmpty || value.length > 160) return;
+      about[label] = value;
+    }
+    Future<void> collect(String uri, Map<String, String> fields) async {
+      try {
+        final payload = await request(uri)
+            .timeout(const Duration(seconds: 3));
+        for (final entry in fields.entries) {
+          record(entry.value, payload[entry.key]);
+        }
+      } catch (_) {
+        // A firmware may not expose this optional SSAP endpoint.
+      }
+    }
+    await collect('ssap://com.webos.service.tv.systemproperty/getSystemInfo', {
+      'modelName': 'Model',
+      'model': 'Model code',
+      'serialNumber': 'Serial number',
+      'firmwareVersion': 'Firmware',
+      'sdkVersion': 'SDK version',
+      'webOSVersion': 'webOS version',
+      'productName': 'Product',
+    });
+    await collect('ssap://com.webos.service.update/getCurrentSWInformation', {
+      'model_name': 'Model',
+      'modelName': 'Model',
+      'product_name': 'Product',
+      'sw_type': 'Software type',
+      'sw_version': 'Firmware',
+      'webos_version': 'webOS version',
+      'major_ver': 'Software major version',
+      'minor_ver': 'Software minor version',
+    });
+    await collect('ssap://com.webos.service.config/getConfigs', {
+      'country': 'Country',
+    });
+    about['Last checked'] = DateTime.now().toUtc().toIso8601String();
+    return about;
+  }
+
   /// Identity metadata is gathered only over a paired control channel.
   Future<LgTvDevice> identify(LgTvDevice paired) async {
     var mac = paired.macAddress;
@@ -742,7 +805,9 @@ class LgWebOsClient implements TvRemoteController {
     } catch (_) {
       // Optional hello is not universally available after registration.
     }
-    return paired.copyWith(macAddress: mac, deviceUuid: uuid);
+    final about = await readAboutTv();
+    return paired.copyWith(macAddress: mac, deviceUuid: uuid,
+        about: {...paired.about, ...about});
   }
 
   /// Experimental LG firmware screenshot API. It returns a temporary LAN
