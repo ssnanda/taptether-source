@@ -1518,10 +1518,119 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  Future<void> loadSamsungTvs() async {
+    try {
+      final tvs = await SamsungTvStore().read();
+      if (mounted) setState(() => savedSamsungTvs = tvs);
+    } catch (_) {
+      // Samsung pairing tokens stay in the device secure store.
+    }
+  }
+
+  Future<void> _refreshTvStatuses() async {
+    if (!mounted || !_appForeground || _checkingTvStatus) return;
+    _checkingTvStatus = true;
+    if (mounted) setState(() {});
+    try {
+      final lan = await detectLanRange() ?? _wifiRange;
+      final lg = savedLgTvs.toList();
+      final samsung = savedSamsungTvs.toList();
+      await Future.wait(<Future<void>>[
+        for (final tv in lg) () async {
+          final key = 'lg:${tv.host}';
+          final reachable = lan != null &&
+              lanRangeContains(lan, tv.host) && await lgTvResponds(tv);
+          if (!mounted) return;
+          setState(() {
+            _tvOnline[key] = reachable;
+            if (reachable) _tvLastSeen[key] = DateTime.now();
+          });
+        }(),
+        for (final tv in samsung) () async {
+          final key = 'samsung:${tv.host}';
+          final reachable = lan != null &&
+              lanRangeContains(lan, tv.host) &&
+              await samsungTvResponds(tv);
+          if (!mounted) return;
+          setState(() {
+            _tvOnline[key] = reachable;
+            if (reachable) _tvLastSeen[key] = DateTime.now();
+          });
+        }(),
+      ]);
+    } catch (_) {
+      // No speculative online status after probe failures.
+    } finally {
+      _checkingTvStatus = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _recoverTvAddresses({bool force = false}) async {
+    if (!mounted || !_appForeground || _recoveringTvAddresses) return;
+    final now = DateTime.now();
+    if (!force && _lastTvRecovery != null &&
+        now.difference(_lastTvRecovery!) < const Duration(minutes: 10)) {
+      return;
+    }
+    final network = await detectLanRange() ?? _wifiRange;
+    if (network == null || !mounted) return;
+    // No broad scan while devices are reachable, or without a stable ID.
+    final missingLg = savedLgTvs.where((tv) =>
+        _tvOnline['lg:${tv.host}'] != true &&
+        tv.deviceUuid.isNotEmpty && tv.tlsPin.isNotEmpty &&
+        (!lanRangeContains(network, tv.host) ||
+            _tvOnline['lg:${tv.host}'] == false)).take(4).toList();
+    final missingSamsung = savedSamsungTvs.where((tv) =>
+        _tvOnline['samsung:${tv.host}'] != true &&
+        (tv.deviceId.isNotEmpty || tv.macAddress.isNotEmpty) &&
+        (!lanRangeContains(network, tv.host) ||
+            _tvOnline['samsung:${tv.host}'] == false)).take(4).toList();
+    if (missingLg.isEmpty && missingSamsung.isEmpty) return;
+    _lastTvRecovery = now;
+    _recoveringTvAddresses = true;
+    setState(() {});
+    try {
+      // Scan only on the active LAN, with bounded concurrency. Match UUID/MAC
+      // first, then require existing TLS-pinned credentials before updating IP.
+      for (final tv in missingLg) {
+        if (!mounted || !_appForeground) break;
+        final recovered = await relocateLgTv(tv);
+        if (recovered != null) await loadLgTvs();
+      }
+      for (final tv in missingSamsung) {
+        if (!mounted || !_appForeground) break;
+        final recovered = await relocateSamsungTv(tv);
+        if (recovered != null) await loadSamsungTvs();
+      }
+    } finally {
+      _recoveringTvAddresses = false;
+      if (mounted) {
+        setState(() {});
+        unawaited(_refreshTvStatuses());
+      }
+    }
+  }
+
+  Future<void> openSamsungTv({String? host}) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SamsungTvScreen(
+        initialHost: host,
+        initialLocation: _detectedLocation ?? 'other',
+        onSaved: loadSamsungTvs,
+      ),
+    ));
+    if (mounted) {
+      await loadSamsungTvs();
+      unawaited(_refreshTvStatuses());
+    }
+  }
+
   Future<void> openLgWebOs({String? host}) async {
     await Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => LgWebOsScreen(
         initialHost: host,
+        initialLocation: _detectedLocation ?? 'other',
         onSaved: loadLgTvs,
       ),
     ));
