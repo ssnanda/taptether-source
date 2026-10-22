@@ -29,7 +29,9 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   Future<void> _refresh() async {
     try {
       final data = await _store.snapshot();
-      if (mounted) setState(() => _entries = data.length);
+      if (mounted) {
+        setState(() => _entries = data.length);
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _error =
@@ -81,8 +83,12 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
                 child: const Text('Cancel')),
             FilledButton(
               onPressed: () {
-                if (first.text.length < 12) return;
-                if (confirm && first.text != again.text) return;
+                if (first.text.length < 12) {
+                  return;
+                }
+                if (confirm && first.text != again.text) {
+                  return;
+                }
                 Navigator.pop(dialog, first.text);
               },
               child: Text(confirm ? 'Encrypt' : 'Unlock'),
@@ -97,7 +103,9 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   }
 
   Future<void> _run(Future<void> Function() task) async {
-    if (_busy) return;
+    if (_busy) {
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -105,12 +113,18 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     try {
       await task();
     } on FormatException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() => _error = error.message);
+      }
     } catch (error) {
-      if (mounted) setState(() =>
-          _error = 'Backup operation failed: ' + error.toString());
+      if (mounted) {
+        setState(() =>
+            _error = 'Backup operation failed: ' + error.toString());
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
@@ -119,15 +133,21 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         reason: 'Authorize exporting device credentials')) {
       return;
     }
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final entries = await _store.snapshot();
     if (entries.isEmpty) {
       throw StateError('There are no saved credentials to back up.');
     }
     final password = await _password(confirm: true);
-    if (password == null || !mounted) return;
+    if (password == null || !mounted) {
+      return;
+    }
     final encrypted = await DeviceBackupCodec.encrypt(entries, password);
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final day = DateTime.now().toUtc().toIso8601String().split('T').first;
     final location = await FilePicker.platform.saveFile(
       dialogTitle: 'Save TapTether encrypted device backup',
@@ -136,7 +156,9 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
       allowedExtensions: const ['ttbackup'],
       bytes: encrypted,
     );
-    if (!mounted || location == null) return;
+    if (!mounted || location == null) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('Encrypted backup saved outside TapTether. '
           'Keep it in iCloud Drive or another safe location.'),
@@ -148,14 +170,18 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         reason: 'Authorize restoring device credentials')) {
       return;
     }
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final selection = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['ttbackup'],
       allowMultiple: false,
       withData: true,
     );
-    if (selection == null || selection.files.isEmpty || !mounted) return;
+    if (selection == null || selection.files.isEmpty || !mounted) {
+      return;
+    }
     final picked = selection.files.single;
     if (picked.size > DeviceBackupCodec.maxFileBytes) {
       throw const FormatException('Backup file exceeds size limit.');
@@ -167,14 +193,22 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (bytes == null || bytes.length > DeviceBackupCodec.maxFileBytes) {
       throw const FormatException('Unable to read selected backup.');
     }
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final password = await _password(confirm: false);
-    if (password == null || !mounted) return;
+    if (password == null || !mounted) {
+      return;
+    }
     // Authenticate the entire file before overwriting any secure entry.
     final verified = await DeviceBackupCodec.decrypt(bytes, password);
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final existing = await _store.snapshot();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final approved = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
@@ -194,12 +228,18 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         ],
       ),
     );
-    if (approved != true || !mounted) return;
+    if (approved != true || !mounted) {
+      return;
+    }
     await _store.restore(verified);
     await widget.onRestored?.call();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     await _refresh();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('Devices restored. Saved devices will be '
           'checked on your current Wi-Fi.'),
