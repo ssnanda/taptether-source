@@ -392,6 +392,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
             Expanded(child: LgCompactRemote(
               key: ValueKey(_connected!.host),
               client: _session!, device: _connected!,
+              captureSnapshot: _session!.takeSnapshot,
               onError: (error) {
                 if (mounted) setState(() => _error = error);
               },
