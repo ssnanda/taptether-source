@@ -276,7 +276,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     }
     await _auto.enable(password);
     if (_auto.lastError != null) {
-      throw StateError(_auto.lastError);
+      throw StateError(_auto.lastError!);
     }
   });
 
@@ -375,7 +375,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         Text('SSH private keys available on this phone: $_sshKeyCount',
             style: Theme.of(context).textTheme.bodySmall),
       const SizedBox(height: 18),
-      const Text('This backup contains secret pairing tokens and 
+      const Text('This backup contains secret pairing tokens and '
           'SSH private keys. Keep the password safe. It cannot be reset. '
           'Make a new backup whenever you add or remove devices.'),
     ]),
