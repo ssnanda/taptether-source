@@ -26,6 +26,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   Timer? _connectionTimer;
   bool _foreground = true;
   bool _recovering = false;
+  bool _healthChecking = false;
+  bool _suspended = false;
   DateTime _lastRecovery = DateTime.fromMillisecondsSinceEpoch(0);
   bool _busy = false;
   bool _discovering = false;
@@ -50,8 +52,11 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
     _connectionTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (!mounted || !_foreground || _busy || _recovering) return;
-      if (_selected?.clientKey.isNotEmpty == true && !_ready) {
+      if (!mounted || !_foreground || _busy || _recovering ||
+          _suspended) return;
+      if (_ready) {
+        unawaited(_checkSession());
+      } else if (_selected?.clientKey.isNotEmpty == true) {
         unawaited(_recover());
       }
     });
@@ -60,20 +65,51 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
-    if (_foreground && _selected?.clientKey.isNotEmpty == true) {
+    if (_foreground && !_suspended &&
+        _selected?.clientKey.isNotEmpty == true) {
+      if (_ready) {
+        unawaited(_checkSession());
+      } else {
+        unawaited(_recover(force: true));
+      }
+    }
+  }
+
+  /// A socket can remain nominally open after Wi-Fi changes. Check the
+  /// authenticated channel, not merely WebSocket.readyState.
+  Future<void> _checkSession() async {
+    final client = _session;
+    if (client == null || !client.connected || _healthChecking ||
+        _busy || _recovering || !_foreground || _suspended) return;
+    _healthChecking = true;
+    try {
+      await client.request(
+          'ssap://com.webos.applicationManager/getForegroundAppInfo');
+    } catch (_) {
+      if (!mounted || _session != client || _suspended) return;
+      await client.disconnect();
+      if (!mounted || _session != client || _suspended) return;
+      setState(() {
+        _session = null;
+        _connected = null;
+        _status = 'Connection interrupted · recovering…';
+      });
       unawaited(_recover(force: true));
+    } finally {
+      _healthChecking = false;
     }
   }
 
   /// Reuse the existing pairing key; never register an unknown TV on recovery.
   /// Only move an IP when a stable UUID or pinned TLS certificate matches.
   Future<void> _recover({bool force = false}) async {
-    if (!mounted || !_foreground || _busy || _recovering || _ready) return;
+    if (!mounted || !_foreground || _busy || _recovering ||
+        _ready || _suspended) return;
     final tv = _selected;
     if (tv == null || tv.clientKey.isEmpty) return;
     final now = DateTime.now();
     if (!force && now.difference(_lastRecovery) <
-        const Duration(seconds: 45)) return;
+        const Duration(seconds: 90)) return;
     _lastRecovery = now;
     _recovering = true;
     try {
@@ -189,6 +225,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   Future<void> _connect(LgTvDevice tv) async {
     if (_busy || _recovering) return;
     _target = tv;
+    _suspended = false;
     setState(() {
       _busy = true;
       _error = null;
@@ -398,6 +435,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         if (mounted) {
           setState(() {
           _connected = null;
+          _suspended = true;
           _status = 'Power-off requested';
 
           });
@@ -408,6 +446,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     } else {
       try {
         await wakeLgTv(current);
+        _suspended = false;
         if (mounted) {
           setState(() {
           _status = 'Power-on signal sent. TV may take a moment.';
@@ -425,6 +464,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   }
 
   Future<void> _disconnect() async {
+    _suspended = true;
     await _session?.disconnect();
     if (mounted) {
       setState(() {
