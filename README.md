@@ -71,6 +71,38 @@ This registers the background login LaunchAgent and displays the LAN IP, token a
     ~/.local/bin/taptetherctl-mac status
     ~/.local/bin/taptetherctl-mac restart
 
+## Portable device backups (0.8.7)
+
+TapTether stores trusted computer fingerprints/tokens, LG and Samsung TV
+pairings, the phone Ed25519 identity, SSH keys, and network preferences in
+OS secure storage. On iOS the app's secure-storage records **may be lost**
+after an uninstall, especially when sideload signing or app identity changes.
+
+To preserve devices:
+1. Open **Security & Appearance → Device Backup → Back up devices to Files**.
+2. Choose a unique backup password (at least 12 characters).
+3. In Files, save the encrypted `.ttbackup` file to **iCloud Drive** or another
+   folder that is **outside the TapTether application sandbox**. Local folders
+   inside the TapTether app will be removed when the app is deleted.
+4. After reinstalling, use **Restore saved devices** on the empty My Devices
+   screen, or **Security & Appearance → Device Backup → Restore devices**.
+5. Select the file, enter its password, and approve credential restoration.
+   TapTether reloads the restored phone identity and device list and checks
+   reachable devices. Agent-side registration must still be valid.
+
+Backups are made **only when requested**, encrypted with AES-256-GCM using
+PBKDF2-HMAC-SHA256-derived keys (240,000 iterations, unique salt and nonce).
+The backup includes private pairing secrets and SSH keys; keep the file and
+password secure. Incorrect passwords, tampering, unsupported schemas, and
+oversized backups are rejected **before** credentials are written.
+The app-lock PIN and biometric settings are **not** exported or replaced.
+There is no TapTether cloud service, account or telemetry. After pairing new
+devices, export another backup to capture the changes.
+
+A reinstall without an earlier backup cannot reconstruct credentials that
+were already removed from the Keychain/secure storage. Re-pair those devices
+once, then save a protected backup.
+
 ## Unified TV remotes (0.8.6)
 
 - **LG webOS and Samsung Tizen / Smart View**: agent-free local remote controls.
