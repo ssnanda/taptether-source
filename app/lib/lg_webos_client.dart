@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -8,6 +9,41 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'discovery.dart';
 import 'lan_scan.dart';
 import 'tv_remote_controller.dart';
+
+/// The URL comes from an already paired LG TV; never follow it off-device.
+/// Do not fetch arbitrary URLs or chase redirects received through SSAP.
+Uri? safeLgSnapshotUri(String raw, String host) {
+  final uri = Uri.tryParse(raw);
+  if (uri == null ||
+      (uri.scheme != 'http' && uri.scheme != 'https') ||
+      uri.host != host ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasFragment ||
+      uri.port < 1 ||
+      uri.port > 65535) {
+    return null;
+  }
+  return uri;
+}
+
+/// Reject truncated and unexpected image responses before displaying them.
+bool isCompleteLgSnapshot(Uint8List data) {
+  if (data.length < 16) return false;
+  final jpeg = data[0] == 0xff && data[1] == 0xd8 &&
+      data[2] == 0xff && data[data.length - 2] == 0xff &&
+      data.last == 0xd9;
+  if (jpeg) return true;
+  if (data.length < 20) return false;
+  const png = [137, 80, 78, 71, 13, 10, 26, 10];
+  const iend = [73, 69, 78, 68];
+  for (var i = 0; i < png.length; i++) {
+    if (data[i] != png[i]) return false;
+  }
+  for (var i = 0; i < iend.length; i++) {
+    if (data[data.length - 8 + i] != iend[i]) return false;
+  }
+  return true;
+}
 
 /// LG webOS Second Screen (SSAP) client. No agent, root, or TV app needed.
 /// LG requires explicit approval on the TV at initial registration.
@@ -697,6 +733,65 @@ class LgWebOsClient implements TvRemoteController {
       // Optional hello is not universally available after registration.
     }
     return paired.copyWith(macAddress: mac, deviceUuid: uuid);
+  }
+
+  /// Experimental LG firmware screenshot API. It returns a temporary LAN
+  /// image URL rather than sending image bytes through the SSAP socket.
+  /// A capture is only requested from the active remote on user action.
+  /// DRM video may be absent or black; no image is persisted or uploaded.
+  Future<Uint8List> takeSnapshot() async {
+    if (!connected) {
+      throw StateError('Connect to the TV before requesting a snapshot.');
+    }
+    Map<String, dynamic> payload;
+    try {
+      payload = await request('ssap://tv/executeOneShot');
+    } catch (_) {
+      throw StateError('This LG TV does not permit screen snapshots.');
+    }
+    final image = payload['imageUri'];
+    if (image is! String) {
+      throw StateError('This LG TV did not return a screen snapshot.');
+    }
+    final uri = safeLgSnapshotUri(image, device.host);
+    if (uri == null) {
+      throw StateError('TV supplied an unsafe snapshot address.');
+    }
+    final client = uri.scheme == 'https' ? _httpsClient() : HttpClient();
+    client.connectionTimeout = const Duration(seconds: 3);
+    try {
+      final req = await client.getUrl(uri).timeout(
+          const Duration(seconds: 4));
+      req.followRedirects = false;
+      req.headers.set(HttpHeaders.acceptHeader, 'image/jpeg, image/png');
+      final response = await req.close().timeout(
+          const Duration(seconds: 5));
+      if (response.statusCode != HttpStatus.ok) {
+        throw StateError('TV snapshot unavailable (HTTP ${response.statusCode}).');
+      }
+      const maxBytes = 4 * 1024 * 1024;
+      final declared = response.contentLength;
+      if (declared > maxBytes) {
+        throw StateError('TV snapshot exceeds the size limit.');
+      }
+      final bytes = BytesBuilder(copy: false);
+      await for (final part in response.timeout(
+          const Duration(seconds: 5))) {
+        bytes.add(part);
+        if (bytes.length > maxBytes) {
+          throw StateError('TV snapshot exceeds the size limit.');
+        }
+      }
+      final frame = bytes.takeBytes();
+      if (!isCompleteLgSnapshot(frame)) {
+        throw StateError('TV returned an invalid or incomplete image.');
+      }
+      return frame;
+    } on TimeoutException {
+      throw StateError('TV snapshot timed out.');
+    } finally {
+      client.close(force: true);
+    }
   }
 
   @override
