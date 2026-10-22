@@ -1842,6 +1842,66 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  bool _tvVisible(String location, String key) {
+    final selected = _locationFilter == 'automatic'
+        ? _detectedLocation : _locationFilter;
+    final matchingLocation = selected == 'all' ||
+        (selected == null && _locationFilter == 'automatic') ||
+        location == selected ||
+        (location == 'other' && _tvOnline[key] == true &&
+            _locationFilter == 'automatic');
+    return matchingLocation && (_showOffline || _tvOnline[key] == true);
+  }
+
+  Widget _tvStatus(String vendor, String host) {
+    final key = '$vendor:$host';
+    final outside = _wifiRange != null &&
+        !lanRangeContains(_wifiRange!, host);
+    final online = _tvOnline[key] == true;
+    final checking = _checkingTvStatus || _recoveringTvAddresses;
+    final label = online ? 'ONLINE'
+        : outside ? 'OTHER NETWORK'
+        : checking ? 'CHECKING' : 'OFFLINE';
+    final color = online ? Colors.green.shade700 :
+        Theme.of(context).colorScheme.outline;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(online ? Icons.check_circle : Icons.circle_outlined,
+          size: 15, color: color),
+      const SizedBox(width: 5),
+      Text(label, style: TextStyle(
+          fontSize: 10, color: color, fontWeight: FontWeight.w700)),
+    ]);
+  }
+
+  Future<void> _chooseTvType() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheet) => SafeArea(child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.tv_outlined),
+            title: const Text('LG webOS TV'),
+            subtitle: const Text('Agent-free, local TV pairing'),
+            onTap: () {
+              Navigator.pop(sheet);
+              unawaited(openLgWebOs());
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.tv),
+            title: const Text('Samsung Smart TV'),
+            subtitle: const Text('Tizen / Smart View local pairing'),
+            onTap: () {
+              Navigator.pop(sheet);
+              unawaited(openSamsungTv());
+            },
+          ),
+        ],
+      )),
+    );
+  }
+
   Widget deviceDashboard() {
     final visibleDevices = visibleSavedDevices(
       savedComputers,
@@ -1851,6 +1911,12 @@ class _RemoteScreenState extends State<RemoteScreen>
       currentNetwork: _wifiRange,
       showOffline: _showOffline,
     );
+    final onlineComputerCount =
+        savedComputers.where((tv) => _online[tv.id] == true).length;
+    final onlineTvCount =
+        savedLgTvs.where((tv) => _tvOnline['lg:${tv.host}'] == true).length +
+        savedSamsungTvs.where((tv) =>
+            _tvOnline['samsung:${tv.host}'] == true).length;
     final availabilityHint = savedDeviceAvailabilityHint(
       savedCount: savedComputers.length,
       onlineCount: savedComputers.where((d) => _online[d.id] == true).length,
