@@ -267,9 +267,13 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
       return;
     }
     final selected = await _auto.chooseFolder();
-    if (!selected || !mounted) return;
+    if (!selected || !mounted) {
+      return;
+    }
     final password = await _password(confirm: true);
-    if (password == null || !mounted) return;
+    if (password == null || !mounted) {
+      return;
+    }
     await _auto.enable(password);
     if (_auto.lastError != null) {
       throw StateError(_auto.lastError);
