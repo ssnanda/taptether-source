@@ -19,6 +19,7 @@ python3 "$ROOT/bin/9-tt-brand-icons.py"
 python3 "$ROOT/bin/4-sync-app-version.py"
 cd "$ROOT/app"
 flutter pub get
+bash "$ROOT/bin/2f-tt-ios-cloud-backup.sh"
 # Fail immediately on invalid Dart instead of after agent compilation/Xcode packaging.
 flutter analyze
 "$ROOT/bin/2e-tt-stage-mobile-agents.sh"
