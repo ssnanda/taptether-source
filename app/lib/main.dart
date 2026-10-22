@@ -878,6 +878,23 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (network == null || !mounted) {
         return;
       }
+      // Prefer a short local DNS/mDNS lookup over a full subnet sweep.
+      // A resolved address is NEVER trusted until the saved TLS pin and
+      // paired-phone authentication succeed in _reconcileScannedAgent.
+      for (final saved in savedComputers.take(12)) {
+        if (!mounted || !_appForeground) return;
+        if (_online[saved.id] == true) continue;
+        final addresses = await resolveSavedAgentLanAddresses(saved, network);
+        for (final address in addresses) {
+          if (!mounted || !_appForeground) return;
+          await _reconcileScannedAgent(address, passive: true);
+          if (_online[saved.id] == true) break;
+        }
+      }
+      if (!mounted || !_appForeground ||
+          (!force && savedComputers.every((d) => _online[d.id] == true))) {
+        return;
+      }
       final candidates = await findNearbyDevices(
         duration: const Duration(seconds: 2),
         scanPrefixes: [network.activePrefix],
