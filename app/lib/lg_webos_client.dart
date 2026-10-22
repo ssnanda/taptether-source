@@ -467,6 +467,7 @@ class LgWebOsClient implements TvRemoteController {
           secure: _secure,
           macAddress: device.macAddress,
           deviceUuid: device.deviceUuid,
+          location: device.location,
         );
       } catch (e) {
         failure = e;
