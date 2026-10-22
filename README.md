@@ -71,6 +71,42 @@ This registers the background login LaunchAgent and displays the LAN IP, token a
     ~/.local/bin/taptetherctl-mac status
     ~/.local/bin/taptetherctl-mac restart
 
+## Unified TV remotes (0.8.6)
+
+- **LG webOS and Samsung Tizen / Smart View**: agent-free local remote controls.
+  Pairing requires one-time approval on the television; authorizations and
+  nicknames are stored only in the phone's secure store.
+- Samsung discovery reads the vendor's local `/api/v2/` device information
+  (port 8001). Generic open ports are **never** called Samsung TVs. Encrypted
+  remote uses `wss://TV:8002`, with certificate pinning; older TVs may fall
+  back to on-LAN `ws://TV:8001` when no pinned certificate exists.
+- Samsung compact remote shares LG's one-screen layout. On LG, swipes move
+  the pointer; on Samsung, swipes translate to directional keys for broad
+  compatibility, with tap-as-OK. The full arrows/OK keypad opens on demand.
+  Text entry only works when a TV-supported text field has focus.
+- Apps are **only shown when confirmed by the device**. Samsung REST API
+  availability differs between models, and the finite catalog may omit some
+  installed applications. The foreground app is shown when exposed; the
+  movie/video title inside Netflix and YouTube usually is not.
+- The My Devices dashboard shows each saved computer and TV with a separate
+  live reachability state. `PAIRED` means authorized, not necessarily online.
+  TV location filtering, Show Offline, computer/TV counts and Add TV controls
+  are shared. The refresh button also checks both TV types.
+- A TV can retain its user nickname (for example, **Family Room TV**) and
+  vendor-provided UUID/MAC. Address recovery requires a stable match and
+  re-authentication with existing keys (including a TLS pin when supported);
+  it never trusts a reused IP address alone. Recovery scans are bounded to
+  the phone's current Wi-Fi range and throttled.
+- A top-right **On/Off** button issues an authenticated Power Off when
+  connected. Power On sends a local Wake-on-LAN packet only with a saved MAC
+  and requires the TV's network-standby setting. Some wireless and commercial
+  signage sets cannot be powered on remotely.
+- Commercial Samsung signage may run Android-based CMS players or firmware
+  without the Smart View WebSocket API. Such models require a separately
+  supported local protocol; compatibility is not assumed from the logo.
+- TapTether uses no cloud, accounts, analytics, remote telemetry or background
+  playback history. It does not install an agent on either TV.
+
 ## LG remote redesign (0.8.5)
 
 Version 0.8.5 adds a one-screen iPhone remote without numeric keypad or a
