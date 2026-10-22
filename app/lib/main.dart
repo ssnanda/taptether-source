@@ -846,7 +846,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         _checkingHeartbeat = false;
         if (mounted) setState(() {});
         if (mounted && savedComputers.isNotEmpty &&
-            !_online.values.any((online) => online)) {
+            savedComputers.any((d) => _online[d.id] != true)) {
           unawaited(_recoverSavedDevices());
         }
       }
@@ -910,10 +910,10 @@ class _RemoteScreenState extends State<RemoteScreen>
         }
       }
       if (!mounted || !_appForeground ||
-          (!force && _online.values.any((online) => online))) {
+          (!force && savedComputers.every((d) => _online[d.id] == true))) {
         return;
       }
-      // A zero-online Wi-Fi is the only automatic TCP scan trigger.
+      // Only remaining offline pairings trigger the bounded TCP scan.
       // At most 24 concurrent, 300ms per host and once every ten minutes.
       // Unlike manual discovery this scans ONLY the TapTether agent port.
       setState(() => _probingOfflineAgents = true);
@@ -928,7 +928,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       final savedIps = savedComputers.map((device) => device.host).toSet();
       for (final address in responders) {
         if (!mounted || !_appForeground ||
-            (!force && _online.values.any((online) => online))) {
+            (!force && savedComputers.every((d) => _online[d.id] == true))) {
           break;
         }
         if (_wifiRange != null &&
@@ -1903,7 +1903,15 @@ class _RemoteScreenState extends State<RemoteScreen>
         location == selected ||
         (location == 'other' && _tvOnline[key] == true &&
             _locationFilter == 'automatic');
-    return matchingLocation && (_showOffline || _tvOnline[key] == true);
+    if (_tvOnline[key] != true) {
+      // Offline TVs from another network never appear in My Devices.
+      // A saved IP is a last-known route, not proof of current presence.
+      final sameSubnet = _wifiRange != null &&
+          lanRangeContains(_wifiRange!, key.substring(key.indexOf(':') + 1));
+      return _showOffline && sameSubnet &&
+          (_locationFilter == 'automatic' || matchingLocation);
+    }
+    return matchingLocation;
   }
 
   Widget _tvStatus(String vendor, String host) {
