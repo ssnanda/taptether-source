@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'lan_scan.dart';
 import 'computer_store.dart';
 import 'scan_report.dart';
+import 'lg_webos_client.dart';
 
 /// Injecting a scanner permits deterministic tests of authenticated
 /// scan-to-paired-device reconciliation without touching real network hosts.
@@ -46,6 +47,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
   final _specificIp = TextEditingController();
   DetectedLanRange? _network;
   bool _checkingSpecificIp = false;
+  Map<int, TcpProbeStatus> _specificPortResults = {};
+  String? _lgProtocolResult;
   String? _notRespondingIp;
   bool _editedPrefix = false;
   List<LanHost> _hosts = [];
@@ -267,9 +270,28 @@ class _LanScanScreenState extends State<LanScanScreen> {
     setState(() {
       _checkingSpecificIp = true;
       _notRespondingIp = null;
+      _specificPortResults = {};
+      _lgProtocolResult = null;
       _error = null;
     });
     try {
+      final diagnostic = await Future.wait([3000, 3001].map(
+        (port) => probeTcpPort(ip, port),
+      ));
+      final results = <int, TcpProbeStatus>{
+        3000: diagnostic[0], 3001: diagnostic[1],
+      };
+      final hasLgPort = diagnostic.contains(TcpProbeStatus.open);
+      final lgHello = hasLgPort ? await readLgWebOsHello(ip,
+          connectTimeout: const Duration(milliseconds: 650),
+          replyTimeout: const Duration(seconds: 2)) : null;
+      final protocol = !hasLgPort
+          ? 'LG control service not accepting connections on 3000/3001.'
+          : lgHello == null
+              ? 'LG protocol not confirmed (open port alone is not proof).'
+              : 'LG webOS protocol confirmed.';
+      _report.add('$ip: LG 3000 ${tcpProbeLabel(results[3000]!)} · '
+          '3001 ${tcpProbeLabel(results[3001]!)} · $protocol');
       final found = await checkPrivateLanIp(ip);
       if (!mounted) return;
       _report.add(found == null
@@ -279,6 +301,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
       _verifyCandidate(found ??
           LanHost(ip: ip, hostname: ip, openPorts: const []));
       setState(() {
+        _specificPortResults = results;
+        _lgProtocolResult = protocol;
         if (found == null) {
           _notRespondingIp = ip;
         } else {
@@ -408,11 +432,11 @@ class _LanScanScreenState extends State<LanScanScreen> {
                 color: Theme.of(context).colorScheme.error)),
           ],
           const SizedBox(height: 18),
-          Text('Check a specific computer',
+          Text('Check a specific device',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          Text('A Mac may not appear in a full scan if its services are '
-              'blocked. Check its known IP directly, or pair it manually.',
+          Text('Test a computer or TV directly. LG webOS uses TCP '
+              '3000 (WebSocket) and 3001 (secure WebSocket).',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
           Row(children: [
@@ -424,7 +448,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
               autocorrect: false,
               decoration: const InputDecoration(
                 isDense: true,
-                labelText: 'Computer IP',
+                labelText: 'Device IP',
                 hintText: '192.168.1.77',
               ),
             )),
@@ -435,6 +459,17 @@ class _LanScanScreenState extends State<LanScanScreen> {
               child: Text(_checkingSpecificIp ? 'Checking…' : 'Check IP'),
             ),
           ]),
+          if (_specificPortResults.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('LG webOS connectivity',
+                style: Theme.of(context).textTheme.titleSmall),
+            for (final port in [3000, 3001])
+              Text('TCP $port: ${tcpProbeLabel(_specificPortResults[port]!)}'),
+            if (_lgProtocolResult != null) Text(_lgProtocolResult!),
+            const Text('A refused connection means the host rejected the '
+                'TCP connection; a timeout means no response arrived. '
+                'Neither proves that the TV is powered off.'),
+          ],
           if (_notRespondingIp != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -442,7 +477,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('No tested services responded at $_notRespondingIp. '
-                      'The computer may still be online with its ports '
+                      'The device may still be online with its ports '
                       'closed. This is not proof that it is offline.'),
                   TextButton(
                     onPressed: () => Navigator.pop(context, _notRespondingIp),
@@ -490,8 +525,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
               'or stale, and do not prove a device is online.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 6),
-          const Text('Tap any result to use its IP in the computer pairing form. '
-              'An IP scan does not authorize access to a computer.'),
+          const Text('Tap any result to use its IP in the pairing form. '
+              'An IP scan does not authorize access to a device.'),
         ],
       )),
     );
