@@ -119,7 +119,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     } catch (error) {
       if (mounted) {
         setState(() =>
-            _error = 'Backup operation failed: ' + error.toString());
+            _error = 'Backup operation failed: $error');
       }
     } finally {
       if (mounted) {
@@ -151,7 +151,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     final day = DateTime.now().toUtc().toIso8601String().split('T').first;
     final location = await FilePicker.platform.saveFile(
       dialogTitle: 'Save TapTether encrypted device backup',
-      fileName: 'TapTether-Devices-' + day + '.ttbackup',
+      fileName: 'TapTether-Devices-$day.ttbackup',
       type: FileType.custom,
       allowedExtensions: const ['ttbackup'],
       bytes: encrypted,
@@ -209,16 +209,17 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (!mounted) {
       return;
     }
+    final existingWarning = existing.isNotEmpty
+        ? '\n\nYou already have saved settings. Back those up first '
+          'if you want to keep them.'
+        : '';
     final approved = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
         title: const Text('Restore saved devices?'),
-        content: Text('Restore ' + verified.length.toString() +
-            ' encrypted pairing, identity and settings records. '
-            'Matching records in this installation will be overwritten.' +
-            (existing.isNotEmpty
-                ? '\n\nYou already have stored settings. Back those up '
-                  'first if you want to keep them.' : '') +
+        content: Text('Restore ${verified.length} encrypted pairing, '
+            'identity and settings records. Matching records in this '
+            'installation will be overwritten.$existingWarning'
             '\n\nYour app PIN is not changed.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialog, false),
@@ -264,7 +265,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
           'folder outside TapTether. This uses no TapTether cloud server.'),
       const SizedBox(height: 16),
       if (_entries != null)
-        Text('Saved secure-storage records: ' + _entries.toString(),
+        Text('Saved secure-storage records: $_entries',
             style: Theme.of(context).textTheme.bodySmall),
       if (_busy) const LinearProgressIndicator(),
       if (_error != null)
