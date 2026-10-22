@@ -2105,8 +2105,8 @@ class _RemoteScreenState extends State<RemoteScreen>
                 savedComputers.where((other) =>
                     other.host == device.host && other.id != device.id)
                     .isNotEmpty && _online[device.id] != true
-                    ? '${device.host} · Shared/stale IP · Verify identity'
-                    : '${device.host} · ${deviceLocations[device.location] ?? 'Other'}',
+                    ? 'Shared address · Verify device identity'
+                    : '${device.platform == 'darwin' ? 'Mac' : device.platform == 'windows' ? 'Windows' : 'Linux'} · ${deviceLocations[device.location] ?? 'Other'}',
                 maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (_online[device.id] == true &&
@@ -2147,7 +2147,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               title: Text(tv.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text('${tv.host} · LG webOS · Paired',
+              subtitle: const Text('LG webOS · Paired',
                   maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: _tvStatus('lg', tv.host),
               onTap: () => openLgWebOs(host: tv.host),
@@ -2165,7 +2165,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               title: Text(tv.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text('${tv.host} · Samsung TV · Paired',
+              subtitle: const Text('Samsung TV · Paired',
                   maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: _tvStatus('samsung', tv.host),
               onTap: () => openSamsungTv(host: tv.host),
