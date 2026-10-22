@@ -90,6 +90,30 @@ void main() {
     expect(restored.copyWith(name: 'Living Room').clientKey, 'saved-key');
   });
 
+  test('About TV inventory persists across storage, rename and IP changes', () {
+    const paired = LgTvDevice(
+      host: '192.168.68.86', name: 'Basement TV',
+      clientKey: 'paired-key', tlsPin: 'ABCDEF',
+      about: {
+        'Model': 'OLED65C4PUA',
+        'Firmware': '23.20.10',
+        'webOS version': '9.0',
+      },
+    );
+    final restored = LgTvDevice.fromJson(
+        Map<String, dynamic>.from(paired.toJson()));
+    expect(restored.about['Model'], 'OLED65C4PUA');
+    final moved = restored.copyWith(host: '192.168.68.125');
+    expect(moved.about['Firmware'], '23.20.10');
+    expect(moved.clientKey, 'paired-key');
+    expect(moved.tlsPin, 'ABCDEF');
+    expect(moved.copyWith(name: 'TV').about['webOS version'], '9.0');
+    final legacy = LgTvDevice.fromJson({
+      'host': '192.168.68.86', 'name': 'Legacy', 'clientKey': 'key',
+    });
+    expect(legacy.about, isEmpty);
+  });
+
   test('LG registration reuses saved key and grants pointer control', () {
     final device = LgTvDevice(
         host: '192.168.1.5', name: 'Living Room', clientKey: 'known-key');
