@@ -142,11 +142,9 @@ class LgTvStore {
     // solely because two different TVs have occupied the same address.
     bool sameIdentity(LgTvDevice saved) =>
         (device.deviceUuid.isNotEmpty && saved.deviceUuid.isNotEmpty &&
-            saved.deviceUuid == device.deviceUuid) ||
-        (device.macAddress.isNotEmpty && saved.macAddress.isNotEmpty &&
-            canonicalLgMac(device.macAddress) != null &&
-            canonicalLgMac(saved.macAddress) ==
-                canonicalLgMac(device.macAddress)) ||
+            saved.deviceUuid == device.deviceUuid &&
+            device.tlsPin.isNotEmpty && saved.tlsPin.isNotEmpty &&
+            saved.tlsPin.toUpperCase() == device.tlsPin.toUpperCase()) ||
         (device.tlsPin.isNotEmpty && saved.tlsPin.isNotEmpty &&
             saved.tlsPin.toUpperCase() == device.tlsPin.toUpperCase()) ||
         (saved.host == device.host && saved.clientKey == device.clientKey &&
