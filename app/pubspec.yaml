@@ -1,7 +1,7 @@
 name: taptether
 description: Local-first universal remote for trusted personal devices.
 publish_to: none
-version: 0.8.5+96
+version: 0.8.6+97
 environment:
   sdk: '>=3.4.0 <4.0.0'
 dependencies:
