@@ -732,7 +732,7 @@ class LgWebOsClient implements TvRemoteController {
   /// Whitelist only known non-secret fields; unsupported services are normal.
   /// No AI capability is inferred from a model name or firmware string.
   Future<Map<String, String>> readAboutTv() async {
-    if (!connected || device.clientKey.isEmpty) return const {};
+    if (!connected) return const {};
     final about = <String, String>{};
     void record(String label, Object? raw) {
       if (raw is! String && raw is! num && raw is! bool) return;
