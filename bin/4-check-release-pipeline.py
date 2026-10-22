@@ -183,7 +183,7 @@ assert "$settingsItem = [System.Windows.Forms.ToolStripMenuItem]::new('Settings'
 assert "$quitItem = $menu.Items.Add('Quit TapTether')" in win_tray
 assert 'if (Stop-ManagedAgent)' in win_tray
 
-# My Devices probes saved hosts first. If all are offline, passive recovery
+# My Devices probes saved hosts on the current subnet. Any offline pairing triggers passive recovery
 # uses one Wi-Fi UDP discovery plus a throttled bounded agent-port-only
 # TCP fallback. An open port never changes identity without saved TLS auth.
 recovery = (ROOT / "app" / "lib" / "device_recovery.dart").read_text(
@@ -193,7 +193,7 @@ assert "probeAgentControlPorts" in recovery
 assert "Socket.connect(ip, 48321" in recovery
 heartbeat = mobile.split(
     "  Future<void> _refreshHeartbeats() async {", 1)[1].split(
-    "  // Recover saved pairings quietly", 1)[0]
+    "  // Recover each offline saved pairing quietly", 1)[0]
 assert "_probeSavedDevice(device, phone)" in heartbeat
 assert "probeAgentControlPorts(" not in heartbeat
 assert "findNearbyDevices(" not in heartbeat
