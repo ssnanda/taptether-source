@@ -1676,8 +1676,24 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> openSecuritySettings() async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const SecuritySettingsScreen(),
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SecuritySettingsScreen(
+        onDevicesRestored: () async {
+          // Recreate Ed25519 identity after restoring the private seed,
+          // otherwise the old in-memory identity could fail authentication.
+          _cachedPhoneIdentity = null;
+          if (agent.configured) agent.disconnect();
+          _online.clear();
+          _tvOnline.clear();
+          await loadComputers();
+          await loadLgTvs();
+          await loadSamsungTvs();
+          if (mounted) {
+            unawaited(_refreshHeartbeats());
+            unawaited(_refreshTvStatuses());
+          }
+        },
+      ),
     ));
   }
 
@@ -2046,12 +2062,19 @@ class _RemoteScreenState extends State<RemoteScreen>
             children: [
               const Icon(Icons.devices_other_outlined, size: 36),
               const SizedBox(height: 12),
-              Text('No computers paired yet',
+              Text('No saved devices',
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
-              const Text('Pair a computer on your local network '
-                  'to reconnect with a single tap.'),
+              const Text('If you reinstalled TapTether, restore an '
+                  'encrypted device backup to recover your previous '
+                  'computers and TVs.'),
               const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: openSecuritySettings,
+                icon: const Icon(Icons.restore),
+                label: const Text('Restore saved devices'),
+              ),
+              const SizedBox(height: 6),
               FilledButton.icon(
                 onPressed: showPairForm,
                 icon: const Icon(Icons.add),
