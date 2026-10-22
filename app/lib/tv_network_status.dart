@@ -8,10 +8,17 @@ Future<bool> lgTvResponds(LgTvDevice saved) async {
       connectTimeout: const Duration(milliseconds: 330),
       replyTimeout: const Duration(milliseconds: 850));
   if (response == null) return false;
-  if (saved.deviceUuid.isNotEmpty && response.deviceUuid.isNotEmpty) {
-    return saved.deviceUuid == response.deviceUuid;
+  if (saved.deviceUuid.isNotEmpty && response.deviceUuid.isNotEmpty &&
+      saved.deviceUuid != response.deviceUuid) {
+    return false;
   }
-  return true;
+  // An SSAP hello is unauthenticated and DHCP can reassign the saved IP.
+  // A pinned certificate must match before showing a paired TV as online.
+  if (saved.tlsPin.isNotEmpty) {
+    return matchesLgTlsPin(saved.host, saved.tlsPin);
+  }
+  // Legacy unpinned pairings cannot establish verified online identity.
+  return false;
 }
 
 Future<bool> samsungTvResponds(SamsungTvDevice saved) async {
