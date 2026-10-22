@@ -88,6 +88,29 @@ void main() {
     expect(noVerified.length, 3);
   });
 
+  test('All locations hides off-subnet devices even with stale online flag', () {
+    final current = rangeFromWifi('192.168.68.100', '255.255.252.0')!;
+    final saved = [
+      host('old-mac', '192.168.1.86', 'home'),
+      host('lg-nearby', '192.168.68.86', 'home'),
+    ];
+    final visible = visibleSavedDevices(saved,
+        online: {'old-mac': true, 'lg-nearby': false},
+        locationFilter: 'all', currentLocation: 'home',
+        currentNetwork: current, showOffline: true);
+    expect(visible.map((d) => d.id), ['lg-nearby']);
+    // Once a pinned/authenticated discovery updates its IP, it returns.
+    final relocated = [
+      host('old-mac', '192.168.68.124', 'home'),
+      saved.last,
+    ];
+    final after = visibleSavedDevices(relocated,
+        online: {'old-mac': true, 'lg-nearby': false},
+        locationFilter: 'all', currentLocation: 'home',
+        currentNetwork: current, showOffline: true);
+    expect(after.map((d) => d.id), ['old-mac', 'lg-nearby']);
+  });
+
   test('automatic offline filter ignores saved location but enforces CIDR', () {
     final network = rangeFromWifi('192.168.68.50', '255.255.252.0')!;
     final devices = [
