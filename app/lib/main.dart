@@ -818,10 +818,18 @@ class _RemoteScreenState extends State<RemoteScreen>
         }
       } catch (_) {}
       final savedSnapshot = savedComputers.toList();
-      // Start every saved host immediately instead of waiting for discovery
-      // broadcasts, subnet probes, or a preceding batch to time out.
+      // Do not contact stale IPs on another subnet. They might now belong
+      // to an unrelated machine; discover locally and authenticate instead.
+      final currentNetwork = await detectLanRange() ?? _wifiRange;
+      if (currentNetwork != null && mounted) {
+        setState(() => _wifiRange = currentNetwork);
+      }
       await Future.wait(savedSnapshot.map((device) async {
-        final probe = await _probeSavedDevice(device, phone);
+        final onLan = currentNetwork != null &&
+            lanRangeContains(currentNetwork, device.host);
+        final probe = onLan
+            ? await _probeSavedDevice(device, phone)
+            : (online: false, version: null);
         if (!mounted || generation != _heartbeatGeneration) return;
         // Device may have been renamed/repaired while this ping was in flight.
         final stillSaved = savedComputers.any(
