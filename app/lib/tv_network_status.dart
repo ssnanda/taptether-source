@@ -31,7 +31,9 @@ Future<bool> samsungTvResponds(SamsungTvDevice saved) async {
 /// successful saved-credential reconnection. IP-only matches are forbidden.
 Future<LgTvDevice?> relocateLgTv(LgTvDevice saved) async {
   if (saved.deviceUuid.isEmpty || saved.clientKey.isEmpty ||
-      saved.tlsPin.isEmpty) return null;
+      saved.tlsPin.isEmpty) {
+    return null;
+  }
   final found = await discoverLgTvs();
   for (final candidate in found) {
     var identified = candidate;
@@ -39,7 +41,9 @@ Future<LgTvDevice?> relocateLgTv(LgTvDevice saved) async {
       identified = await readLgWebOsHello(candidate.host) ?? candidate;
     }
     if (identified.deviceUuid != saved.deviceUuid ||
-        candidate.host == saved.host) continue;
+        candidate.host == saved.host) {
+      continue;
+    }
     final client = LgWebOsClient(saved.copyWith(host: candidate.host));
     try {
       final verified = await client.connect();
@@ -58,15 +62,21 @@ Future<LgTvDevice?> relocateLgTv(LgTvDevice saved) async {
 Future<SamsungTvDevice?> relocateSamsungTv(
     SamsungTvDevice saved) async {
   if (saved.token.isEmpty ||
-      (saved.deviceId.isEmpty && saved.macAddress.isEmpty)) return null;
+      (saved.deviceId.isEmpty && saved.macAddress.isEmpty)) {
+    return null;
+  }
   final found = await discoverSamsungTvs();
   for (final candidate in found) {
-    if (candidate.host == saved.host) continue;
+    if (candidate.host == saved.host) {
+      continue;
+    }
     final sameId = saved.deviceId.isNotEmpty &&
         saved.deviceId == candidate.deviceId;
     final sameMac = saved.macAddress.isNotEmpty &&
         saved.macAddress == candidate.macAddress;
-    if (!sameId && !sameMac) continue;
+    if (!sameId && !sameMac) {
+      continue;
+    }
     final client = SamsungTvClient(saved.copyWith(host: candidate.host));
     try {
       final verified = await client.connect();
