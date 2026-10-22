@@ -6,6 +6,9 @@ import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'lg_webos_client.dart';
 import 'lg_webos_screen.dart';
+import 'samsung_tv_client.dart';
+import 'samsung_tv_screen.dart';
+import 'tv_network_status.dart';
 import 'remote_layout_settings.dart';
 import 'remote_mode_bar.dart';
 import 'stepped_scroll.dart';
@@ -503,6 +506,12 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _retryingConnection = false;
   List<SavedComputer> savedComputers = [];
   List<LgTvDevice> savedLgTvs = [];
+  List<SamsungTvDevice> savedSamsungTvs = [];
+  final Map<String, bool> _tvOnline = {};
+  final Map<String, DateTime> _tvLastSeen = {};
+  bool _checkingTvStatus = false;
+  bool _recoveringTvAddresses = false;
+  DateTime? _lastTvRecovery;
   List<DiscoveredDevice> nearbyComputers = [];
   bool searching = false;
   bool installingAgent = false;
@@ -669,6 +678,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(checkForUpdates());
     unawaited(loadComputers());
     unawaited(loadLgTvs());
+    unawaited(loadSamsungTvs());
     unawaited(_listenForAgentAnnouncements());
     unawaited(_refreshNetworkLocation());
     WidgetsBinding.instance.addObserver(this);
@@ -677,6 +687,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           AppLifecycleState.resumed) {
         unawaited(_refreshNetworkLocation());
         unawaited(_refreshHeartbeats());
+        unawaited(_refreshTvStatuses());
       }
     });
   }
@@ -716,6 +727,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       _syncScreen();
       unawaited(_refreshNetworkLocation());
       unawaited(_refreshHeartbeats());
+      unawaited(_refreshTvStatuses());
     } else {
       _stopScreen();
     }
@@ -734,11 +746,19 @@ class _RemoteScreenState extends State<RemoteScreen>
           // Recovery cooldown belongs to a network, not the lifetime of the
           // phone app. Recheck promptly after a Wi-Fi/subnet change.
           _lastPassiveDiscovery = null;
+          _lastTvRecovery = null;
+          _tvOnline.clear();
         }
         _lastNetworkId = identity;
         _wifiRange = current;
         _detectedLocation = label;
       });
+      if (changed) {
+        unawaited(_refreshTvStatuses());
+        if (savedLgTvs.isNotEmpty || savedSamsungTvs.isNotEmpty) {
+          unawaited(_recoverTvAddresses());
+        }
+      }
       if (changed && savedComputers.isNotEmpty) {
         // Invalidate probes started on the previous Wi-Fi before refreshing.
         _heartbeatGeneration++;
