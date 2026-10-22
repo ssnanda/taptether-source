@@ -1,14 +1,18 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'tv_remote_controller.dart';
+import 'lg_snapshot_pad.dart';
 
 /// Single-screen TV remote. Optional actions open overlays, never add rows.
 class LgCompactRemote extends StatefulWidget {
   const LgCompactRemote({super.key, required this.client,
-    required this.device, required this.onError});
+    required this.device, required this.onError, this.captureSnapshot});
   final TvRemoteController client;
   final Object device;
   final ValueChanged<String> onError;
+  /// Only LG remotes with the experimental screenshot API supply this.
+  final Future<Uint8List> Function()? captureSnapshot;
   @override
   State<LgCompactRemote> createState() => _LgCompactRemoteState();
 }
@@ -323,7 +327,15 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
               _apps.isEmpty ? null : _openApps),
         ]),
         SizedBox(height: tight ? 4 : 8),
-        Expanded(child: Semantics(
+        if (widget.captureSnapshot != null)
+          Expanded(child: LgSnapshotPad(
+            capture: widget.captureSnapshot!,
+            movePointer: widget.client.pointerMove,
+            clickPointer: widget.client.pointerClick,
+            onError: widget.onError,
+          ))
+        else
+          Expanded(child: Semantics(
           label: widget.client.pointerIsRelative
               ? 'TV touchpad. Swipe to move pointer and tap to click.'
               : 'TV touchpad. Swipe for arrow navigation and tap for OK.',
