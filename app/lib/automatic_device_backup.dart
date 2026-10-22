@@ -44,9 +44,13 @@ class AutomaticDeviceBackup extends ChangeNotifier {
   String? get lastError => _lastError;
 
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized) {
+      return;
+    }
     _initialized = true;
-    if (!Platform.isIOS) return;
+    if (!Platform.isIOS) {
+      return;
+    }
     try {
       final secret = await _secure.read(key: _passwordKey);
       _enabled = secret != null && secret.length >= 12;
@@ -61,7 +65,9 @@ class AutomaticDeviceBackup extends ChangeNotifier {
     _poll ??= Timer.periodic(const Duration(seconds: 60), (_) {
       requestSoon();
     });
-    if (_enabled) requestSoon();
+    if (_enabled) {
+      requestSoon();
+    }
   }
 
   Future<void> refreshFolder() async {
@@ -118,7 +124,9 @@ class AutomaticDeviceBackup extends ChangeNotifier {
   }
 
   void requestSoon() {
-    if (!_initialized || !_enabled || !Platform.isIOS) return;
+    if (!_initialized || !_enabled || !Platform.isIOS) {
+      return;
+    }
     _scheduled?.cancel();
     _scheduled = Timer(const Duration(seconds: 7), () {
       unawaited(backupNow());
@@ -126,7 +134,9 @@ class AutomaticDeviceBackup extends ChangeNotifier {
   }
 
   Future<bool> backupNow({bool force = false}) async {
-    if (_busy || !_enabled || !Platform.isIOS) return false;
+    if (_busy || !_enabled || !Platform.isIOS) {
+      return false;
+    }
     _busy = true;
     _lastError = null;
     notifyListeners();
@@ -142,7 +152,9 @@ class AutomaticDeviceBackup extends ChangeNotifier {
       // Hash only in memory. Never record a key or private credential in logs.
       final ordered = SplayTreeMap<String, String>.from(selected);
       final digest = sha256.convert(utf8.encode(jsonEncode(ordered))).toString();
-      if (!force && digest == _lastDigest) return false;
+      if (!force && digest == _lastDigest) {
+        return false;
+      }
 
       final encrypted = await DeviceBackupCodec.encrypt(selected, password);
       final response = await _channel.invokeMapMethod<String, dynamic>(
