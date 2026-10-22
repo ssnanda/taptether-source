@@ -854,7 +854,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   // Recover saved pairings quietly when ALL saved hosts fail authenticated
-  // heartbeats. UDP first, then a throttled, bounded TCP agent-port probe
+  // heartbeats. Local DNS, then UDP, then a bounded TCP agent-port probe
   // when broadcast discovery is blocked by iOS or the Wi-Fi router.
   // Raw TCP acceptance is NEVER evidence of identity or an online device.
   Future<void> _recoverSavedDevices({bool force = false}) async {
