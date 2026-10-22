@@ -856,7 +856,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   // Raw TCP acceptance is NEVER evidence of identity or an online device.
   Future<void> _recoverSavedDevices({bool force = false}) async {
     if (!mounted || !_appForeground || savedComputers.isEmpty ||
-        _recoveringDiscovery || _scanningToReconcile) {
+        _recoveringDiscovery || _scanningToReconcile ||
+        (force && savedComputers.every((d) => _online[d.id] == true))) {
       return;
     }
     final now = DateTime.now();
