@@ -33,7 +33,7 @@ Future<LgTvDevice?> relocateLgTv(LgTvDevice saved) async {
   if (saved.clientKey.isEmpty || saved.tlsPin.isEmpty) {
     return null;
   }
-  final found = await discoverLgTvs();
+  final found = await discoverLgTvs(scanEntireLan: true);
   for (final candidate in found) {
     var identified = candidate;
     if (identified.deviceUuid.isEmpty) {
