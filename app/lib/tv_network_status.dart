@@ -30,8 +30,7 @@ Future<bool> samsungTvResponds(SamsungTvDevice saved) async {
 /// Only auto-migrate trusted devices after stable-ID matching AND a
 /// successful saved-credential reconnection. IP-only matches are forbidden.
 Future<LgTvDevice?> relocateLgTv(LgTvDevice saved) async {
-  if (saved.deviceUuid.isEmpty || saved.clientKey.isEmpty ||
-      saved.tlsPin.isEmpty) {
+  if (saved.clientKey.isEmpty || saved.tlsPin.isEmpty) {
     return null;
   }
   final found = await discoverLgTvs();
@@ -40,8 +39,15 @@ Future<LgTvDevice?> relocateLgTv(LgTvDevice saved) async {
     if (identified.deviceUuid.isEmpty) {
       identified = await readLgWebOsHello(candidate.host) ?? candidate;
     }
-    if (identified.deviceUuid != saved.deviceUuid ||
-        candidate.host == saved.host) {
+    if (candidate.host == saved.host) {
+      continue;
+    }
+    final matchesUuid = saved.deviceUuid.isNotEmpty &&
+        identified.deviceUuid == saved.deviceUuid;
+    // Existing TLS certificate is a stronger identifier than an IP, and
+    // permits recovery for legacy TV pairings without an exposed UUID.
+    if (!matchesUuid &&
+        !await matchesLgTlsPin(candidate.host, saved.tlsPin)) {
       continue;
     }
     final client = LgWebOsClient(saved.copyWith(host: candidate.host));
