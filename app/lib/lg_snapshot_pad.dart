@@ -220,22 +220,32 @@ class _LgSnapshotPadState extends State<LgSnapshotPad>
     final scheme = Theme.of(context).colorScheme;
     return Column(children: [
       Row(children: [
-        ChoiceChip(
-          label: const Text('Touchpad'),
-          selected: !_snapshot,
-          onSelected: (_) => _select(false),
-        ),
-        const SizedBox(width: 6),
-        ChoiceChip(
-          label: const Text('Snapshot'),
-          selected: _snapshot,
-          onSelected: (_) => _select(true),
-        ),
-        const Spacer(),
+        Expanded(child: TextButton(
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            minimumSize: const Size(0, 40),
+            visualDensity: VisualDensity.compact,
+            backgroundColor: !_snapshot ? scheme.primaryContainer : null,
+          ),
+          onPressed: () => _select(false),
+          child: const Text('Touchpad', maxLines: 1),
+        )),
+        const SizedBox(width: 5),
+        Expanded(child: TextButton(
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            minimumSize: const Size(0, 40),
+            visualDensity: VisualDensity.compact,
+            backgroundColor: _snapshot ? scheme.primaryContainer : null,
+          ),
+          onPressed: () => _select(true),
+          child: const Text('Snapshot', maxLines: 1),
+        )),
         if (_snapshot) ...[
           IconButton(
             tooltip: 'Refresh TV snapshot',
             onPressed: _busy ? null : () => unawaited(_refresh()),
+            visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.refresh),
           ),
           IconButton(
@@ -243,6 +253,7 @@ class _LgSnapshotPadState extends State<LgSnapshotPad>
                 ? 'Stop automatic snapshots'
                 : 'Auto refresh every 15 seconds',
             onPressed: _toggleAuto,
+            visualDensity: VisualDensity.compact,
             icon: Icon(_automatic ? Icons.timer : Icons.timer_outlined),
           ),
         ],
