@@ -677,10 +677,14 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
     unawaited(loadComputers());
-    unawaited(loadLgTvs());
-    unawaited(loadSamsungTvs());
+    // Load both TV stores and current Wi-Fi before attempting a single
+    // bounded startup address recovery (including after app reinstall/login).
+    unawaited(Future.wait([
+      loadLgTvs(),
+      loadSamsungTvs(),
+      _refreshNetworkLocation(),
+    ]).then((_) => _recoverTvAddresses()));
     unawaited(_listenForAgentAnnouncements());
-    unawaited(_refreshNetworkLocation());
     WidgetsBinding.instance.addObserver(this);
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (WidgetsBinding.instance.lifecycleState ==
@@ -885,7 +889,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         }
       }
       if (!mounted || !_appForeground ||
-          _online.values.any((online) => online)) {
+          (!force && _online.values.any((online) => online))) {
         return;
       }
       // A zero-online Wi-Fi is the only automatic TCP scan trigger.
@@ -903,7 +907,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       final savedIps = savedComputers.map((device) => device.host).toSet();
       for (final address in responders) {
         if (!mounted || !_appForeground ||
-            _online.values.any((online) => online)) {
+            (!force && _online.values.any((online) => online))) {
           break;
         }
         if (_wifiRange != null &&
