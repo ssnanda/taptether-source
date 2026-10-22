@@ -288,6 +288,60 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     }
   }
 
+  Future<void> _showAboutTv(LgTvDevice tv) async {
+    // Refresh on demand if connected; previously captured information remains
+    // readable while the TV is offline.
+    if (_ready && _session != null && _connected?.host == tv.host) {
+      await _identify(_session!, _connected!);
+    }
+    if (!mounted) return;
+    final latest = _saved.where((item) =>
+        item.host == tv.host ||
+        (tv.tlsPin.isNotEmpty && item.tlsPin == tv.tlsPin));
+    final details = latest.isEmpty ? tv : latest.first;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('About TV'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              _aboutLine('Name', details.name),
+              _aboutLine('IP address', details.host),
+              _aboutLine('Connection', details.secure
+                  ? 'Encrypted webOS LAN' : 'Legacy webOS LAN'),
+              if (details.macAddress.isNotEmpty)
+                _aboutLine('MAC address', details.macAddress),
+              if (details.deviceUuid.isNotEmpty)
+                _aboutLine('Device UUID', details.deviceUuid),
+              if (details.about.isEmpty)
+                const Text('Model and firmware information will be captured '
+                    'when the paired TV responds to device information queries.'),
+              for (final entry in details.about.entries)
+                _aboutLine(entry.key, entry.value),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  Widget _aboutLine(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12)),
+        SelectableText(value),
+      ],
+    ),
+  );
+
   Future<void> _reloadSaved() async {
     final devices = await _store.read();
     if (mounted) {
