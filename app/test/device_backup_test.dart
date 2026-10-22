@@ -1,0 +1,74 @@
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:taptether/device_backup.dart';
+
+void main() {
+  const password = 'correct-horse-battery-staple-2026';
+  const records = <String, String>{
+    'taptether.trusted.computers.v1': '[{"name":"Desktop"}]',
+    'taptether.lg.webos.pairings.v1': '[{"name":"Family Room TV"}]',
+    'taptether.samsung.tv.pairings.v1': '[{"name":"Office Samsung"}]',
+    'taptether.device.ed25519.v1': '{"private":"secret","public":"key"}',
+    'taptether.ssh.keys.pem.v2.mykey': 'sensitive-ssh-private-key',
+    'taptether.network.locations.v1': '{"home":"ssid"}',
+  };
+
+  test('encrypted backup restores all supported pairings and phone identity',
+      () async {
+    final encrypted = await DeviceBackupCodec.encrypt(records, password);
+    expect(utf8.decode(encrypted), isNot(contains('sensitive-ssh')));
+    expect(utf8.decode(encrypted), isNot(contains('Family Room TV')));
+    final decrypted = await DeviceBackupCodec.decrypt(encrypted, password);
+    expect(decrypted, records);
+  });
+
+  test('backups use randomized salt and nonce', () async {
+    final a = await DeviceBackupCodec.encrypt(records, password);
+    final b = await DeviceBackupCodec.encrypt(records, password);
+    expect(a, isNot(b));
+  });
+
+  test('reject incorrect password without returning keys', () async {
+    final encrypted = await DeviceBackupCodec.encrypt(records, password);
+    await expectLater(
+      DeviceBackupCodec.decrypt(encrypted, 'wrong-but-long-passphrase'),
+      throwsFormatException,
+    );
+  });
+
+  test('detect encrypted data tampering before restore', () async {
+    final encrypted = await DeviceBackupCodec.encrypt(records, password);
+    final data = jsonDecode(utf8.decode(encrypted)) as Map<String, dynamic>;
+    final cipher = data['ciphertext'] as String;
+    data['ciphertext'] = (cipher[0] == 'A' ? 'B' : 'A') + cipher.substring(1);
+    await expectLater(
+      DeviceBackupCodec.decrypt(utf8.encode(jsonEncode(data)), password),
+      throwsFormatException,
+    );
+  });
+
+  test('do not export app lock or arbitrary secure storage values', () {
+    final chosen = DeviceBackupCodec.selectKeys({
+      ...records,
+      'taptether.lock.hash.v1': 'six-digit-pin-hash',
+      'taptether.lock.bio.v1': 'true',
+      'unrelated.password': 'someone-elses-credential',
+    });
+    expect(chosen.length, records.length);
+    expect(chosen.containsKey('taptether.lock.hash.v1'), isFalse);
+    expect(chosen.containsKey('unrelated.password'), isFalse);
+  });
+
+  test('require long passwords and reject unknown backup schema', () async {
+    await expectLater(DeviceBackupCodec.encrypt(records, '123456'),
+        throwsFormatException);
+    final encrypted = await DeviceBackupCodec.encrypt(records, password);
+    final changed = jsonDecode(utf8.decode(encrypted)) as Map<String, dynamic>;
+    changed['version'] = 2;
+    await expectLater(
+      DeviceBackupCodec.decrypt(utf8.encode(jsonEncode(changed)), password),
+      throwsFormatException,
+    );
+  });
+}
