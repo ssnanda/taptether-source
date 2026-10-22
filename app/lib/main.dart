@@ -1720,10 +1720,10 @@ class _RemoteScreenState extends State<RemoteScreen>
         ),
         ListTile(
           leading: const Icon(Icons.tv_outlined),
-          title: const Text('LG webOS TV'),
+          title: const Text('TV Remotes'),
           onTap: () {
             Navigator.pop(context);
-            openLgWebOs();
+            unawaited(_chooseTvType());
           },
         ),
         ListTile(
@@ -1753,6 +1753,14 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () {
                 Navigator.pop(context);
                 openLgWebOs();
+              },
+            ), 
+            ListTile(
+              leading: const Icon(Icons.tv),
+              title: const Text('Add Samsung Smart TV'),
+              onTap: () {
+                Navigator.pop(context);
+                openSamsungTv();
               },
             ),
             ListTile(
@@ -2174,6 +2182,11 @@ class _RemoteScreenState extends State<RemoteScreen>
             avatar: const Icon(Icons.add, size: 18),
             label: const Text('Pair'),
             onPressed: showPairForm,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.tv_outlined, size: 18),
+            label: const Text('TV'),
+            onPressed: _chooseTvType,
           ),
           ActionChip(
             avatar: const Icon(Icons.qr_code_scanner, size: 18),
