@@ -937,7 +937,9 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Future<void> _refreshDevicesManually() async {
     if (_checkingHeartbeat || _recoveringDiscovery ||
-        _recoveringTvAddresses || _checkingTvStatus) return;
+        _recoveringTvAddresses || _checkingTvStatus) {
+      return;
+    }
     await Future.wait([
       _refreshHeartbeats(),
       _refreshTvStatuses(),
