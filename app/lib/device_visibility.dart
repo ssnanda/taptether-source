@@ -30,7 +30,8 @@ List<SavedComputer> visibleSavedDevices(
     // to this Wi-Fi subnet, regardless of a manual location selection.
     // No network detected => do not guess that an old IP is nearby.
     if (online[device.id] != true) {
-      return showOffline && onCurrentNetwork && matchesLocation;
+      return showOffline && onCurrentNetwork &&
+          (locationFilter == 'automatic' || matchesLocation);
     }
     return matchesLocation;
   }).toList();
