@@ -36,6 +36,9 @@ class LanHost {
       }
     }
     if (openPorts.contains(48321)) return 'TapTether computer (unverified)';
+    if (openPorts.contains(3001) || openPorts.contains(3000)) {
+      return 'Possible LG webOS TV (unverified)';
+    }
     if (openPorts.contains(3389)) return 'Remote Desktop computer';
     if (openPorts.contains(445)) return 'File sharing device';
     if (openPorts.contains(22)) return 'SSH-enabled computer / server';
@@ -57,6 +60,9 @@ class LanHost {
 
   String get deviceHint {
     if (openPorts.contains(48321)) return 'TapTether agent (likely)';
+    if (openPorts.contains(3001) || openPorts.contains(3000)) {
+      return 'LG webOS remote port open (TV identity unverified)';
+    }
     if (openPorts.contains(3389)) return 'Remote Desktop device';
     if (openPorts.contains(445)) return 'File sharing / computer';
     if (openPorts.contains(22)) return 'SSH-enabled computer or server';
@@ -67,7 +73,51 @@ class LanHost {
   }
 }
 
-const lanScanPorts = <int>[48321, 22, 80, 443, 445, 3389];
+const lanScanPorts = <int>[48321, 3001, 3000, 22, 80, 443, 445, 3389];
+
+/// An open TCP port does not establish that a device is an LG TV.
+enum TcpProbeStatus { open, refused, timedOut, unreachable, error }
+
+String tcpProbeLabel(TcpProbeStatus status) => switch (status) {
+  TcpProbeStatus.open => 'Open',
+  TcpProbeStatus.refused => 'Refused',
+  TcpProbeStatus.timedOut => 'Timed out',
+  TcpProbeStatus.unreachable => 'Unreachable',
+  TcpProbeStatus.error => 'Error',
+};
+
+/// Manual-only diagnostics. Keep full-scan probes lightweight and bounded.
+Future<TcpProbeStatus> probeTcpPort(String host, int port, {
+  Duration timeout = const Duration(milliseconds: 900),
+}) async {
+  if (!isPrivateIPv4(host) || port < 1 || port > 65535) {
+    throw const FormatException('Invalid private LAN host or TCP port');
+  }
+  try {
+    final socket = await Socket.connect(host, port, timeout: timeout);
+    socket.destroy();
+    return TcpProbeStatus.open;
+  } on TimeoutException {
+    return TcpProbeStatus.timedOut;
+  } on SocketException catch (error) {
+    if (error.osError?.errorCode == 61 || error.osError?.errorCode == 111 ||
+        error.osError?.errorCode == 10061) {
+      return TcpProbeStatus.refused;
+    }
+    if (error.osError?.errorCode == 51 || error.osError?.errorCode == 65 ||
+        error.osError?.errorCode == 101 || error.osError?.errorCode == 113 ||
+        error.osError?.errorCode == 10051 || error.osError?.errorCode == 10065) {
+      return TcpProbeStatus.unreachable;
+    }
+    if (error.message.toLowerCase().contains('timed out')) {
+      return TcpProbeStatus.timedOut;
+    }
+    return TcpProbeStatus.error;
+  } catch (_) {
+    return TcpProbeStatus.error;
+  }
+}
+
 
 bool validPrivate24Prefix(String prefix) =>
     isPrivateIPv4('${prefix.trim()}.1');
