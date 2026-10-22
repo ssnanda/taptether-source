@@ -28,19 +28,29 @@ Uri? safeLgSnapshotUri(String raw, String host) {
 
 /// Reject truncated and unexpected image responses before displaying them.
 bool isCompleteLgSnapshot(Uint8List data) {
-  if (data.length < 16) return false;
+  if (data.length < 16) {
+    return false;
+  }
   final jpeg = data[0] == 0xff && data[1] == 0xd8 &&
       data[2] == 0xff && data[data.length - 2] == 0xff &&
       data.last == 0xd9;
-  if (jpeg) return true;
-  if (data.length < 20) return false;
+  if (jpeg) {
+    return true;
+  }
+  if (data.length < 20) {
+    return false;
+  }
   const png = [137, 80, 78, 71, 13, 10, 26, 10];
   const iend = [73, 69, 78, 68];
   for (var i = 0; i < png.length; i++) {
-    if (data[i] != png[i]) return false;
+    if (data[i] != png[i]) {
+      return false;
+    }
   }
   for (var i = 0; i < iend.length; i++) {
-    if (data[data.length - 8 + i] != iend[i]) return false;
+    if (data[data.length - 8 + i] != iend[i]) {
+      return false;
+    }
   }
   return true;
 }
