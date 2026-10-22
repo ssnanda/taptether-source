@@ -5,8 +5,10 @@ import 'lg_compact_remote.dart';
 
 /// Phone-side LG remote: on-screen controls only, no agent on the TV.
 class LgWebOsScreen extends StatefulWidget {
-  const LgWebOsScreen({super.key, this.initialHost, this.onSaved});
+  const LgWebOsScreen({super.key, this.initialHost,
+    this.initialLocation = 'other', this.onSaved});
   final String? initialHost;
+  final String initialLocation;
   final Future<void> Function()? onSaved;
   @override
   State<LgWebOsScreen> createState() => _LgWebOsScreenState();
@@ -103,7 +105,10 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
           ? 'Approve TapTether on the TV screen.'
           : 'Connecting…';
     });
-    final client = LgWebOsClient(tv);
+    final client = LgWebOsClient(tv.copyWith(
+      location: tv.location == 'other'
+          ? widget.initialLocation : tv.location,
+    ));
     try {
       await _session?.disconnect();
       _session = null;
@@ -190,7 +195,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
 
   Future<void> _rename(LgTvDevice tv) async {
     final controller = TextEditingController(
-      text: tv.name == 'LG webOS TV' ? 'Family Room TV' : tv.name,
+      text: tv.name == 'LG webOS TV' ? '' : tv.name,
     );
     final updated = await showDialog<String>(
       context: context,
