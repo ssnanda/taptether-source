@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Protect instant saved-device loading while allowing bounded UDP recovery.
 
-No TCP sweep during heartbeats. After zero online, throttle a bounded\nagent-port-only TCP recovery across the current Wi-Fi CIDR.
+No TCP sweep during heartbeats. When a paired computer is offline, throttle bounded agent-port-only TCP\nrecovery across the current Wi-Fi CIDR.
 """
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 main = (root / 'app/lib/main.dart').read_text()
 a = main.index('  Future<void> _refreshHeartbeats() async {')
-b = main.index('  // Recover saved pairings quietly', a)
+b = main.index('  // Recover each offline saved pairing quietly', a)
 body = main[a:b]
 for forbidden in ('findNearbyDevices(', 'probeAgentControlPorts(',
                   'scanPrefixes', 'InternetAddress.lookup(',
@@ -38,7 +38,7 @@ assert 'probeAgentControlPorts(' in recovery
 assert 'parallelism: 24' in recovery
 assert 'maxHits: 16' in recovery
 assert 'Duration(minutes: 10)' in recovery
-assert '_online.values.any((online) => online)' in recovery
+assert 'savedComputers.every((d) => _online[d.id] == true)' in recovery
 assert '_reconcileScannedAgent(address, passive: true)' in recovery
 assert 'if (_probingOfflineAgents)' not in recovery
 assert 'checking: _checkingHeartbeat || _recoveringDiscovery' in main
