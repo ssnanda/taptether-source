@@ -104,62 +104,29 @@ List<String> agentTcpProbeAddresses(DetectedLanRange network, {
 
 
 /// Resolve a saved agent's local DNS name before resorting to a subnet scan.
-/// DNS and mDNS are untrusted routing hints: callers MUST authenticate the
-/// pinned TLS certificate and paired phone before persisting an address.
+/// DNS and mDNS are untrusted hints; callers MUST authenticate the saved
+/// certificate and paired phone before changing a stored address.
 String? localAgentDnsName(String savedName) {
   final name = savedName.trim().toLowerCase();
-  if (name.isEmpty || name.length > 253 ||
-      name.contains(RegExp(r'[\\s/@:]'))) {
+  if (name.isEmpty || name.length > 253 || name.contains(' ') ||
+      name.contains('/') || name.contains('@') || name.contains(':')) {
     return null;
   }
-  final candidate = name.endsWith('.') ? name.substring(0, name.length - 1) : name;
+  final candidate = name.endsWith('.')
+      ? name.substring(0, name.length - 1) : name;
   if (isPrivateIPv4(candidate)) return null;
   final local = candidate.endsWith('.local')
       ? candidate : (!candidate.contains('.') ? '$candidate.local' : '');
-  if (local.isEmpty || !RegExp(r'^[a-z0-9-]+(\\.[a-z0-9-]+)*\\.local
-/// Crucially, an open TCP port is NEVER enough to change a paired device.
-/// The caller must authenticate using the SAVED phone identity and TLS pin.
-/// This fallback works where UDP discovery/mDNS is blocked on iOS Wi-Fi.
-Future<List<String>> probeAgentControlPorts(
-  DetectedLanRange network, {
-  int parallelism = 48,
-  int maxHits = 24,
-  Duration timeout = const Duration(milliseconds: 320),
-  void Function(String ip, bool accepts)? onProbe,
-}) async {
-  final addresses = agentTcpProbeAddresses(network);
-  final found = <String>[];
-  final workers = parallelism.clamp(1, 64);
-  for (var index = 0; index < addresses.length; index += workers) {
-    final batch = addresses.skip(index).take(workers).toList();
-    final hits = await Future.wait(batch.map((ip) async {
-      try {
-        final socket = await Socket.connect(ip, 48321, timeout: timeout);
-        socket.destroy();
-        return ip;
-      } on SocketException {
-        return null;
-      } on TimeoutException {
-        return null;
-      }
-    }));
-    for (var i = 0; i < batch.length; i++) {
-      onProbe?.call(batch[i], hits[i] != null);
-    }
-    found.addAll(hits.whereType<String>());
-    if (found.length >= maxHits) break;
-  }
-  return found.take(maxHits).toList();
-}
-)
-      .hasMatch(local)) {
+  final labels = local.split('.');
+  if (labels.length < 2 || labels.last != 'local' ||
+      labels.any((label) => label.isEmpty || label.length > 63 ||
+          !RegExp(r'^[a-z0-9-]+$').hasMatch(label))) {
     return null;
   }
   return local;
 }
 
-/// At most a few DNS addresses on the current Wi-Fi subnet. A DNS reply
-/// cannot change a saved pairing by itself.
+/// DNS only suggests IPs within the phone's current Wi-Fi CIDR.
 Future<List<String>> resolveSavedAgentLanAddresses(
     SavedComputer saved, DetectedLanRange network, {
     Future<List<InternetAddress>> Function(String host)? lookup,
