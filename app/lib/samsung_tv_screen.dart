@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'lg_compact_remote.dart';
-import 'lan_scan.dart';
+import 'discovery.dart';
 import 'samsung_tv_client.dart';
 import 'tv_lan_utils.dart';
 
