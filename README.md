@@ -103,6 +103,25 @@ A reinstall without an earlier backup cannot reconstruct credentials that
 were already removed from the Keychain/secure storage. Re-pair those devices
 once, then save a protected backup.
 
+## LG webOS Snapshot (0.8.9)
+
+On a paired LG TV, the compact remote's touchpad includes **Touchpad** and
+**Snapshot** modes. Snapshot uses the undocumented
+`ssap://tv/executeOneShot` call and fetches the returned JPEG/PNG only
+from the paired TV's LAN IP. Frames are limited to 4 MiB, are validated, are
+not written to storage and are never uploaded. The remote still supports
+swipe-to-move and tap-to-click over the snapshot.
+
+A refresh button captures on demand; the optional 15-second timer captures
+only while Snapshot is selected and the phone app is foregrounded. The timer
+stops on exit, and repeated failures disable refresh. Returning to Touchpad
+clears the frame.
+
+LG does **not** guarantee the capture API on retail webOS TVs. Firmware can
+reject the request, and Netflix/other DRM playback commonly displays black
+rather than protected video. This is an experimental remote-navigation aid,
+not live TV streaming or a DRM bypass. Samsung retains its existing touchpad.
+
 ## Unified TV remotes (0.8.6)
 
 - **LG webOS and Samsung Tizen / Smart View**: agent-free local remote controls.
