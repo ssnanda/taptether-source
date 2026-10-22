@@ -25,7 +25,7 @@ void main() {
     expect(visible.map((d) => d.id), ['home-online']);
   });
 
-  test('show offline and manual categories always remain available', () {
+  test('show offline requires same subnet even with a manual category', () {
     final devices = [
       host('home', '192.168.68.81', 'home'),
       host('office', '10.30.1.10', 'office'),
@@ -33,7 +33,8 @@ void main() {
     final visible = visibleSavedDevices(devices,
       online: {'home': false, 'office': true},
       locationFilter: 'home', currentLocation: 'office',
-      currentNetwork: null, showOffline: true);
+      currentNetwork: rangeFromWifi('192.168.68.100', '255.255.252.0'),
+      showOffline: true);
     expect(visible.map((d) => d.id), ['home']);
   });
 
@@ -73,16 +74,31 @@ void main() {
     final visible = visibleSavedDevices(all,
       online: {'mac': true, 'old-ip-entry': false, 'lenovo': false},
       locationFilter: 'all', currentLocation: 'home',
-      currentNetwork: null, showOffline: true);
+      currentNetwork: rangeFromWifi('192.168.68.25', '255.255.252.0'),
+      showOffline: true);
     expect(visible.map((device) => device.id), ['mac', 'lenovo']);
     expect(all.length, 3); // Never mutate/delete saved credentials.
     final noVerified = visibleSavedDevices(all,
       online: {'mac': false, 'old-ip-entry': false, 'lenovo': false},
       locationFilter: 'all', currentLocation: 'home',
-      currentNetwork: null, showOffline: true);
+      currentNetwork: rangeFromWifi('192.168.68.25', '255.255.252.0'),
+      showOffline: true);
     // Same-IP offline devices may be different historical machines;
     // retain both in absence of proof.
     expect(noVerified.length, 3);
+  });
+
+  test('automatic offline filter ignores saved location but enforces CIDR', () {
+    final network = rangeFromWifi('192.168.68.50', '255.255.252.0')!;
+    final devices = [
+      host('old-home', '192.168.69.20', 'home'),
+      host('office', '10.20.1.8', 'office'),
+    ];
+    final visible = visibleSavedDevices(devices,
+        online: {'old-home': false, 'office': false},
+        locationFilter: 'automatic', currentLocation: 'office',
+        currentNetwork: network, showOffline: true);
+    expect(visible.map((d) => d.id), ['old-home']);
   });
 
   test('offline and unverified devices never start connection attempts', () {
@@ -118,14 +134,13 @@ void main() {
       currentNetwork: rangeFromWifi('192.168.68.25', '255.255.252.0'),
       showOffline: true);
     expect(visible.map((device) => device.id),
-      ['online', 'checking', 'offline', 'office-offline']);
-    // The default dashboard does not require a subnet scan to show saved
-    // entries; online means exclusively authenticated saved-host checks.
+      ['online', 'checking', 'offline']);
+    // With no detected Wi-Fi, offline devices are never presumed local.
     final initial = visibleSavedDevices(saved,
       online: {}, locationFilter: 'all', currentLocation: null,
       currentNetwork: null, showOffline: true);
     expect(initial.map((device) => device.id),
-      ['offline', 'checking', 'online', 'office-offline']);
+      <String>[]);
   });
 
 }
