@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'lg_webos_client.dart';
+import 'tv_remote_controller.dart';
 
 /// Single-screen TV remote. Optional actions open overlays, never add rows.
 class LgCompactRemote extends StatefulWidget {
   const LgCompactRemote({super.key, required this.client,
     required this.device, required this.onError});
-  final LgWebOsClient client;
-  final LgTvDevice device;
+  final TvRemoteController client;
+  final Object device;
   final ValueChanged<String> onError;
   @override
   State<LgCompactRemote> createState() => _LgCompactRemoteState();
