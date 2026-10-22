@@ -1591,7 +1591,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     // No broad scan while devices are reachable, or without a stable ID.
     final missingLg = savedLgTvs.where((tv) =>
         _tvOnline['lg:${tv.host}'] != true &&
-        tv.deviceUuid.isNotEmpty && tv.tlsPin.isNotEmpty &&
+        tv.clientKey.isNotEmpty && tv.tlsPin.isNotEmpty &&
         (!lanRangeContains(network, tv.host) ||
             _tvOnline['lg:${tv.host}'] == false)).take(4).toList();
     final missingSamsung = savedSamsungTvs.where((tv) =>
