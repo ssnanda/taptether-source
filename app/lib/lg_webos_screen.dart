@@ -124,7 +124,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       if (!mounted || !_foreground) { return; }
       if (mounted) { setState(() =>
           _status = 'Finding ${tv.name} on Wi-Fi…'); }
-      final candidates = await discoverLgTvs();
+      final candidates = await discoverLgTvs(scanEntireLan: true);
       for (final candidate in candidates) {
         if (!mounted || !_foreground) { return; }
         if (candidate.host == tv.host) { continue; }
