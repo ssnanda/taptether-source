@@ -2091,40 +2091,51 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
 
-      // TVs share the same device-card surface; their authenticated pairing
-      // is preserved independently of desktop agent credentials.
+      // TV types share the saved-device list, location and offline filters.
       for (final tv in savedLgTvs)
-        Card(
-          key: ValueKey('lg-tv-${tv.deviceUuid.isNotEmpty
-              ? tv.deviceUuid : tv.host}'),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 5),
-            leading: const Icon(Icons.tv_outlined, size: 29),
-            title: Text(tv.name,
-              maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text('${tv.host} · LG webOS',
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: const Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.link, size: 14),
-              SizedBox(width: 4),
-              Text('PAIRED', style: TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w700)),
-              Icon(Icons.chevron_right),
-            ]),
-            onTap: () => openLgWebOs(host: tv.host),
+        if (_tvVisible(tv.location, 'lg:${tv.host}'))
+          Card(
+            key: ValueKey('lg-tv-${tv.deviceUuid.isNotEmpty
+                ? tv.deviceUuid : tv.host}'),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 5),
+              leading: const Icon(Icons.tv_outlined, size: 29),
+              title: Text(tv.name, maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text('${tv.host} · LG webOS · Paired',
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: _tvStatus('lg', tv.host),
+              onTap: () => openLgWebOs(host: tv.host),
+            ),
           ),
-        ),
-      if (savedLgTvs.isEmpty)
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => openLgWebOs(),
-            icon: const Icon(Icons.tv_outlined),
-            label: const Text('Add LG webOS TV'),
+      for (final tv in savedSamsungTvs)
+        if (_tvVisible(tv.location, 'samsung:${tv.host}'))
+          Card(
+            key: ValueKey('samsung-tv-${tv.deviceId.isNotEmpty
+                ? tv.deviceId : tv.host}'),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 5),
+              leading: const Icon(Icons.tv, size: 29),
+              title: Text(tv.name, maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text('${tv.host} · Samsung TV · Paired',
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: _tvStatus('samsung', tv.host),
+              onTap: () => openSamsungTv(host: tv.host),
+            ),
           ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _chooseTvType,
+          icon: const Icon(Icons.add_circle_outline),
+          label: const Text('Add TV'),
         ),
+      ),
       const SizedBox(height: 12),
       Align(
         alignment: Alignment.centerLeft,
