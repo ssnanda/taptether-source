@@ -20,6 +20,7 @@ class LgTvDevice {
     this.secure = true,
     this.macAddress = '',
     this.deviceUuid = '',
+    this.location = 'other',
   });
 
   final String host;
@@ -30,17 +31,19 @@ class LgTvDevice {
   // Stable identity is MAC/TV UUID, never the DHCP address alone.
   final String macAddress;
   final String deviceUuid;
+  final String location;
 
   LgTvDevice copyWith({
     String? host, String? name, String? clientKey,
     String? tlsPin, bool? secure, String? macAddress,
-    String? deviceUuid,
+    String? deviceUuid, String? location,
   }) => LgTvDevice(
     host: host ?? this.host, name: name ?? this.name,
     clientKey: clientKey ?? this.clientKey, tlsPin: tlsPin ?? this.tlsPin,
     secure: secure ?? this.secure,
     macAddress: macAddress ?? this.macAddress,
     deviceUuid: deviceUuid ?? this.deviceUuid,
+    location: location ?? this.location,
   );
 
   Map<String, Object> toJson() => {
@@ -51,6 +54,7 @@ class LgTvDevice {
     'secure': secure,
     'macAddress': macAddress,
     'deviceUuid': deviceUuid,
+    'location': location,
   };
 
   static LgTvDevice fromJson(Map<String, dynamic> json) => LgTvDevice(
@@ -61,6 +65,7 @@ class LgTvDevice {
     secure: json['secure'] != false,
     macAddress: (json['macAddress'] as String?) ?? '',
     deviceUuid: (json['deviceUuid'] as String?) ?? '',
+    location: (json['location'] as String?) ?? 'other',
   );
 }
 
@@ -102,6 +107,8 @@ class LgTvStore {
           ? (previous?.macAddress ?? '') : device.macAddress,
       deviceUuid: device.deviceUuid.isEmpty
           ? (previous?.deviceUuid ?? '') : device.deviceUuid,
+      location: device.location == 'other'
+          ? (previous?.location ?? 'other') : device.location,
     );
     all.removeWhere((saved) => saved.host == device.host ||
         (merged.deviceUuid.isNotEmpty &&
