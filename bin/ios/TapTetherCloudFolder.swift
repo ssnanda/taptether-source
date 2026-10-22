@@ -1,0 +1,184 @@
+import UIKit
+import Flutter
+import UniformTypeIdentifiers
+
+// A user-selected Files/iCloud Drive directory works without private
+// CloudKit containers or new iCloud signing entitlements. Bookmarks only
+// survive app launches, not app deletion; encrypted backup files survive.
+final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
+    private static let bookmarkKey = "taptether.auto-backup.folder-bookmark.v1"
+    private let defaults = UserDefaults.standard
+    private weak var presentingController: UIViewController?
+    private var pendingPicker: FlutterResult?
+
+    func register(_ controller: FlutterViewController) {
+        presentingController = controller
+        let channel = FlutterMethodChannel(
+            name: "taptether.device_backup.folder.v1",
+            binaryMessenger: controller.binaryMessenger)
+        channel.setMethodCallHandler { [weak self] call, result in
+            guard let self = self else {
+                result(FlutterError(code: "CLOSED", message: "Folder handler unavailable", details: nil))
+                return
+            }
+            switch call.method {
+            case "selectFolder":
+                self.selectFolder(result)
+            case "status":
+                result(self.folderStatus())
+            case "writeBackup":
+                self.writeBackup(call, result)
+            case "clearFolder":
+                self.defaults.removeObject(forKey: Self.bookmarkKey)
+                result(true)
+            default:
+                result(FlutterMethodNotImplemented)
+            }
+        }
+    }
+
+    private func selectedURL() -> URL? {
+        guard let bookmark = defaults.data(forKey: Self.bookmarkKey) else {
+            return nil
+        }
+        var stale = false
+        do {
+            let url = try URL(resolvingBookmarkData: bookmark,
+                              bookmarkDataIsStale: &stale)
+            if stale {
+                defaults.removeObject(forKey: Self.bookmarkKey)
+                return nil
+            }
+            return url
+        } catch {
+            defaults.removeObject(forKey: Self.bookmarkKey)
+            return nil
+        }
+    }
+
+    private func folderStatus() -> [String: Any] {
+        guard let url = selectedURL() else {
+            return ["available": false]
+        }
+        let access = url.startAccessingSecurityScopedResource()
+        if access { url.stopAccessingSecurityScopedResource() }
+        return ["available": access,
+                "folder": url.lastPathComponent]
+    }
+
+    private func selectFolder(_ result: @escaping FlutterResult) {
+        guard pendingPicker == nil else {
+            result(FlutterError(code: "BUSY", message: "Folder picker is open", details: nil))
+            return
+        }
+        guard #available(iOS 14, *) else {
+            result(FlutterError(code: "IOS_VERSION", message: "iOS 14+ required", details: nil))
+            return
+        }
+        guard let presenter = presentingController else {
+            result(FlutterError(code: "NO_UI", message: "No screen for picker", details: nil))
+            return
+        }
+        pendingPicker = result
+        let picker = UIDocumentPickerViewController(
+            forOpeningContentTypes: [UTType.folder], asCopy: false)
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        presenter.present(picker, animated: true)
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        pendingPicker?(false)
+        pendingPicker = nil
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController,
+                        didPickDocumentsAt urls: [URL]) {
+        guard let selected = urls.first else {
+            pendingPicker?(false)
+            pendingPicker = nil
+            return
+        }
+        guard selected.startAccessingSecurityScopedResource() else {
+            pendingPicker?(FlutterError(code: "PERMISSION",
+                message: "Files did not grant access to that folder", details: nil))
+            pendingPicker = nil
+            return
+        }
+        defer { selected.stopAccessingSecurityScopedResource() }
+        do {
+            let bookmark = try selected.bookmarkData(
+                options: .minimalBookmark,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil)
+            defaults.set(bookmark, forKey: Self.bookmarkKey)
+            pendingPicker?(true)
+        } catch {
+            pendingPicker?(FlutterError(code: "BOOKMARK",
+                message: "Unable to retain folder permission", details: nil))
+        }
+        pendingPicker = nil
+    }
+
+    private func writeBackup(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+        guard let data = call.arguments as? [String: Any],
+              let encoded = data["bytes"] as? FlutterStandardTypedData else {
+            result(FlutterError(code: "INPUT", message: "Encrypted backup data missing", details: nil))
+            return
+        }
+        guard encoded.data.count > 0 && encoded.data.count <= 4 * 1024 * 1024 else {
+            result(FlutterError(code: "SIZE", message: "Encrypted backup size invalid", details: nil))
+            return
+        }
+        guard let folder = selectedURL(),
+              folder.startAccessingSecurityScopedResource() else {
+            result(FlutterError(code: "FOLDER", message: "Choose an accessible Files folder again", details: nil))
+            return
+        }
+        defer { folder.stopAccessingSecurityScopedResource() }
+        var coordinatedError: NSError?
+        var writeError: Error?
+        var filename = ""
+        let fileBytes = encoded.data
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let stamp = formatter.string(from: Date())
+        filename = "TapTether-Auto-" + stamp + "-" +
+            UUID().uuidString.prefix(8) + ".ttbackup"
+        let target = folder.appendingPathComponent(filename)
+        // File providers, including iCloud Drive, require coordinated writes.
+        NSFileCoordinator().coordinate(
+            writingItemAt: folder, options: .forMerging,
+            error: &coordinatedError) { accessibleFolder in
+                do {
+                    let output = accessibleFolder.appendingPathComponent(filename)
+                    try fileBytes.write(to: output, options: .atomic)
+                    let attributes = try FileManager.default.attributesOfItem(atPath: output.path)
+                    let count = attributes[.size] as? NSNumber
+                    if count?.intValue != fileBytes.count {
+                        throw NSError(domain: "TapTetherBackup", code: 11,
+                            userInfo: [NSLocalizedDescriptionKey: "File verification failed"])
+                    }
+                    // Keep five independent backups; deletion happens only
+                    // after the new encrypted file was written and verified.
+                    let contents = try FileManager.default.contentsOfDirectory(
+                        at: accessibleFolder, includingPropertiesForKeys: [.contentModificationDateKey])
+                    let backups = contents.filter {
+                        $0.lastPathComponent.hasPrefix("TapTether-Auto-") &&
+                        $0.pathExtension == "ttbackup"
+                    }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+                    for old in backups.dropFirst(5) {
+                        try? FileManager.default.removeItem(at: old)
+                    }
+                } catch {
+                    writeError = error
+                }
+            }
+        if let error = coordinatedError ?? (writeError as NSError?) {
+            result(FlutterError(code: "WRITE", message: error.localizedDescription, details: nil))
+            return
+        }
+        result(["saved": true, "filename": filename, "folder": folder.lastPathComponent])
+    }
+}
