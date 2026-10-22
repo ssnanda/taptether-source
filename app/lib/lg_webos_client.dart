@@ -747,7 +747,9 @@ class LgWebOsClient implements TvRemoteController {
       context: SecurityContext(withTrustedRoots: false));
   var same = false;
   client.badCertificateCallback = (cert, certificateHost, port) {
-    if (certificateHost != host || port != 3001) return false;
+    if (certificateHost != host || port != 3001) {
+      return false;
+    }
     same = sha256.convert(cert.der).toString().toUpperCase() ==
         expectedPin.toUpperCase();
     return same;
