@@ -126,59 +126,73 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
             result(FlutterError(code: "INPUT", message: "Encrypted backup data missing", details: nil))
             return
         }
-        guard encoded.data.count > 0 && encoded.data.count <= 4 * 1024 * 1024 else {
+        guard !encoded.data.isEmpty && encoded.data.count <= 4 * 1024 * 1024 else {
             result(FlutterError(code: "SIZE", message: "Encrypted backup size invalid", details: nil))
             return
         }
-        guard let folder = selectedURL(),
-              folder.startAccessingSecurityScopedResource() else {
-            result(FlutterError(code: "FOLDER", message: "Choose an accessible Files folder again", details: nil))
-            return
-        }
-        defer { folder.stopAccessingSecurityScopedResource() }
-        var coordinatedError: NSError?
-        var writeError: Error?
-        var filename = ""
-        let fileBytes = encoded.data
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        let stamp = formatter.string(from: Date())
-        filename = "TapTether-Auto-" + stamp + "-" +
-            UUID().uuidString.prefix(8) + ".ttbackup"
-        let target = folder.appendingPathComponent(filename)
-        // File providers, including iCloud Drive, require coordinated writes.
-        NSFileCoordinator().coordinate(
-            writingItemAt: folder, options: .forMerging,
-            error: &coordinatedError) { accessibleFolder in
-                do {
-                    let output = accessibleFolder.appendingPathComponent(filename)
-                    try fileBytes.write(to: output, options: .atomic)
-                    let attributes = try FileManager.default.attributesOfItem(atPath: output.path)
-                    let count = attributes[.size] as? NSNumber
-                    if count?.intValue != fileBytes.count {
-                        throw NSError(domain: "TapTetherBackup", code: 11,
-                            userInfo: [NSLocalizedDescriptionKey: "File verification failed"])
+        let encrypted = encoded.data
+        // iCloud Drive / third-party file providers can block during writes.
+        // Never run coordinated file I/O on the UI/platform-channel thread.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self, let folder = self.selectedURL(),
+                  folder.startAccessingSecurityScopedResource() else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "FOLDER",
+                        message: "Select an accessible iCloud Drive folder again",
+                        details: nil))
+                }
+                return
+            }
+            defer { folder.stopAccessingSecurityScopedResource() }
+            var coordinatedError: NSError?
+            var writeError: Error?
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyyMMdd-HHmmss"
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            let filename = "TapTether-Auto-" + formatter.string(from: Date()) +
+                "-" + String(UUID().uuidString.prefix(8)) + ".ttbackup"
+
+            NSFileCoordinator().coordinate(
+                writingItemAt: folder, options: .forMerging,
+                error: &coordinatedError) { writableFolder in
+                    do {
+                        let output = writableFolder.appendingPathComponent(filename)
+                        try encrypted.write(to: output, options: .atomic)
+                        let attrs = try FileManager.default.attributesOfItem(
+                            atPath: output.path)
+                        guard (attrs[.size] as? NSNumber)?.intValue == encrypted.count
+                            else {
+                            throw NSError(domain: "TapTetherBackup", code: 11,
+                                userInfo: [NSLocalizedDescriptionKey: "File verification failed"])
+                        }
+                        // Retain five verified encrypted generations.
+                        let contents = try FileManager.default.contentsOfDirectory(
+                            at: writableFolder,
+                            includingPropertiesForKeys: [.contentModificationDateKey])
+                        let backups = contents.filter {
+                            $0.lastPathComponent.hasPrefix("TapTether-Auto-") &&
+                            $0.pathExtension == "ttbackup"
+                        }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+                        for old in backups.dropFirst(5) {
+                            try? FileManager.default.removeItem(at: old)
+                        }
+                    } catch {
+                        writeError = error
                     }
-                    // Keep five independent backups; deletion happens only
-                    // after the new encrypted file was written and verified.
-                    let contents = try FileManager.default.contentsOfDirectory(
-                        at: accessibleFolder, includingPropertiesForKeys: [.contentModificationDateKey])
-                    let backups = contents.filter {
-                        $0.lastPathComponent.hasPrefix("TapTether-Auto-") &&
-                        $0.pathExtension == "ttbackup"
-                    }.sorted { $0.lastPathComponent > $1.lastPathComponent }
-                    for old in backups.dropFirst(5) {
-                        try? FileManager.default.removeItem(at: old)
-                    }
-                } catch {
-                    writeError = error
+                }
+
+            let failure = coordinatedError ?? (writeError as NSError?)
+            DispatchQueue.main.async {
+                if let error = failure {
+                    result(FlutterError(code: "WRITE",
+                        message: error.localizedDescription, details: nil))
+                } else {
+                    // A successful coordinated write is not proof that iCloud
+                    // has finished synchronizing the file across devices.
+                    result(["saved": true, "filename": filename,
+                            "folder": folder.lastPathComponent])
                 }
             }
-        if let error = coordinatedError ?? (writeError as NSError?) {
-            result(FlutterError(code: "WRITE", message: error.localizedDescription, details: nil))
-            return
         }
-        result(["saved": true, "filename": filename, "folder": folder.lastPathComponent])
     }
 }
