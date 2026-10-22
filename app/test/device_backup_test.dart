@@ -48,6 +48,23 @@ void main() {
     );
   });
 
+  test('all real SSH private key records are included and auto password excluded', () {
+    const values = <String, String>{
+      'taptether.ssh.keys.index.v2': '[{"id":"k1","name":"Mac"}]',
+      'taptether.ssh.keys.default.v2': 'k1',
+      'taptether.ssh.keys.pem.v2.k1': '-----BEGIN OPENSSH PRIVATE KEY-----',
+      'taptether.ssh.ed25519.private.v1': 'legacy-private-key',
+      'taptether.ssh.host-fingerprint.v1.192.168.68.81':
+          'trusted-server-identity',
+      'taptether.auto-backup.password.v1': 'DO-NOT-EXPORT',
+      'taptether.auto-backup.last-digest.v1': 'DO-NOT-EXPORT',
+    };
+    final records = DeviceBackupCodec.selectKeys(values);
+    expect(records.length, 5);
+    expect(records['taptether.ssh.keys.pem.v2.k1'], contains('PRIVATE KEY'));
+    expect(records.containsKey('taptether.auto-backup.password.v1'), isFalse);
+  });
+
   test('do not export app lock or arbitrary secure storage values', () {
     final chosen = DeviceBackupCodec.selectKeys({
       ...records,
