@@ -68,6 +68,24 @@ void main() {
     expect(lan.scanPrefixes.first, '10.50.10');
   });
 
+  test('LG webOS TCP ports are included in manual IP scans', () {
+    expect(lanScanPorts, containsAll([3000, 3001]));
+    const lg = LanHost(ip: '192.168.68.86',
+        hostname: '192.168.68.86', openPorts: [3001]);
+    expect(lg.deviceType, contains('LG webOS'));
+    expect(lg.deviceHint, contains('identity unverified'));
+    expect(tcpProbeLabel(TcpProbeStatus.open), 'Open');
+    expect(tcpProbeLabel(TcpProbeStatus.refused), 'Refused');
+    expect(tcpProbeLabel(TcpProbeStatus.timedOut), 'Timed out');
+  });
+
+  test('manual port diagnostics reject nonlocal targets', () async {
+    await expectLater(probeTcpPort('8.8.8.8', 3001),
+        throwsFormatException);
+    await expectLater(probeTcpPort('192.168.68.86', 0),
+        throwsFormatException);
+  });
+
   test('service hints derive from observed open ports only', () {
     expect(const LanHost(
       ip: '192.168.68.87', hostname: 'mac.local',
