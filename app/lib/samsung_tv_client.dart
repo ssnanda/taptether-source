@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'lan_scan.dart';
+import 'discovery.dart';
 import 'tv_lan_utils.dart';
 import 'tv_remote_controller.dart';
 
@@ -231,7 +232,7 @@ class SamsungTvClient implements TvRemoteController {
     }
     final name = base64Encode(utf8.encode('TapTether'));
     final info = await probeSamsungTv(device.host);
-    Exception? lastError;
+    Object? lastError;
     for (final secure in [true, false]) {
       final port = secure ? 8002 : 8001;
       final uri = Uri(
