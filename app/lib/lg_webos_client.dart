@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'discovery.dart';
 import 'lan_scan.dart';
+import 'tv_remote_controller.dart';
 
 /// LG webOS Second Screen (SSAP) client. No agent, root, or TV app needed.
 /// LG requires explicit approval on the TV at initial registration.
@@ -349,9 +350,11 @@ Future<List<LgTvDevice>> discoverLgTvs({
   return found.values.toList()..sort((a, b) => a.host.compareTo(b.host));
 }
 
-class LgWebOsClient {
+class LgWebOsClient implements TvRemoteController {
   LgWebOsClient(this.device);
   final LgTvDevice device;
+  @override
+  bool get pointerIsRelative => true;
   WebSocket? _main;
   WebSocket? _pointer;
   Future<void>? _pointerOpening;
