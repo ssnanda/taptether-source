@@ -144,6 +144,7 @@ class LgTvStore {
         (device.deviceUuid.isNotEmpty && saved.deviceUuid.isNotEmpty &&
             saved.deviceUuid == device.deviceUuid) ||
         (device.macAddress.isNotEmpty && saved.macAddress.isNotEmpty &&
+            canonicalLgMac(device.macAddress) != null &&
             canonicalLgMac(saved.macAddress) ==
                 canonicalLgMac(device.macAddress)) ||
         (device.tlsPin.isNotEmpty && saved.tlsPin.isNotEmpty &&
