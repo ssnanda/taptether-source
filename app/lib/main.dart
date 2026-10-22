@@ -1906,22 +1906,19 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   bool _tvVisible(String location, String key) {
+    // A saved TV on a different subnet stays in Manage Devices until
+    // rediscovery verifies the same pairing at a current-network address.
+    final host = key.substring(key.indexOf(':') + 1);
+    if (_wifiRange == null || !lanRangeContains(_wifiRange!, host)) {
+      return false;
+    }
     final selected = _locationFilter == 'automatic'
         ? _detectedLocation : _locationFilter;
     final matchingLocation = selected == 'all' ||
         (selected == null && _locationFilter == 'automatic') ||
         location == selected ||
-        (location == 'other' && _tvOnline[key] == true &&
-            _locationFilter == 'automatic');
-    if (_tvOnline[key] != true) {
-      // Offline TVs from another network never appear in My Devices.
-      // A saved IP is a last-known route, not proof of current presence.
-      final sameSubnet = _wifiRange != null &&
-          lanRangeContains(_wifiRange!, key.substring(key.indexOf(':') + 1));
-      return _showOffline && sameSubnet &&
-          (_locationFilter == 'automatic' || matchingLocation);
-    }
-    return matchingLocation;
+        (_locationFilter == 'automatic' && _tvOnline[key] == true);
+    return matchingLocation && (_showOffline || _tvOnline[key] == true);
   }
 
   Widget _tvStatus(String vendor, String host) {
