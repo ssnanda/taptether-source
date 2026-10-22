@@ -97,7 +97,9 @@ class LgTvStore {
         (device.deviceUuid.isNotEmpty &&
             saved.deviceUuid == device.deviceUuid) ||
         (device.macAddress.isNotEmpty &&
-            saved.macAddress == device.macAddress));
+            saved.macAddress == device.macAddress) ||
+        (device.tlsPin.isNotEmpty &&
+            saved.tlsPin.toUpperCase() == device.tlsPin.toUpperCase()));
     final previous = matching.isEmpty ? null : matching.first;
     // Preserve user-entered nicknames, older keys and MAC/UUID metadata.
     final merged = device.copyWith(
@@ -114,7 +116,9 @@ class LgTvStore {
         (merged.deviceUuid.isNotEmpty &&
             saved.deviceUuid == merged.deviceUuid) ||
         (merged.macAddress.isNotEmpty &&
-            saved.macAddress == merged.macAddress));
+            saved.macAddress == merged.macAddress) ||
+        (merged.tlsPin.isNotEmpty &&
+            saved.tlsPin.toUpperCase() == merged.tlsPin.toUpperCase()));
     all.insert(0, merged);
     await _storage.write(
       key: key,
