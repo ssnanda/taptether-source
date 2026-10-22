@@ -77,10 +77,26 @@ class ComputerStore {
     if (raw == null || raw.isEmpty) return [];
     final decoded = jsonDecode(raw);
     if (decoded is! List) throw const FormatException('Invalid saved devices');
-    return decoded
+    final devices = decoded
         .whereType<Map>()
         .map((entry) => SavedComputer.fromJson(Map<String, dynamic>.from(entry)))
         .toList();
+    final seenIds = <String>{};
+    final seenPins = <String>{};
+    final seenAgentIds = <String>{};
+    return devices.where((device) {
+      final pin = device.fingerprint.toUpperCase();
+      if (!seenIds.add(device.id) || seenPins.contains(pin) ||
+          (device.deviceId.isNotEmpty &&
+              seenAgentIds.contains(device.deviceId))) {
+        return false;
+      }
+      seenPins.add(pin);
+      if (device.deviceId.isNotEmpty) {
+        seenAgentIds.add(device.deviceId);
+      }
+      return true;
+    }).toList();
   }
 
   Future<List<SavedComputer>> upsert(SavedComputer device) async {
@@ -91,7 +107,9 @@ class ComputerStore {
     final pin = device.fingerprint.toUpperCase();
     devices.removeWhere((existing) =>
         existing.id == device.id ||
-        (pin.length == 64 && existing.fingerprint.toUpperCase() == pin));
+        (pin.length == 64 && existing.fingerprint.toUpperCase() == pin) ||
+        (device.deviceId.isNotEmpty &&
+            existing.deviceId == device.deviceId));
     devices.insert(0, device);
     if (devices.length > 25) devices.removeRange(25, devices.length);
     await _storage.write(
