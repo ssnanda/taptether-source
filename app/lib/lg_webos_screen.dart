@@ -14,14 +14,19 @@ class LgWebOsScreen extends StatefulWidget {
   State<LgWebOsScreen> createState() => _LgWebOsScreenState();
 }
 
-class _LgWebOsScreenState extends State<LgWebOsScreen> {
+class _LgWebOsScreenState extends State<LgWebOsScreen>
+    with WidgetsBindingObserver {
   final _store = LgTvStore();
   final _ip = TextEditingController();
   List<LgTvDevice> _saved = [];
   List<LgTvDevice> _discovered = [];
   LgWebOsClient? _session;
   LgTvDevice? _connected;
+  LgTvDevice? _target;
   Timer? _connectionTimer;
+  bool _foreground = true;
+  bool _recovering = false;
+  DateTime _lastRecovery = DateTime.fromMillisecondsSinceEpoch(0);
   bool _busy = false;
   bool _discovering = false;
   String _status = 'Choose an LG TV on this Wi-Fi.';
@@ -30,6 +35,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
   bool get _ready => !_busy && _session?.connected == true;
   LgTvDevice? get _selected {
     if (_connected != null) return _connected;
+    if (_target != null) return _target;
     if (widget.initialHost != null) {
       for (final tv in _saved) {
         if (tv.host == widget.initialHost) return tv;
@@ -41,16 +47,97 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
     _connectionTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (!mounted || _connected == null) return;
-      if (_session?.connected != true) {
-        setState(() {
-          _connected = null;
-          _status = 'TV connection lost. Tap to reconnect.';
-        });
+      if (!mounted || !_foreground || _busy || _recovering) return;
+      if (_selected?.clientKey.isNotEmpty == true && !_ready) {
+        unawaited(_recover());
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground && _selected?.clientKey.isNotEmpty == true) {
+      unawaited(_recover(force: true));
+    }
+  }
+
+  /// Reuse the existing pairing key; never register an unknown TV on recovery.
+  /// Only move an IP when a stable UUID or pinned TLS certificate matches.
+  Future<void> _recover({bool force = false}) async {
+    if (!mounted || !_foreground || _busy || _recovering || _ready) return;
+    final tv = _selected;
+    if (tv == null || tv.clientKey.isEmpty) return;
+    final now = DateTime.now();
+    if (!force && now.difference(_lastRecovery) <
+        const Duration(seconds: 45)) return;
+    _lastRecovery = now;
+    _recovering = true;
+    try {
+      if (mounted) setState(() {
+        _status = 'Reconnecting to ${tv.name}…';
+        _error = null;
+      });
+      // First try the last known address; most reconnects do not need a scan.
+      if (await _tryRecoveryHost(tv, tv.host)) return;
+      if (!mounted || !_foreground) return;
+      if (mounted) setState(() =>
+          _status = 'Finding ${tv.name} on Wi-Fi…');
+      final candidates = await discoverLgTvs();
+      for (final candidate in candidates) {
+        if (!mounted || !_foreground) return;
+        if (candidate.host == tv.host) continue;
+        final sameUuid = tv.deviceUuid.isNotEmpty &&
+            candidate.deviceUuid.isNotEmpty &&
+            tv.deviceUuid == candidate.deviceUuid;
+        final sameTls = tv.tlsPin.isNotEmpty &&
+            await matchesLgTlsPin(candidate.host, tv.tlsPin);
+        if (!sameUuid && !sameTls) continue;
+        if (await _tryRecoveryHost(tv, candidate.host)) return;
+      }
+      if (mounted) setState(() {
+        _status = 'TV unavailable · will retry automatically';
+        _error = null;
+      });
+    } finally {
+      _recovering = false;
+    }
+  }
+
+  Future<bool> _tryRecoveryHost(LgTvDevice tv, String host) async {
+    // Never send a stored client key to an unverified new address.
+    if (host != tv.host && tv.tlsPin.isNotEmpty &&
+        !await matchesLgTlsPin(host, tv.tlsPin)) return false;
+    if (host == tv.host && tv.tlsPin.isNotEmpty &&
+        !await matchesLgTlsPin(host, tv.tlsPin)) return false;
+    final updated = tv.copyWith(host: host);
+    final client = LgWebOsClient(updated);
+    try {
+      final paired = await client.connect();
+      if (!mounted || !_foreground) {
+        await client.disconnect();
+        return false;
+      }
+      await _session?.disconnect();
+      _session = client;
+      _connected = paired;
+      _target = paired;
+      await _store.save(paired);
+      if (!mounted) return false;
+      setState(() {
+        _status = 'Connected · ${client.transport}';
+        _error = null;
+      });
+      await _reloadSaved();
+      unawaited(_identify(client, paired));
+      return true;
+    } catch (_) {
+      await client.disconnect();
+      return false;
+    }
   }
 
   Future<void> _load() async {
@@ -61,7 +148,10 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
       final host = widget.initialHost;
       if (host != null) {
         final matches = saved.where((tv) => tv.host == host);
-        if (matches.isNotEmpty) await _connect(matches.first);
+        if (matches.isNotEmpty) {
+          _target = matches.first;
+          await _recover(force: true);
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _error = 'Cannot read saved TV pairings.');
@@ -97,7 +187,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
   }
 
   Future<void> _connect(LgTvDevice tv) async {
-    if (_busy) return;
+    if (_busy || _recovering) return;
+    _target = tv;
     setState(() {
       _busy = true;
       _error = null;
@@ -122,6 +213,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
       setState(() {
         _session = client;
         _connected = paired;
+        _target = paired;
         _busy = false;
         _status = 'Connected · ${client.transport}';
       });
@@ -161,6 +253,18 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
         for (final item in devices) {
           if (item.host == _connected!.host) {
             _connected = item;
+            break;
+          }
+        }
+      }
+      if (_target != null) {
+        for (final item in devices) {
+          if (item.host == _target!.host ||
+              (_target!.deviceUuid.isNotEmpty &&
+                  item.deviceUuid == _target!.deviceUuid) ||
+              (_target!.tlsPin.isNotEmpty &&
+                  item.tlsPin == _target!.tlsPin)) {
+            _target = item;
             break;
           }
         }
@@ -280,6 +384,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
       _connected = null;
     }
     await _store.remove(tv.host);
+    if (_target?.host == tv.host) _target = null;
     await _reloadSaved();
   }
 
@@ -463,6 +568,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen> {
   @override
   void dispose() {
     _connectionTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _ip.dispose();
     if (_session != null) unawaited(_session!.disconnect());
     super.dispose();
