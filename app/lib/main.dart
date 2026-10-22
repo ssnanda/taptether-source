@@ -853,7 +853,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
-  // Recover saved pairings quietly when ALL saved hosts fail authenticated
+  // Recover each offline saved pairing quietly after authenticated
   // heartbeats. Local DNS, then UDP, then a bounded TCP agent-port probe
   // when broadcast discovery is blocked by iOS or the Wi-Fi router.
   // Raw TCP acceptance is NEVER evidence of identity or an online device.
@@ -1600,7 +1600,17 @@ class _RemoteScreenState extends State<RemoteScreen>
       // No speculative online status after probe failures.
     } finally {
       _checkingTvStatus = false;
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        // A DHCP lease may change while other TVs stay online. Recover each
+        // missing pairing independently, subject to the ten-minute cooldown.
+        if (!_recoveringTvAddresses && _appForeground &&
+            (savedLgTvs.any((tv) => _tvOnline['lg:${tv.host}'] == false) ||
+             savedSamsungTvs.any((tv) =>
+                 _tvOnline['samsung:${tv.host}'] == false))) {
+          unawaited(_recoverTvAddresses());
+        }
+      }
     }
   }
 
