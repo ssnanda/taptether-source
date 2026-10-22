@@ -26,11 +26,17 @@ List<SavedComputer> visibleSavedDevices(
         ? device.location == selectedLocation
         : (locationFilter == 'automatic' && currentNetwork != null
             ? onCurrentNetwork : true));
-    return matchesLocation && (showOffline || online[device.id] == true);
+    // Offline entries are relevant only if their last verified IP belongs
+    // to this Wi-Fi subnet, regardless of a manual location selection.
+    // No network detected => do not guess that an old IP is nearby.
+    if (online[device.id] != true) {
+      return showOffline && onCurrentNetwork && matchesLocation;
+    }
+    return matchesLocation;
   }).toList();
   // Fast dashboard: keep saved order within each group, but surface online
   // machines first, followed by pending verification, then offline machines.
-  // A saved machine never disappears just because its Wi-Fi is unavailable.
+  // Other-network offline devices remain in Manage Devices, not this list.
   int priority(String id) => online[id] == true ? 0
       : online[id] == null ? 1 : 2;
   filtered.sort((a, b) => priority(a.id).compareTo(priority(b.id)));
