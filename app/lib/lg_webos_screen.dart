@@ -117,6 +117,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         _status = 'Reconnecting to ${tv.name}…';
         _error = null;
       }); }
+      // IP is a last-known route, never the TV identity. TLS pin and saved
+      // registration key are required to reuse a pairing at any address.
       // First try the last known address; most reconnects do not need a scan.
       if (await _tryRecoveryHost(tv, tv.host)) { return; }
       if (!mounted || !_foreground) { return; }
@@ -131,6 +133,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
             tv.deviceUuid == candidate.deviceUuid;
         final sameTls = tv.tlsPin.isNotEmpty &&
             await matchesLgTlsPin(candidate.host, tv.tlsPin);
+        // A MAC address is a discovery hint, not proof: iOS cannot query
+        // arbitrary LAN MACs and MAC addresses can be spoofed. Only a pinned
+        // certificate permits sending the saved client key to a new host.
         if (!sameUuid && !sameTls) { continue; }
         if (await _tryRecoveryHost(tv, candidate.host)) { return; }
       }
@@ -148,7 +153,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     if (host != tv.host && tv.tlsPin.isNotEmpty &&
         !await matchesLgTlsPin(host, tv.tlsPin)) { return false; }
     if (host == tv.host && tv.tlsPin.isNotEmpty &&
-        !await matchesLgTlsPin(host, tv.tlsPin)) return false;
+        !await matchesLgTlsPin(host, tv.tlsPin)) { return false; }
     // Never migrate a stored key to a different IP without a trusted TLS pin.
     if (host != tv.host && tv.tlsPin.isEmpty) { return false; }
     final updated = tv.copyWith(host: host);
