@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'app_security.dart';
 import 'appearance.dart';
+import 'device_backup_screen.dart';
 
 class SecuritySettingsScreen extends StatefulWidget {
-  const SecuritySettingsScreen({super.key});
+  const SecuritySettingsScreen({super.key, this.onDevicesRestored});
+  final Future<void> Function()? onDevicesRestored;
   @override
   State<SecuritySettingsScreen> createState() => _SecuritySettingsScreenState();
 }
@@ -183,6 +185,22 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
             icon: const Icon(Icons.lock),
             label: const Text('Lock now')),
       ],
+      const Divider(height: 40),
+      Text('Device backup',
+          style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 6),
+      const Text('Preserve trusted devices and pairing keys across '
+          'app deletion, reinstall and phone replacement.'),
+      const SizedBox(height: 10),
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => DeviceBackupScreen(
+            onRestored: widget.onDevicesRestored,
+          )),
+        ),
+        icon: const Icon(Icons.backup_outlined),
+        label: const Text('Back up / Restore devices'),
+      ),
       const Divider(height: 40),
       Text('Appearance',
           style: Theme.of(context).textTheme.titleLarge),
