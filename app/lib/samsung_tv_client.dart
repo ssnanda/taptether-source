@@ -164,6 +164,10 @@ Future<Map<String, dynamic>?> _samsungHttp(
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return null;
     }
+    if (method == 'POST') {
+      // Samsung frequently returns HTTP 204 with no JSON after app launch.
+      return {'accepted': true};
+    }
     final body = await utf8.decoder.bind(response).join()
         .timeout(timeout);
     if (body.length > 32768) return null;
