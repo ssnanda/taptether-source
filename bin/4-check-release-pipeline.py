@@ -302,7 +302,7 @@ assert "macosArchiveArchitecture" in mac_test
 assert "mergeDiscoveredAgents(" in lan
 assert "checkPrivateLanIp(" in lan
 assert "device.scanSubtitle" in scan_screen
-assert "Check a specific computer" in scan_screen
+assert "Check a specific device" in scan_screen
 
 
 print("PASS: one Actions workflow, auto full Release on VERSION and per-platform agent-only manual releases")
