@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/computer_store.dart';
 import 'package:taptether/device_recovery.dart';
@@ -55,6 +56,32 @@ void main() {
     expect(samePairedAgent(mac, imposter), isFalse);
     expect(samePairedAgent(mac, saved('roamed', '192.168.1.86')), isTrue);
     expect(() => movedDevice(mac, '8.8.8.8'), throwsFormatException);
+  });
+
+  test('only safe local DNS names are considered for agent recovery', () {
+    expect(localAgentDnsName('Sandips-MBP'), 'sandips-mbp.local');
+    expect(localAgentDnsName('Sandips-MBP.local'), 'sandips-mbp.local');
+    expect(localAgentDnsName('My MacBook'), isNull);
+    expect(localAgentDnsName('example.com'), isNull);
+    expect(localAgentDnsName('192.168.68.86'), isNull);
+    expect(localAgentDnsName('bad/hostname'), isNull);
+  });
+
+  test('DNS recovery keeps only addresses on current Wi-Fi CIDR', () async {
+    final network = rangeFromWifi(
+        '192.168.68.100', '255.255.252.0')!;
+    final addresses = await resolveSavedAgentLanAddresses(
+        saved('mac', '192.168.68.77'), network,
+        lookup: (host) async {
+          expect(host, 'sandips-mbp.local');
+          return [
+            InternetAddress('192.168.69.50'),
+            InternetAddress('192.168.72.50'),
+            InternetAddress('192.168.69.50'),
+            InternetAddress('8.8.8.8'),
+          ];
+        });
+    expect(addresses, ['192.168.69.50']);
   });
 
   test('TCP recovery probes both sides of the current /23', () {
