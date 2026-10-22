@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/lg_compact_remote.dart';
+import 'package:taptether/lan_scan.dart';
 import 'package:taptether/samsung_tv_client.dart';
 import 'package:taptether/tv_lan_utils.dart';
 
@@ -50,6 +51,18 @@ void main() {
     expect(samsungDeviceFromInfo('192.168.68.90', {
       'device': {'type': 'SmartTV'},
     }), isNull);
+  });
+
+  test('TV discovery stays inside the active private Wi-Fi CIDR', () {
+    final lan = rangeFromWifi('192.168.68.70', '255.255.252.0')!;
+    final hosts = tvLanHosts(lan);
+    expect(hosts, contains('192.168.68.62'));
+    expect(hosts, contains('192.168.71.254'));
+    expect(hosts, isNot(contains('192.168.68.0')));
+    expect(hosts, isNot(contains('192.168.71.255')));
+    expect(hosts, isNot(contains('192.168.68.70')));
+    expect(hosts, isNot(contains('192.168.72.1')));
+    expect(hosts.length, 1021);
   });
 
   test('Samsung pairing and nickname serialize without losing credentials', () {
