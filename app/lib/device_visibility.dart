@@ -26,11 +26,12 @@ List<SavedComputer> visibleSavedDevices(
         ? device.location == selectedLocation
         : (locationFilter == 'automatic' && currentNetwork != null
             ? onCurrentNetwork : true));
-    // Offline entries are relevant only if their last verified IP belongs
-    // to this Wi-Fi subnet, regardless of a manual location selection.
-    // No network detected => do not guess that an old IP is nearby.
+    // My Devices represents only this Wi-Fi, even under "All locations".
+    // An IP last verified on another subnet must not remain visible.
+    // Discovery may later authenticate this same pairing at a new local IP.
+    if (!onCurrentNetwork) return false;
     if (online[device.id] != true) {
-      return showOffline && onCurrentNetwork &&
+      return showOffline &&
           (locationFilter == 'automatic' || matchesLocation);
     }
     return matchesLocation;
