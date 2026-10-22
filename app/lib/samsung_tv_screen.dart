@@ -52,8 +52,10 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
         if (found.isNotEmpty) await _connect(found.first);
       }
     } catch (_) {
-      if (mounted) setState(() =>
+      if (mounted) {
+        setState(() =>
           _error = 'Unable to access locally saved Samsung pairings.');
+      }
     }
   }
 
@@ -87,10 +89,14 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
             : 'Select a Samsung TV to authorize.';
       });
     } catch (error) {
-      if (mounted) setState(() =>
+      if (mounted) {
+        setState(() =>
           _error = 'Discovery blocked. Enter the TV LAN IP.');
+      }
     } finally {
-      if (mounted) setState(() => _finding = false);
+      if (mounted) {
+        setState(() => _finding = false);
+      }
     }
   }
 
@@ -124,12 +130,17 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
       await _reload();
     } catch (error) {
       await controller.disconnect();
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _error = error.toString().replaceFirst('Bad state: ', '');
         _status = 'Not connected';
-      });
+
+        });
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
@@ -233,12 +244,17 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
       try {
         await _client!.powerOff();
         await _client!.disconnect();
-        if (mounted) setState(() {
+        if (mounted) {
+          setState(() {
           _status = 'Power-off requested';
           _client = null;
-        });
+
+          });
+        }
       } catch (error) {
-        if (mounted) setState(() => _error = '$error');
+        if (mounted) {
+          setState(() => _error = '$error');
+        }
       }
       return;
     }
@@ -246,20 +262,27 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
     if (tv == null) return;
     try {
       await wakeSamsungTv(tv);
-      if (mounted) setState(() =>
+      if (mounted) {
+        setState(() =>
           _status = 'Power-on signal sent (requires network standby).');
+      }
     } catch (error) {
-      if (mounted) setState(() =>
+      if (mounted) {
+        setState(() =>
           _error = error.toString().replaceFirst('Bad state: ', ''));
+      }
     }
   }
 
   Future<void> _disconnect() async {
     await _client?.disconnect();
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _client = null;
       _status = 'Disconnected';
-    });
+
+      });
+    }
   }
 
   Future<void> _forget(SamsungTvDevice tv) async {
@@ -328,7 +351,9 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
               key: ValueKey('samsung-${tv.deviceId}-${tv.host}'),
               client: _client!, device: tv,
               onError: (error) {
-                if (mounted) setState(() => _error = error);
+                if (mounted) {
+                  setState(() => _error = error);
+                }
               },
             ))
           else Expanded(child: ListView(children: [
