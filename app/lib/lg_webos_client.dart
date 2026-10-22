@@ -385,6 +385,7 @@ class LgWebOsClient implements TvRemoteController {
   String? _observedPin;
   bool _secure = true;
 
+  @override
   bool get connected => _main?.readyState == WebSocket.open;
   String get transport => _secure ? 'Encrypted LAN' : 'Legacy LAN';
 
@@ -590,6 +591,7 @@ class LgWebOsClient implements TvRemoteController {
     }
   }
 
+  @override
   Future<void> button(String name) async {
     const allowed = {
       'UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER', 'BACK', 'HOME',
@@ -602,6 +604,7 @@ class LgWebOsClient implements TvRemoteController {
     _pointer!.add('type:button\nname:$name\n\n');
   }
 
+  @override
   Future<void> pointerMove(int dx, int dy) async {
     if (dx == 0 && dy == 0) return;
     await _openPointer();
@@ -610,11 +613,13 @@ class LgWebOsClient implements TvRemoteController {
     _pointer!.add('type:move\ndx:$x\ndy:$y\ndown:0\n\n');
   }
 
+  @override
   Future<void> pointerClick() async {
     await _openPointer();
     _pointer!.add('type:click\n\n');
   }
 
+  @override
   Future<void> insertText(String text) async {
     if (text.isEmpty) return;
     if (text.length > 500) {
@@ -655,12 +660,14 @@ class LgWebOsClient implements TvRemoteController {
     return paired.copyWith(macAddress: mac, deviceUuid: uuid);
   }
 
+  @override
   Future<String?> foregroundApp() async {
     final payload = await request(
         'ssap://com.webos.applicationManager/getForegroundAppInfo');
     return payload['appId']?.toString();
   }
 
+  @override
   Future<String?> currentChannel() async {
     final payload = await request('ssap://tv/getCurrentChannel');
     final number = payload['channelNumber']?.toString() ??
@@ -671,21 +678,29 @@ class LgWebOsClient implements TvRemoteController {
         .where((value) => value.isNotEmpty).join(' · ');
   }
 
+  @override
   Future<int?> volumeLevel() async {
     final payload = await request('ssap://audio/getVolume');
     final number = payload['volume'];
     return number is num && number >= 0 ? number.round() : null;
   }
 
+  @override
   Future<void> volumeUp() async { await request('ssap://audio/volumeUp'); }
+  @override
   Future<void> volumeDown() async { await request('ssap://audio/volumeDown'); }
+  @override
   Future<void> mute(bool value) async {
     await request('ssap://audio/setMute', {'mute': value});
   }
+  @override
   Future<void> channelUp() async { await request('ssap://tv/channelUp'); }
+  @override
   Future<void> channelDown() async { await request('ssap://tv/channelDown'); }
+  @override
   Future<void> powerOff() async { await request('ssap://system/turnOff'); }
 
+  @override
   Future<List<({String id, String title})>> apps() async {
     final payload = await request(
         'ssap://com.webos.applicationManager/listLaunchPoints');
@@ -700,6 +715,7 @@ class LgWebOsClient implements TvRemoteController {
       ..sort((a, b) => a.title.compareTo(b.title));
   }
 
+  @override
   Future<void> launchApp(String appId) async {
     if (appId.isEmpty || appId.length > 128) {
       throw const FormatException('Invalid TV application');
@@ -707,6 +723,7 @@ class LgWebOsClient implements TvRemoteController {
     await request('ssap://com.webos.applicationManager/launch', {'id': appId});
   }
 
+  @override
   Future<void> disconnect() async {
     _closed(StateError('LG TV session closed'));
     await _mainSubscription?.cancel();
