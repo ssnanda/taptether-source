@@ -132,8 +132,10 @@ class _LgSnapshotPadState extends State<LgSnapshotPad>
     try {
       await action();
     } catch (error) {
-      if (mounted) widget.onError(error.toString()
-          .replaceFirst('Bad state: ', ''));
+      if (mounted) {
+        widget.onError(error.toString()
+            .replaceFirst('Bad state: ', ''));
+      }
     }
   }
 
