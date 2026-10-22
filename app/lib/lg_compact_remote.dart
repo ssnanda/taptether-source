@@ -324,7 +324,9 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
         ]),
         SizedBox(height: tight ? 4 : 8),
         Expanded(child: Semantics(
-          label: 'LG TV touchpad. Swipe to browse and tap to click.',
+          label: widget.client.pointerIsRelative
+              ? 'TV touchpad. Swipe to move pointer and tap to click.'
+              : 'TV touchpad. Swipe for arrow navigation and tap for OK.',
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onPanUpdate: _pan,
@@ -335,15 +337,17 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
                 border: Border.all(color: scheme.outlineVariant),
                 borderRadius: BorderRadius.circular(23),
               ),
-              child: const Center(child: Column(
+              child: Center(child: Column(
                 mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.touch_app_outlined, size: 32),
-                  SizedBox(height: 7),
-                  Text('Touchpad',
+                  const Icon(Icons.touch_app_outlined, size: 32),
+                  const SizedBox(height: 7),
+                  const Text('Touchpad',
                       style: TextStyle(fontWeight: FontWeight.w600)),
-                  SizedBox(height: 4),
-                  Text('Swipe to browse · Tap to click',
-                      style: TextStyle(fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text(widget.client.pointerIsRelative
+                      ? 'Swipe to browse · Tap to click'
+                      : 'Swipe for arrows · Tap for OK',
+                      style: const TextStyle(fontSize: 12)),
                 ],
               )),
             ),
