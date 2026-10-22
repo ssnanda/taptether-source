@@ -29,7 +29,9 @@ class DeviceBackupCodec {
   static Map<String, String> selectKeys(Map<String, String> all) {
     final entries = <String, String>{};
     for (final entry in all.entries) {
-      if (!supportedKey(entry.key)) continue;
+      if (!supportedKey(entry.key)) {
+        continue;
+      }
       if (entry.key.length > 220 || entry.value.length > maxFileBytes) {
         throw const FormatException('Saved device configuration is too large.');
       }
