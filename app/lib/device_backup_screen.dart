@@ -5,6 +5,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import 'app_security.dart';
+import 'automatic_device_backup.dart';
+import 'phone_ssh_keys.dart';
 import 'device_backup.dart';
 
 class DeviceBackupScreen extends StatefulWidget {
@@ -16,21 +18,33 @@ class DeviceBackupScreen extends StatefulWidget {
 
 class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   final _store = DeviceBackupStore();
+  final _auto = AutomaticDeviceBackup.instance;
   bool _busy = false;
   String? _error;
   int? _entries;
+  int? _sshKeyCount;
+
+  void _automaticChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
+    _auto.addListener(_automaticChanged);
     _refresh();
+    _auto.initialize();
   }
 
   Future<void> _refresh() async {
     try {
       final data = await _store.snapshot();
+      final keys = await PhoneSshKeyStore().listKeys();
       if (mounted) {
-        setState(() => _entries = data.length);
+        setState(() {
+          _entries = data.length;
+          _sshKeyCount = keys.length;
+        });
       }
     } catch (_) {
       if (mounted) {
@@ -247,6 +261,35 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     ));
   });
 
+  Future<void> _toggleAutomatic(bool enable) => _run(() async {
+    if (!enable) {
+      await _auto.disable();
+      return;
+    }
+    final selected = await _auto.chooseFolder();
+    if (!selected || !mounted) return;
+    final password = await _password(confirm: true);
+    if (password == null || !mounted) return;
+    await _auto.enable(password);
+    if (_auto.lastError != null) {
+      throw StateError(_auto.lastError);
+    }
+  });
+
+  Future<void> _backupAutomaticallyNow() => _run(() async {
+    final saved = await _auto.backupNow(force: true);
+    if (!saved) {
+      throw StateError(_auto.lastError ??
+          'Cannot verify the encrypted backup write.');
+    }
+  });
+
+  @override
+  void dispose() {
+    _auto.removeListener(_automaticChanged);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Device Backup & Restore')),
@@ -284,8 +327,51 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         icon: const Icon(Icons.file_download_outlined),
         label: const Text('Restore devices from backup'),
       ),
+      const Divider(height: 32),
+      Text('Automatic iCloud Drive backup',
+          style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 6),
+      const Text('Choose an iCloud Drive folder once. TapTether then '
+          'saves an encrypted backup when paired devices, phone identity '
+          'or SSH keys change while the app is active. iOS controls '
+          'the actual iCloud upload.'),
+      if (Platform.isIOS)
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Automatic encrypted backup'),
+          subtitle: Text(_auto.enabled
+              ? (_auto.folderAvailable
+                  ? 'Destination: ${_auto.folderName ?? 'Files folder'}'
+                  : 'Folder permission needs attention')
+              : 'Off · Choose an iCloud Drive folder to enable'),
+          value: _auto.enabled,
+          onChanged: _busy || _auto.busy ? null : _toggleAutomatic,
+        )
+      else
+        const Text('Automatic Files backup is available on iOS. '
+            'Android still supports manual encrypted export.'),
+      if (_auto.enabled) ...[
+        if (_auto.lastBackup != null)
+          Text('Last encrypted file saved: '
+              '${_auto.lastBackup!.toLocal().toString().substring(0, 16)}',
+              style: Theme.of(context).textTheme.bodySmall),
+        if (_auto.busy) const LinearProgressIndicator(),
+        if (_auto.lastError != null)
+          Text(_auto.lastError!, style: TextStyle(
+              color: Theme.of(context).colorScheme.error)),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _busy || _auto.busy ? null : _backupAutomaticallyNow,
+          icon: const Icon(Icons.cloud_upload_outlined),
+          label: const Text('Back up now'),
+        ),
+      ],
+      const SizedBox(height: 12),
+      if (_sshKeyCount != null)
+        Text('SSH private keys available on this phone: $_sshKeyCount',
+            style: Theme.of(context).textTheme.bodySmall),
       const SizedBox(height: 18),
-      const Text('This backup contains secret pairing tokens and '
+      const Text('This backup contains secret pairing tokens and 
           'SSH private keys. Keep the password safe. It cannot be reset. '
           'Make a new backup whenever you add or remove devices.'),
     ]),
