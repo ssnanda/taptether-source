@@ -24,6 +24,7 @@ import 'device_visibility.dart';
 import 'clipboard_chunks.dart';
 import 'appearance.dart';
 import 'app_security.dart';
+import 'automatic_device_backup.dart';
 import 'security_settings_screen.dart';
 import 'device_manager_screen.dart';
 import 'discovery.dart';
@@ -674,6 +675,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(AutomaticDeviceBackup.instance.initialize());
     unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
     unawaited(loadComputers());
@@ -728,6 +730,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appForeground = state == AppLifecycleState.resumed;
     if (_appForeground) {
+      AutomaticDeviceBackup.instance.requestSoon();
       _syncScreen();
       unawaited(_refreshNetworkLocation());
       unawaited(_refreshHeartbeats());
@@ -1673,6 +1676,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => const SshKeyScreen(),
     ));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<void> openSecuritySettings() async {
@@ -1688,6 +1692,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           await loadComputers();
           await loadLgTvs();
           await loadSamsungTvs();
+          AutomaticDeviceBackup.instance.requestSoon();
           if (mounted) {
             unawaited(_refreshHeartbeats());
             unawaited(_refreshTvStatuses());
