@@ -4159,7 +4159,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   Widget build(BuildContext context) {
     // Keep the dashboard visible until a tapped saved device has completed
     // TLS pin verification and authenticated its control session.
-    final connected = agent.configured && _connectingDeviceId == null;
+    final connected = _wifiRange != null && agent.configured &&
+        _connectingDeviceId == null;
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       key: _scaffoldKey,
@@ -4179,7 +4180,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       body: connected && landscape
           ? SafeArea(child: _landscapeImmersive())
           : SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        if (!connected) ...[
+        if (!connected && _wifiRange != null) ...[
           Text('Your devices. Your control. Your network.',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.primary,
@@ -4187,8 +4188,10 @@ class _RemoteScreenState extends State<RemoteScreen>
               )),
           const SizedBox(height: 12),
         ],
-        if (!connected) updateNotices(),
-        if (!connected) ...[
+        if (!connected && _wifiRange != null) updateNotices(),
+        if (!connected && _wifiRange == null)
+          _offlineHome(),
+        if (!connected && _wifiRange != null) ...[
           deviceDashboard(),
           if (_showPairForm) ...[
           const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
@@ -4211,7 +4214,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         ],
         const SizedBox(height: 16),
         if (!connected) ...[
-          if ((_showPairForm || _showQuickActions || savedComputers.isEmpty) &&
+          if (_wifiRange != null &&
+              (_showPairForm || _showQuickActions || savedComputers.isEmpty) &&
               status.isNotEmpty && status != 'Not connected' &&
               status != 'Select a saved device to connect.') ...[
             Text(status, style: TextStyle(fontSize: 12,
