@@ -13,6 +13,85 @@ class DeviceBackupCodec {
   static const iterations = 240000;
   static const maxFileBytes = 4 * 1024 * 1024;
   static const maxKeys = 150;
+  static const unprotectedFormat = 'taptether-unprotected-devices';
+
+  // Passwordless portable files deliberately have NO encryption. Only offer
+  // this after an explicit confirmation: anyone with the .ttbackup file can
+  // read pairing tokens, phone identity and SSH private keys.
+  static Uint8List exportUnprotected(Map<String, String> raw) {
+    final values = selectKeys(raw);
+    if (values.isEmpty) {
+      throw StateError('No saved devices to back up.');
+    }
+    final bytes = Uint8List.fromList(utf8.encode(jsonEncode({
+      'format': unprotectedFormat,
+      'version': version,
+      'createdUtc': DateTime.now().toUtc().toIso8601String(),
+      'items': values,
+    })));
+    if (bytes.length > maxFileBytes) {
+      throw const FormatException('Backup exceeds the allowed size.');
+    }
+    return bytes;
+  }
+
+  static bool needsPassword(List<int> bytes) {
+    final payload = _envelope(bytes);
+    if (payload['format'] == unprotectedFormat) {
+      return false;
+    }
+    if (payload['format'] == format) {
+      return true;
+    }
+    throw const FormatException('Unrecognized TapTether backup file.');
+  }
+
+  static Map<String, dynamic> _envelope(List<int> bytes) {
+    if (bytes.isEmpty || bytes.length > maxFileBytes) {
+      throw const FormatException('Invalid backup file size.');
+    }
+    try {
+      final payload = jsonDecode(utf8.decode(bytes));
+      if (payload is Map<String, dynamic> &&
+          payload['version'] == version) {
+        return payload;
+      }
+    } catch (_) {
+      // Omit error details that could contain private file data.
+    }
+    throw const FormatException('Invalid or unsupported backup file.');
+  }
+
+  static Future<Map<String, String>> restoreFile(
+      List<int> bytes, {String? password}) async {
+    if (needsPassword(bytes)) {
+      if (password == null || password.isEmpty) {
+        throw const FormatException('This backup needs its password.');
+      }
+      return decrypt(bytes, password);
+    }
+    final payload = _envelope(bytes);
+    if (payload['format'] != unprotectedFormat ||
+        payload['items'] is! Map) {
+      throw const FormatException('Invalid unprotected backup file.');
+    }
+    final entries = payload['items'] as Map;
+    if (entries.isEmpty || entries.length > maxKeys) {
+      throw const FormatException('Invalid backup record count.');
+    }
+    final records = <String, String>{};
+    for (final entry in entries.entries) {
+      if (entry.key is! String || entry.value is! String ||
+          !supportedKey(entry.key as String) ||
+          (entry.key as String).length > 220 ||
+          (entry.value as String).length > maxFileBytes) {
+        throw const FormatException('Backup contains an invalid record.');
+      }
+      records[entry.key as String] = entry.value as String;
+    }
+    return records;
+  }
+
 
   static bool supportedKey(String key) =>
       key == 'taptether.trusted.computers.v1' ||
