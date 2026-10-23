@@ -89,7 +89,7 @@ String _title(String raw) {
   final words = raw.replaceAllMapped(RegExp(r'([a-z0-9])([A-Z])'),
       (m) => '${m[1]} ${m[2]}')
       .replaceAll('_', ' ')
-      .replaceAll(RegExp(r'\\s+'), ' ').trim();
+      .replaceAll(RegExp(r'\s+'), ' ').trim();
   return words.isEmpty ? raw
       : words[0].toUpperCase() + words.substring(1);
 }
