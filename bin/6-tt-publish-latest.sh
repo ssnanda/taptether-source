@@ -83,14 +83,19 @@ bash "$ROOT/bin/4-clean-macos-review-apps.sh"
   exit 1
 }
 python3 - "$VERSION" <<'PY'
-import json,re,sys,urllib.error,urllib.request
+import json,os,re,sys,urllib.error,urllib.request
 version=sys.argv[1]
+token=os.environ.get('GH_TOKEN')
+if not token: raise SystemExit('Missing public release token')
 def numeric(v):
     m=re.fullmatch(r'(\d+)\.(\d+)\.(\d+)\+(\d+)',v)
     if not m: raise SystemExit('Invalid release version')
     return tuple(map(int,m.groups()))
 req=urllib.request.Request('https://api.github.com/repos/ssnanda/taptether.com/releases/tags/current',
-    headers={'User-Agent':'TapTether-Release-Guard','Accept':'application/vnd.github+json'})
+    headers={'User-Agent':'TapTether-Release-Guard',
+             'Accept':'application/vnd.github+json',
+             'Authorization':f'Bearer {token}',
+             'X-GitHub-Api-Version':'2022-11-28'})
 try:
     with urllib.request.urlopen(req,timeout=15) as f: release=json.load(f)
 except urllib.error.HTTPError as e:
