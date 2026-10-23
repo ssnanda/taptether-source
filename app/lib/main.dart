@@ -533,7 +533,6 @@ class _RemoteScreenState extends State<RemoteScreen>
   String status = 'Not connected';
   String installedVersion = '…';
   String? availableAppVersion;
-  String? availableAgentVersion;
   String? connectedAgentVersion;
   String? _latestReleaseVersion;
   final Map<String, String> _latestAgentByPlatform = {};
@@ -2840,10 +2839,6 @@ class _RemoteScreenState extends State<RemoteScreen>
         _latestReleaseVersion = latest;
         if (platform != null) _latestAgentByPlatform[platform] = latestAgent;
         availableAppVersion = newerThan(latest, current) ? latest : null;
-        final selected = _latestAgentByPlatform[_connectedPlatform] ?? latest;
-        availableAgentVersion = connectedAgentVersion != null &&
-                newerThan(selected, connectedAgentVersion!)
-            ? selected : null;
       });
     } catch (_) {
       // LAN control remains usable without internet access.
@@ -3147,13 +3142,6 @@ class _RemoteScreenState extends State<RemoteScreen>
         if (existingId != null && currentAgent != null) {
           _savedAgentVersions[existingId] = currentAgent;
         }
-        availableAgentVersion = currentAgent != null &&
-                (_latestAgentByPlatform[_connectedPlatform] ??
-                    _latestReleaseVersion) != null &&
-                newerThan((_latestAgentByPlatform[_connectedPlatform] ??
-                    _latestReleaseVersion)!, currentAgent)
-            ? (_latestAgentByPlatform[_connectedPlatform] ?? _latestReleaseVersion)
-            : null;
         });
       }
       // Persist only after certificate pin verification and authenticated ping.
