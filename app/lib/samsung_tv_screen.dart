@@ -11,11 +11,13 @@ import 'tv_lan_utils.dart';
 class SamsungTvScreen extends StatefulWidget {
   const SamsungTvScreen({
     super.key, this.initialHost, this.initialLocation = 'other',
-    this.onSaved,
+    this.onSaved, this.autoConnect = true, this.wakeDevice,
   });
   final String? initialHost;
   final String initialLocation;
   final Future<void> Function()? onSaved;
+  final bool autoConnect;
+  final Future<void> Function(SamsungTvDevice)? wakeDevice;
 
   @override
   State<SamsungTvScreen> createState() => _SamsungTvScreenState();
@@ -60,7 +62,9 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
             _selectedDevice = found.first;
             _status = 'Selected ${found.first.name} · ${found.first.host}';
           });
-          if (found.first.token.isNotEmpty) await _connect(found.first);
+          if (widget.autoConnect && found.first.token.isNotEmpty) {
+            await _connect(found.first);
+          }
         } else if (mounted) {
           setState(() {
             _status = 'This TV is no longer saved.';
@@ -287,7 +291,7 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
     }
     final tv = selected;
     try {
-      await wakeSamsungTv(tv);
+      await (widget.wakeDevice ?? wakeSamsungTv)(tv);
       if (mounted) {
         setState(() =>
           _status = 'Power-on signal sent (requires network standby).');
