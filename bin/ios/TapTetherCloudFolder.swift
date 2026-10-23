@@ -8,14 +8,14 @@ import UniformTypeIdentifiers
 final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
     private static let bookmarkKey = "taptether.auto-backup.folder-bookmark.v1"
     private let defaults = UserDefaults.standard
-    private weak var presentingController: UIViewController?
     private var pendingPicker: FlutterResult?
+    private var channel: FlutterMethodChannel?
 
-    func register(_ controller: FlutterViewController) {
-        presentingController = controller
+    func register(messenger: FlutterBinaryMessenger) {
         let channel = FlutterMethodChannel(
             name: "taptether.device_backup.folder.v1",
-            binaryMessenger: controller.binaryMessenger)
+            binaryMessenger: messenger)
+        self.channel = channel
         channel.setMethodCallHandler { [weak self] call, result in
             guard let self = self else {
                 result(FlutterError(code: "CLOSED", message: "Folder handler unavailable", details: nil))
@@ -35,6 +35,20 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                 result(FlutterMethodNotImplemented)
             }
         }
+    }
+
+    private var presentingController: UIViewController? {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        guard var controller = scene?.windows.first(where: { $0.isKeyWindow })?
+            .rootViewController else {
+            return nil
+        }
+        while let presented = controller.presentedViewController {
+            controller = presented
+        }
+        return controller
     }
 
     private func selectedURL() -> URL? {
@@ -63,7 +77,8 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
         let access = url.startAccessingSecurityScopedResource()
         if access { url.stopAccessingSecurityScopedResource() }
         return ["available": access,
-                "folder": url.lastPathComponent]
+                "folder": url.lastPathComponent,
+                "location": "Files / " + url.lastPathComponent]
     }
 
     private func selectFolder(_ result: @escaping FlutterResult) {
@@ -190,7 +205,8 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                     // A successful coordinated write is not proof that iCloud
                     // has finished synchronizing the file across devices.
                     result(["saved": true, "filename": filename,
-                            "folder": folder.lastPathComponent])
+                            "folder": folder.lastPathComponent,
+                            "location": "Files / " + folder.lastPathComponent])
                 }
             }
         }
