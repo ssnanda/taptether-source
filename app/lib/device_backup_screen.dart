@@ -63,8 +63,10 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         await _import(backupBytes: bytes);
       }
     } catch (_) {
-      if (mounted) setState(() => _error =
-          'Cannot read this backup. Check iCloud Drive and try again.');
+      if (mounted) {
+        setState(() => _error =
+            'Cannot read this backup. Check iCloud Drive and try again.');
+      }
     }
   }
 
