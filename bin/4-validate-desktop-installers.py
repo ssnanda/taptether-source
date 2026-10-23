@@ -49,6 +49,7 @@ def check_deb(root: Path, version: str, arch: str) -> None:
             f'{archive}: optional xdotool must not block installation')
     sources = {
         'usr/share/taptether/4-ubuntu-desktop-setup.sh': root / 'bin' / '4-ubuntu-desktop-setup.sh',
+        'usr/share/taptether/4-ubuntu-uninstall.sh': root / 'bin' / '4-ubuntu-uninstall.sh',
         'usr/share/taptether/7-tt-update-ubuntu.sh': root / 'bin' / '7-tt-update-ubuntu.sh',
             'usr/share/taptether/7b-tt-ubuntu-release-info.py': root / 'bin' / '7b-tt-ubuntu-release-info.py',
         'usr/share/taptether/9-tt-system-update-ubuntu.sh': root / 'bin' / '9-tt-system-update-ubuntu.sh',
