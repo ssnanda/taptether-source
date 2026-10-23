@@ -603,7 +603,6 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
           if (tv != null && (!_detailMode || _ready))
             TextButton.icon(
               key: const ValueKey('lg-power-toggle'),
-              tooltip: '${_ready ? "Turn off" : "Turn on"} ${tv.name} (${tv.host})',
               onPressed: _busy || _recovering ? null : _power,
               icon: Icon(Icons.power_settings_new,
                   color: _ready ? Theme.of(context).colorScheme.error
