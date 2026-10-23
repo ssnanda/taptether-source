@@ -11,7 +11,7 @@ command -v gh >/dev/null 2>&1 || { echo 'GitHub CLI is required: brew install gh
 command -v python3 >/dev/null 2>&1 || { echo 'Python 3 required' >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo 'Sign in with gh auth login (or set GH_TOKEN in CI)' >&2; exit 1; }
 [[ "$(git branch --show-current)" == main ]] || { echo 'Publish only from main.' >&2; exit 1; }
-[[ "$(git remote get-url origin)" == *ssnanda/taptether.com* ]] || { echo 'Refusing unknown Git origin.' >&2; exit 1; }
+[[ "$(git remote get-url origin)" == *ssnanda/taptether-source* ]] || { echo 'Refusing unknown Git origin.' >&2; exit 1; }
 # Full releases must be newer than all independently released desktop agents.
 python3 bin/4-guard-release-sync.py
 mkdir -p "$STAGE"
@@ -76,99 +76,72 @@ asset_count="$(find "$STAGE" -maxdepth 1 -type f -name 'TapTether*' | wc -l | tr
 # Validation has completed before this release job runs. Remove any extracted
 # project-local review bundles so Spotlight sees only the canonical install.
 bash "$ROOT/bin/4-clean-macos-review-apps.sh"
-VERSION_TAG="v$VERSION"
-if gh release view "$VERSION_TAG" -R "$REPO" >/dev/null 2>&1; then
-  echo "$VERSION_TAG is already published; bump VERSION to publish another build." >&2
+# Publish only to a public rolling release; no source SHA or private CI links.
+[[ "$REPO" == "ssnanda/taptether.com" ]] || exit 1
+[[ -n "${GH_TOKEN:-}" ]] || {
+  echo 'Set TAPTETHER_PUBLIC_RELEASE_TOKEN in private Actions secrets; it must have public repo Contents: Read and write.' >&2
   exit 1
-fi
-# A unique release is genuinely created when this version is built, so GitHub
-# displays its correct publication timestamp. Keep current as a compatibility
-# alias for AltStore and existing auto-updaters (their URLs never change).
-PUBLISHED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-SOURCE_SHA="$(git rev-parse HEAD)"
-NOTES="TapTether $VERSION — build checks completed; publication started $PUBLISHED_AT (UTC).
-Source commit: $SOURCE_SHA
-Build workflow: https://github.com/$REPO/actions/runs/${GITHUB_RUN_ID:-manual}
-All native agents were built and verified before IPA/APK publication.
-Unsigned iOS IPA requires AltStore signing."
-echo "Publishing new, timestamped release: $VERSION_TAG"
+}
+python3 - "$VERSION" <<'PY'
+import json,re,sys,urllib.error,urllib.request
+version=sys.argv[1]
+def numeric(v):
+    m=re.fullmatch(r'(\d+)\.(\d+)\.(\d+)\+(\d+)',v)
+    if not m: raise SystemExit('Invalid release version')
+    return tuple(map(int,m.groups()))
+req=urllib.request.Request('https://api.github.com/repos/ssnanda/taptether.com/releases/tags/current',
+    headers={'User-Agent':'TapTether-Release-Guard','Accept':'application/vnd.github+json'})
+try:
+    with urllib.request.urlopen(req,timeout=15) as f: release=json.load(f)
+except urllib.error.HTTPError as e:
+    if e.code!=404: raise
+else:
+    match=re.match(r'^TapTether (\d+\.\d+\.\d+\+\d+)(?:\s|$)',release.get('name',''))
+    if not match: raise SystemExit('Unknown current-release version')
+    if numeric(version)<=numeric(match.group(1)): raise SystemExit('Refusing older or duplicate release')
+PY
+NOTES="TapTether $VERSION — latest iOS IPA (unsigned), Android APK, and desktop agents.
+The IPA needs a compatible signing/sideloading tool. Only distribution binaries are public."
 files=()
 for asset in "${expected_assets[@]}"; do files+=("$STAGE/$asset"); done
-gh release create "$VERSION_TAG" "${files[@]}" -R "$REPO" \
-  --target "$SOURCE_SHA" --title "TapTether $VERSION" \
-  --notes "$NOTES" --latest
-echo "Timestamped latest release: https://github.com/$REPO/releases/tag/$VERSION_TAG"
-
-# Keep the current stable asset URLs used by old clients. Its historical
-# published_at timestamp is NOT updated by editing: only the unique version
-# release above should receive GitHub's Latest label and fresh date.
 if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
-  gh release edit "$TAG" -R "$REPO" --title "TapTether $VERSION (rolling downloads)" \
-    --notes "$NOTES" --latest=false
-  while IFS=' ' read -r ID NAME; do
-    if [[ "$NAME" == TapTether* ]]; then
-      gh api --method DELETE "repos/$REPO/releases/assets/$ID" >/dev/null
+  gh release edit "$TAG" -R "$REPO" --title "TapTether $VERSION (rolling downloads)" --notes "$NOTES" --latest
+  gh release upload "$TAG" -R "$REPO" --clobber "${files[@]}"
+  while IFS=' ' read -r id name; do
+    keep=0
+    for expected in "${expected_assets[@]}"; do
+      if [[ "$name" == "$expected" ]]; then keep=1; break; fi
+    done
+    if [[ "$keep" -eq 0 ]]; then
+      gh api --method DELETE "repos/$REPO/releases/assets/$id" >/dev/null
     fi
   done < <(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | "\(.id) \(.name)"')
-  gh release upload "$TAG" -R "$REPO" "${files[@]}"
 else
-  gh release create "$TAG" "${files[@]}" -R "$REPO" \
-    --target "$SOURCE_SHA" --title "TapTether $VERSION (rolling downloads)" \
-    --notes "$NOTES" --latest=false
+  gh release create "$TAG" "${files[@]}" -R "$REPO" --target main \
+    --title "TapTether $VERSION (rolling downloads)" --notes "$NOTES" --latest
 fi
-echo "Updated stable downloads: https://github.com/$REPO/releases/tag/$TAG"
-# Only commit a valid feed after its corresponding IPA is actually uploaded.
-# Use a disposable worktree based on the current remote HEAD. The release can
-# finish after someone else bumps VERSION; in that case the old AltStore feed
-# must not overwrite the newer release (or make a successful release look failed).
-if [[ "$HAS_IPA" -eq 1 ]]; then
-  FEED_SNAPSHOT="$(mktemp)"
-  FEED_WORKTREE="$(mktemp -d)"
-  cp "$ROOT/altstore.json" "$FEED_SNAPSHOT"
-  cleanup_feed_worktree() {
-    git worktree remove --force "$FEED_WORKTREE" >/dev/null 2>&1 || true
-    rmdir "$FEED_WORKTREE" >/dev/null 2>&1 || true
-    rm -f "$FEED_SNAPSHOT"
-  }
-  trap cleanup_feed_worktree EXIT
-  feed_done=0
-  worktree_ready=0
-  for attempt in 1 2 3; do
-    git fetch --quiet origin main
-    remote_version="$(git show origin/main:VERSION | tr -d '\r\n')"
-    if [[ "$remote_version" != "$VERSION" ]]; then
-      echo "::notice::Release $VERSION assets published, but main is already $remote_version. Skipping stale AltStore feed push."
-      feed_done=1
-      break
-    fi
-    if [[ "$worktree_ready" -eq 0 ]]; then
-      git worktree add --quiet --detach "$FEED_WORKTREE" origin/main
-      worktree_ready=1
-    else
-      git -C "$FEED_WORKTREE" reset --hard origin/main >/dev/null
-    fi
-    cp "$FEED_SNAPSHOT" "$FEED_WORKTREE/altstore.json"
-    git -C "$FEED_WORKTREE" add -- altstore.json
-    if git -C "$FEED_WORKTREE" diff --cached --quiet -- altstore.json; then
-      echo 'AltStore feed already matches published IPA.'
-      feed_done=1
-      break
-    fi
-    git -C "$FEED_WORKTREE" -c user.name='TapTether Release Bot' \
-      -c user.email='actions@users.noreply.github.com' \
-      commit -m "chore: publish AltStore feed for $VERSION" -- altstore.json
-    if git -C "$FEED_WORKTREE" push origin HEAD:main; then
-      echo 'Committed and pushed altstore.json with the published IPA size/version.'
-      feed_done=1
-      break
-    fi
-    echo "::warning::main moved during feed publication; retrying ($attempt/3)."
-  done
-  if [[ "$feed_done" -ne 1 ]]; then
-    echo 'AltStore feed push could not be reconciled with main after three attempts.' >&2
-    exit 1
+# Synchronized agent binaries supersede older platform-only releases.
+for platform in ubuntu macos windows; do
+  if gh release view "$platform-current" -R "$REPO" >/dev/null 2>&1; then
+    gh release delete "$platform-current" -R "$REPO" --yes --cleanup-tag
   fi
-  cleanup_feed_worktree
-  trap - EXIT
+done
+# Commit only generated AltStore metadata to public main, never application source.
+git fetch --quiet origin main
+remote_version="$(git show origin/main:VERSION | tr -d '\r\n')"
+if [[ "$remote_version" != "$VERSION" ]]; then
+  echo '::warning::Skipping stale AltStore feed because source VERSION advanced.'
+  exit 0
 fi
-echo 'Note: private GitHub release assets and raw altstore.json are not anonymously accessible to AltStore.'
+feed_sha="$(gh api "repos/$REPO/contents/altstore.json" --jq '.sha' 2>/dev/null || true)"
+feed_base64="$(base64 < "$ROOT/altstore.json" | tr -d '\r\n')"
+if [[ -n "$feed_sha" ]]; then
+  gh api -X PUT "repos/$REPO/contents/altstore.json" \
+    -f message="chore: latest AltStore metadata $VERSION" \
+    -f content="$feed_base64" -f sha="$feed_sha" -f branch=main >/dev/null
+else
+  gh api -X PUT "repos/$REPO/contents/altstore.json" \
+    -f message="chore: initial AltStore metadata $VERSION" \
+    -f content="$feed_base64" -f branch=main >/dev/null
+fi
+echo "Public current: https://github.com/$REPO/releases/tag/current"
