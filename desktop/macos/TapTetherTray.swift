@@ -592,7 +592,14 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         stack.spacing = 8
         stack.alignment = .centerX
         stack.frame = NSRect(x: 0, y: 0, width: 520, height: 425)
-        let addresses = privatePairingIPs(details)
+        // Older controller output or an interface change can omit the IP list.
+        // Fall back to the trusted physical LAN interface tracked by the tray.
+        var addresses = privatePairingIPs(details)
+        if addresses.isEmpty, let physical = primaryLANIPv4() {
+            addresses = [physical]
+        }
+        var qrReady = false
+        var qrProblem = "Agent credentials or local network address are unavailable."
         if token.count >= 20 && fingerprint.count == 64 && !addresses.isEmpty {
             let address = addresses.count == 1 ? addresses[0] : {
                 let selector = NSAlert()
@@ -620,12 +627,26 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
                    let qr = pairingQRImage(url) {
                     let view = NSImageView(image: qr)
                     view.imageScaling = .scaleProportionallyUpOrDown
-                    view.frame = NSRect(x: 0, y: 0, width: 252, height: 252)
+                    view.translatesAutoresizingMaskIntoConstraints = false
+                    view.widthAnchor.constraint(equalToConstant: 252).isActive = true
+                    view.heightAnchor.constraint(equalToConstant: 252).isActive = true
                     stack.addArrangedSubview(view)
+                    qrReady = true
                     let label = NSTextField(labelWithString: "QR for " + address)
                     stack.addArrangedSubview(label)
+                } else {
+                    qrProblem = "The built-in macOS QR renderer returned no image."
                 }
+            } else {
+                qrProblem = "No local address was selected."
             }
+        }
+        if !qrReady {
+            let explanation = NSTextField(labelWithString:
+                "QR unavailable: " + qrProblem)
+            explanation.lineBreakMode = .byWordWrapping
+            explanation.maximumNumberOfLines = 3
+            stack.addArrangedSubview(explanation)
         }
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 125))
         scroll.hasVerticalScroller = true
