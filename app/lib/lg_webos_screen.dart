@@ -45,8 +45,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   // verified TLS/UUID recovery may subsequently update that host.
   LgTvDevice? get _selected {
     if (_detailMode) return _connected ?? _target;
-    return _connected ?? _target ??
-        (_saved.isEmpty ? null : _saved.first);
+    return _connected ?? _target;
   }
 
   @override
