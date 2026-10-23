@@ -2106,7 +2106,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// available, but offers no network-dependent controls or fake online state.
   Widget _offlineHome() {
     if (!_checkedWifi) {
-      return const Center(child: CircularProgressIndicator());
+      return const Text('Checking Wi-Fi…',
+          key: ValueKey('wifi-status-checking'));
     }
     return Column(
       key: const ValueKey('taptether-offline-home'),
