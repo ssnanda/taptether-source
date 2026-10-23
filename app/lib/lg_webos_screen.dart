@@ -8,12 +8,16 @@ import 'lg_compact_remote.dart';
 class LgWebOsScreen extends StatefulWidget {
   const LgWebOsScreen({super.key, this.initialHost,
     this.initialLocation = 'other', this.onSaved,
-    this.autoReconnect = true, this.wakeDevice});
+    this.autoReconnect = true, this.wakeDevice,
+    this.lookupMacHint});
   final String? initialHost;
   final String initialLocation;
   final Future<void> Function()? onSaved;
   final bool autoReconnect;
   final Future<void> Function(LgTvDevice)? wakeDevice;
+  /// Optional, explicit on-demand suggestion from an authenticated computer's
+  /// neighbor table. ARP is unverified; user must review before saving.
+  final Future<String?> Function(String host)? lookupMacHint;
   @override
   State<LgWebOsScreen> createState() => _LgWebOsScreenState();
 }
@@ -467,49 +471,115 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     await _reloadSaved();
   }
 
-  Future<void> _editMac(LgTvDevice tv) async {
+  Future<bool> _editMac(LgTvDevice tv) async {
     final controller = TextEditingController(text: tv.macAddress);
+    var checking = false;
+    String? hint;
     final updated = await showDialog<String>(
       context: context,
-      builder: (dialog) => AlertDialog(
-        title: const Text('TV identity & power on'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Local IP: ${tv.host}'),
-          if (tv.deviceUuid.isNotEmpty)
-            Text('TV ID: ${tv.deviceUuid}',
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 12),
-          TextField(
-            controller: controller,
-            autocorrect: false,
-            decoration: const InputDecoration(
-              labelText: 'TV MAC address',
-              hintText: 'AA:BB:CC:DD:EE:FF',
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text('Enable Mobile TV On / Wake-on-LAN on the TV '
-              'for supported models.',
-              style: TextStyle(fontSize: 12)),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog),
-              child: const Text('Cancel')),
-          FilledButton(onPressed: () =>
-              Navigator.pop(dialog, controller.text.trim()),
-              child: const Text('Save')),
-        ],
+      builder: (dialog) => StatefulBuilder(
+        builder: (dialog, setDialogState) => AlertDialog(
+          title: Text(tv.macAddress.isEmpty
+              ? 'Set up Power On for ${tv.name}'
+              : 'TV identity & power on'),
+          content: SingleChildScrollView(child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${tv.name} · ${tv.host}'),
+              if (tv.deviceUuid.isNotEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text('TV pairing identity saved',
+                    style: TextStyle(fontSize: 12))),
+              const SizedBox(height: 12),
+              TextField(
+                key: const ValueKey('lg-mac-setup-field'),
+                controller: controller,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(
+                  labelText: 'TV Wi-Fi MAC address',
+                  hintText: 'AA:BB:CC:DD:EE:FF',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (widget.lookupMacHint != null) ...[
+                const SizedBox(height: 6),
+                TextButton.icon(
+                  key: const ValueKey('lg-find-mac-hint'),
+                  onPressed: checking ? null : () async {
+                    setDialogState(() { checking = true; hint = null; });
+                    try {
+                      final candidate = await widget.lookupMacHint!(tv.host);
+                      if (!dialog.mounted) return;
+                      final normalized = canonicalLgMac(candidate ?? '');
+                      setDialogState(() {
+                        checking = false;
+                        if (normalized == null) {
+                          hint = 'No network MAC hint found. Enter it '
+                              'from your router or TV settings.';
+                        } else {
+                          controller.text = normalized;
+                          hint = 'Possible MAC from a paired computer. '
+                              'Verify it belongs to this TV before saving.';
+                        }
+                      });
+                    } catch (_) {
+                      if (dialog.mounted) setDialogState(() {
+                        checking = false;
+                        hint = 'Could not retrieve a network MAC hint.';
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.search),
+                  label: Text(checking
+                      ? 'Checking paired computers…'
+                      : 'Look up MAC on local network'),
+                ),
+              ],
+              if (hint != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(hint!,
+                      style: const TextStyle(fontSize: 12))),
+              const SizedBox(height: 8),
+              const Text('Find the Wi-Fi MAC in your router device '
+                  'details, or on your LG TV under Settings → '
+                  'All Settings → Support → TV Information '
+                  '(on many newer models).',
+                  style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 8),
+              const Text('Enable TV On With Mobile / Turn on via Wi-Fi '
+                  'on the television. Wake-on-LAN needs the MAC of '
+                  'the network interface currently connected.',
+                  style: TextStyle(fontSize: 12)),
+            ],
+          )),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialog),
+                child: const Text('Cancel')),
+            FilledButton(
+                key: const ValueKey('lg-save-mac'),
+                onPressed: checking ? null
+                    : () => Navigator.pop(dialog, controller.text.trim()),
+                child: const Text('Save MAC')),
+          ],
+        ),
       ),
     );
     controller.dispose();
-    if (updated == null || !mounted) return;
+    if (updated == null || !mounted) return false;
     final mac = canonicalLgMac(updated);
     if (updated.isNotEmpty && mac == null) {
-      setState(() => _error = 'Enter a valid six-byte MAC address.');
-      return;
+      setState(() => _error = 'Enter a valid six-byte Wi-Fi MAC address.');
+      return false;
     }
     await _store.save(tv.copyWith(macAddress: mac ?? ''));
     await _reloadSaved();
+    if (mounted) setState(() => _error = null);
+    return mac != null;
   }
 
   Future<void> _forget(LgTvDevice tv) async {
@@ -533,6 +603,14 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     }
     if (_detailMode && _target != null &&
         current.host != _target!.host) {
+      return;
+    }
+    // Don't pretend a failed wake occurred when setup is incomplete.
+    // In the real app, an unknown MAC opens setup. Injected wake actions
+    // keep existing isolation tests deterministic.
+    if (canonicalLgMac(current.macAddress) == null &&
+        widget.wakeDevice == null) {
+      await _editMac(current);
       return;
     }
     _waking = true;
@@ -697,7 +775,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                     icon: const Icon(Icons.power_settings_new),
                     label: Text(_waking
                         ? 'Sending wake signal to ${tv.name}…'
-                        : 'Turn on ${tv.name}'),
+                        : canonicalLgMac(tv.macAddress) == null
+                            ? 'Set up Power On for ${tv.name}'
+                            : 'Turn on ${tv.name}'),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
@@ -708,9 +788,12 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                     label: Text('Connect to ${tv.name}'),
                   ),
                   const SizedBox(height: 8),
-                  Text('Power On sends a wake-up packet only to the saved '
-                      'MAC address of this TV. Network standby must be '
-                      'enabled on the TV.',
+                  Text(tv.macAddress.isEmpty
+                      ? 'Power On needs this TV’s Wi-Fi MAC address. '
+                        'Tap Set up Power On to save it once.'
+                      : 'Power On sends a wake-up packet only to this '
+                        'TV’s saved MAC address. Network standby must '
+                        'be enabled on the TV.',
                       style: Theme.of(context).textTheme.bodySmall),
                 ],
               ],
