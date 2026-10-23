@@ -131,6 +131,28 @@ class AutomaticDeviceBackup extends ChangeNotifier {
     return _lastFileName ?? 'TapTether backup';
   }
 
+  /// Mandatory encrypted recovery point created before importing a backup.
+  /// This is independent of whether automatic backups are enabled.
+  Future<String> savePreRestore(Uint8List encryptedBytes) async {
+    if (!Platform.isIOS) {
+      throw StateError('Pre-restore backup requires iOS Files access.');
+    }
+    if (!_folderAvailable) await refreshFolder();
+    if (!_folderAvailable) {
+      throw StateError('Choose an accessible Files backup folder first.');
+    }
+    final response = await _channel.invokeMapMethod<String, dynamic>(
+      'writeBackup', <String, Object>{
+        'bytes': encryptedBytes, 'kind': 'pre-restore',
+      });
+    if (response?['saved'] != true ||
+        (response?['filename']?.toString() ?? '').isEmpty) {
+      throw StateError('Pre-restore backup could not be verified.');
+    }
+    notifyListeners();
+    return response!['filename'].toString();
+  }
+
   Future<List<Map<String, dynamic>>> listBackups() async {
     if (!Platform.isIOS || !_folderAvailable) return const [];
     final result = await _channel.invokeListMethod<dynamic>('listBackups');
