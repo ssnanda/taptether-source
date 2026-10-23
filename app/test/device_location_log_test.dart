@@ -20,6 +20,6 @@ void main() {
   test('location messages remain short and have no line breaks', () {
     expect(DeviceLocationLog.safeMessage('DNS checked\nother text'),
         'DNS checked other text');
-    expect(DeviceLocationLog.safeMessage('a' * 250).length, 150);
+    expect(DeviceLocationLog.safeMessage(List.filled(250, 'a').join()).length, 150);
   });
 }
