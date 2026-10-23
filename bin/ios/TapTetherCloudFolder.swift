@@ -95,7 +95,8 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
     private func isManagedBackup(_ file: URL) -> Bool {
         let name = file.lastPathComponent
         return (name.hasPrefix("TapTether-Auto-") ||
-                name.hasPrefix("TapTether-Manual-")) &&
+                name.hasPrefix("TapTether-Manual-") ||
+                name.hasPrefix("TapTether-PreRestore-")) &&
             file.pathExtension == "ttbackup"
     }
 
@@ -181,7 +182,9 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
             return
         }
         let encrypted = encoded.data
-        let kind = (data["kind"] as? String) == "manual" ? "Manual" : "Auto"
+        let requestedKind = data["kind"] as? String
+        let kind = requestedKind == "pre-restore" ? "PreRestore"
+            : requestedKind == "manual" ? "Manual" : "Auto"
         // iCloud Drive / third-party file providers can block during writes.
         // Never run coordinated file I/O on the UI/platform-channel thread.
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -217,16 +220,23 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                             throw NSError(domain: "TapTetherBackup", code: 11,
                                 userInfo: [NSLocalizedDescriptionKey: "File verification failed"])
                         }
-                        // Ten newest verified manual/auto generations combined.
+                        // Ten normal versions plus five pre-restore safety
+                        // copies. Automatic backup rotation must not immediately
+                        // discard the recovery point from before a restore.
                         let contents = try FileManager.default.contentsOfDirectory(
                             at: target,
                             includingPropertiesForKeys: [.contentModificationDateKey])
-                        let backups = contents.filter {
-                            self.isManagedBackup($0)
-                        }.sorted {
-                            self.backupDate($0) > self.backupDate($1)
+                        let backups = contents.filter { self.isManagedBackup($0) }
+                        let regular = backups.filter {
+                            !$0.lastPathComponent.hasPrefix("TapTether-PreRestore-")
+                        }.sorted { self.backupDate($0) > self.backupDate($1) }
+                        let safety = backups.filter {
+                            $0.lastPathComponent.hasPrefix("TapTether-PreRestore-")
+                        }.sorted { self.backupDate($0) > self.backupDate($1) }
+                        for old in regular.dropFirst(10) {
+                            try? FileManager.default.removeItem(at: old)
                         }
-                        for old in backups.dropFirst(10) {
+                        for old in safety.dropFirst(5) {
                             try? FileManager.default.removeItem(at: old)
                         }
                     } catch {
@@ -277,7 +287,7 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                             self.backupDate($0) > self.backupDate($1)
                         }
                         let iso = ISO8601DateFormatter()
-                        for file in backups.prefix(10) {
+                        for file in backups.prefix(15) {
                             let attributes = try file.resourceValues(
                                 forKeys: [.fileSizeKey, .contentModificationDateKey])
                             entries.append([
