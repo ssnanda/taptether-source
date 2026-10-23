@@ -859,8 +859,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         setState(() => _wifiRange = currentNetwork);
       }
       await Future.wait(savedSnapshot.map((device) async {
-        final onLan = currentNetwork != null &&
-            lanRangeContains(currentNetwork, device.host);
+        final onLan = lanRangeContains(currentNetwork, device.host);
         final probe = onLan
             ? await _probeSavedDevice(device, phone)
             : (online: false, version: null);
