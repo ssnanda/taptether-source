@@ -528,9 +528,13 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   /// if a background reconnect happens while the user presses On.
   Future<void> _wakeSelected() async {
     final current = _selected;
-    if (current == null || _waking) return;
+    if (current == null || _waking) {
+      return;
+    }
     if (_detailMode && _target != null &&
-        current.host != _target!.host) return;
+        current.host != _target!.host) {
+      return;
+    }
     _waking = true;
     try {
       await (widget.wakeDevice ?? wakeLgTv)(current);
@@ -554,9 +558,13 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
 
   Future<void> _power() async {
     final current = _selected;
-    if (current == null || _busy) return;
+    if (current == null || _busy) {
+      return;
+    }
     if (_detailMode && _target != null &&
-        current.host != _target!.host) return;
+        current.host != _target!.host) {
+      return;
+    }
     if (!_ready || _connected?.host != current.host) {
       await _wakeSelected();
       return;
