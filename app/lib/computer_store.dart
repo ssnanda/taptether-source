@@ -17,6 +17,7 @@ class SavedComputer {
     this.location = 'other',
     this.customName = false,
     this.macAddress = '',
+    this.dnsName = '',
   });
 
   final String id;
@@ -30,6 +31,9 @@ class SavedComputer {
   final bool customName;
   // MAC is optional and comes only from authenticated agent metadata.
   final String macAddress;
+  // The verified agent's OS hostname, distinct from the user's nickname.
+  // mDNS/DNS can relocate this agent; it never proves device identity.
+  final String dnsName;
 
   Map<String, String> toJson() => {
     'id': id, 'name': name, 'host': host, 'token': token,
@@ -37,6 +41,7 @@ class SavedComputer {
     'deviceId': deviceId, 'location': location,
     'customName': customName.toString(),
     'macAddress': macAddress,
+    'dnsName': dnsName,
   };
 
   static SavedComputer fromJson(Map<String, dynamic> data) {
@@ -49,6 +54,10 @@ class SavedComputer {
           ? value('location') : 'other',
       customName: value('customName') == 'true',
       macAddress: value('macAddress'),
+      // Preserve the original machine hostname for pre-migration pairings.
+      // A custom nickname must never be used as a DNS/mDNS lookup name.
+      dnsName: value('dnsName').isNotEmpty ? value('dnsName')
+          : (value('customName') == 'true' ? '' : value('name')),
     );
     if (computer.id.isEmpty || computer.host.isEmpty ||
         (computer.token.length < 20 && computer.deviceId.length != 32) ||
