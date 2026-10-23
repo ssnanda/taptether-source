@@ -135,7 +135,9 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
   Future<void> _action(SavedComputer device, String action) async {
     if (widget.offlineMode && {
       'connect', 'update', 'uninstall', 'diagnostics',
-    }.contains(action)) return;
+    }.contains(action)) {
+      return;
+    }
     switch (action) {
       case 'diagnostics':
         await widget.onDiagnostics(device);
