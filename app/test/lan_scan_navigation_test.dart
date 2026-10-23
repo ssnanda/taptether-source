@@ -27,7 +27,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-        find.text('Start network scan'), 200);
+        find.text('Start network scan'), 200, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('Start network scan'));
     await tester.pumpAndSettle();
     expect(scans, 1);
@@ -35,7 +35,7 @@ void main() {
         findsOneWidget);
 
     await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-device-192.168.68.73')), 200);
+        find.byKey(const ValueKey('scan-device-192.168.68.73')), 200, scrollable: find.byType(Scrollable).first);
     await tester.tap(
         find.byKey(const ValueKey('scan-device-192.168.68.73')));
     await tester.pumpAndSettle();
@@ -51,7 +51,7 @@ void main() {
     expect(find.text('Scan local network'), findsOneWidget);
     expect(scans, 1); // Back must never trigger a second network scan.
     await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-device-192.168.68.53')), 200);
+        find.byKey(const ValueKey('scan-device-192.168.68.53')), 200, scrollable: find.byType(Scrollable).first);
     await tester.tap(
         find.byKey(const ValueKey('scan-device-192.168.68.53')));
     await tester.pumpAndSettle();
@@ -69,19 +69,19 @@ void main() {
     expect(find.byKey(const ValueKey('scan-whole-network')),
         findsOneWidget);
     await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-targeted-only')), 180);
+        find.byKey(const ValueKey('scan-targeted-only')), 180, scrollable: find.byType(Scrollable).first);
     expect(find.byKey(const ValueKey('scan-targeted-only')), findsOneWidget);
     await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-vendor-lg')), 180);
+        find.byKey(const ValueKey('scan-vendor-lg')), 180, scrollable: find.byType(Scrollable).first);
     expect(find.byKey(const ValueKey('scan-vendor-lg')), findsOneWidget);
     await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-vendor-samsung')), 180);
+        find.byKey(const ValueKey('scan-vendor-samsung')), 180, scrollable: find.byType(Scrollable).first);
     expect(find.byKey(const ValueKey('scan-vendor-samsung')), findsOneWidget);
     await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-deep-all-tcp')), 180);
+        find.byKey(const ValueKey('scan-deep-all-tcp')), 180, scrollable: find.byType(Scrollable).first);
     expect(find.byKey(const ValueKey('scan-deep-all-tcp')), findsOneWidget);
     await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-targeted-only')), -180);
+        find.byKey(const ValueKey('scan-targeted-only')), -180, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.byKey(const ValueKey('scan-targeted-only')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('scan-target-ips')), findsOneWidget);
