@@ -108,6 +108,48 @@ class AutomaticDeviceBackup extends ChangeNotifier {
     return chosen && _folderAvailable;
   }
 
+  /// Manually save to the selected Files folder without enabling automation.
+  /// The native writer creates TapTether/ and rotates verified generations.
+  Future<String> saveManual(Uint8List bytes) async {
+    if (!Platform.isIOS) {
+      throw StateError('Choose a backup destination using Files.');
+    }
+    if (!_folderAvailable) {
+      await refreshFolder();
+    }
+    if (!_folderAvailable) {
+      throw StateError('Choose a Files folder first.');
+    }
+    final response = await _channel.invokeMapMethod<String, dynamic>(
+      'writeBackup', <String, Object>{'bytes': bytes, 'kind': 'manual'});
+    if (response?['saved'] != true) {
+      throw StateError('Backup file was not verified.');
+    }
+    _lastFileName = response?['filename']?.toString();
+    _lastBackup = DateTime.now().toUtc();
+    notifyListeners();
+    return _lastFileName ?? 'TapTether backup';
+  }
+
+  Future<List<Map<String, dynamic>>> listBackups() async {
+    if (!Platform.isIOS || !_folderAvailable) return const [];
+    final result = await _channel.invokeListMethod<dynamic>('listBackups');
+    return (result ?? const []).whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item)).toList();
+  }
+
+  Future<Uint8List> readBackup(String filename) async {
+    if (!Platform.isIOS || !_folderAvailable) {
+      throw StateError('Backup folder not selected.');
+    }
+    final contents = await _channel.invokeMethod<Uint8List>(
+      'readBackup', <String, String>{'filename': filename});
+    if (contents == null || contents.isEmpty) {
+      throw StateError('Backup file is empty or unavailable.');
+    }
+    return contents;
+  }
+
   Future<void> enable(String? password) async {
     if (!Platform.isIOS) {
       throw StateError('Automatic Files backup is currently iOS-only.');
@@ -194,7 +236,8 @@ class AutomaticDeviceBackup extends ChangeNotifier {
           : await DeviceBackupCodec.encrypt(selected, password!);
       final response = await _channel.invokeMapMethod<String, dynamic>(
         'writeBackup',
-        <String, Object>{'bytes': Uint8List.fromList(fileBytes)});
+        <String, Object>{
+          'bytes': Uint8List.fromList(fileBytes), 'kind': 'auto'});
       if (response?['saved'] != true) {
         throw StateError('The backup destination did not verify the write.');
       }
