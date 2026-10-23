@@ -21,6 +21,8 @@ class AutomaticDeviceBackup extends ChangeNotifier {
   static const _passwordKey = 'taptether.auto-backup.password.v1';
   static const _digestKey = 'taptether.auto-backup.last-digest.v1';
   static const _timeKey = 'taptether.auto-backup.last-saved.v1';
+  static const _fileKey = 'taptether.auto-backup.last-file.v1';
+  static const _withoutPasswordKey = 'taptether.auto-backup.no-password.v1';
 
   final _secure = const FlutterSecureStorage();
   final _store = DeviceBackupStore();
@@ -31,6 +33,9 @@ class AutomaticDeviceBackup extends ChangeNotifier {
   bool _enabled = false;
   bool _folderAvailable = false;
   String? _folderName;
+  String? _folderLocation;
+  String? _lastFileName;
+  bool _withoutPassword = false;
   DateTime? _lastBackup;
   String? _lastError;
   String? _lastDigest;
@@ -39,6 +44,9 @@ class AutomaticDeviceBackup extends ChangeNotifier {
   bool get folderAvailable => _folderAvailable;
   bool get busy => _busy;
   String? get folderName => _folderName;
+  String? get folderLocation => _folderLocation;
+  String? get lastFileName => _lastFileName;
+  bool get withoutPassword => _withoutPassword;
   DateTime? get lastBackup => _lastBackup;
   String? get lastError => _lastError;
 
@@ -52,8 +60,11 @@ class AutomaticDeviceBackup extends ChangeNotifier {
     }
     try {
       final secret = await _secure.read(key: _passwordKey);
-      _enabled = secret != null && secret.length >= 12;
+      _withoutPassword =
+          await _secure.read(key: _withoutPasswordKey) == 'true';
+      _enabled = _withoutPassword || (secret != null && secret.length >= 12);
       _lastDigest = await _secure.read(key: _digestKey);
+      _lastFileName = await _secure.read(key: _fileKey);
       final rawTime = await _secure.read(key: _timeKey);
       _lastBackup = rawTime == null ? null : DateTime.tryParse(rawTime);
       await refreshFolder();
@@ -75,9 +86,11 @@ class AutomaticDeviceBackup extends ChangeNotifier {
       final info = await _channel.invokeMapMethod<String, dynamic>('status');
       _folderAvailable = info?['available'] == true;
       _folderName = info?['folder']?.toString();
+      _folderLocation = info?['location']?.toString() ??
+          (_folderName == null ? null : 'Files / $_folderName');
     } on MissingPluginException {
       _folderAvailable = false;
-      _lastError = 'Automatic Files backups unavailable in this build.';
+      _lastError = 'Update TapTether to enable automatic Files backup.';
     } catch (error) {
       _folderAvailable = false;
       _lastError = 'Unable to access selected folder: $error';
@@ -95,28 +108,49 @@ class AutomaticDeviceBackup extends ChangeNotifier {
     return chosen && _folderAvailable;
   }
 
-  Future<void> enable(String password) async {
+  Future<void> enable(String? password) async {
     if (!Platform.isIOS) {
       throw StateError('Automatic Files backup is currently iOS-only.');
     }
-    if (password.length < 12) {
+    if (password != null && password.length < 12) {
       throw const FormatException('Backup password must be at least 12 characters.');
     }
     await refreshFolder();
     if (!_folderAvailable) {
       throw StateError('Choose an accessible iCloud Drive folder first.');
     }
-    await _secure.write(key: _passwordKey, value: password);
+    await setProtection(password);
     _enabled = true;
+    notifyListeners();
+    if (!await backupNow(force: true)) {
+      final message = _lastError ?? 'Could not save automatic backup.';
+      await disable();
+      throw StateError(message);
+    }
+  }
+
+  Future<void> setProtection(String? password) async {
+    if (password != null && password.length < 12) {
+      throw const FormatException('Backup password must be at least 12 characters.');
+    }
+    if (password == null) {
+      await _secure.delete(key: _passwordKey);
+      await _secure.write(key: _withoutPasswordKey, value: 'true');
+    } else {
+      await _secure.write(key: _passwordKey, value: password);
+      await _secure.delete(key: _withoutPasswordKey);
+    }
+    _withoutPassword = password == null;
     _lastDigest = null;
     _lastError = null;
     notifyListeners();
-    await backupNow(force: true);
   }
 
   Future<void> disable() async {
     _scheduled?.cancel();
     await _secure.delete(key: _passwordKey);
+    await _secure.delete(key: _withoutPasswordKey);
+    _withoutPassword = false;
     _enabled = false;
     _lastError = null;
     notifyListeners();
@@ -141,8 +175,8 @@ class AutomaticDeviceBackup extends ChangeNotifier {
     notifyListeners();
     try {
       final password = await _secure.read(key: _passwordKey);
-      if (password == null || password.length < 12) {
-        throw StateError('Backup password is missing. Set up automatic backup again.');
+      if (!_withoutPassword && (password == null || password.length < 12)) {
+        throw StateError('Backup password missing. Reconfigure backup protection.');
       }
       final selected = await _store.snapshot();
       if (selected.isEmpty) {
@@ -155,17 +189,25 @@ class AutomaticDeviceBackup extends ChangeNotifier {
         return false;
       }
 
-      final encrypted = await DeviceBackupCodec.encrypt(selected, password);
+      final fileBytes = _withoutPassword
+          ? DeviceBackupCodec.exportUnprotected(selected)
+          : await DeviceBackupCodec.encrypt(selected, password!);
       final response = await _channel.invokeMapMethod<String, dynamic>(
         'writeBackup',
-        <String, Object>{'bytes': Uint8List.fromList(encrypted)});
+        <String, Object>{'bytes': Uint8List.fromList(fileBytes)});
       if (response?['saved'] != true) {
         throw StateError('The backup destination did not verify the write.');
       }
       _lastDigest = digest;
       _lastBackup = DateTime.now().toUtc();
       _folderName = response?['folder']?.toString() ?? _folderName;
+      _folderLocation = response?['location']?.toString() ??
+          (_folderName == null ? null : 'Files / $_folderName');
+      _lastFileName = response?['filename']?.toString();
       _folderAvailable = true;
+      if (_lastFileName != null) {
+        await _secure.write(key: _fileKey, value: _lastFileName!);
+      }
       await _secure.write(key: _digestKey, value: digest);
       await _secure.write(
           key: _timeKey, value: _lastBackup!.toIso8601String());
