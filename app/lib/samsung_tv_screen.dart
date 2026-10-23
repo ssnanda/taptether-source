@@ -359,8 +359,6 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
         actions: [
           if (tv != null && (!_detailMode || _connected)) TextButton.icon(
             key: const ValueKey('samsung-power-toggle'),
-            tooltip: '${_connected ? "Turn off" : "Turn on"} '
-                '${tv.name} (${tv.host})',
             onPressed: _busy ? null : _power,
             icon: const Icon(Icons.power_settings_new),
             label: Text(_connected ? 'Off' : 'On'),
