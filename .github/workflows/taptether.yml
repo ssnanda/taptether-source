@@ -528,8 +528,13 @@ jobs:
         with:
           go-version: '1.27.x'
           cache: false
-      - name: Install icon renderer
-        run: python3 -m pip install --disable-pip-version-check Pillow
+      - name: Create isolated Python environment for icon renderer
+        run: |
+          python3 -m venv "$RUNNER_TEMP/taptether-python"
+          "$RUNNER_TEMP/taptether-python/bin/python" -m pip install --disable-pip-version-check Pillow
+          echo "$RUNNER_TEMP/taptether-python/bin" >> "$GITHUB_PATH"
+      - name: Verify icon renderer
+        run: python3 -c 'from PIL import Image; print("Pillow available")'
       - name: Set package-only version without committing VERSION
         env:
           REQUESTED_VERSION: ${{ inputs.agent_version }}
