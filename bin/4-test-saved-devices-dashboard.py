@@ -48,7 +48,9 @@ assert "Tooltip(" in main
 assert "Icons.travel_explore" in main
 assert "Icons.check_circle" in main
 assert "Icons.radio_button_unchecked" in main
-assert "key: const ValueKey('locate-saved-devices')" in main
+header = (root / 'app/lib/device_dashboard_header.dart').read_text()
+assert "key: const ValueKey('locate-saved-devices')" in header
+assert "key: const ValueKey('refresh-device-status')" not in main
 assert "_refreshDevicesManually" in main
 assert "DeviceLocationLog.instance.record" in main
 assert '_lastPassiveDiscovery = null;' in main
