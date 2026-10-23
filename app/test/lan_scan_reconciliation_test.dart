@@ -49,10 +49,10 @@ void main() {
     expect(network.scanPrefixes.toSet(),
         {'192.168.20', '192.168.21'});
     expect(find.textContaining('192.168.20.0/23'), findsWidgets);
-    final allSubnets = tester.widget<SwitchListTile>(
+    final allSubnets = tester.widget<CheckboxListTile>(
         find.byKey(const ValueKey('scan-whole-network')));
     expect(allSubnets.value, isTrue);
-    await tester.tap(find.text('Start IP scan'));
+    await tester.tap(find.text('Start network scan'));
     await tester.pump();
     await tester.pump();
     // Active Wi-Fi /24 is intentionally scanned first; the verifier runs
@@ -104,7 +104,7 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Start IP scan'));
+    await tester.tap(find.text('Start network scan'));
     await tester.pumpAndSettle();
     expect(find.text('UnknownMac.local'), findsOneWidget);
     expect(find.byKey(const ValueKey('scan-verified-pairs')), findsNothing);
