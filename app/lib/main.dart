@@ -28,6 +28,7 @@ import 'automatic_device_backup.dart';
 import 'security_settings_screen.dart';
 import 'device_manager_screen.dart';
 import 'device_diagnostics_screen.dart';
+import 'device_location_log.dart';
 import 'uninstall_agent_screen.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
@@ -1001,17 +1002,73 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  String _computerLocationKey(SavedComputer device) =>
+      'computer:${device.id}';
+  String _lgLocationKey(LgTvDevice tv) =>
+      'lg:${tv.deviceUuid.isNotEmpty ? tv.deviceUuid :
+            (tv.tlsPin.isNotEmpty ? tv.tlsPin : tv.host)}';
+  String _samsungLocationKey(SamsungTvDevice tv) =>
+      'samsung:${tv.deviceId.isNotEmpty ? tv.deviceId :
+            (tv.macAddress.isNotEmpty ? tv.macAddress : tv.host)}';
+
+  Future<void> _noteLocation(String deviceKey, String event) async {
+    try {
+      await DeviceLocationLog.instance.record(deviceKey, event);
+    } catch (_) {
+      // Diagnostics are supplementary and must never break discovery.
+    }
+  }
+
+  bool _locatingManually = false;
   Future<void> _refreshDevicesManually() async {
     if (_wifiRange == null || _checkingHeartbeat || _recoveringDiscovery ||
         _recoveringTvAddresses || _checkingTvStatus) {
       return;
     }
-    await Future.wait([
-      _refreshHeartbeats(),
-      _refreshTvStatuses(),
-    ]);
-    await _recoverSavedDevices(force: true);
-    await _recoverTvAddresses(force: true);
+    if (_locatingManually) return;
+    setState(() => _locatingManually = true);
+    final computers = savedComputers.toList();
+    final lgTvs = savedLgTvs.toList();
+    final samsungTvs = savedSamsungTvs.toList();
+    try {
+      await Future.wait([
+        for (final device in computers)
+          _noteLocation(_computerLocationKey(device),
+              'Manual locate requested; verify saved IP, DNS, discovery and TLS'),
+        for (final tv in lgTvs)
+          _noteLocation(_lgLocationKey(tv),
+              'Manual locate requested; verify TV identity at current IP'),
+        for (final tv in samsungTvs)
+          _noteLocation(_samsungLocationKey(tv),
+              'Manual locate requested; verify TV identity at current IP'),
+      ]);
+      await Future.wait([_refreshHeartbeats(), _refreshTvStatuses()]);
+      await _recoverSavedDevices(force: true);
+      await _recoverTvAddresses(force: true);
+      await Future.wait([
+        for (final device in computers)
+          _noteLocation(_computerLocationKey(device),
+              _online[device.id] == true
+                  ? 'Located: saved pairing authenticated'
+                  : 'Not located on this Wi-Fi (pairing unchanged)'),
+        for (final tv in lgTvs)
+          _noteLocation(_lgLocationKey(tv),
+              savedLgTvs.any((saved) =>
+                _lgLocationKey(saved) == _lgLocationKey(tv) &&
+                _tvOnline['lg:${saved.host}'] == true)
+                  ? 'Located: saved TV identity verified'
+                  : 'Not located on this Wi-Fi (pairing unchanged)'),
+        for (final tv in samsungTvs)
+          _noteLocation(_samsungLocationKey(tv),
+              savedSamsungTvs.any((saved) =>
+                _samsungLocationKey(saved) == _samsungLocationKey(tv) &&
+                _tvOnline['samsung:${saved.host}'] == true)
+                  ? 'Located: saved TV identity verified'
+                  : 'Not located on this Wi-Fi (pairing unchanged)'),
+      ]);
+    } finally {
+      if (mounted) setState(() => _locatingManually = false);
+    }
   }
 
   // Listen only in the foreground; iOS can suspend background sockets.
