@@ -42,6 +42,14 @@ assert 'savedComputers.every((d) => _online[d.id] == true)' in recovery
 assert '_reconcileScannedAgent(address, passive: true)' in recovery
 assert 'if (_probingOfflineAgents)' not in recovery
 assert 'checking: _checkingHeartbeat || _recoveringDiscovery' in main
-assert "Checking TapTether agent addresses on this Wi-Fi" in main
+# Dashboard statuses use compact semantic icons, not flashing prose.
+assert "Checking TapTether agent addresses on this Wi-Fi" not in main
+assert "Tooltip(" in main
+assert "Icons.travel_explore" in main
+assert "Icons.check_circle" in main
+assert "Icons.radio_button_unchecked" in main
+assert "key: const ValueKey('locate-saved-devices')" in main
+assert "_refreshDevicesManually" in main
+assert "DeviceLocationLog.instance.record" in main
 assert '_lastPassiveDiscovery = null;' in main
 print('PASS saved-only heartbeat, passive UDP plus throttled TCP recovery')
