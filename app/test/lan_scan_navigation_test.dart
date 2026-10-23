@@ -26,14 +26,16 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+        find.text('Start network scan'), 200);
     await tester.tap(find.text('Start network scan'));
     await tester.pumpAndSettle();
     expect(scans, 1);
     expect(find.byKey(const ValueKey('copy-network-report')),
         findsOneWidget);
 
-    await tester.ensureVisible(
-        find.byKey(const ValueKey('scan-device-192.168.68.73')));
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('scan-device-192.168.68.73')), 200);
     await tester.tap(
         find.byKey(const ValueKey('scan-device-192.168.68.73')));
     await tester.pumpAndSettle();
@@ -48,8 +50,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Scan local network'), findsOneWidget);
     expect(scans, 1); // Back must never trigger a second network scan.
-    await tester.ensureVisible(
-        find.byKey(const ValueKey('scan-device-192.168.68.53')));
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('scan-device-192.168.68.53')), 200);
     await tester.tap(
         find.byKey(const ValueKey('scan-device-192.168.68.53')));
     await tester.pumpAndSettle();
@@ -66,14 +68,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('scan-whole-network')),
         findsOneWidget);
-    expect(find.byKey(const ValueKey('scan-targeted-only')),
-        findsOneWidget);
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('scan-targeted-only')), 180);
+    expect(find.byKey(const ValueKey('scan-targeted-only')), findsOneWidget);
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('scan-vendor-lg')), 180);
     expect(find.byKey(const ValueKey('scan-vendor-lg')), findsOneWidget);
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('scan-vendor-samsung')), 180);
     expect(find.byKey(const ValueKey('scan-vendor-samsung')), findsOneWidget);
-    expect(find.byKey(const ValueKey('scan-deep-all-tcp')),
-        findsOneWidget);
-    await tester.ensureVisible(find.byKey(
-        const ValueKey('scan-targeted-only')));
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('scan-deep-all-tcp')), 180);
+    expect(find.byKey(const ValueKey('scan-deep-all-tcp')), findsOneWidget);
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('scan-targeted-only')), -180);
     await tester.tap(find.byKey(const ValueKey('scan-targeted-only')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('scan-target-ips')), findsOneWidget);
