@@ -1038,7 +1038,9 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   bool _locatingManually = false;
   Future<void> _refreshDevicesManually() async {
-    if (_wifiRange == null || _locatingManually) return;
+    if (_wifiRange == null || _locatingManually) {
+      return;
+    }
     setState(() => _locatingManually = true);
     try {
       // A user-requested locate must not become a greyed-out, dead control
