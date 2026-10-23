@@ -9,6 +9,7 @@ import 'discovery.dart';
 import 'lan_scan.dart';
 import 'lg_webos_client.dart';
 import 'samsung_tv_client.dart';
+import 'device_location_log.dart';
 
 /// Opt-in LAN diagnostics for each saved device type.
 /// No pairing or TLS credentials are copied into this screen's report.
@@ -26,6 +27,9 @@ class DeviceDiagnosticsScreen extends StatefulWidget {
     this.about = const {},
     this.lastError,
     this.verifyAuthenticated,
+    this.locationLogKey = '',
+    this.onLocate,
+    this.currentHost,
   });
 
   final String name;
@@ -41,6 +45,11 @@ class DeviceDiagnosticsScreen extends StatefulWidget {
   final String? lastError;
   /// Read-only authenticated check supplied by a trusted caller.
   final Future<Map<String, String>> Function()? verifyAuthenticated;
+  /// Stable paired-device identity, never the floating address.
+  final String locationLogKey;
+  /// Uses existing authenticated discovery; never enrolls new devices.
+  final Future<void> Function()? onLocate;
+  final String Function()? currentHost;
 
   @override
   State<DeviceDiagnosticsScreen> createState() =>
@@ -87,6 +96,7 @@ String diagnosticReport({
 class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
   final Map<String, String> _details = {};
   bool _running = false;
+  bool _locating = false;
   DateTime? _lastRun;
   String? _report;
 
@@ -102,12 +112,28 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
     final details = <String, String>{};
     void add(String label, String value) =>
         details[label] = redactDiagnosticText(value);
+    final currentHost = widget.currentHost?.call() ?? widget.host;
     add('Connection category', widget.kind);
     add('Saved pairing', widget.paired ? 'Yes' : 'No');
     add('Certificate pin stored', widget.hasTlsPin ? 'Yes (value omitted)' : 'No');
     add('Last dashboard reachability', widget.reportedOnline == null
         ? 'Not checked' : widget.reportedOnline! ? 'Online' : 'Offline');
     add('Location label', widget.location);
+    if (widget.locationLogKey.isNotEmpty) {
+      try {
+        final events = await DeviceLocationLog.instance
+            .read(widget.locationLogKey);
+        if (events.isEmpty) {
+          add('Location history', 'No location attempts recorded');
+        } else {
+          for (var i = 0; i < events.length && i < 16; i++) {
+            add('Locate event ${i + 1}', events[i]);
+          }
+        }
+      } catch (_) {
+        add('Location history', 'Unavailable on this phone');
+      }
+    }
     if (widget.model.isNotEmpty) add('Model', widget.model);
     for (final entry in widget.about.entries.take(32)) {
       if (RegExp(r'token|key|secret|password|pin|fingerprint|session',
@@ -136,14 +162,14 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
         add('Current Wi-Fi LAN', '${lan.ip} / ${lan.cidr}');
         add('Subnet mask', lan.subnetMask);
         add('Wi-Fi SSID', lan.ssid?.isNotEmpty == true ? lan.ssid! : 'Not available');
-        onCurrentLan = lanRangeContains(lan, widget.host);
+        onCurrentLan = lanRangeContains(lan, currentHost);
         add('LAN subnet match', onCurrentLan ? 'Yes' : 'No');
       }
     } catch (error) {
       add('Current Wi-Fi LAN', 'Detection failed: $error');
     }
 
-    if (!isPrivateIPv4(widget.host)) {
+    if (!isPrivateIPv4(currentHost)) {
       add('Device address validation', 'Not a private IPv4; active tests skipped');
     } else if (!onCurrentLan) {
       add('Active checks', 'Skipped: saved IP is outside current Wi-Fi subnet. Re-discover and verify device identity first.');
@@ -158,7 +184,7 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
       final results = await Future.wait(ports.map((port) async {
         final watch = Stopwatch()..start();
         try {
-          final status = await probeTcpPort(widget.host, port,
+          final status = await probeTcpPort(currentHost, port,
               timeout: const Duration(milliseconds: 1100));
           return MapEntry(port, '${status.name} (${watch.elapsedMilliseconds} ms)');
         } catch (error) {
@@ -170,7 +196,7 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
       }
       if (widget.kind == 'lg') {
         try {
-          final hello = await readLgWebOsHello(widget.host,
+          final hello = await readLgWebOsHello(currentHost,
               connectTimeout: const Duration(milliseconds: 650),
               replyTimeout: const Duration(seconds: 2));
           add('LG webOS hello', hello == null
@@ -183,7 +209,7 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
             : 'Not available without a saved certificate pin');
       } else if (widget.kind == 'samsung') {
         try {
-          final info = await probeSamsungTv(widget.host,
+          final info = await probeSamsungTv(currentHost,
               timeout: const Duration(seconds: 2));
           add('Samsung device info', info == null
               ? 'No valid Samsung /api/v2 response'
@@ -218,9 +244,22 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
       _lastRun = now;
       _details.addAll(details);
       _report = diagnosticReport(name: widget.name, kind: widget.kind,
-          host: widget.host, timestamp: now, details: details);
+          host: currentHost, timestamp: now, details: details);
       _running = false;
     });
+  }
+
+  Future<void> _locateNow() async {
+    if (_running || _locating || widget.onLocate == null) return;
+    setState(() => _locating = true);
+    try {
+      await widget.onLocate!();
+    } catch (_) {
+      // Actual recovery details are recorded by the controller.
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+    if (mounted) await _run();
   }
 
   Future<void> _copy() async {
@@ -238,7 +277,7 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
     appBar: AppBar(title: const Text('Device Diagnostics')),
     body: ListView(padding: const EdgeInsets.all(16), children: [
       Text(widget.name, style: Theme.of(context).textTheme.titleLarge),
-      Text('${widget.kind} · ${widget.host}'),
+      Text('${widget.kind} · ${widget.currentHost?.call() ?? widget.host}'),
       const SizedBox(height: 12),
       Row(children: [
         Expanded(child: FilledButton.icon(
@@ -255,12 +294,22 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
           label: const Text('Copy report'),
         )),
       ]),
-      if (_running) const Padding(padding: EdgeInsets.symmetric(vertical: 12),
+      if (widget.onLocate != null) ...[
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          key: const ValueKey('locate-from-diagnostics'),
+          onPressed: _running || _locating ? null : _locateNow,
+          icon: const Icon(Icons.travel_explore),
+          label: Text(_locating ? 'Locating…' : 'Locate device now'),
+        ),
+      ],
+      if (_running || _locating)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 12),
           child: LinearProgressIndicator()),
       const SizedBox(height: 10),
-      const Text('Runs only when opened or refreshed. No cloud upload, '
-          'network-wide scan, re-pairing or device control. Copy the report '
-          'to share it. It includes your LAN IP and possibly Wi-Fi name.'),
+      const Text('Checks stay local. Location history includes verified '
+          'IP changes and discovery results; copied reports may contain '
+          'your Wi-Fi name and local IP addresses.'),
       if (_lastRun != null) ...[
         const SizedBox(height: 12),
         Text('Last run: ${_lastRun!.toLocal()}'),
