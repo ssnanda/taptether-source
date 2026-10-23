@@ -476,6 +476,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final networkLocationStore = NetworkLocationStore();
   Timer? _heartbeatTimer;
   DetectedLanRange? _wifiRange;
+  bool _checkedWifi = false;
   String? _detectedLocation;
   // Saved devices appear immediately; the user can filter by location or hide offline.
   String _locationFilter = 'all';
@@ -760,15 +761,30 @@ class _RemoteScreenState extends State<RemoteScreen>
         }
         _lastNetworkId = identity;
         _wifiRange = current;
+        _checkedWifi = true;
         _detectedLocation = label;
+        if (current == null) {
+          _showPairForm = false;
+          _showQuickActions = false;
+          nearbyComputers.clear();
+          _online.clear();
+          _savedAgentVersions.clear();
+          _tvOnline.clear();
+        }
       });
-      if (changed) {
+      // Never retain a remote session when Wi-Fi disappears. Keep pairing
+      // credentials and saved names intact; only the live session ends.
+      if (current == null && agent.configured) {
+        _stopScreen();
+        agent.disconnect();
+      }
+      if (changed && current != null) {
         unawaited(_refreshTvStatuses());
         if (savedLgTvs.isNotEmpty || savedSamsungTvs.isNotEmpty) {
           unawaited(_recoverTvAddresses());
         }
       }
-      if (changed && savedComputers.isNotEmpty) {
+      if (changed && current != null && savedComputers.isNotEmpty) {
         // Invalidate probes started on the previous Wi-Fi before refreshing.
         _heartbeatGeneration++;
         _checkingHeartbeat = false;
@@ -822,8 +838,18 @@ class _RemoteScreenState extends State<RemoteScreen>
       final savedSnapshot = savedComputers.toList();
       // Do not contact stale IPs on another subnet. They might now belong
       // to an unrelated machine; discover locally and authenticate instead.
-      final currentNetwork = await detectLanRange() ?? _wifiRange;
-      if (currentNetwork != null && mounted) {
+      final currentNetwork = await detectLanRange();
+      if (currentNetwork == null) {
+        if (mounted) {
+          setState(() {
+            for (final saved in savedComputers) {
+              _online[saved.id] = false;
+            }
+          });
+        }
+        return;
+      }
+      if (mounted) {
         setState(() => _wifiRange = currentNetwork);
       }
       await Future.wait(savedSnapshot.map((device) async {
@@ -868,8 +894,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   // when broadcast discovery is blocked by iOS or the Wi-Fi router.
   // Raw TCP acceptance is NEVER evidence of identity or an online device.
   Future<void> _recoverSavedDevices({bool force = false}) async {
-    if (!mounted || !_appForeground || savedComputers.isEmpty ||
-        _recoveringDiscovery || _scanningToReconcile ||
+    if (!mounted || !_appForeground || _wifiRange == null ||
+        savedComputers.isEmpty || _recoveringDiscovery || _scanningToReconcile ||
         (force && savedComputers.every((d) => _online[d.id] == true))) {
       return;
     }
@@ -884,8 +910,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (mounted) setState(() {});
     try {
       // Do not scan a stale cached CIDR if the user switched Wi-Fi.
-      final network = await detectLanRange() ?? _wifiRange;
-      if (network == null || !mounted) {
+      final network = await detectLanRange();
+      if (network == null || !mounted || _wifiRange == null) {
         return;
       }
       // Prefer a short local DNS/mDNS lookup over a full subnet sweep.
@@ -1581,7 +1607,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _checkingTvStatus = true;
     if (mounted) setState(() {});
     try {
-      final lan = await detectLanRange() ?? _wifiRange;
+      final lan = await detectLanRange();
       final lg = savedLgTvs.toList();
       final samsung = savedSamsungTvs.toList();
       await Future.wait(<Future<void>>[
@@ -1632,8 +1658,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         now.difference(_lastTvRecovery!) < const Duration(minutes: 10)) {
       return;
     }
-    final network = await detectLanRange() ?? _wifiRange;
-    if (network == null || !mounted) return;
+    final network = await detectLanRange();
+    if (network == null || _wifiRange == null || !mounted) return;
     // No broad scan while devices are reachable, or without a stable ID.
     final missingLg = savedLgTvs.where((tv) =>
         _tvOnline['lg:${tv.host}'] != true &&
