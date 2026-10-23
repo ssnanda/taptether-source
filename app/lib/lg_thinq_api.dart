@@ -32,21 +32,24 @@ class LgThinQDevice {
 
   static LgThinQDevice? parse(Object? value) {
     if (value is! Map) return null;
-    String field(String key) => value[key] is String
-        ? (value[key] as String).trim() : '';
-    final id = field('deviceId').isNotEmpty
-        ? field('deviceId') : field('id');
+    String field(Map data, String key) => data[key] is String
+        ? (data[key] as String).trim() : '';
+    final info = value['deviceInfo'] is Map
+        ? value['deviceInfo'] as Map : value;
+    final id = field(value, 'deviceId').isNotEmpty
+        ? field(value, 'deviceId') : field(value, 'id');
     if (id.isEmpty || id.length > 180) return null;
-    final type = field('deviceType').isNotEmpty
-        ? field('deviceType') : field('type');
-    final alias = field('alias').isNotEmpty
-        ? field('alias') : field('name');
+    final type = field(info, 'deviceType').isNotEmpty
+        ? field(info, 'deviceType') : field(value, 'deviceType');
+    final alias = field(info, 'alias').isNotEmpty
+        ? field(info, 'alias') : field(value, 'name');
+    final model = field(info, 'modelName').isNotEmpty
+        ? field(info, 'modelName') : field(value, 'modelName');
     return LgThinQDevice(
       id: id,
       name: alias.isEmpty ? 'LG appliance' : alias,
       type: type,
-      model: field('modelName').isNotEmpty
-          ? field('modelName') : field('model'),
+      model: model,
     );
   }
 
