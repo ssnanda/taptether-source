@@ -211,6 +211,58 @@ class LgThinQClient {
     }
   }
 
+  /// LG ThinQ conditional-control POST. Only invoke after validating an
+  /// exact resource/property/value from this device's current profile.
+  /// A 2xx response means LG accepted the request, not that hardware
+  /// has finished the operation. Device state must be refreshed afterward.
+  Future<void> control(String deviceId, Map<String, Object?> payload) async {
+    if (payload.isEmpty || payload.length > 4) {
+      throw const FormatException('Invalid ThinQ control request.');
+    }
+    final http = HttpClient();
+    http.connectionTimeout = const Duration(seconds: 8);
+    try {
+      final uri = Uri.https('api-${thinQRegion(country)}.lgthinq.com',
+          '/devices/${Uri.encodeComponent(deviceId)}/control');
+      final req = await http.postUrl(uri)
+          .timeout(const Duration(seconds: 10));
+      req.followRedirects = false;
+      req.headers.set('Authorization', 'Bearer $personalToken');
+      req.headers.set('x-country', country);
+      req.headers.set('x-client-id', clientId);
+      req.headers.set('x-api-key', lgThinQPublicApiKey);
+      req.headers.set('x-service-phase', 'OP');
+      req.headers.set('x-conditional-control', 'true');
+      final random = Random.secure();
+      req.headers.set('x-message-id', base64UrlEncode(
+          List<int>.generate(16, (_) => random.nextInt(256)))
+          .replaceAll('=', ''));
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode(payload));
+      final resp = await req.close().timeout(const Duration(seconds: 12));
+      if (resp.isRedirect) {
+        await resp.drain<void>();
+        throw StateError('LG ThinQ redirected the control request.');
+      }
+      final responseBody = await utf8.decoder.bind(resp).join()
+          .timeout(const Duration(seconds: 12));
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        throw StateError('LG rejected control (HTTP ${resp.statusCode}).');
+      }
+      if (responseBody.isNotEmpty) {
+        final decoded = jsonDecode(responseBody);
+        if (decoded is Map && decoded['error'] != null) {
+          final error = decoded['error'];
+          final code = error is Map ? error['code'] : null;
+          throw StateError('LG rejected command'
+              '${code == null ? "" : " (code $code)"}.');
+        }
+      }
+    } finally {
+      http.close(force: true);
+    }
+  }
+
   Future<List<LgThinQDevice>> discover() async =>
       parseThinQDevices(await _get('devices'));
 
