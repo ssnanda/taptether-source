@@ -7,10 +7,13 @@ import 'lg_compact_remote.dart';
 /// Phone-side LG remote: on-screen controls only, no agent on the TV.
 class LgWebOsScreen extends StatefulWidget {
   const LgWebOsScreen({super.key, this.initialHost,
-    this.initialLocation = 'other', this.onSaved});
+    this.initialLocation = 'other', this.onSaved,
+    this.autoReconnect = true, this.wakeDevice});
   final String? initialHost;
   final String initialLocation;
   final Future<void> Function()? onSaved;
+  final bool autoReconnect;
+  final Future<void> Function(LgTvDevice)? wakeDevice;
   @override
   State<LgWebOsScreen> createState() => _LgWebOsScreenState();
 }
@@ -194,7 +197,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         if (matches.isNotEmpty) {
           _target = matches.first;
           setState(() => _status = 'Selected ${_target!.name} · $host');
-          await _recover(force: true);
+          if (widget.autoReconnect) await _recover(force: true);
         } else if (mounted) {
           setState(() {
             _status = 'This TV is no longer saved.';
@@ -545,7 +548,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       }
     } else {
       try {
-        await wakeLgTv(current);
+        await (widget.wakeDevice ?? wakeLgTv)(current);
         _suspended = false;
         if (mounted) {
           setState(() {
@@ -587,7 +590,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         actions: [
           // In single-device mode the power target is named explicitly in
           // the body. Avoid an ambiguous generic "On" action in the header.
-          if (tv != null && !_detailMode)
+          if (tv != null && (!_detailMode || _ready))
             TextButton.icon(
               key: const ValueKey('lg-power-toggle'),
               tooltip: '${_ready ? "Turn off" : "Turn on"} ${tv.name} (${tv.host})',
