@@ -40,14 +40,25 @@ if [[ "${1:-}" == "--system" ]]; then
 fi
 
 mode="${1:-}"
-[[ $# -eq 1 && ( "$mode" == "--keep-pairing" || "$mode" == "--erase-pairing" ) ]] \
-  || fail 'Specify exactly --keep-pairing or --erase-pairing.'
+[[ $# -eq 1 ]] || fail 'Unexpected uninstall arguments.'
+finish_only=false
+case "$mode" in
+  --keep-pairing|--erase-pairing) ;;
+  --complete-keep-pairing)
+    finish_only=true
+    mode=--keep-pairing ;;
+  --complete-erase-pairing)
+    finish_only=true
+    mode=--erase-pairing ;;
+  *) fail 'Choose keep-pairing or erase-pairing explicitly.' ;;
+esac
 [[ "$(id -u)" != 0 ]] || fail 'Run as your Ubuntu desktop user, not root.'
-command -v pkexec >/dev/null 2>&1 \
-  || fail 'Graphical administrator authorization (pkexec) is not installed.'
-# No owner files are removed when administrator approval fails.
-pkexec /bin/bash /usr/share/taptether/4-ubuntu-uninstall.sh --system \
-  || fail 'Authorization cancelled or package removal failed.'
+if [[ "$finish_only" != true ]]; then
+  command -v pkexec >/dev/null 2>&1 \
+    || fail 'Graphical authorization (pkexec) is not installed.'
+  pkexec /bin/bash /usr/share/taptether/4-ubuntu-uninstall.sh --system \
+    || fail 'Authorization cancelled or package removal failed.'
+fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user disable --now taptether-screen.service >/dev/null 2>&1 || true
   systemctl --user disable --now taptether-agent.service >/dev/null 2>&1 || true
