@@ -370,7 +370,7 @@ def pair_device(_item):
     # may choose another address rather than pairing the wrong VPN subnet.
     raw = result.stdout
     ips = []
-    for value in re.findall(r'(?<![0-9.])(?:10|192|172)\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}(?![0-9.])', raw):
+    for value in re.findall(r'(?<![0-9.])(?:10|192|172)\.\d{1,3}\.\d{1,3}\.\d{1,3}(?![0-9.])', raw):
         octets = [int(x) for x in value.split(".")]
         if all(0 <= x <= 255 for x in octets) and (
                 octets[0] == 10 or
@@ -378,8 +378,8 @@ def pair_device(_item):
                 (octets[0] == 172 and 16 <= octets[1] <= 31)):
             if value not in ips:
                 ips.append(value)
-    token_match = re.search(r'^Pairing token:\\s*(\\S+)', raw, re.M)
-    pin_match = re.search(r'^TLS certificate SHA-256 fingerprint:\\s*([0-9A-Fa-f]{64})', raw, re.M)
+    token_match = re.search(r'^Pairing token:\s*(\S+)', raw, re.M)
+    pin_match = re.search(r'^TLS certificate SHA-256 fingerprint:\s*([0-9A-Fa-f]{64})', raw, re.M)
     qrbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
     dialog.get_content_area().pack_start(qrbox, False, False, 5)
     if ips and token_match and pin_match:
