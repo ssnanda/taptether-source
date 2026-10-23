@@ -43,6 +43,70 @@ void main() {
     expect(find.textContaining('Power-on signal sent'), findsOneWidget);
   });
 
+  testWidgets('LG Power On without MAC guides setup and saves reviewed hint',
+      (tester) async {
+    FlutterSecureStorage.setMockInitialValues({
+      LgTvStore.key: jsonEncode([
+        const LgTvDevice(
+          host: '192.168.68.89', name: 'DadaDadi TV',
+          clientKey: 'paired', tlsPin: 'certificate-pin',
+        ).toJson(),
+      ]),
+    });
+    var hintsRequested = 0;
+    await tester.pumpWidget(MaterialApp(home: LgWebOsScreen(
+      initialHost: '192.168.68.89',
+      autoReconnect: false,
+      lookupMacHint: (host) async {
+        hintsRequested++;
+        expect(host, '192.168.68.89');
+        return 'aa-bb-cc-dd-ee-ff';
+      },
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Set up Power On for DadaDadi TV'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('lg-power-selected-tv')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lg-mac-setup-field')), findsOneWidget);
+    expect(find.text('Turn on DadaDadi TV'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('lg-find-mac-hint')));
+    await tester.pumpAndSettle();
+    expect(hintsRequested, 1);
+    final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('lg-mac-setup-field')));
+    expect(field.controller!.text, 'AA:BB:CC:DD:EE:FF');
+    expect(find.textContaining('Verify it belongs to this TV'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('lg-save-mac')));
+    await tester.pumpAndSettle();
+    expect(find.text('Turn on DadaDadi TV'), findsOneWidget);
+    final stored = await LgTvStore().read();
+    expect(stored.single.macAddress, 'AA:BB:CC:DD:EE:FF');
+    expect(stored.single.clientKey, 'paired');
+    expect(stored.single.tlsPin, 'certificate-pin');
+  });
+
+  testWidgets('LG missing MAC setup cancellation never changes saved pairing',
+      (tester) async {
+    FlutterSecureStorage.setMockInitialValues({
+      LgTvStore.key: jsonEncode([
+        const LgTvDevice(host: '192.168.68.89',
+          name: 'DadaDadi TV', clientKey: 'saved-pairing').toJson(),
+      ]),
+    });
+    await tester.pumpWidget(const MaterialApp(home: LgWebOsScreen(
+      initialHost: '192.168.68.89', autoReconnect: false,
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('lg-power-selected-tv')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set up Power On for DadaDadi TV'), findsOneWidget);
+    final stored = await LgTvStore().read();
+    expect(stored.single.macAddress, isEmpty);
+    expect(stored.single.clientKey, 'saved-pairing');
+  });
+
   testWidgets('LG detail refuses to fall back when selected saved TV is gone',
       (tester) async {
     FlutterSecureStorage.setMockInitialValues({
