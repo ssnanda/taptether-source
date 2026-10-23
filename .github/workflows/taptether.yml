@@ -394,7 +394,7 @@ jobs:
   agent-only-validate:
     # A separate lightweight path in the SAME workflow. Does not initialize
     # Flutter, sign iOS code, or build Android; full releases remain untouched.
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'agent-ubuntu' || inputs.task == 'agent-macos' || inputs.task == 'agent-windows')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'agent-ubuntu' || inputs.task == 'agent-macos' || inputs.task == 'agent-windows')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (startsWith(github.event.head_commit.message, 'agent-ubuntu:') || startsWith(github.event.head_commit.message, 'agent-macos:'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
