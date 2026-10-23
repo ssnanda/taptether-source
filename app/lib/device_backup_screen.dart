@@ -181,6 +181,61 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     }
   }
 
+  Future<String?> _getExportPassword() async {
+    if (!_usePassword) return null;
+    if (_rememberedPassword != null &&
+        _rememberedPassword!.length >= 12) {
+      return _rememberedPassword;
+    }
+    final entered = await _password(confirm: true);
+    if (entered == null) return null;
+    await _secure.write(key: _passwordKey, value: entered);
+    _rememberedPassword = entered;
+    return entered;
+  }
+
+  Future<void> _toggleProtection(bool enabled) => _run(() async {
+    if (enabled == _usePassword) return;
+    if (!enabled) {
+      final approved = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('Disable password protection?'),
+          content: const Text('Without a password, the backup file is not '
+              'encrypted. Anyone with it could access your device '
+              'credentials and SSH keys.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialog, false),
+                child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(dialog, true),
+                child: const Text('Continue')),
+          ],
+        ),
+      );
+      if (approved != true || !mounted) return;
+      await _secure.write(key: _noPasswordKey, value: 'true');
+    } else {
+      final newPassword = await _getExportPasswordForChange();
+      if (newPassword == null || !mounted) return;
+      await _secure.delete(key: _noPasswordKey);
+    }
+    _usePassword = enabled;
+    if (_auto.enabled) {
+      await _auto.setProtection(_usePassword ? _rememberedPassword : null);
+      await _auto.backupNow(force: true);
+    }
+    if (mounted) setState(() {});
+  });
+
+  Future<String?> _getExportPasswordForChange() async {
+    if (_rememberedPassword != null) return _rememberedPassword;
+    final entered = await _password(confirm: true);
+    if (entered == null) return null;
+    await _secure.write(key: _passwordKey, value: entered);
+    _rememberedPassword = entered;
+    return entered;
+  }
+
   Future<void> _export() => _run(() async {
     if (!await AppSecurity.instance.authenticate(context,
         reason: 'Authorize exporting device credentials')) {
@@ -193,11 +248,13 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (entries.isEmpty) {
       throw StateError('There are no saved credentials to back up.');
     }
-    final password = await _password(confirm: true);
-    if (password == null || !mounted) {
+    final password = await _getExportPassword();
+    if ((_usePassword && password == null) || !mounted) {
       return;
     }
-    final encrypted = await DeviceBackupCodec.encrypt(entries, password);
+    final encrypted = _usePassword
+        ? await DeviceBackupCodec.encrypt(entries, password!)
+        : DeviceBackupCodec.exportUnprotected(entries);
     if (!mounted) {
       return;
     }
@@ -212,10 +269,12 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (!mounted || location == null) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Encrypted backup saved outside TapTether. '
-          'Keep it in iCloud Drive or another safe location.'),
-    ));
+    _lastManualLocation = location;
+    await _secure.write(key: _lastManualKey, value: location);
+    if (mounted) setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Backup saved to Files.')),
+    );
   });
 
   Future<void> _import() => _run(() async {
