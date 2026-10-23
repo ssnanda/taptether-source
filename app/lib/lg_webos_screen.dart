@@ -471,7 +471,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     await _reloadSaved();
   }
 
-  Future<bool> _editMac(LgTvDevice tv) async {
+  Future<void> _editMac(LgTvDevice tv) async {
     final controller = TextEditingController(text: tv.macAddress);
     var checking = false;
     String? hint;
@@ -570,16 +570,15 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       ),
     );
     controller.dispose();
-    if (updated == null || !mounted) return false;
+    if (updated == null || !mounted) return;
     final mac = canonicalLgMac(updated);
     if (updated.isNotEmpty && mac == null) {
       setState(() => _error = 'Enter a valid six-byte Wi-Fi MAC address.');
-      return false;
+      return;
     }
     await _store.save(tv.copyWith(macAddress: mac ?? ''));
     await _reloadSaved();
     if (mounted) setState(() => _error = null);
-    return mac != null;
   }
 
   Future<void> _forget(LgTvDevice tv) async {
