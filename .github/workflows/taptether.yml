@@ -61,9 +61,17 @@ jobs:
       - name: Release preflight (only before publishing)
         if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
+          [[ -n "${GH_TOKEN:-}" ]] || {
+            echo "::error::Set private repo Actions secret TAPTETHER_PUBLIC_RELEASE_TOKEN (public taptether.com Contents: Read and write)."
+            exit 1
+          }
+          [[ "$(gh api repos/ssnanda/taptether.com --jq '.permissions.push')" == true ]] || {
+            echo "::error::Publishing credential cannot write to the public distribution repository."
+            exit 1
+          }
           [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
             echo 'Release only from main.' >&2; exit 1;
           }
