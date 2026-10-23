@@ -3,6 +3,16 @@ import 'package:taptether/lan_scan.dart';
 import 'package:taptether/discovery.dart';
 
 void main() {
+  test('cellular and VPN interfaces are not mistaken for Wi-Fi', () {
+    for (final name in ['pdp_ip0', 'rmnet_data0', 'utun2', 'lo0',
+                        'awdl0', 'eth0', 'bridge0']) {
+      expect(isPhoneWifiInterface(name), isFalse, reason: name);
+    }
+    for (final name in ['en0', 'wlan0', 'wlan1', 'wifi0']) {
+      expect(isPhoneWifiInterface(name), isTrue, reason: name);
+    }
+  });
+
   test('scanner accepts only RFC1918 /24 prefixes', () {
     for (final prefix in ['192.168.68', '10.4.3', '172.16.0',
                          '172.31.255']) {
