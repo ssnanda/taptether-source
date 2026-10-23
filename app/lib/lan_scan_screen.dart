@@ -48,6 +48,7 @@ class LanScanScreen extends StatefulWidget {
 class _LanScanScreenState extends State<LanScanScreen> {
   final _prefix = TextEditingController();
   final _specificIp = TextEditingController();
+  final _targetIps = TextEditingController();
   DetectedLanRange? _network;
   bool _checkingSpecificIp = false;
   Map<int, TcpProbeStatus> _specificPortResults = {};
@@ -94,6 +95,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
       if (_specificIp.text.isEmpty &&
           widget.initialIp != null && widget.initialIp!.isNotEmpty) {
         _specificIp.text = widget.initialIp!;
+        _targetIps.text = widget.initialIp!;
       }
     });
   }
@@ -103,6 +105,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
     _cancel = true;
     _prefix.dispose();
     _specificIp.dispose();
+    _targetIps.dispose();
     super.dispose();
   }
 
@@ -230,6 +233,10 @@ class _LanScanScreenState extends State<LanScanScreen> {
           if (existing.isNotEmpty) ...existing.first.openPorts,
           ...result.openPorts,
         }.toList()..sort();
+        // Silence/filtered ports are not proof of an offline host.
+        // Avoid creating hundreds of meaningless cards for CIDR scans.
+        if (mergedPorts.isEmpty && existing.isEmpty) return;
+        if (existing.isEmpty && _hosts.length >= 250) return;
         setState(() {
           _hosts = [
             for (final item in _hosts)
@@ -322,7 +329,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
     }
     late final List<String> targets;
     try {
-      targets = parseDeepScanTargets(_specificIp.text, network);
+      targets = parseDeepScanTargets(_targetIps.text, network);
     } on FormatException catch (error) {
       setState(() => _error = error.message);
       return;
@@ -727,7 +734,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
             const SizedBox(height: 8),
             TextField(
               key: const ValueKey('scan-target-ips'),
-              controller: _specificIp,
+              controller: _targetIps,
               enabled: !_busy,
               autocorrect: false,
               keyboardType: TextInputType.url,
@@ -746,23 +753,23 @@ class _LanScanScreenState extends State<LanScanScreen> {
                 ActionChip(
                   label: const Text('Washer'),
                   onPressed: _busy ? null : () => setState(
-                      () => _specificIp.text = '192.168.68.73')),
+                      () => _targetIps.text = '192.168.68.73'),
                 ),
                 ActionChip(
                   label: const Text('Dryer'),
                   onPressed: _busy ? null : () => setState(
-                      () => _specificIp.text = '192.168.68.53')),
+                      () => _targetIps.text = '192.168.68.53'),
                 ),
                 ActionChip(
                   label: const Text('Refrigerator'),
                   onPressed: _busy ? null : () => setState(
-                      () => _specificIp.text = '192.168.68.72')),
+                      () => _targetIps.text = '192.168.68.72'),
                 ),
                 ActionChip(
                   label: const Text('All 3 LG appliances'),
                   onPressed: _busy ? null : () => setState(
-                      () => _specificIp.text =
-                          '192.168.68.73, 192.168.68.53, 192.168.68.72')),
+                      () => _targetIps.text =
+                          '192.168.68.73, 192.168.68.53, 192.168.68.72'),
                 ),
               ]),
           ],
