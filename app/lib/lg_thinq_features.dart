@@ -49,14 +49,22 @@ class ThinQFeature {
           (type == 'range' || type == 'number')));
 
   bool permits(Object value) {
-    if (!actionable) return false;
-    if (options.isNotEmpty) return options.contains(value);
-    if (value is! num || minimum == null || maximum == null) return false;
+    if (!actionable) {
+      return false;
+    }
+    if (options.isNotEmpty) {
+      return options.contains(value);
+    }
+    if (value is! num || minimum == null || maximum == null) {
+      return false;
+    }
     if (value < minimum! || value > maximum! || excluded.contains(value)) {
       return false;
     }
     final increment = step ?? 1;
-    if (increment <= 0) return false;
+    if (increment <= 0) {
+      return false;
+    }
     final multiples = (value - minimum!) / increment;
     return (multiples - multiples.round()).abs() < 0.000001;
   }
@@ -87,8 +95,12 @@ String _title(String raw) {
 }
 
 String _valueLabel(Object value) {
-  if (value is bool) return value ? 'Enabled' : 'Disabled';
-  if (value is num) return value.toString();
+  if (value is bool) {
+    return value ? 'Enabled' : 'Disabled';
+  }
+  if (value is num) {
+    return value.toString();
+  }
   final text = value.toString().replaceAll('_', ' ');
   return text.length > 130 ? '${text.substring(0, 130)}…' : text;
 }
@@ -101,7 +113,9 @@ const _privateKeys = {
 };
 
 bool _safeName(String name) {
-  if (_privateKeys.contains(name)) return false;
+  if (_privateKeys.contains(name)) {
+    return false;
+  }
   final low = name.toLowerCase();
   return !(low.contains('secret') || low.contains('password') ||
       low.contains('token') || low.contains('credential') ||
@@ -125,7 +139,9 @@ Object? _extractCurrent(Object? status, String resource,
   Object? found;
   var exact = false;
   void visit(Object? node, String? zone, int depth) {
-    if (depth > 9 || exact) return;
+    if (depth > 9 || exact) {
+      return;
+    }
     if (node is List) {
       for (final item in node.take(32)) {
         visit(item, zone, depth + 1);
@@ -146,7 +162,9 @@ Object? _extractCurrent(Object? status, String resource,
         }
       }
       for (final entry in node.entries) {
-        if (!_safeName(entry.key.toString())) continue;
+        if (!_safeName(entry.key.toString())) {
+          continue;
+        }
         final value = entry.value;
         if (value is Map || value is List) {
           visit(value, here, depth + 1);
@@ -264,14 +282,18 @@ List<ThinQFeature> thinQFeatures(Object? profile, Object? state) {
   // Include ALL additional scalar live state fields not in the profile;
   // LG firmware frequently adds status fields without profile metadata.
   void statusWalk(Object? node, String? location, int depth) {
-    if (depth > 8 || values.length > 250) return;
+    if (depth > 8 || values.length > 250) {
+      return;
+    }
     if (node is List) {
       for (final item in node.take(24)) {
         statusWalk(item, location, depth + 1);
       }
       return;
     }
-    if (node is! Map) return;
+    if (node is! Map) {
+      return;
+    }
     final zone = _location(node) ?? location;
     for (final entry in node.entries) {
       final group = entry.key.toString();
@@ -329,7 +351,9 @@ String thinQSummaryLine(List<ThinQFeature> features) {
   if (stage != null && h != null && m != null) {
     return '$stage · ${h > 0 ? "$h hr " : ""}$m min remaining';
   }
-  if (stage != null) return stage;
+  if (stage != null) {
+    return stage;
+  }
   final door = field('doorState') ?? field('doorOpen');
   return door == null ? 'Status not available' : 'Door: $door';
 }
