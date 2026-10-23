@@ -485,6 +485,9 @@ jobs:
         with:
           go-version: '1.27.x'
           cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install icon renderer
         run: python3 -m pip install --disable-pip-version-check Pillow
       - name: Set package-only version without committing VERSION
