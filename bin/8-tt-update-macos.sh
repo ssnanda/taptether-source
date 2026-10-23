@@ -41,11 +41,19 @@ def verify(data, tag):
     if asset.get("browser_download_url") != url:
         raise SystemExit(f"{tag}: unexpected asset URL")
     return match.group(1), digest[7:].lower(), url
-options = [verify(fetch("current"), "current")]
-try:
-    options.append(verify(fetch("macos-current"), "macos-current"))
-except urllib.error.HTTPError as exc:
-    if exc.code != 404: raise
+# Full releases may be absent from a fresh public distribution repository.
+# A missing channel is not an error if a verified platform release exists.
+options = []
+for tag in ("current", "macos-current"):
+    try:
+        data = fetch(tag)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            continue
+        raise
+    options.append(verify(data, tag))
+if not options:
+    raise SystemExit("No public TapTether macOS release is available yet")
 latest, digest, url = max(options, key=lambda item: parts(item[0]))
 print("\t".join((latest, "yes" if parts(latest) > parts(installed) else "no", digest, url)))
 PY
