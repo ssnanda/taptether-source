@@ -14,11 +14,13 @@ import time
 from pathlib import Path
 import subprocess
 import sys
+import re
+from urllib.parse import urlencode
 
 try:
     import gi
     gi.require_version("Gtk", "3.0")
-    from gi.repository import Gtk, GLib, Gdk
+    from gi.repository import Gtk, GLib, Gdk, GdkPixbuf
 except (ImportError, ValueError) as exc:
     raise SystemExit("TapTether tray needs python3-gi and gir1.2-gtk-3.0: " + str(exc))
 
@@ -284,6 +286,61 @@ def update_from_tray(item):
 
     threading.Thread(target=worker, daemon=True).start()
 
+def show_about_agent(_item):
+    dialog = Gtk.MessageDialog(message_type=Gtk.MessageType.INFO,
+                               buttons=Gtk.ButtonsType.CLOSE,
+                               text="TapTether Agent")
+    dialog.format_secondary_text(
+        "Version: " + agent_version() + "\\n"
+        "Platform: Ubuntu / Linux\\n"
+        "Privacy: LAN-only. No accounts, analytics, or telemetry.\\n"
+        "Control port: 48321\\n"
+        "Service: " + ("Running" if running() else "Stopped"))
+    dialog.run()
+    dialog.destroy()
+
+
+def uninstall_from_tray(_item):
+    uninstaller = Path.home() / ".local/bin/taptether-uninstall"
+    if not uninstaller.is_file():
+        message("Uninstall", "Uninstaller is missing. Install or repair the agent first.", error=True)
+        return
+    dialog = Gtk.MessageDialog(message_type=Gtk.MessageType.WARNING,
+                               buttons=Gtk.ButtonsType.NONE,
+                               text="Uninstall TapTether from Ubuntu?")
+    dialog.format_secondary_text(
+        "This removes TapTether services, screen helper and tray.\\n"
+        "Keep Pairings preserves phone authorizations and certificates for reinstall.\\n"
+        "Erase Everything also removes local TapTether pairing keys and settings.")
+    dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+    dialog.add_button("Keep Pairings", 1)
+    dialog.add_button("Erase Everything", 2)
+    choice = dialog.run()
+    dialog.destroy()
+    if choice not in (1, 2):
+        return
+    if choice == 2:
+        confirm = Gtk.MessageDialog(message_type=Gtk.MessageType.WARNING,
+                                    buttons=Gtk.ButtonsType.OK_CANCEL,
+                                    text="Erase all TapTether pairing data?")
+        confirm.format_secondary_text("The phone must pair again. This cannot be undone.")
+        choice2 = confirm.run()
+        confirm.destroy()
+        if choice2 != Gtk.ResponseType.OK:
+            return
+    mode = "--erase-pairing" if choice == 2 else "--keep-pairing"
+    def worker():
+        try:
+            # Launch an independent process; uninstall will remove the tray
+            # itself only after administrator approval.
+            subprocess.Popen(["/bin/bash", str(uninstaller), mode],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError:
+            GLib.idle_add(message, "Uninstall", "Could not start the uninstaller.", True)
+    threading.Thread(target=worker, daemon=True).start()
+
+
 def add_menu_item(menu, text, callback):
     item = Gtk.MenuItem(label=text)
     item.connect("activate", callback)
@@ -306,11 +363,59 @@ def pair_device(_item):
     dialog = Gtk.Dialog(title="Private TapTether pairing details",
                         flags=Gtk.DialogFlags.MODAL)
     dialog.add_button("Close", Gtk.ResponseType.CLOSE)
-    heading = Gtk.Label(label="Copy these credentials into your own TapTether phone app. Keep them private.")
+    heading = Gtk.Label(label="Scan the QR using TapTether → Scan QR. Keep this code private.")
     heading.set_xalign(0)
     dialog.get_content_area().pack_start(heading, False, False, 8)
+    # Pick a private LAN IP from the agent output. Users with multiple interfaces
+    # may choose another address rather than pairing the wrong VPN subnet.
+    raw = result.stdout
+    ips = []
+    for value in re.findall(r'(?<![0-9.])(?:10|192|172)\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}(?![0-9.])', raw):
+        octets = [int(x) for x in value.split(".")]
+        if all(0 <= x <= 255 for x in octets) and (
+                octets[0] == 10 or
+                (octets[0] == 192 and octets[1] == 168) or
+                (octets[0] == 172 and 16 <= octets[1] <= 31)):
+            if value not in ips:
+                ips.append(value)
+    token_match = re.search(r'^Pairing token:\\s*(\\S+)', raw, re.M)
+    pin_match = re.search(r'^TLS certificate SHA-256 fingerprint:\\s*([0-9A-Fa-f]{64})', raw, re.M)
+    qrbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+    dialog.get_content_area().pack_start(qrbox, False, False, 5)
+    if ips and token_match and pin_match:
+        ip_choice = Gtk.ComboBoxText()
+        for ip in ips:
+            ip_choice.append_text(ip)
+        ip_choice.set_active(0)
+        qrbox.pack_start(ip_choice, False, False, 2)
+        qr_image = Gtk.Image()
+        qrbox.pack_start(qr_image, False, False, 2)
+        qr_hint = Gtk.Label(label="")
+        qrbox.pack_start(qr_hint, False, False, 2)
+
+        def render_code(_widget=None):
+            uri = "taptether://pair?" + urlencode({
+                "v": "1", "host": ip_choice.get_active_text(),
+                "token": token_match.group(1),
+                "fingerprint": pin_match.group(1).upper()})
+            try:
+                proc = subprocess.run(["qrencode", "-t", "PNG", "-s", "8",
+                                       "-m", "2", "-o", "-"],
+                                      input=uri.encode(), stdout=subprocess.PIPE,
+                                      stderr=subprocess.DEVNULL, timeout=5, check=True)
+                loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+                loader.write(proc.stdout)
+                loader.close()
+                qr_image.set_from_pixbuf(loader.get_pixbuf())
+                qr_hint.set_text("QR for " + ip_choice.get_active_text())
+            except (OSError, subprocess.SubprocessError, GLib.Error):
+                qr_hint.set_text("QR unavailable. Install qrencode, or use the text below.")
+        ip_choice.connect("changed", render_code)
+        render_code()
+    else:
+        qrbox.pack_start(Gtk.Label(label="Pairing QR unavailable; use the text below."), False, False, 2)
     scroller = Gtk.ScrolledWindow()
-    scroller.set_size_request(580, 210)
+    scroller.set_size_request(580, 145)
     display = Gtk.TextView()
     display.set_editable(False)
     display.set_cursor_visible(True)
@@ -409,6 +514,9 @@ def menu(version):
 
     shutdown.connect("toggled", change_shutdown)
     settings.append(shutdown)
+    add_menu_item(settings, "About TapTether Agent…", show_about_agent)
+    settings.append(Gtk.SeparatorMenuItem())
+    add_menu_item(settings, "Uninstall TapTether…", uninstall_from_tray)
     settings_item.set_submenu(settings)
     m.append(settings_item)
     m.append(Gtk.SeparatorMenuItem())
