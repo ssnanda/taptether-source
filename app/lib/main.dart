@@ -1051,6 +1051,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           platform: device.platform, deviceId: device.deviceId,
           customName: device.customName, location: choice,
           macAddress: device.macAddress,
+          dnsName: device.dnsName,
         ));
       }
     }
@@ -1808,6 +1809,73 @@ class _RemoteScreenState extends State<RemoteScreen>
     ));
   }
 
+  Future<void> _renameComputer(SavedComputer device,
+      {bool firstPairing = false}) async {
+    if (!mounted) return;
+    final field = TextEditingController(
+      text: firstPairing ? '' : device.name,
+    );
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(firstPairing ? 'Name this computer' : 'Rename computer'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          maxLength: 40,
+          textCapitalization: TextCapitalization.words,
+          decoration: InputDecoration(
+            labelText: 'Computer nickname',
+            hintText: device.platform == 'darwin'
+                ? 'Office MacBook' : 'Office Computer',
+            helperText: 'Your label only. The actual computer name stays unchanged.',
+          ),
+          onSubmitted: (value) => Navigator.pop(dialog, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: Text(firstPairing ? 'Not now' : 'Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog, field.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (result == null || result.isEmpty || !mounted) return;
+    final newName = result.trim();
+    if (newName.length > 40 || newName == device.name) return;
+    try {
+      // Resolve the *current* saved record, since DHCP and heartbeats may
+      // have updated it while the rename dialog was open.
+      final latest = await deviceStore.read();
+      final matches = latest.where((item) => item.id == device.id);
+      if (matches.isEmpty) return;
+      final saved = matches.first;
+      final renamed = SavedComputer(
+        id: saved.id, name: newName, host: saved.host,
+        token: saved.token, fingerprint: saved.fingerprint,
+        deviceId: saved.deviceId, platform: saved.platform,
+        location: saved.location, customName: true,
+        macAddress: saved.macAddress,
+        dnsName: saved.dnsName.isNotEmpty ? saved.dnsName
+            : (saved.customName ? '' : saved.name),
+      );
+      final updated = await deviceStore.upsert(renamed);
+      if (!mounted) return;
+      setState(() => savedComputers = updated);
+      AutomaticDeviceBackup.instance.requestSoon();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _dashboardNotice =
+            'Could not save computer name. Please retry in Manage.');
+      }
+    }
+  }
+
   Future<void> openDeviceManager() async {
     final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => DeviceManagerScreen(
@@ -2282,6 +2350,13 @@ class _RemoteScreenState extends State<RemoteScreen>
                     icon: const Icon(Icons.system_update_alt),
                     visualDensity: VisualDensity.compact,
                   ),
+                IconButton(
+                  key: ValueKey('rename-computer-${device.id}'),
+                  tooltip: 'Rename ${device.name}',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _renameComputer(device),
+                  icon: const Icon(Icons.edit_outlined, size: 19),
+                ),
                 IconButton(
                   key: ValueKey('diagnostics-computer-${device.id}'),
                   tooltip: 'Diagnose ${device.name}',
@@ -2865,11 +2940,10 @@ class _RemoteScreenState extends State<RemoteScreen>
             RegExp(r'[^a-fA-F0-9]'), '').toUpperCase();
         final byPin = savedComputers.where(
             (d) => d.fingerprint.toUpperCase() == normalizedPin);
-        final byHost = savedComputers.where(
-            (d) => d.host == host.text.trim());
+        // IPs are DHCP addresses, not device identities. Never overwrite
+        // a different saved computer merely because its old IP was reused.
         final existing = byId.isNotEmpty ? byId.first
-            : byPin.isNotEmpty ? byPin.first
-            : byHost.isNotEmpty ? byHost.first : null;
+            : byPin.isNotEmpty ? byPin.first : null;
         final discovered = nearbyComputers.where((d) => d.host == host.text.trim());
         final location = _detectedLocation ?? existing?.location ?? 'other';
         final device = SavedComputer(
@@ -2887,6 +2961,13 @@ class _RemoteScreenState extends State<RemoteScreen>
           location: location,
           customName: existing?.customName ?? false,
           macAddress: agent.reportedMacAddress ?? existing?.macAddress ?? '',
+          // Preserve the real OS hostname separately from the user's label.
+          // The hostname is only an mDNS hint; the pinned certificate and
+          // authenticated phone key are always required before changing IP.
+          dnsName: agent.reportedHostname ??
+              ((existing?.dnsName ?? '').isNotEmpty ? existing!.dnsName
+                  : (existing?.customName == true ? ''
+                     : (verifiedName ?? existing?.name ?? ''))),
         );
         // For an already-saved, certificate-verified computer, show the
         // remote immediately. Secure-storage writes and layout restore can
@@ -2920,6 +3001,13 @@ class _RemoteScreenState extends State<RemoteScreen>
         // connection identifies its real platform. Mobile app versions
         // remain governed by the separate full AltStore release.
         unawaited(checkForUpdates(agentPlatform: device.platform));
+        // Like TVs, ask for an optional human-readable name after first
+        // pairing. No re-pairing or service restart is needed.
+        if (existing == null && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(_renameComputer(device, firstPairing: true));
+          });
+        }
         return true;
       } catch (_) {
         if (mounted) {
