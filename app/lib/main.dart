@@ -2660,15 +2660,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () => openSamsungTv(host: tv.host),
             ),
           ),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: _chooseTvType,
-          icon: const Icon(Icons.add_circle_outline),
-          label: const Text('Add TV'),
-        ),
-      ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 8),
       Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
@@ -2678,7 +2670,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           icon: Icon(_showQuickActions
               ? Icons.expand_less : Icons.add_circle_outline),
           label: Text(_showQuickActions
-              ? 'Hide add & discovery tools' : 'Add / Discover'),
+              ? 'Close' : 'Add device'),
         ),
       ),
       if (_showQuickActions) ...[
