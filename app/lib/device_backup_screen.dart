@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'app_security.dart';
 import 'automatic_device_backup.dart';
+import 'backup_preview.dart';
 import 'backup_location_label.dart';
 import 'device_backup.dart';
 
@@ -56,18 +57,19 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     }
   }
 
-  Future<void> _restoreSaved(String filename) async {
+  Future<void> _openSaved(String filename) async {
+    if (_busy || filename.isEmpty) return;
+    late final Uint8List bytes;
     try {
-      final bytes = await _auto.readBackup(filename);
-      if (mounted) {
-        await _import(backupBytes: bytes);
-      }
+      bytes = await _auto.readBackup(filename);
     } catch (_) {
       if (mounted) {
         setState(() => _error =
             'Cannot read this backup. Check iCloud Drive and try again.');
       }
+      return;
     }
+    if (mounted) await _import(backupBytes: bytes, sourceName: filename);
   }
 
   Future<void> _loadBackupOptions() async {
@@ -226,6 +228,10 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
       if (mounted) {
         setState(() => _error = error.message);
       }
+    } on StateError catch (error) {
+      if (mounted) {
+        setState(() => _error = error.message.toString());
+      }
     } on MissingPluginException {
       if (mounted) {
         setState(() => _error =
@@ -355,7 +361,107 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     }
   });
 
-  Future<void> _import({Uint8List? backupBytes}) => _run(() async {
+  /// Mandatory rollback point. A cancelled or failed write blocks restore.
+  Future<String?> _createPreRestoreBackup(
+      Map<String, String> existing) async {
+    if (existing.isEmpty) return null;
+    // An emergency backup always contains encrypted credentials, even when
+    // ordinary manual backup password protection is turned off.
+    final password = await _getExportPasswordForChange();
+    if (password == null) return null;
+    final bytes = await DeviceBackupCodec.encrypt(existing, password);
+    if (!mounted) return null;
+    if (Platform.isIOS) {
+      if (!_auto.folderAvailable) {
+        if (!await _auto.chooseFolder() || !mounted) return null;
+      }
+      final saved = await _auto.savePreRestore(bytes);
+      await _loadBackups();
+      return saved;
+    }
+
+    final stamp = DateTime.now().toUtc().toIso8601String()
+        .replaceAll(RegExp(r'[:.]'), '-');
+    final file = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save pre-restore safety backup',
+      fileName: 'TapTether-PreRestore-$stamp.ttbackup',
+      type: FileType.custom,
+      allowedExtensions: const ['ttbackup'],
+      bytes: bytes,
+    );
+    if (file == null) return null;
+    // When the provider exposes a native path, verify the write size.
+    final output = File(file);
+    if (await output.exists() && await output.length() != bytes.length) {
+      throw StateError('Pre-restore backup was not saved completely.');
+    }
+    return file;
+  }
+
+  Future<bool> _reviewBackup(
+      Map<String, String> verified, String? sourceName) async {
+    final preview = BackupPreview.fromRecords(verified);
+    return await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Review backup'),
+        content: SizedBox(
+          width: 340,
+          child: SingleChildScrollView(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (sourceName != null)
+                Text(sourceName,
+                    style: Theme.of(dialog).textTheme.bodySmall),
+              const SizedBox(height: 8),
+              Text('${preview.deviceCount} devices · '
+                   '${preview.recordCount} saved records',
+                  style: Theme.of(dialog).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              for (final group in preview.groups.entries)
+                if (group.value.isNotEmpty) ...[
+                  Text(group.key,
+                      style: Theme.of(dialog).textTheme.titleSmall),
+                  for (final name in group.value.take(12))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 3, 0, 3),
+                      child: Row(children: [
+                        const Icon(Icons.devices_outlined, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis)),
+                      ]),
+                    ),
+                  const SizedBox(height: 8),
+                ],
+              if (preview.deviceCount == 0)
+                const Text('No named devices in this backup.'),
+              if (preview.otherRecordCount > 0)
+                Text('${preview.otherRecordCount} additional identity, '
+                    'SSH, network or preference records'),
+              const SizedBox(height: 10),
+              const Text('Pairing secrets and private keys are '
+                  'hidden from this preview.'),
+            ],
+          )),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Done')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialog, true),
+            icon: const Icon(Icons.restore_outlined),
+            label: const Text('Continue to restore')),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  Future<void> _import({Uint8List? backupBytes, String? sourceName}) =>
+      _run(() async {
     if (!await AppSecurity.instance.authenticate(context,
         reason: 'Authorize restoring device credentials')) {
       return;
@@ -414,33 +520,47 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (!mounted) {
       return;
     }
+    // View first, with a separate explicit path to restore.
+    if (!await _reviewBackup(verified, sourceName) || !mounted) return;
     final existing = await _store.snapshot();
-    if (!mounted) {
-      return;
+    if (!mounted) return;
+
+    // Fail closed. Any existing pairings and keys must be saved in an
+    // encrypted PreRestore file before the import can mutate Keychain.
+    String? safetyFile;
+    if (existing.isNotEmpty) {
+      safetyFile = await _createPreRestoreBackup(existing);
+      if (safetyFile == null || !mounted) {
+        if (mounted) {
+          setState(() => _error = 'Restore cancelled. Current devices '
+              'were not changed because a Pre-Restore backup was not saved.');
+        }
+        return;
+      }
     }
-    final existingWarning = existing.isNotEmpty
-        ? '\n\nYou already have saved settings. Back those up first '
-          'if you want to keep them.'
-        : '';
+    if (!mounted) return;
     final approved = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
-        title: const Text('Restore saved devices?'),
-        content: Text('Restore ${verified.length} encrypted pairing, '
-            'identity and settings records. Matching records in this '
-            'installation will be overwritten.$existingWarning'
-            '\n\nYour app PIN is not changed.'),
+        title: Text(safetyFile == null
+            ? 'Restore saved devices?' : 'Safety backup created'),
+        content: Text(safetyFile == null
+            ? 'No current saved-device records need protection. '
+              'Restore ${verified.length} records? Your app PIN is unchanged.'
+            : 'Saved your current devices in:\n$safetyFile'
+              '\n\nYou can use that Pre-Restore backup to recover '
+              'your previous pairings and settings.'
+              '\n\nContinue restoring ${verified.length} records? '
+              'Matching records will be overwritten. Your PIN stays unchanged.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialog, false),
               child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(dialog, true),
-              child: const Text('Restore')),
+              child: const Text('Restore now')),
         ],
       ),
     );
-    if (approved != true || !mounted) {
-      return;
-    }
+    if (approved != true || !mounted) return;
     await _store.restore(verified);
     await widget.onRestored?.call();
     if (!mounted) {
@@ -551,7 +671,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
             Row(children: [
               Expanded(child: Text('Recent backups',
                 style: Theme.of(context).textTheme.titleMedium)),
-              Text('${_backups.length}/10',
+              Text('${_backups.length} saved',
                 style: Theme.of(context).textTheme.bodySmall),
             ]),
             if (_backups.isEmpty)
@@ -560,9 +680,13 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
                 child: Text('No backups in this folder yet.'))
             else
               for (final item in _backups) ListTile(
+                key: ValueKey('backup-entry-${item['filename']}'),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.history_outlined),
+                leading: Icon(
+                  (item['filename']?.toString() ?? '')
+                      .contains('-PreRestore-')
+                      ? Icons.shield_outlined : Icons.history_outlined),
                 title: Text(() {
                   final time = DateTime.tryParse(item['date']?.toString() ?? '')
                       ?.toLocal();
@@ -573,9 +697,17 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
                       '${time.minute.toString().padLeft(2, '0')}';
                 }()),
                 subtitle: Text((item['filename']?.toString() ?? '')
-                    .contains('-Manual-') ? 'Manual backup' : 'Automatic backup'),
-                trailing: const Icon(Icons.restore_outlined, size: 20),
-                onTap: _busy ? null : () => _restoreSaved(
+                    .contains('-PreRestore-') ? 'Pre-Restore safety backup'
+                    : (item['filename']?.toString() ?? '')
+                        .contains('-Manual-') ? 'Manual backup'
+                    : 'Automatic backup'),
+                trailing: IconButton(
+                  tooltip: 'View backup',
+                  icon: const Icon(Icons.visibility_outlined, size: 21),
+                  onPressed: _busy ? null : () => _openSaved(
+                    item['filename']?.toString() ?? ''),
+                ),
+                onTap: _busy ? null : () => _openSaved(
                     item['filename']?.toString() ?? ''),
               ),
           ],
