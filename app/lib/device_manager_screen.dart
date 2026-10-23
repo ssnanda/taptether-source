@@ -10,9 +10,10 @@ class DeviceManagerScreen extends StatefulWidget {
   const DeviceManagerScreen({super.key, required this.store,
     required this.onConnect, required this.onUpdate,
     required this.onDiagnostics, required this.onUninstall,
-    this.online = const {}});
+    this.online = const {}, this.offlineMode = false});
   final ComputerStore store;
   final Map<String, bool> online;
+  final bool offlineMode;
   final Future<void> Function(SavedComputer) onConnect;
   final Future<void> Function(SavedComputer) onUpdate;
   final Future<void> Function(SavedComputer) onDiagnostics;
@@ -132,6 +133,9 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
   }
 
   Future<void> _action(SavedComputer device, String action) async {
+    if (widget.offlineMode && {
+      'connect', 'update', 'uninstall', 'diagnostics',
+    }.contains(action)) return;
     switch (action) {
       case 'diagnostics':
         await widget.onDiagnostics(device);
@@ -180,7 +184,8 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
       children: [
         const SizedBox(height: 6),
         SizedBox(width: double.infinity, child: FilledButton.icon(
-          onPressed: () => Navigator.pop(context, true),
+          onPressed: widget.offlineMode
+              ? null : () => Navigator.pop(context, true),
           icon: const Icon(Icons.add),
           label: const Text('Add computer'),
         )),
@@ -202,22 +207,25 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
             title: Text(device.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis),
             subtitle: Text('${device.host} · ${deviceLocations[device.location]!}'
-                 ' · ${widget.online[device.id] == true ? 'Online' :
+                 ' · ${widget.offlineMode ? 'Join Wi-Fi' :
+                    widget.online[device.id] == true ? 'Online' :
                     widget.online[device.id] == false ? 'Offline' : 'Checking'}',
                 maxLines: 1, overflow: TextOverflow.ellipsis),
-            onTap: canConnectSavedDevice(widget.online[device.id],
+            onTap: !widget.offlineMode &&
+                canConnectSavedDevice(widget.online[device.id],
                  connecting: _busy)
                  ? () => _action(device, 'connect') : null,
             trailing: PopupMenuButton<String>(
               tooltip: 'Manage ${device.name}', enabled: !_busy,
               onSelected: (action) => _action(device, action),
               itemBuilder: (_) => [
-                PopupMenuItem(value: 'connect',
+                if (!widget.offlineMode) PopupMenuItem(value: 'connect',
                   enabled: canConnectSavedDevice(widget.online[device.id],
                       connecting: _busy),
                   child: const Text('Connect')),
-                if (device.platform == 'linux' || device.platform == 'darwin' ||
-                    device.platform == 'windows')
+                if (!widget.offlineMode &&
+                    (device.platform == 'linux' || device.platform == 'darwin' ||
+                    device.platform == 'windows'))
                   const PopupMenuItem(
                     value: 'update',
                     child: Row(children: [
@@ -226,14 +234,16 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                       Text('Update Agent'),
                     ]),
                   ),
-                if (device.platform == 'linux' || device.platform == 'darwin')
+                if (!widget.offlineMode &&
+                    (device.platform == 'linux' || device.platform == 'darwin'))
                   const PopupMenuItem(value: 'uninstall',
                     child: Row(children: [
                       Icon(Icons.delete_forever_outlined),
                       SizedBox(width: 8),
                       Text('Uninstall Agent…'),
                     ])),
-                const PopupMenuItem(value: 'diagnostics',
+                if (!widget.offlineMode)
+                  const PopupMenuItem(value: 'diagnostics',
                     child: Row(children: [
                       Icon(Icons.bug_report_outlined),
                       SizedBox(width: 8),
