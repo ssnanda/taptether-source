@@ -1,7 +1,7 @@
-/// Device-driven capability model for LG ThinQ profiles and live states.
-/// All readable profile features are shown. Writable features produce an
-/// action only if an exact parameter can be validated against LG's own
-/// advertised writable values. No guessed appliance commands.
+// Device-driven capability model for LG ThinQ profiles and live states.
+// All readable profile features are shown. Writable features produce an
+// action only if an exact parameter can be validated against LG's own
+// advertised writable values. No guessed appliance commands.
 
 class ThinQFeature {
   const ThinQFeature({
@@ -314,14 +314,18 @@ List<ThinQFeature> thinQFeatures(Object? profile, Object? state) {
     for (final entry in node.entries) {
       final group = entry.key.toString();
       if (!_safeName(group) || group == 'location' ||
-          group == 'locationName') continue;
+          group == 'locationName') {
+        continue;
+      }
       final child = entry.value;
       if (child is Map) {
         final resourceZone = _location(child) ?? zone;
         for (final prop in child.entries) {
           final key = prop.key.toString();
           if (!_safeName(key) || key == 'locationName' ||
-              key == 'location' || key == 'unit') continue;
+              key == 'location' || key == 'unit') {
+            continue;
+          }
           final value = prop.value;
           if (value is String || value is num || value is bool) {
             final id = '$group.$key@${resourceZone ?? ""}';
