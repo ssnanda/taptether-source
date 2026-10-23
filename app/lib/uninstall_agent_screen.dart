@@ -173,29 +173,22 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
       } else {
         // Ubuntu requires sudo for systemd/dpkg. Never run a caller-provided
         // shell command, path or URL. Only this fixed packaged uninstaller.
+        final session = await ssh.execute(
+            _sudo.text.isNotEmpty
+                ? 'sudo -S -p "" /bin/bash /usr/share/taptether/4-ubuntu-uninstall.sh --system'
+                : 'sudo -n /bin/bash /usr/share/taptether/4-ubuntu-uninstall.sh --system',
+            pty: const SSHPtyConfig());
         if (_sudo.text.isNotEmpty) {
-          final session = await ssh.execute('sudo -S -p "" -v',
-              pty: const SSHPtyConfig());
-          session.stdin.add(Uint8List.fromList(utf8.encode('${_sudo.text}\n')));
-          await Future.wait([
-            session.stdout.drain<void>(),
-            session.stderr.drain<void>(),
-          ]).timeout(const Duration(seconds: 25));
-          if (await session.waitForExit(timeout: const Duration(seconds: 8)) != 0) {
-            throw StateError('Ubuntu sudo authorization failed.');
-          }
-        } else {
-          final valid = await ssh.runWithResult('sudo -n -v')
-              .timeout(const Duration(seconds: 12));
-          if (valid.exitCode != 0) {
-            throw StateError('Enter the Ubuntu sudo password, or enable '
-                'passwordless sudo for your account.');
-          }
+          session.stdin.add(Uint8List.fromList(
+              utf8.encode('${_sudo.text}\n')));
         }
-        final removed = await ssh.runWithResult(
-            'sudo -n /bin/bash /usr/share/taptether/4-ubuntu-uninstall.sh --system')
-            .timeout(const Duration(minutes: 2));
-        if (removed.exitCode != 0) {
+        await Future.wait([
+          session.stdout.drain<void>(),
+          session.stderr.drain<void>(),
+        ]).timeout(const Duration(minutes: 2));
+        final exitCode = await session.waitForExit(
+            timeout: const Duration(seconds: 10));
+                if (exitCode != 0) {
           throw StateError('Ubuntu system package removal failed. '
               'Run local diagnostics before retrying.');
         }
