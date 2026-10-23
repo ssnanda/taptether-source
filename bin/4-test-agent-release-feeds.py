@@ -59,7 +59,9 @@ mac = (ROOT/'bin'/'8-tt-update-macos.sh').read_text()
 windows = (ROOT/'desktop'/'windows'/'Update-TapTether.ps1').read_text()
 system = (ROOT/'bin'/'9-tt-system-update-ubuntu.sh').read_text()
 assert 'rolling="$platform-current"' in publisher
-assert 'gh release create "$tag"' in publisher
+assert 'gh release create "$rolling"' in publisher
+assert 'tag="agent-$platform-v$version"' not in publisher
+assert '--target main' in publisher
 assert 'TapTether.ipa' not in publisher and 'TapTether.apk' not in publisher
 assert 'bin/4-guard-release-sync.py' in workflow
 assert 'bin/6-tt-publish-agent-only.sh ubuntu' in workflow
