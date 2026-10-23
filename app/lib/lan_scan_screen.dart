@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'lan_scan.dart';
 import 'deep_port_scan.dart';
@@ -9,6 +10,7 @@ import 'scan_report.dart';
 import 'lg_webos_client.dart';
 import 'samsung_tv_client.dart';
 import 'lg_appliance_discovery.dart';
+import 'lan_host_details_screen.dart';
 
 /// Injecting a scanner permits deterministic tests of authenticated
 /// scan-to-paired-device reconciliation without touching real network hosts.
@@ -362,11 +364,13 @@ class _LanScanScreenState extends State<LanScanScreen> {
           _report.add(host == null
               ? '$ip: no quick TCP response (not proof of offline)'
               : '$ip: TCP open ${host.openPorts.join(", ")}');
-          if (host != null) {
-            _verifyCandidate(host);
-            setState(() => _hosts = [..._hosts, host]);
-          }
-          setState(() => _completed++);
+          final candidate = host ?? LanHost(
+              ip: ip, hostname: ip, openPorts: const []);
+          if (host != null) _verifyCandidate(host);
+          setState(() {
+            _hosts = [..._hosts, candidate];
+            _completed++;
+          });
         }
         if (!_cancel) await Future.wait(_pendingVerifications);
       }
@@ -567,12 +571,14 @@ class _LanScanScreenState extends State<LanScanScreen> {
         _lgProtocolResult = protocol;
         if (found == null) {
           _notRespondingIp = ip;
-        } else {
-          _hosts = [
-            for (final item in _hosts)
-              if (item.ip != found.ip) item,
-            found,
-          ]..sort((a, b) {
+        }
+        final candidate = found ?? LanHost(
+            ip: ip, hostname: ip, openPorts: const []);
+        _hosts = [
+          for (final item in _hosts)
+            if (item.ip != ip) item,
+          candidate,
+        ]..sort((a, b) {
             final left = a.ip.split('.').map(int.parse).toList();
             final right = b.ip.split('.').map(int.parse).toList();
             for (var i = 0; i < 4; i++) {
@@ -581,7 +587,6 @@ class _LanScanScreenState extends State<LanScanScreen> {
             }
             return 0;
           });
-        }
       });
     } catch (_) {
       _report.add('$ip: manual check failed');
@@ -591,6 +596,59 @@ class _LanScanScreenState extends State<LanScanScreen> {
       }
     } finally {
       if (mounted) setState(() => _checkingSpecificIp = false);
+    }
+  }
+
+  /// Level-one report includes the visible device inventory, not only the
+  /// low-level scan log. Copied data never leaves the phone automatically.
+  String _networkDiagnostics() {
+    final result = StringBuffer()
+      ..writeln('TapTether network scan · ${_network?.cidr ?? "unknown"}')
+      ..writeln('Found ${_hosts.length} device(s)');
+    for (final host in _hosts) {
+      final verified = _verifiedAgents[host.ip];
+      final name = verified ?? host.displayName;
+      result.writeln('${host.ip} · $name · '
+          'TCP ${host.openPorts.isEmpty
+              ? "no tested response" : host.openPorts.join(", ")}');
+      final mac = host.macAddress ?? _cachedMacs[host.ip];
+      if (mac != null && mac.isNotEmpty) {
+        result.writeln('  MAC hint: $mac (unverified)');
+      }
+    }
+    result.writeln('---');
+    result.write(_report.output);
+    return result.toString();
+  }
+
+  Future<void> _copyNetworkDiagnostics() async {
+    await Clipboard.setData(
+        ClipboardData(text: _networkDiagnostics()));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Network diagnostics copied')));
+    }
+  }
+
+  Future<void> _openHost(LanHost device) async {
+    final matches = widget.knownComputers.where((entry) =>
+        entry.host == device.ip && entry.macAddress.isNotEmpty);
+    final mac = device.macAddress ?? _cachedMacs[device.ip] ??
+        (matches.isEmpty ? null : matches.first.macAddress);
+    final selected = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => LanHostDetailsScreen(
+        device: device,
+        network: _network!,
+        verifiedName: _verifiedAgents[device.ip],
+        macAddress: mac,
+        checkLg: _scanLg,
+        checkSamsung: _scanSamsung,
+      )),
+    );
+    // Only the explicit "Use IP for pairing" button returns to pairing;
+    // regular Back leaves the existing network inventory untouched.
+    if (selected != null && mounted) {
+      Navigator.pop(context, selected);
     }
   }
 
@@ -607,7 +665,17 @@ class _LanScanScreenState extends State<LanScanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan local network')),
+      appBar: AppBar(
+        title: const Text('Scan local network'),
+        actions: [
+          IconButton(
+            key: const ValueKey('copy-network-report'),
+            tooltip: 'Copy network diagnostics',
+            onPressed: _copyNetworkDiagnostics,
+            icon: const Icon(Icons.copy_outlined),
+          ),
+        ],
+      ),
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -881,9 +949,16 @@ class _LanScanScreenState extends State<LanScanScreen> {
               subtitle: Text(_subtitle(device)),
               isThreeLine: true,
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.pop(context, device.ip),
+              key: ValueKey('scan-device-${device.ip}'),
+              onTap: _network == null ? null : () => _openHost(device),
             )),
           const SizedBox(height: 16),
+          OutlinedButton.icon(
+            key: const ValueKey('copy-network-diagnostics'),
+            onPressed: _copyNetworkDiagnostics,
+            icon: const Icon(Icons.copy_all_outlined),
+            label: const Text('Copy network diagnostics'),
+          ),
           ScanReportPanel(
             title: 'Full Scan Output',
             report: _report,
@@ -894,8 +969,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
               'or stale, and do not prove a device is online.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 6),
-          const Text('Tap any result to use its IP in the pairing form. '
-              'An IP scan does not authorize access to a device.'),
+          const Text('Tap a device to see its own scan options and report. '
+              'Back returns to this device list without scanning again. '
+              'Pairing requires a separate explicit action.'),
         ],
       )),
     );
