@@ -32,11 +32,15 @@ Map<String, String> parseSsdpHeaders(String response) {
   final result = <String, String>{};
   for (final line in const LineSplitter().convert(response)) {
     final separator = line.indexOf(':');
-    if (separator <= 0) continue;
+    if (separator <= 0) {
+      continue;
+    }
     final name = line.substring(0, separator).trim().toLowerCase();
     if (!const {'server', 'st', 'usn', 'model', 'modelname',
       'friendlyname', 'x-friendly-name', 'x-model-name'}
-        .contains(name)) continue;
+        .contains(name)) {
+      continue;
+    }
     result[name] = safeApplianceLabel(line.substring(separator + 1));
   }
   return result;
