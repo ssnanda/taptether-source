@@ -368,9 +368,12 @@ String thinQSummaryLine(List<ThinQFeature> features) {
     return null;
   }
   final stage = field('currentState') ?? field('runState');
-  final h = int.tryParse(field('remainHour') ?? '');
-  final m = int.tryParse(field('remainMinute') ?? '');
-  if (stage != null && h != null && m != null) {
+  final rawHours = field('remainHour');
+  final rawMinutes = field('remainMinute');
+  final h = int.tryParse(rawHours ?? '0');
+  final m = int.tryParse(rawMinutes ?? '0');
+  if (stage != null && (rawHours != null || rawMinutes != null) &&
+      h != null && m != null) {
     return '$stage · ${h > 0 ? "$h hr " : ""}$m min remaining';
   }
   if (stage != null) {
