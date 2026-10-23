@@ -8,14 +8,14 @@ void main() {
       timestamp: DateTime.utc(2026, 10, 22),
       details: {
         'Failure': 'Authorization: secret123 Bearer secretABC '
-            'tlsPin=${'A' * 64}',
+            'tlsPin=${'A'.padRight(64, 'A')}',
       },
     );
     expect(report, contains('192.168.68.11'));
     expect(report, contains('[REDACTED]'));
     expect(report, isNot(contains('secret123')));
     expect(report, isNot(contains('secretABC')));
-    expect(report, isNot(contains('A' * 64)));
+    expect(report, isNot(contains('A'.padRight(64, 'A'))));
   });
 
   test('report retains actionable port state and timestamp', () {
