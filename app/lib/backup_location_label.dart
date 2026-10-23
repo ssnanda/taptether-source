@@ -22,8 +22,8 @@ String backupLocationLabel({String? automaticFolder, String? manualPath}) {
         ? 'iCloud Drive'
         : 'iCloud Drive / ${folders.join(' / ')}';
   }
-  if (normalized.toLowerCase().contains('icloud drive')) {
-    return 'iCloud Drive';
+  if (normalized.toLowerCase().startsWith('icloud drive')) {
+    return normalized;
   }
   // The native folder channel reports "Files / <folder name>". Only
   // show its friendly folder name; never claim it is on iCloud.
