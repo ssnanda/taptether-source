@@ -73,11 +73,7 @@ jobs:
           }
           # Refuse a future full release that would downgrade any platform-only agent.
           python3 bin/4-guard-release-sync.py
-          if gh release view "v$version" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "v$version already published. Increment VERSION before rebuilding." >&2
-            exit 1
-          fi
-          if gh release view current -R "$GITHUB_REPOSITORY" \
+          if gh release view current -R "ssnanda/taptether.com" \
                 --json name --jq '.name' 2>/dev/null | grep -Fq "TapTether $version"; then
             echo "TapTether $version is already on current. Increment VERSION before another release." >&2
             exit 1
@@ -383,7 +379,7 @@ jobs:
       - name: Publish current IPA, APK and agents to GitHub Releases
         if: ${{ github.event_name == 'push' || inputs.task == 'release' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-latest.sh
 
   agent-only-validate:
@@ -457,7 +453,7 @@ jobs:
           for deb in dist/ubuntu/*.deb; do dpkg-deb --info "$deb"; done
       - name: Publish only Ubuntu agents
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-agent-only.sh ubuntu
 
   agent-only-windows:
@@ -495,7 +491,7 @@ jobs:
         run: bash bin/2c-tt-windows.sh
       - name: Publish only Windows agents
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-agent-only.sh windows
 
   agent-only-macos:
@@ -530,7 +526,7 @@ jobs:
           python3 bin/4-validate-desktop-installers.py --platform macos
       - name: Publish only macOS agents; never replace Screen/Input Core
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-agent-only.sh macos
 
   cleanup-history:
