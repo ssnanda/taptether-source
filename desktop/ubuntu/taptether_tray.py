@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 import re
+import shutil
 from urllib.parse import urlencode
 
 try:
@@ -398,22 +399,28 @@ def pair_device(_item):
                 "v": "1", "host": ip_choice.get_active_text(),
                 "token": token_match.group(1),
                 "fingerprint": pin_match.group(1).upper()})
+            if not shutil.which("qrencode"):
+                qr_hint.set_text("QR unavailable: install qrencode (sudo apt install qrencode).")
+                return
             try:
-                proc = subprocess.run(["qrencode", "-t", "PNG", "-s", "8",
+                proc = subprocess.run(["qrencode", "-t", "PNG", "-s", "6",
                                        "-m", "2", "-o", "-"],
                                       input=uri.encode(), stdout=subprocess.PIPE,
                                       stderr=subprocess.DEVNULL, timeout=5, check=True)
                 loader = GdkPixbuf.PixbufLoader.new_with_type("png")
                 loader.write(proc.stdout)
+                pixbuf = loader.get_pixbuf()
                 loader.close()
-                qr_image.set_from_pixbuf(loader.get_pixbuf())
+                if pixbuf is None:
+                    raise ValueError("The QR PNG could not be decoded")
+                qr_image.set_from_pixbuf(pixbuf)
                 qr_hint.set_text("QR for " + ip_choice.get_active_text())
-            except (OSError, subprocess.SubprocessError, GLib.Error):
-                qr_hint.set_text("QR unavailable. Install qrencode, or use the text below.")
+            except (OSError, subprocess.SubprocessError, GLib.Error, ValueError):
+                qr_hint.set_text("QR rendering failed. Check qrencode and Agent diagnostics.")
         ip_choice.connect("changed", render_code)
         render_code()
     else:
-        qrbox.pack_start(Gtk.Label(label="Pairing QR unavailable; use the text below."), False, False, 2)
+        qrbox.pack_start(Gtk.Label(label="Pairing QR unavailable: local IP, token or certificate is missing."), False, False, 2)
     scroller = Gtk.ScrolledWindow()
     scroller.set_size_request(580, 145)
     display = Gtk.TextView()
