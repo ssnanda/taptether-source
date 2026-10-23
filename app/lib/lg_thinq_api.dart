@@ -131,7 +131,7 @@ class LgThinQStorage {
   }
 
   Future<void> setEnabled(LgThinQDevice device, bool enable) async {
-    final saved = await enabledDevices();
+    final saved = <LgThinQDevice>[...await enabledDevices()];
     saved.removeWhere((entry) => entry.id == device.id);
     if (enable) saved.add(device);
     await _storage.write(key: devicesKey,
@@ -238,8 +238,8 @@ Map<String, String> safeThinQSummary(Object? data) {
       final value = entry.value;
       if (allowed.contains(key) && value != null &&
           (value is String || value is num || value is bool)) {
-        result[key] = value.toString().substring(
-            0, value.toString().length.clamp(0, 90));
+        final text = value.toString();
+        result[key] = text.length <= 90 ? text : text.substring(0, 90);
       } else if (value is Map) {
         visit(value, depth + 1);
       }
