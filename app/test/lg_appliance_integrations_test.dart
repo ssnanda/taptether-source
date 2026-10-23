@@ -31,10 +31,12 @@ void main() {
 
   test('ThinQ inventory filters malformed IDs and recognizes appliances', () {
     final devices = parseThinQDevices([
-      {'deviceId':'abc1','deviceType':'DEVICE_WASHER',
-        'alias':'Laundry Washer','modelName':'WM1234'},
-      {'deviceId':'abc2','deviceType':'DEVICE_REFRIGERATOR',
-        'alias':'Kitchen','model':'LRFXC'},
+      {'deviceId':'abc1','deviceInfo':{
+          'deviceType':'DEVICE_WASHER',
+          'alias':'Laundry Washer','modelName':'WM1234'}},
+      {'deviceId':'abc2','deviceInfo':{
+          'deviceType':'DEVICE_REFRIGERATOR',
+          'alias':'Kitchen','modelName':'LRFXC'}},
       {'deviceType':'DEVICE_DRYER','alias':'Missing ID'},
     ]);
     expect(devices.length, 2);
