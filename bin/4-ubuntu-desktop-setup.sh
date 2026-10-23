@@ -8,6 +8,7 @@ SYS_SERVICE="/etc/systemd/system/$UNIT"
 OLD_USER_SERVICE="$HOME/.config/systemd/user/$UNIT"
 CTL="$HOME/.local/bin/taptetherctl"
 UPDATER="$HOME/.local/bin/taptether-agent-update"
+UNINSTALLER="$HOME/.local/bin/taptether-uninstall"
 POWER_RULE="/etc/polkit-1/rules.d/80-taptether-shutdown.rules"
 POWER_DROPIN="/etc/systemd/system/taptether-agent.service.d/40-shutdown.conf"
 POWER_DISABLED="$HOME/.config/taptether/remote-shutdown-disabled"
@@ -169,6 +170,9 @@ install() {
     cp "${BASH_SOURCE[0]}" "$CTL"
   fi
   chmod 700 "$CTL"
+  if [[ -s /usr/share/taptether/4-ubuntu-uninstall.sh ]]; then
+    command install -m 0700 /usr/share/taptether/4-ubuntu-uninstall.sh "$UNINSTALLER"
+  fi
   if [[ -f "$(dirname "$0")/7-tt-update-ubuntu.sh" ]]; then
     command install -m 0700 "$(dirname "$0")/7-tt-update-ubuntu.sh" "$UPDATER"
   fi
