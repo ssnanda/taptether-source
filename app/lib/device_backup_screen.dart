@@ -308,12 +308,30 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (!mounted) {
       return;
     }
-    final password = await _password(confirm: false);
-    if (password == null || !mounted) {
-      return;
+    // Read the file format first. Unprotected backups need no password;
+    // encrypted backups first try the passphrase saved on this phone.
+    Map<String, String> verified;
+    if (DeviceBackupCodec.needsPassword(bytes)) {
+      if (_rememberedPassword != null) {
+        try {
+          verified = await DeviceBackupCodec.restoreFile(bytes,
+              password: _rememberedPassword);
+        } on FormatException {
+          if (!mounted) return;
+          final password = await _password(confirm: false);
+          if (password == null) return;
+          verified = await DeviceBackupCodec.restoreFile(bytes,
+              password: password);
+        }
+      } else {
+        final password = await _password(confirm: false);
+        if (password == null) return;
+        verified = await DeviceBackupCodec.restoreFile(bytes,
+            password: password);
+      }
+    } else {
+      verified = await DeviceBackupCodec.restoreFile(bytes);
     }
-    // Authenticate the entire file before overwriting any secure entry.
-    final verified = await DeviceBackupCodec.decrypt(bytes, password);
     if (!mounted) {
       return;
     }
@@ -364,17 +382,23 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
       await _auto.disable();
       return;
     }
-    final selected = await _auto.chooseFolder();
-    if (!selected || !mounted) {
-      return;
+    if (!_auto.folderAvailable) {
+      final selected = await _auto.chooseFolder();
+      if (!selected || !mounted) return;
     }
-    final password = await _password(confirm: true);
-    if (password == null || !mounted) {
-      return;
-    }
+    final password = await _getExportPassword();
+    if ((_usePassword && password == null) || !mounted) return;
     await _auto.enable(password);
     if (_auto.lastError != null) {
       throw StateError(_auto.lastError!);
+    }
+  });
+
+  Future<void> _changeFolder() => _run(() async {
+    final changed = await _auto.chooseFolder();
+    if (changed && _auto.enabled &&
+        !await _auto.backupNow(force: true)) {
+      throw StateError('Cannot save to the selected folder.');
     }
   });
 
