@@ -2279,34 +2279,30 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Widget _deviceStatus(String id) {
     final state = _online[id];
-    final busy = _connectingDeviceId == id && state == true;
-    final checking = state != true &&
-        (_checkingHeartbeat || _recoveringDiscovery);
+    final connecting = _connectingDeviceId == id;
+    final locating = state != true && _recoveringDiscovery;
+    final checking = state != true && _checkingHeartbeat;
+    final status = connecting ? 'Connecting' : state == true ? 'Online'
+        : locating ? 'Locating' : checking ? 'Checking'
+        : state == false ? 'Offline' : 'Not yet checked';
     final color = state == true
-        ? Colors.green.shade700
-        : state == false
-            ? Theme.of(context).colorScheme.outline
-            : Theme.of(context).colorScheme.secondary;
-    final label = busy
-        ? 'CONNECTING' : state == true
-            ? 'ONLINE' : checking
-                ? (_probingOfflineAgents ? 'LOCATING' : 'CHECKING')
-                : state == false ? 'OFFLINE' : 'CHECKING';
-    return Semantics(
-      label: 'Computer ${busy ? 'connecting' : label.toLowerCase()}',
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (busy)
-          SizedBox(width: 13, height: 13,
-            child: CircularProgressIndicator(strokeWidth: 2, color: color))
-        else
-          Icon(state == true ? Icons.check_circle :
-              state == false ? Icons.circle_outlined : Icons.circle,
-              size: 15, color: color),
-        const SizedBox(width: 5),
-        Text(label, style: TextStyle(color: color,
-            fontSize: 11, fontWeight: FontWeight.w800,
-            letterSpacing: 0.35)),
-      ]),
+        ? Colors.green.shade700 : (locating || connecting)
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.outline;
+    final icon = connecting ? Icons.link
+        : state == true ? Icons.check_circle
+        : locating ? Icons.travel_explore
+        : checking ? Icons.sync
+        : Icons.radio_button_unchecked;
+    return Tooltip(
+      message: status,
+      child: Semantics(
+        label: 'Computer $status',
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(icon, color: color, size: 22),
+        ),
+      ),
     );
   }
 
@@ -2328,22 +2324,30 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Widget _tvStatus(String vendor, String host) {
     final key = '$vendor:$host';
-    final outside = _wifiRange != null &&
+    final otherNetwork = _wifiRange != null &&
         !lanRangeContains(_wifiRange!, host);
     final online = _tvOnline[key] == true;
-    final checking = _checkingTvStatus || _recoveringTvAddresses;
-    final label = online ? 'ONLINE'
-        : outside ? 'OTHER NETWORK'
-        : checking ? 'CHECKING' : 'OFFLINE';
-    final color = online ? Colors.green.shade700 :
-        Theme.of(context).colorScheme.outline;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(online ? Icons.check_circle : Icons.circle_outlined,
-          size: 15, color: color),
-      const SizedBox(width: 5),
-      Text(label, style: TextStyle(
-          fontSize: 10, color: color, fontWeight: FontWeight.w700)),
-    ]);
+    final locating = !online && _recoveringTvAddresses;
+    final checking = !online && _checkingTvStatus;
+    final status = online ? 'Online' : otherNetwork ? 'Other network'
+        : locating ? 'Locating' : checking ? 'Checking' : 'Offline';
+    final color = online ? Colors.green.shade700
+        : locating ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.outline;
+    final icon = online ? Icons.check_circle
+        : otherNetwork ? Icons.wifi_off
+        : locating ? Icons.travel_explore
+        : checking ? Icons.sync : Icons.radio_button_unchecked;
+    return Tooltip(
+      message: status,
+      child: Semantics(
+        label: '$vendor TV $status',
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(icon, size: 22, color: color),
+        ),
+      ),
+    );
   }
 
   Future<void> _chooseTvType() async {
@@ -2432,11 +2436,26 @@ class _RemoteScreenState extends State<RemoteScreen>
             },
           )),
           IconButton(
-            tooltip: 'Refresh computers and TVs',
-            onPressed: (_checkingHeartbeat || _recoveringDiscovery ||
-                _checkingTvStatus || _recoveringTvAddresses)
-                 ? null : _refreshDevicesManually,
+            key: const ValueKey('refresh-device-status'),
+            tooltip: 'Check device status',
+            onPressed: (_checkingHeartbeat || _checkingTvStatus ||
+                _locatingManually)
+                ? null : () async {
+                    await Future.wait([
+                      _refreshHeartbeats(), _refreshTvStatuses(),
+                    ]);
+                  },
             icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            key: const ValueKey('locate-saved-devices'),
+            tooltip: 'Locate saved devices on Wi-Fi (find changed IPs)',
+            onPressed: (_locatingManually || _recoveringDiscovery ||
+                _recoveringTvAddresses || _checkingHeartbeat ||
+                _checkingTvStatus)
+                ? null : _refreshDevicesManually,
+            icon: Icon(_locatingManually ? Icons.hourglass_top
+                : Icons.travel_explore),
           ),
         ]),
         Row(children: [
@@ -2447,28 +2466,19 @@ class _RemoteScreenState extends State<RemoteScreen>
           ),
           const Text('Show offline'),
           const Spacer(),
-          Text(
-            '$onlineComputerCount computer${onlineComputerCount == 1 ? '' : 's'}'
-             ' · $onlineTvCount TV${onlineTvCount == 1 ? '' : 's'} online',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w600),
+          Tooltip(
+            message: 'Devices currently online',
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.check_circle_outline, size: 16,
+                  color: Colors.green.shade700),
+              const SizedBox(width: 5),
+              Text('$onlineComputerCount computer · $onlineTvCount TVs',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w600)),
+            ]),
           ),
         ]),
-        if (_recoveringTvAddresses)
-          Text('Locating saved TVs by verified identity…',
-            style: Theme.of(context).textTheme.bodySmall),
-        if (_checkingTvStatus && !_checkingHeartbeat)
-          Text('Checking saved TVs…',
-            style: Theme.of(context).textTheme.bodySmall),
-        if (_recoveringDiscovery)
-          Text(_probingOfflineAgents
-              ? 'Checking TapTether agent addresses on this Wi-Fi…'
-              : 'Finding paired computers on this Wi-Fi…',
-            style: Theme.of(context).textTheme.bodySmall),
-        if (_checkingHeartbeat)
-          Text('Checking saved devices…',
-            style: Theme.of(context).textTheme.bodySmall),
         if (_dashboardNotice != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -2490,10 +2500,8 @@ class _RemoteScreenState extends State<RemoteScreen>
             savedLgTvs.isEmpty && savedSamsungTvs.isEmpty)
           Padding(
             padding: const EdgeInsets.all(14),
-            child: Text(_checkingHeartbeat
-                ? 'Checking saved devices…'
-                : 'No saved devices match this filter. Change the location '
-                  'or enable Show offline.'),
+            child: const Text(
+                'No saved devices match this filter.'),
           ),
       ],
       if (savedComputers.isEmpty && savedLgTvs.isEmpty &&
