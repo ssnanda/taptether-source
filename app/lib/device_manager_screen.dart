@@ -9,11 +9,13 @@ import 'network_location.dart';
 class DeviceManagerScreen extends StatefulWidget {
   const DeviceManagerScreen({super.key, required this.store,
     required this.onConnect, required this.onUpdate,
+    required this.onDiagnostics,
     this.online = const {}});
   final ComputerStore store;
   final Map<String, bool> online;
   final Future<void> Function(SavedComputer) onConnect;
   final Future<void> Function(SavedComputer) onUpdate;
+  final Future<void> Function(SavedComputer) onDiagnostics;
   @override
   State<DeviceManagerScreen> createState() => _DeviceManagerScreenState();
 }
@@ -128,6 +130,9 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
 
   Future<void> _action(SavedComputer device, String action) async {
     switch (action) {
+      case 'diagnostics':
+        await widget.onDiagnostics(device);
+        return;
       case 'connect':
         if (!canConnectSavedDevice(widget.online[device.id],
             connecting: _busy)) {
@@ -214,6 +219,12 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                       Text('Update Agent'),
                     ]),
                   ),
+                const PopupMenuItem(value: 'diagnostics',
+                    child: Row(children: [
+                      Icon(Icons.bug_report_outlined),
+                      SizedBox(width: 8),
+                      Text('Diagnostics'),
+                    ])),
                 const PopupMenuItem(value: 'rename', child: Text('Rename')),
                 const PopupMenuItem(value: 'address', child: Text('Change LAN address')),
                 const PopupMenuDivider(),
