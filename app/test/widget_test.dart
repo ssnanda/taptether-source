@@ -41,6 +41,10 @@ void main() {
     await tester.tap(find.text('Settings & More'));
     await tester.pumpAndSettle();
     expect(find.text('Security & Appearance'), findsOneWidget);
+    expect(find.text('API Integrations'), findsOneWidget);
+    await tester.tap(find.text('API Integrations'));
+    await tester.pumpAndSettle();
+    expect(find.text('LG ThinQ'), findsOneWidget);
     expect(find.text('About TapTether'), findsOneWidget);
     expect(find.text('Download agents'), findsOneWidget);
     expect(find.text('TV Remotes'), findsNothing);
