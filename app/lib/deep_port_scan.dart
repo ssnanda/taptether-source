@@ -123,8 +123,9 @@ Future<List<DeepHostResult>> scanDeepTcp({
         }
       }
     }
+    final portCount = lastPort - firstPort + 1;
     await Future.wait(List.generate(
-        parallelism.clamp(1, lastPort - firstPort + 1),
+        parallelism < portCount ? parallelism : portCount,
         (_) => worker()));
     openPorts.sort();
     final result = DeepHostResult(host, openPorts, hostChecked);
