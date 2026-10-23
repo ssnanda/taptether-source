@@ -26,6 +26,7 @@ import 'appearance.dart';
 import 'app_security.dart';
 import 'automatic_device_backup.dart';
 import 'security_settings_screen.dart';
+import 'about_taptether_screen.dart';
 import 'device_manager_screen.dart';
 import 'device_diagnostics_screen.dart';
 import 'device_location_log.dart';
@@ -493,6 +494,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final Map<String, DateTime> _recentAnnouncements = {};
   int _heartbeatGeneration = 0;
   String? _connectingDeviceId;
+  String? _connectedDeviceId;
   String? _dashboardNotice;
   Future<PhoneIdentity>? _cachedPhoneIdentity;
   Future<PhoneIdentity> _phoneIdentity() =>
@@ -1517,6 +1519,9 @@ class _RemoteScreenState extends State<RemoteScreen>
       _connectedPlatform = device.platform;
       _macShortcuts = device.platform == 'darwin';
       succeeded = await connect(existingId: device.id, deviceId: device.deviceId);
+      if (succeeded && mounted) {
+        setState(() => _connectedDeviceId = device.id);
+      }
     } catch (_) {
       // Saved device connection failures should not dump exception strings
       // containing LAN address/port onto the main dashboard.
@@ -2027,7 +2032,10 @@ class _RemoteScreenState extends State<RemoteScreen>
       );
       final updated = await deviceStore.upsert(renamed);
       if (!mounted) return;
-      setState(() => savedComputers = updated);
+      setState(() {
+        savedComputers = updated;
+        if (_connectedDeviceId == saved.id) discoveredName = newName;
+      });
       AutomaticDeviceBackup.instance.requestSoon();
     } catch (_) {
       if (mounted) {
@@ -2114,7 +2122,8 @@ class _RemoteScreenState extends State<RemoteScreen>
               children: [
                 Text('TapTether',
                     style: Theme.of(context).textTheme.titleLarge),
-                const Text('Your network. Your control.'),
+                Text('Local control. No accounts.',
+                    style: Theme.of(context).textTheme.bodySmall),
               ],
             )),
           ]),
@@ -2129,14 +2138,6 @@ class _RemoteScreenState extends State<RemoteScreen>
               agent.disconnect();
               setState(() => status = 'Select a device to connect.');
             }
-          },
-        ),
-        if (_wifiRange != null) ListTile(
-          leading: const Icon(Icons.tv_outlined),
-          title: const Text('TV Remotes'),
-          onTap: () {
-            Navigator.pop(context);
-            unawaited(_chooseTvType());
           },
         ),
         ListTile(
@@ -2220,11 +2221,23 @@ class _RemoteScreenState extends State<RemoteScreen>
             openSecuritySettings();
           },
         ),
-        AboutListTile(
-          icon: const Icon(Icons.info_outline),
-          applicationName: 'TapTether',
-          applicationVersion: installedVersion,
-          child: const Text('About'),
+        ListTile(
+          leading: const Icon(Icons.download_outlined),
+          title: const Text('Download agents'),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const AgentDownloadsScreen()));
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.info_outline),
+          title: const Text('About TapTether'),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => AboutTapTetherScreen(version: installedVersion)));
+          },
         ),
       ],
     )),
@@ -2579,13 +2592,6 @@ class _RemoteScreenState extends State<RemoteScreen>
                     visualDensity: VisualDensity.compact,
                   ),
                 IconButton(
-                  key: ValueKey('rename-computer-${device.id}'),
-                  tooltip: 'Rename ${device.name}',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _renameComputer(device),
-                  icon: const Icon(Icons.edit_outlined, size: 19),
-                ),
-                IconButton(
                   key: ValueKey('diagnostics-computer-${device.id}'),
                   tooltip: 'Diagnose ${device.name}',
                   visualDensity: VisualDensity.compact,
@@ -2863,11 +2869,6 @@ class _RemoteScreenState extends State<RemoteScreen>
       onTap: () => launchUrl(
         Uri.parse('https://github.com/ssnanda/taptether.com/releases/tag/current'),
         mode: LaunchMode.externalApplication),
-    )),
-    if (availableAgentVersion != null) Card(child: ListTile(
-      leading: const Icon(Icons.computer),
-      title: Text('Computer agent update: ${availableAgentVersion!}'),
-      subtitle: const Text('On the computer, run taptetherctl check-update and update.'),
     )),
   ]);
 
@@ -4323,18 +4324,24 @@ class _RemoteScreenState extends State<RemoteScreen>
         ),
         title: Text(connected ? (discoveredName ?? 'Remote') : 'TapTether',
             maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: connected ? [
+          IconButton(
+            key: const ValueKey('rename-active-computer'),
+            tooltip: 'Rename computer',
+            icon: const Icon(Icons.edit_outlined, size: 20),
+            onPressed: () {
+              final matches = savedComputers.where((device) =>
+                device.id == _connectedDeviceId ||
+                (device.host == host.text.trim() &&
+                    device.fingerprint == pin.text));
+              if (matches.isNotEmpty) unawaited(_renameComputer(matches.first));
+            },
+          ),
+        ] : null,
       ),
       body: connected && landscape
           ? SafeArea(child: _landscapeImmersive())
           : SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        if (!connected && _wifiRange != null) ...[
-          Text('Your devices. Your control. Your network.',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              )),
-          const SizedBox(height: 12),
-        ],
         if (!connected && _wifiRange != null) updateNotices(),
         if (!connected && _wifiRange == null)
           _offlineHome(),
@@ -4369,9 +4376,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 12),
           ],
-          Center(child: Text('TapTether v$installedVersion',
-            style: TextStyle(fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant))),
+
         ],
       ])),
     );
