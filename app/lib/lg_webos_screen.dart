@@ -580,6 +580,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
               tooltip: 'TV options',
               onSelected: (item) {
                 if (item == 'diagnostics') unawaited(_showDiagnostics(tv));
+                if (item == 'about') unawaited(_showAboutTv(tv));
                 if (item == 'rename') unawaited(_rename(tv));
                 if (item == 'mac') unawaited(_editMac(tv));
                 if (item == 'disconnect') unawaited(_disconnect());
@@ -591,6 +592,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                 const PopupMenuItem(
                     value: 'mac', child: Text('TV identity / MAC')),
                 const PopupMenuItem(value: 'diagnostics', child: Text('Diagnostics')),
+                const PopupMenuItem(value: 'about', child: Text('About TV')),
                 if (_ready) const PopupMenuItem(
                     value: 'disconnect', child: Text('Disconnect')),
                 const PopupMenuItem(
