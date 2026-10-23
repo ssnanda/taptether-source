@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'lg_webos_client.dart';
+import 'device_diagnostics_screen.dart';
 import 'lg_compact_remote.dart';
 
 /// Phone-side LG remote: on-screen controls only, no agent on the TV.
@@ -288,6 +289,26 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     }
   }
 
+
+  Future<void> _showDiagnostics(LgTvDevice tv) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => DeviceDiagnosticsScreen(
+        name: tv.name, host: tv.host, kind: 'lg',
+        location: tv.location, paired: tv.clientKey.isNotEmpty,
+        hasTlsPin: tv.tlsPin.isNotEmpty,
+        reportedOnline: _ready && _connected?.host == tv.host,
+        model: tv.about['modelName'] ?? tv.about['model'] ?? '',
+        about: tv.about, lastError: _error,
+        verifyAuthenticated: tv.tlsPin.isEmpty ? null : () async {
+          final valid = await matchesLgTlsPin(tv.host, tv.tlsPin);
+          return {'TLS certificate identity': valid
+              ? 'Matches saved fingerprint (no re-pairing)'
+              : 'Not verified (certificate mismatch or TV unreachable)'};
+        },
+      ),
+    ));
+  }
+
   Future<void> _showAboutTv(LgTvDevice tv) async {
     // Refresh on demand if connected; previously captured information remains
     // readable while the TV is offline.
@@ -558,6 +579,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
             PopupMenuButton<String>(
               tooltip: 'TV options',
               onSelected: (item) {
+                if (item == 'diagnostics') unawaited(_showDiagnostics(tv));
                 if (item == 'rename') unawaited(_rename(tv));
                 if (item == 'mac') unawaited(_editMac(tv));
                 if (item == 'disconnect') unawaited(_disconnect());
@@ -568,6 +590,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                     value: 'rename', child: Text('Rename TV')),
                 const PopupMenuItem(
                     value: 'mac', child: Text('TV identity / MAC')),
+                const PopupMenuItem(value: 'diagnostics', child: Text('Diagnostics')),
                 if (_ready) const PopupMenuItem(
                     value: 'disconnect', child: Text('Disconnect')),
                 const PopupMenuItem(
@@ -612,11 +635,18 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                   subtitle: Text(paired.host +
                       (paired.macAddress.isEmpty ? '' : ' · MAC saved')),
                   onTap: _busy ? null : () => _connect(paired),
-                  trailing: IconButton(
-                    tooltip: 'Rename TV',
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () => _rename(paired),
-                  ),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                     IconButton(
+                       tooltip: 'Diagnostics',
+                       icon: const Icon(Icons.bug_report_outlined),
+                       onPressed: () => _showDiagnostics(paired),
+                     ),
+                     IconButton(
+                       tooltip: 'Rename TV',
+                       icon: const Icon(Icons.edit_outlined),
+                       onPressed: () => _rename(paired),
+                     ),
+                   ]),
                 )),
               FilledButton.icon(
                 onPressed: _busy || _discovering ? null : _discover,
