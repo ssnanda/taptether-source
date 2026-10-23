@@ -71,6 +71,10 @@ class _LanScanScreenState extends State<LanScanScreen> {
   bool _scanTargetedIps = false;
   bool _scanLg = false;
   bool _scanSamsung = false;
+  bool _vendorBusy = false;
+  int _vendorChecked = 0;
+  int _vendorTotal = 0;
+  final Map<String, String> _vendorModels = {};
   bool _deepTcpPorts = false;
   bool _deepOnlyResponsive = true;
   int _deepCompleted = 0;
@@ -264,63 +268,122 @@ class _LanScanScreenState extends State<LanScanScreen> {
         : 'Deep TCP scan complete. Open ports are not proof of device identity.');
   }
 
+  void _addVendorCandidate(String ip, String name, List<int> ports,
+      {String? model}) {
+    if (!mounted) return;
+    final existing = _hosts.where((item) => item.ip == ip).toList();
+    final previous = existing.isEmpty ? null : existing.first;
+    final mergedPorts = <int>{
+      ...?previous?.openPorts,
+      ...ports,
+    }.toList()..sort();
+    setState(() {
+      if (model != null && model.isNotEmpty) _vendorModels[ip] = model;
+      _hosts = [
+        for (final item in _hosts)
+          if (item.ip != ip) item,
+        LanHost(
+          ip: ip,
+          hostname: previous == null || previous.hostname == ip
+              ? name : previous.hostname,
+          openPorts: mergedPorts,
+          macAddress: previous?.macAddress,
+          platform: previous?.platform,
+          agentAnnounced: previous?.agentAnnounced ?? false,
+        ),
+      ]..sort((a, b) {
+        final aa = a.ip.split('.').map(int.parse).toList();
+        final bb = b.ip.split('.').map(int.parse).toList();
+        for (var i = 0; i < 4; i++) {
+          final diff = aa[i].compareTo(bb[i]);
+          if (diff != 0) return diff;
+        }
+        return 0;
+      });
+    });
+  }
+
   Future<void> _scanVendorHints(List<String> ips) async {
     if (_cancel || !mounted || (!_scanLg && !_scanSamsung)) return;
     final network = _network;
     if (network == null) return;
     final targets = ips.toSet().where((ip) =>
         lanRangeContains(network, ip)).take(4096).toList();
+    setState(() {
+      _vendorBusy = true;
+      _vendorChecked = 0;
+      _vendorTotal = targets.length;
+    });
     _report.add('Vendor read-only checks: '
         '${_scanLg ? "LG" : ""} ${_scanSamsung ? "Samsung" : ""} '
-        '· only on selected/observed LAN hosts.');
-    if (_scanLg) {
-      try {
-        final clues = await LgApplianceLanDiscovery().scan(network);
-        _report.add('LG multicast advertisements: ${clues.length}');
-        for (final item in clues) {
-          _report.add('${item.ip}: possible LG ${item.name}; '
-              'model: ${item.model.isEmpty ? "not advertised" : item.model}; '
-              'server: ${item.server}');
-        }
-      } catch (_) {
-        _report.add('LG multicast discovery unavailable.');
-      }
-    }
-    var index = 0;
-    // Read-only network handshakes are bounded and never pair a TV.
-    Future<void> worker() async {
-      while (index < targets.length && !_cancel && mounted) {
-        final ip = targets[index++];
-        if (_scanLg) {
-          final lg3000 = await probeTcpPort(ip, 3000,
-              timeout: const Duration(milliseconds: 330));
-          final lg3001 = await probeTcpPort(ip, 3001,
-              timeout: const Duration(milliseconds: 330));
-          if (lg3000 == TcpProbeStatus.open ||
-              lg3001 == TcpProbeStatus.open) {
-            final hello = await readLgWebOsHello(ip,
-              connectTimeout: const Duration(milliseconds: 600),
-              replyTimeout: const Duration(seconds: 2));
-            _report.add('$ip: LG webOS ${hello == null
-                ? "ports open, protocol unverified"
-                : "read-only hello confirmed"}');
+        '· ${targets.length} local host(s), no pairing or control.');
+    try {
+      if (_scanLg) {
+        try {
+          final clues = await LgApplianceLanDiscovery().scan(network);
+          _report.add('LG multicast advertisements: ${clues.length}');
+          for (final item in clues) {
+            _report.add('${item.ip}: possible LG ${item.name}; '
+                'model: ${item.model.isEmpty ? "not advertised" : item.model}');
+            _addVendorCandidate(item.ip, item.name, const [],
+                model: item.model);
           }
-        }
-        if (_scanSamsung) {
-          final samsung = await probeSamsungTv(ip,
-              timeout: const Duration(milliseconds: 700));
-          if (samsung != null) {
-            _report.add('$ip: Samsung Tizen/Smart View confirmed · '
-                'model ${samsung.model.isEmpty
-                    ? "not disclosed" : samsung.model}');
-          }
+        } catch (_) {
+          _report.add('LG multicast discovery unavailable.');
         }
       }
+      var index = 0;
+      Future<void> worker() async {
+        while (index < targets.length && !_cancel && mounted) {
+          final ip = targets[index++];
+          if (_scanLg) {
+            final results = await Future.wait([
+              probeTcpPort(ip, 3000,
+                  timeout: const Duration(milliseconds: 330)),
+              probeTcpPort(ip, 3001,
+                  timeout: const Duration(milliseconds: 330)),
+            ]);
+            final ports = <int>[
+              if (results[0] == TcpProbeStatus.open) 3000,
+              if (results[1] == TcpProbeStatus.open) 3001,
+            ];
+            if (ports.isNotEmpty) {
+              final hello = await readLgWebOsHello(ip,
+                connectTimeout: const Duration(milliseconds: 600),
+                replyTimeout: const Duration(seconds: 2));
+              _report.add('$ip: LG webOS ${hello == null
+                  ? "ports open, protocol unverified"
+                  : "read-only hello confirmed"}');
+              if (hello != null) {
+                _addVendorCandidate(ip, 'LG webOS TV', ports);
+              }
+            }
+          }
+          if (_scanSamsung) {
+            final samsung = await probeSamsungTv(ip,
+                timeout: const Duration(milliseconds: 700));
+            if (samsung != null) {
+              _report.add('$ip: Samsung Tizen/Smart View confirmed · '
+                  'model ${samsung.model.isEmpty
+                      ? "not disclosed" : samsung.model}');
+              _addVendorCandidate(ip, 'Samsung TV', const [8001],
+                  model: samsung.model);
+            }
+          }
+          _vendorChecked++;
+          if (_vendorChecked % 12 == 0 ||
+              _vendorChecked == _vendorTotal) {
+            if (mounted) setState(() {});
+          }
+        }
+      }
+      await Future.wait(List.generate(
+          targets.length < 12 ? targets.length : 12, (_) => worker()));
+      _report.add('Vendor checks finished: $_vendorChecked/'
+          '$_vendorTotal hosts. Hints are not authenticated identities.');
+    } finally {
+      if (mounted) setState(() => _vendorBusy = false);
     }
-    await Future.wait(List.generate(
-        targets.length < 12 ? targets.length : 12, (_) => worker()));
-    _report.add('Vendor checks finished. Open ports and device names '
-        'alone are not authenticated identity.');
   }
 
   Future<void> _startTargetedScan() async {
@@ -349,6 +412,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
       _deepCompleted = 0;
       _deepTotal = 0;
       _hosts = [];
+      _vendorModels.clear();
       _verifiedAgents.clear();
       _startedVerification.clear();
       _pendingVerifications.clear();
@@ -422,6 +486,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
       _error = null;
       _hosts = [];
       _cachedMacs = {};
+      _vendorModels.clear();
       _verifiedAgents.clear();
       _startedVerification.clear();
       _pendingVerifications.clear();
@@ -494,7 +559,15 @@ class _LanScanScreenState extends State<LanScanScreen> {
               '${found.length} discovered device(s) · '
               '${_verifiedAgents.length} paired computer(s) authenticated');
       if (!_cancel && mounted && (_scanLg || _scanSamsung)) {
-        await _scanVendorHints(found.keys.toList());
+        // Vendor checks are explicitly requested and may find hosts with
+        // every quick-scan port closed, including LG appliances and TVs.
+        final vendorTargets = [
+          for (var i = 0; i < targets.length; i++)
+            for (var suffix = bounds[i].startHost;
+                suffix <= bounds[i].endHost; suffix++)
+              '${targets[i]}.$suffix',
+        ];
+        await _scanVendorHints(vendorTargets);
       }
       if (_deepTcpPorts && !_cancel && mounted) {
         final deepTargets = _deepOnlyResponsive
@@ -658,7 +731,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
     final mac = device.macAddress ?? _cachedMacs[device.ip] ??
         (matches.isNotEmpty ? matches.first.macAddress : null);
     final verified = _verifiedAgents[device.ip];
+    final model = _vendorModels[device.ip];
     return '${verified == null ? device.scanSubtitle : 'Paired: $verified · Verified agent'}'
+        '${model == null ? '' : '\nModel hint: $model'}'
         '${mac == null || mac.isEmpty ? '' : '\nMAC: $mac'}';
   }
 
@@ -844,14 +919,18 @@ class _LanScanScreenState extends State<LanScanScreen> {
           const SizedBox(height: 12),
           if (_busy) ...[
             LinearProgressIndicator(
-              value: _deepTotal > 0
-                  ? (_deepCompleted / _deepTotal).clamp(0.0, 1.0)
-                  : (_completed / _total).clamp(0.0, 1.0)),
+              value: _vendorBusy && _vendorTotal > 0
+                  ? (_vendorChecked / _vendorTotal).clamp(0.0, 1.0)
+                  : _deepTotal > 0
+                      ? (_deepCompleted / _deepTotal).clamp(0.0, 1.0)
+                      : (_completed / _total).clamp(0.0, 1.0)),
             const SizedBox(height: 10),
-            Text(_deepTotal > 0
-                ? 'Deep TCP: $_deepCompleted/$_deepTotal ports'
-                  '${_deepCurrentIp == null ? "" : " · $_deepCurrentIp"}'
-                : 'Checking $_completed of $_total addresses…'),
+            Text(_vendorBusy
+                ? 'Vendor checks: $_vendorChecked of $_vendorTotal IPs'
+                : _deepTotal > 0
+                    ? 'Deep TCP: $_deepCompleted/$_deepTotal ports'
+                      '${_deepCurrentIp == null ? "" : " · $_deepCurrentIp"}'
+                    : 'Checking $_completed of $_total addresses…'),
             const SizedBox(height: 8),
             OutlinedButton.icon(onPressed: () => _cancel = true,
                 icon: const Icon(Icons.stop_circle_outlined),
