@@ -31,6 +31,7 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
   SamsungTvDevice? _selectedDevice;
   SamsungTvClient? _client;
   bool _busy = false;
+  bool _waking = false;
   bool _finding = false;
   String _status = 'Choose a Samsung TV on this Wi-Fi.';
   String? _error;
@@ -264,43 +265,52 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
     await _reload();
   }
 
+  /// Always sends Wake-on-LAN to the selected TV only. Background connection
+  /// state must never turn an explicit On tap into a Power Off request.
+  Future<void> _wakeSelected() async {
+    final tv = _selected;
+    if (tv == null || _waking) return;
+    if (_detailMode && _selectedDevice?.host != tv.host) return;
+    _waking = true;
+    try {
+      await (widget.wakeDevice ?? wakeSamsungTv)(tv);
+      if (mounted) {
+        setState(() {
+          _status = 'Power-on signal sent to ${tv.name} (${tv.host}).';
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error =
+            error.toString().replaceFirst('Bad state: ', ''));
+      }
+    } finally {
+      _waking = false;
+      if (mounted) setState(() {});
+    }
+  }
+
   Future<void> _power() async {
     if (_busy) return;
     final selected = _selected;
     if (selected == null) return;
-    if (_detailMode && _selectedDevice?.host != selected.host) {
+    if (_detailMode && _selectedDevice?.host != selected.host) return;
+    if (!_connected || _client?.device.host != selected.host) {
+      await _wakeSelected();
       return;
     }
-    if (_connected && _client?.device.host == selected.host) {
-      try {
-        await _client!.powerOff();
-        await _client!.disconnect();
-        if (mounted) {
-          setState(() {
-          _status = 'Power-off requested';
-          _client = null;
-
-          });
-        }
-      } catch (error) {
-        if (mounted) {
-          setState(() => _error = '$error');
-        }
-      }
-      return;
-    }
-    final tv = selected;
     try {
-      await (widget.wakeDevice ?? wakeSamsungTv)(tv);
+      await _client!.powerOff();
+      await _client!.disconnect();
       if (mounted) {
-        setState(() =>
-          _status = 'Power-on signal sent (requires network standby).');
+        setState(() {
+          _status = 'Power-off requested for ${selected.name}';
+          _client = null;
+        });
       }
     } catch (error) {
-      if (mounted) {
-        setState(() =>
-          _error = error.toString().replaceFirst('Bad state: ', ''));
-      }
+      if (mounted) setState(() => _error = '$error');
     }
   }
 
@@ -428,9 +438,11 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
                   const SizedBox(height: 12),
                   FilledButton.icon(
                     key: const ValueKey('samsung-power-selected-tv'),
-                    onPressed: _busy ? null : _power,
+                    onPressed: _waking ? null : _wakeSelected,
                     icon: const Icon(Icons.power_settings_new),
-                    label: Text('Turn on ${tv.name}'),
+                    label: Text(_waking
+                        ? 'Sending wake signal to ${tv.name}…'
+                        : 'Turn on ${tv.name}'),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
