@@ -562,8 +562,11 @@ jobs:
             dist/macos/TapTetherAgent-macos-*.tar.gz
           if-no-files-found: error
           retention-days: 7
+      - name: Explain missing public publish credential
+        if: ${{ env.TAPTETHER_PUBLIC_PUBLISH_ENABLED != 'true' }}
+        run: echo '::warning::Agent was built for private download; configure TAPTETHER_PUBLIC_RELEASE_TOKEN to also update public agent releases.'
       - name: Publish only macOS agents; never replace Screen/Input Core
-        if: ${{ inputs.task == 'agent-macos' && env.TAPTETHER_PUBLIC_PUBLISH_ENABLED == 'true' }}
+        if: ${{ env.TAPTETHER_PUBLIC_PUBLISH_ENABLED == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-agent-only.sh macos
