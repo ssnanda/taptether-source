@@ -28,6 +28,10 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                 result(self.folderStatus())
             case "writeBackup":
                 self.writeBackup(call, result)
+            case "listBackups":
+                self.listBackups(result)
+            case "readBackup":
+                self.readBackup(call, result)
             case "clearFolder":
                 self.defaults.removeObject(forKey: Self.bookmarkKey)
                 result(true)
@@ -70,6 +74,24 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
         }
     }
 
+    // Use a dedicated subfolder for both manual and automatic generations.
+    // Never delete files outside TapTether or overwrite an existing backup.
+    private func backupFolder(_ selected: URL, create: Bool) throws -> URL {
+        let target = selected.lastPathComponent == "TapTether"
+            ? selected : selected.appendingPathComponent("TapTether", isDirectory: true)
+        if create {
+            try FileManager.default.createDirectory(
+                at: target, withIntermediateDirectories: true)
+        }
+        return target
+    }
+
+    private func locationName(_ selected: URL) -> String {
+        let root = selected.path.contains("com~apple~CloudDocs")
+            || selected.lastPathComponent == "com~apple~CloudDocs"
+        return (root ? "iCloud Drive" : "Files") + " / TapTether"
+    }
+
     private func folderStatus() -> [String: Any] {
         guard let url = selectedURL() else {
             return ["available": false]
@@ -77,8 +99,8 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
         let access = url.startAccessingSecurityScopedResource()
         if access { url.stopAccessingSecurityScopedResource() }
         return ["available": access,
-                "folder": url.lastPathComponent,
-                "location": "Files / " + url.lastPathComponent]
+                "folder": "TapTether",
+                "location": locationName(url)]
     }
 
     private func selectFolder(_ result: @escaping FlutterResult) {
@@ -146,6 +168,7 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
             return
         }
         let encrypted = encoded.data
+        let kind = (data["kind"] as? String) == "manual" ? "Manual" : "Auto"
         // iCloud Drive / third-party file providers can block during writes.
         // Never run coordinated file I/O on the UI/platform-channel thread.
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -162,16 +185,17 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
             var coordinatedError: NSError?
             var writeError: Error?
             let formatter = DateFormatter()
-            formatter.dateFormat = "yyyyMMdd-HHmmss"
+            formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
             formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            let filename = "TapTether-Auto-" + formatter.string(from: Date()) +
+            let filename = "TapTether-" + kind + "-" + formatter.string(from: Date()) +
                 "-" + String(UUID().uuidString.prefix(8)) + ".ttbackup"
 
             NSFileCoordinator().coordinate(
                 writingItemAt: folder, options: .forMerging,
                 error: &coordinatedError) { writableFolder in
                     do {
-                        let output = writableFolder.appendingPathComponent(filename)
+                        let target = try self.backupFolder(writableFolder, create: true)
+                        let output = target.appendingPathComponent(filename)
                         try encrypted.write(to: output, options: .atomic)
                         let attrs = try FileManager.default.attributesOfItem(
                             atPath: output.path)
@@ -180,15 +204,15 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                             throw NSError(domain: "TapTetherBackup", code: 11,
                                 userInfo: [NSLocalizedDescriptionKey: "File verification failed"])
                         }
-                        // Retain five verified encrypted generations.
+                        // Ten newest verified manual/auto generations combined.
                         let contents = try FileManager.default.contentsOfDirectory(
-                            at: writableFolder,
+                            at: target,
                             includingPropertiesForKeys: [.contentModificationDateKey])
                         let backups = contents.filter {
-                            $0.lastPathComponent.hasPrefix("TapTether-Auto-") &&
+                            $0.lastPathComponent.hasPrefix("TapTether-") &&
                             $0.pathExtension == "ttbackup"
                         }.sorted { $0.lastPathComponent > $1.lastPathComponent }
-                        for old in backups.dropFirst(5) {
+                        for old in backups.dropFirst(10) {
                             try? FileManager.default.removeItem(at: old)
                         }
                     } catch {
@@ -205,10 +229,113 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                     // A successful coordinated write is not proof that iCloud
                     // has finished synchronizing the file across devices.
                     result(["saved": true, "filename": filename,
-                            "folder": folder.lastPathComponent,
-                            "location": "Files / " + folder.lastPathComponent])
+                            "folder": "TapTether",
+                            "location": self.locationName(folder)])
                 }
             }
         }
     }
+    private func listBackups(_ result: @escaping FlutterResult) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self, let selected = self.selectedURL(),
+                  selected.startAccessingSecurityScopedResource() else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "FOLDER", message:
+                        "Choose a backup location in Files", details: nil))
+                }
+                return
+            }
+            defer { selected.stopAccessingSecurityScopedResource() }
+            var coordinatedError: NSError?
+            var entries = [[String: Any]]()
+            NSFileCoordinator().coordinate(
+                readingItemAt: selected, options: [],
+                error: &coordinatedError) { readable in
+                    do {
+                        let target = try self.backupFolder(readable, create: false)
+                        let files = try FileManager.default.contentsOfDirectory(
+                            at: target,
+                            includingPropertiesForKeys:
+                                [.fileSizeKey, .contentModificationDateKey])
+                        let backups = files.filter {
+                            $0.lastPathComponent.hasPrefix("TapTether-") &&
+                            $0.pathExtension == "ttbackup"
+                        }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+                        let iso = ISO8601DateFormatter()
+                        for file in backups.prefix(10) {
+                            let attributes = try file.resourceValues(
+                                forKeys: [.fileSizeKey, .contentModificationDateKey])
+                            entries.append([
+                                "filename": file.lastPathComponent,
+                                "size": attributes.fileSize ?? 0,
+                                "date": iso.string(from:
+                                    attributes.contentModificationDate ?? Date()),
+                            ])
+                        }
+                    } catch {
+                        // The selected parent may have no TapTether folder yet.
+                    }
+                }
+            DispatchQueue.main.async {
+                if let error = coordinatedError {
+                    result(FlutterError(code: "LIST",
+                        message: error.localizedDescription, details: nil))
+                } else {
+                    result(entries)
+                }
+            }
+        }
+    }
+
+    private func readBackup(_ call: FlutterMethodCall,
+                            _ result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let filename = args["filename"] as? String,
+              filename.hasPrefix("TapTether-"),
+              filename.hasSuffix(".ttbackup"),
+              !filename.contains("/"), !filename.contains("\\\\"),
+              !filename.contains("..") else {
+            result(FlutterError(code: "INPUT",
+                message: "Invalid backup filename", details: nil))
+            return
+        }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self, let selected = self.selectedURL(),
+                  selected.startAccessingSecurityScopedResource() else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "FOLDER",
+                        message: "Choose the backup folder again", details: nil))
+                }
+                return
+            }
+            defer { selected.stopAccessingSecurityScopedResource() }
+            var coordinatedError: NSError?
+            var backupData: Data?
+            NSFileCoordinator().coordinate(
+                readingItemAt: selected, options: [],
+                error: &coordinatedError) { readable in
+                    do {
+                        let folder = try self.backupFolder(readable, create: false)
+                        let file = folder.appendingPathComponent(filename)
+                        let attrs = try FileManager.default.attributesOfItem(
+                            atPath: file.path)
+                        let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
+                        guard size > 0 && size <= 4 * 1024 * 1024 else { return }
+                        backupData = try Data(contentsOf: file)
+                    } catch {
+                        backupData = nil
+                    }
+                }
+            DispatchQueue.main.async {
+                if let bytes = backupData {
+                    result(FlutterStandardTypedData(bytes: bytes))
+                } else {
+                    result(FlutterError(code: "READ",
+                        message: coordinatedError?.localizedDescription
+                            ?? "Cannot read that backup", details: nil))
+                }
+            }
+        }
+    }
+
 }
