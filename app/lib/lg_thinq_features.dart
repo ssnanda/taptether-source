@@ -261,7 +261,9 @@ List<ThinQFeature> thinQFeatures(Object? profile, Object? state) {
     for (final entry in resourceNodes.entries) {
       final resource = entry.key.toString();
       if (resource == 'location' || resource == 'locationName' ||
-          resource == 'unit' || !_safeName(resource)) continue;
+          resource == 'unit' || !_safeName(resource)) {
+        continue;
+      }
       final properties = entry.value;
       if (properties is Map) {
         for (final prop in properties.entries) {
