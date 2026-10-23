@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Platform-scoped immutable and rolling releases. Does NOT modify the full
-# current release, AltStore, IPA/APK, or other platforms' installers.
+# Platform-only rolling releases; bootstrap current only if no full release exists.
+# A future full current release is never modified by platform-only updates.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -85,18 +85,24 @@ else
     --title "TapTether ${display} $version (agent-only rolling downloads)" \
     --notes "$notes" --latest=false
 fi
-# Only newest agent binaries exist publicly. Supersede the old platform
-# assets from current, preserving IPA, APK, and other platforms.
-case "$platform" in
-  ubuntu) prefix='TapTetherAgent-Ubuntu-' ;;
-  macos) prefix='TapTetherAgent-macOS-' ;;
-  windows) prefix='TapTetherAgent-Windows-' ;;
-esac
-if gh release view current -R "$repo" >/dev/null 2>&1; then
-  while IFS=' ' read -r id name; do
-    if [[ "$name" == "$prefix"* ]]; then
-      gh api --method DELETE "repos/$repo/releases/assets/$id" >/dev/null
-    fi
-  done < <(gh api "repos/$repo/releases/tags/current" --jq '.assets[] | "\(.id) \(.name)"')
+# Bootstrap legacy macOS updater clients, which require the full "current"
+# channel to exist before they inspect "macos-current". This is a temporary
+# agent-only compatibility release until the next coordinated IPA/APK release.
+# Never erase assets from a real full current release: older clients validate
+# that channel before reading platform-specific releases.
+if [[ "$platform" == macos ]]; then
+  current_title="$(gh release view current -R "$repo" --json name --jq '.name' 2>/dev/null || true)"
+  bootstrap_title="TapTether $version (macOS bootstrap)"
+  bootstrap_notes="Temporary macOS agent-only compatibility feed for existing TapTether agents.
+This release contains macOS agents only. IPA/APK and other platforms will be
+published by the next full release, which replaces this bootstrap channel."
+  if [[ -z "$current_title" ]]; then
+    gh release create current "${files[@]}" -R "$repo" --target main \
+      --title "$bootstrap_title" --notes "$bootstrap_notes" --latest
+  elif [[ "$current_title" == *"(macOS bootstrap)" ]]; then
+    gh release edit current -R "$repo" \
+      --title "$bootstrap_title" --notes "$bootstrap_notes" --latest
+    gh release upload current "${files[@]}" -R "$repo" --clobber
+  fi
 fi
 echo "Published latest-only $platform agent $version to public rolling release."
