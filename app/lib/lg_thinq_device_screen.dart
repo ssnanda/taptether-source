@@ -53,7 +53,9 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
   }
 
   Future<void> _refresh() async {
-    if (_sending) return;
+    if (_sending) {
+      return;
+    }
     setState(() { _busy = true; _error = null; _warning = null; });
     try {
       // Profile and state can fail independently. Keep the other result
@@ -76,7 +78,9 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
       } catch (_) {
         warnings.add('Current appliance status is unavailable.');
       }
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _profile = profile;
         _state = state;
@@ -178,9 +182,13 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
   }
 
   Future<void> _control(ThinQFeature feature) async {
-    if (_sending || _busy || !feature.actionable) return;
+    if (_sending || _busy || !feature.actionable) {
+      return;
+    }
     final choice = await _chooseValue(feature);
-    if (!mounted || choice == null) return;
+    if (!mounted || choice == null) {
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
@@ -199,7 +207,9 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted) {
+      return;
+    }
     setState(() { _sending = true; _error = null; });
     try {
       // Revalidate against a fresh profile before every physical command.
@@ -220,7 +230,9 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
       } else {
         await api!.control(widget.device.id, payload);
       }
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('LG accepted the command. '
             'Refresh status to confirm the appliance changed.')));
