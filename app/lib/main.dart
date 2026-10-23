@@ -28,6 +28,7 @@ import 'automatic_device_backup.dart';
 import 'security_settings_screen.dart';
 import 'device_manager_screen.dart';
 import 'device_diagnostics_screen.dart';
+import 'uninstall_agent_screen.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
 import 'qr_pairing.dart';
@@ -1770,6 +1771,43 @@ class _RemoteScreenState extends State<RemoteScreen>
     ));
   }
 
+
+  Future<void> openUninstallAgent(SavedComputer device) async {
+    if (device.platform != 'darwin' && device.platform != 'linux') return;
+    await Navigator.of(context).push(MaterialPageRoute<bool>(
+      builder: (_) => UninstallAgentScreen(
+        device: device,
+        verifyDevice: (target) async {
+          // A stale DHCP address can belong to somebody else's machine.
+          // Authenticate this saved TLS-pinned device on the actual Wi-Fi.
+          final currentLan = await detectLanRange();
+          if (currentLan == null ||
+              !lanRangeContains(currentLan, target.host)) {
+            return false;
+          }
+          PhoneIdentity? phone;
+          if (target.deviceId.isNotEmpty) {
+            phone = await _phoneIdentity();
+          }
+          return _pingSavedDevice(target, phone);
+        },
+        onUninstalled: (target, erasePairings) async {
+          if (erasePairings) {
+            await deviceStore.remove(target.id);
+          }
+          if (!mounted) return;
+          await loadComputers();
+          setState(() {
+            _online[target.id] = false;
+            _savedAgentVersions.remove(target.id);
+            _dashboardNotice = '${target.name} agent uninstalled. '
+                '${erasePairings ? 'Saved phone pairing erased.' : 'Phone pairing retained for reinstall.'}';
+          });
+        },
+      ),
+    ));
+  }
+
   Future<void> openDeviceManager() async {
     final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => DeviceManagerScreen(
@@ -1778,6 +1816,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         onConnect: connectSaved,
         onUpdate: updateSavedAgent,
         onDiagnostics: openComputerDiagnostics,
+        onUninstall: openUninstallAgent,
       ),
     ));
     if (!mounted) return;
