@@ -11,7 +11,6 @@ case "$platform" in ubuntu|macos|windows) ;; *) echo 'Usage: publish-agent-only.
 version="$(cat VERSION)"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || { echo 'Invalid agent version' >&2; exit 1; }
 repo="ssnanda/taptether.com"
-tag="agent-$platform-v$version"
 rolling="$platform-current"
 display="$platform"
 [[ "$platform" == macos ]] && display="macOS"
@@ -63,35 +62,41 @@ for tag in ('current', platform + '-current'):
         req = urllib.request.Request(url, headers={'User-Agent':'TapTether-Agent-Release','Accept':'application/vnd.github+json'})
         with urllib.request.urlopen(req, timeout=15) as response: data = json.load(response)
     except urllib.error.HTTPError as exc:
-        if exc.code == 404 and tag != 'current': continue
+        if exc.code == 404: continue
         raise
     match = re.match(r'^TapTether(?: Ubuntu| macOS| Windows)? (\d+\.\d+\.\d+\+\d+)(?:\s|$)', data.get('name',''))
     if not match: raise SystemExit(f'Unrecognized {tag} release metadata')
     if wanted <= parts(match.group(1)):
         raise SystemExit(f'Refusing {version}: {tag} already has {match.group(1)}')
 PY
-gh release view "$tag" -R "$repo" >/dev/null 2>&1 && { echo "Already released: $tag" >&2; exit 1; }
-notes="TapTether $platform agent $version (agent-only release).
-Build workflow: https://github.com/$repo/actions/runs/${GITHUB_RUN_ID:-manual}
-This release updates ONLY $platform agents. IPA/APK, AltStore, macOS Screen Core/Input Core, and other platforms remain unchanged."
-# Publish unique version first so a failure cannot remove the last usable
-# rolling download. Clients continue using previous rolling assets until swap.
-gh release create "$tag" "${files[@]}" -R "$repo" \
-  --target "$(git rev-parse HEAD)" --title "TapTether ${display} $version" \
-  --notes "$notes" --latest=false
+[[ -n "${GH_TOKEN:-}" ]] || {
+  echo 'Set private Actions secret TAPTETHER_PUBLIC_RELEASE_TOKEN with public repo Contents: Read and write.' >&2
+  exit 1
+}
+notes="TapTether ${display} $version — latest ${display} agent installers only.
+All application source code and build workflows remain private."
 if gh release view "$rolling" -R "$repo" >/dev/null 2>&1; then
   gh release edit "$rolling" -R "$repo" \
     --title "TapTether ${display} $version (agent-only rolling downloads)" \
     --notes "$notes" --latest=false
-  while IFS=' ' read -r id name; do
-    [[ "$name" == TapTetherAgent-* ]] || continue
-    gh api --method DELETE "repos/$repo/releases/assets/$id" >/dev/null
-  done < <(gh api "repos/$repo/releases/tags/$rolling" --jq '.assets[] | "\(.id) \(.name)"')
-  gh release upload "$rolling" "${files[@]}" -R "$repo"
+  gh release upload "$rolling" "${files[@]}" -R "$repo" --clobber
 else
-  gh release create "$rolling" "${files[@]}" -R "$repo" \
-    --target "$(git rev-parse HEAD)" \
+  gh release create "$rolling" "${files[@]}" -R "$repo" --target main \
     --title "TapTether ${display} $version (agent-only rolling downloads)" \
     --notes "$notes" --latest=false
 fi
-echo "Published agent-only $platform $version without changing current or mobile releases."
+# Only newest agent binaries exist publicly. Supersede the old platform
+# assets from current, preserving IPA, APK, and other platforms.
+case "$platform" in
+  ubuntu) prefix='TapTetherAgent-Ubuntu-' ;;
+  macos) prefix='TapTetherAgent-macOS-' ;;
+  windows) prefix='TapTetherAgent-Windows-' ;;
+esac
+if gh release view current -R "$repo" >/dev/null 2>&1; then
+  while IFS=' ' read -r id name; do
+    if [[ "$name" == "$prefix"* ]]; then
+      gh api --method DELETE "repos/$repo/releases/assets/$id" >/dev/null
+    fi
+  done < <(gh api "repos/$repo/releases/tags/current" --jq '.assets[] | "\(.id) \(.name)"')
+fi
+echo "Published latest-only $platform agent $version to public rolling release."
