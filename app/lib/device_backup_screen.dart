@@ -84,6 +84,52 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     }
   }
 
+  void _showContents() {
+    String label(String key) {
+      if (key == 'taptether.trusted.computers.v1') {
+        return 'Paired computers';
+      }
+      if (key == 'taptether.lg.webos.pairings.v1') return 'LG TVs';
+      if (key == 'taptether.samsung.tv.pairings.v1') {
+        return 'Samsung TVs';
+      }
+      if (key == 'taptether.device.ed25519.v1') {
+        return 'Phone identity';
+      }
+      if (key.startsWith('taptether.ssh.')) {
+        return 'SSH keys and trusted hosts';
+      }
+      if (key == 'taptether.network.locations.v1') {
+        return 'Network labels';
+      }
+      if (key.startsWith('taptether.remote.layout.v1.')) {
+        return 'Remote preferences';
+      }
+      return 'Appearance and settings';
+    }
+    final categories = <String, int>{};
+    for (final key in _records.keys) {
+      final category = label(key);
+      categories[category] = (categories[category] ?? 0) + 1;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('What is backed up?',
+              style: Theme.of(sheet).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          const Text('Records are saved settings, not individual devices.'),
+          for (final item in categories.entries)
+            ListTile(dense: true, title: Text(item.key),
+                trailing: Text('${item.value}')),
+        ]),
+      )),
+    );
+  }
+
   Future<String?> _password({required bool confirm}) async {
     final first = TextEditingController();
     final again = TextEditingController();
