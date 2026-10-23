@@ -475,6 +475,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final remoteLayoutStore = RemoteLayoutStore();
   final networkLocationStore = NetworkLocationStore();
   Timer? _heartbeatTimer;
+  Timer? _wifiCheckTimer;
   DetectedLanRange? _wifiRange;
   bool _checkedWifi = false;
   String? _detectedLocation;
@@ -691,6 +692,11 @@ class _RemoteScreenState extends State<RemoteScreen>
     ]).then((_) => _recoverTvAddresses()));
     unawaited(_listenForAgentAnnouncements());
     WidgetsBinding.instance.addObserver(this);
+    // Check interface availability without probing/scanning devices.
+    // This makes cellular-only mode apparent without reopening the app.
+    _wifiCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_appForeground) unawaited(_refreshNetworkLocation());
+    });
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (WidgetsBinding.instance.lifecycleState ==
           AppLifecycleState.resumed) {
@@ -1909,6 +1915,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       builder: (_) => DeviceManagerScreen(
         store: deviceStore,
         online: Map<String, bool>.of(_online),
+        offlineMode: _wifiRange == null,
         onConnect: connectSaved,
         onUpdate: updateSavedAgent,
         onDiagnostics: openComputerDiagnostics,
@@ -1917,7 +1924,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     ));
     if (!mounted) return;
     await loadComputers();
-    if (addNew == true && mounted) setState(() => _showPairForm = true);
+    if (addNew == true && mounted && _wifiRange != null) {
+      setState(() => _showPairForm = true);
+    }
   }
 
   Future<void> openSshKeys() async {
@@ -2906,6 +2915,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     WidgetsBinding.instance.removeObserver(this);
     _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
+    _wifiCheckTimer?.cancel();
     final listener = _announcementSubscription;
     if (listener != null) unawaited(listener.cancel());
     _announcementSocket?.close();
