@@ -442,8 +442,10 @@ class _LanScanScreenState extends State<LanScanScreen> {
         await _scanVendorHints(targets);
       }
     } catch (_) {
-      if (mounted) setState(() => _error =
-          'Scan failed. Confirm the IPs are on your current Wi-Fi.');
+      if (mounted) {
+        setState(() => _error =
+            'Scan failed. Confirm the IPs are on your current Wi-Fi.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
