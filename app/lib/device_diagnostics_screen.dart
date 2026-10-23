@@ -111,7 +111,9 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
     if (widget.model.isNotEmpty) add('Model', widget.model);
     for (final entry in widget.about.entries.take(32)) {
       if (RegExp(r'token|key|secret|password|pin|fingerprint|session',
-          caseSensitive: false).hasMatch(entry.key)) continue;
+          caseSensitive: false).hasMatch(entry.key)) {
+        continue;
+      }
       add('TV ${entry.key}', entry.value);
     }
     if (widget.lastError?.isNotEmpty == true) {
@@ -163,7 +165,9 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
           return MapEntry(port, 'error (${redactDiagnosticText('$error')})');
         }
       }));
-      for (final result in results) add('TCP ${result.key}', result.value);
+      for (final result in results) {
+        add('TCP ${result.key}', result.value);
+      }
       if (widget.kind == 'lg') {
         try {
           final hello = await readLgWebOsHello(widget.host,
