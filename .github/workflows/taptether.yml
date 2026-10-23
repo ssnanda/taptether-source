@@ -39,6 +39,7 @@ on:
     paths:
       - VERSION
       - 'versions/ubuntu-agent.txt'
+      - 'versions/macos-agent.txt'
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
     - cron: '37 4 * * 0'
@@ -53,7 +54,7 @@ concurrency:
 
 jobs:
   validate:
-    if: ${{ (github.event_name != 'workflow_dispatch' || (inputs.task != 'agent-ubuntu' && inputs.task != 'agent-macos' && inputs.task != 'agent-windows')) && !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
+    if: ${{ (github.event_name != 'workflow_dispatch' || (inputs.task != 'agent-ubuntu' && inputs.task != 'agent-macos' && inputs.task != 'agent-windows')) && !(github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'agent-ubuntu:') || startsWith(github.event.head_commit.message, 'agent-macos:'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -172,7 +173,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
+    if: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'agent-ubuntu:') || startsWith(github.event.head_commit.message, 'agent-macos:'))) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -208,7 +209,7 @@ jobs:
 
   build-windows:
     needs: validate
-    if: ${{ (github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
+    if: ${{ (github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'agent-ubuntu:') || startsWith(github.event.head_commit.message, 'agent-macos:'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -401,11 +402,16 @@ jobs:
       - name: Require main and explicit agent-only version
         env:
           REQUESTED_VERSION: ${{ inputs.agent_version }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Agent releases only from main.' >&2; exit 1; }
           if [[ "$GITHUB_EVENT_NAME" == push ]]; then
-            REQUESTED_VERSION="$(tr -d '\r\n' < versions/ubuntu-agent.txt)"
+            if [[ "$COMMIT_MESSAGE" == agent-macos:* ]]; then
+              REQUESTED_VERSION="$(tr -d '\r\n' < versions/macos-agent.txt)"
+            else
+              REQUESTED_VERSION="$(tr -d '\r\n' < versions/ubuntu-agent.txt)"
+            fi
           fi
           [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || {
             echo 'Set agent_version to a valid new version such as 0.7.8+68.' >&2
@@ -504,8 +510,10 @@ jobs:
 
   agent-only-macos:
     needs: agent-only-validate
-    if: ${{ inputs.task == 'agent-macos' }}
+    if: ${{ inputs.task == 'agent-macos' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'agent-macos:')) }}
     runs-on: macos-latest
+    env:
+      TAPTETHER_PUBLIC_PUBLISH_ENABLED: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN != '' }}
     timeout-minutes: 45
     permissions:
       contents: write
@@ -522,7 +530,12 @@ jobs:
       - name: Set package-only version without committing VERSION
         env:
           REQUESTED_VERSION: ${{ inputs.agent_version }}
-        run: printf '%s\n' "$REQUESTED_VERSION" > VERSION
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            REQUESTED_VERSION="$(tr -d '\r\n' < versions/macos-agent.txt)"
+          fi
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || exit 1
+          printf '%s\n' "$REQUESTED_VERSION" > VERSION
       - name: Validate native macOS tray and render branding
         run: |
           xcrun swiftc -typecheck desktop/macos/TapTetherTray.swift
@@ -532,7 +545,17 @@ jobs:
         run: |
           bash bin/2b-tt-macos.sh
           python3 bin/4-validate-desktop-installers.py --platform macos
+      - name: Make macOS Agent installer available for QR testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-macOS-agent-QR-test-${{ github.run_id }}
+          path: |
+            dist/macos/TapTetherAgent-macos-*.zip
+            dist/macos/TapTetherAgent-macos-*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish only macOS agents; never replace Screen/Input Core
+        if: ${{ inputs.task == 'agent-macos' && env.TAPTETHER_PUBLIC_PUBLISH_ENABLED == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-agent-only.sh macos
