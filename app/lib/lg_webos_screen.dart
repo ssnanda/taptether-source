@@ -34,6 +34,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   bool _suspended = false;
   DateTime _lastRecovery = DateTime.fromMillisecondsSinceEpoch(0);
   bool _busy = false;
+  bool _waking = false;
   bool _discovering = false;
   String _status = 'Choose an LG TV on this Wi-Fi.';
   String? _error;
@@ -523,45 +524,55 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     if (_detailMode && mounted) Navigator.of(context).pop();
   }
 
+  /// Explicit device-specific wake never becomes a power-off operation
+  /// if a background reconnect happens while the user presses On.
+  Future<void> _wakeSelected() async {
+    final current = _selected;
+    if (current == null || _waking) return;
+    if (_detailMode && _target != null &&
+        current.host != _target!.host) return;
+    _waking = true;
+    try {
+      await (widget.wakeDevice ?? wakeLgTv)(current);
+      _suspended = false;
+      if (mounted) {
+        setState(() {
+          _status = 'Power-on signal sent to ${current.name} (${current.host}).';
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error =
+            error.toString().replaceFirst('Bad state: ', ''));
+      }
+    } finally {
+      _waking = false;
+      if (mounted) setState(() {});
+    }
+  }
+
   Future<void> _power() async {
     final current = _selected;
-    if (current == null || _busy || _recovering) return;
+    if (current == null || _busy) return;
     if (_detailMode && _target != null &&
-        current.host != _target!.host) {
+        current.host != _target!.host) return;
+    if (!_ready || _connected?.host != current.host) {
+      await _wakeSelected();
       return;
     }
-    if (_ready && _connected?.host == current.host) {
-      try {
-        await _session!.powerOff();
-        await _session!.disconnect();
-        if (mounted) {
-          setState(() {
+    try {
+      await _session!.powerOff();
+      await _session!.disconnect();
+      if (mounted) {
+        setState(() {
           _connected = null;
           _suspended = true;
-          _status = 'Power-off requested';
-
-          });
-        }
-      } catch (error) {
-        if (mounted) setState(() => _error = error.toString());
+          _status = 'Power-off requested for ${current.name}';
+        });
       }
-    } else {
-      try {
-        await (widget.wakeDevice ?? wakeLgTv)(current);
-        _suspended = false;
-        if (mounted) {
-          setState(() {
-          _status = 'Power-on signal sent. TV may take a moment.';
-          _error = null;
-
-          });
-        }
-      } catch (error) {
-        if (mounted) {
-          setState(() =>
-              _error = error.toString().replaceFirst('Bad state: ', ''));
-        }
-      }
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
     }
   }
 
@@ -675,9 +686,11 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                   const SizedBox(height: 12),
                   FilledButton.icon(
                     key: const ValueKey('lg-power-selected-tv'),
-                    onPressed: _busy || _recovering ? null : _power,
+                    onPressed: _waking ? null : _wakeSelected,
                     icon: const Icon(Icons.power_settings_new),
-                    label: Text('Turn on ${tv.name}'),
+                    label: Text(_waking
+                        ? 'Sending wake signal to ${tv.name}…'
+                        : 'Turn on ${tv.name}'),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
