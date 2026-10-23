@@ -1995,7 +1995,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             }
           },
         ),
-        ListTile(
+        if (_wifiRange != null) ListTile(
           leading: const Icon(Icons.tv_outlined),
           title: const Text('TV Remotes'),
           onTap: () {
@@ -2011,7 +2011,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             openSshKeys();
           },
         ),
-        ExpansionTile(
+        if (_wifiRange != null) ExpansionTile(
           leading: const Icon(Icons.add_circle_outline),
           title: const Text('Add & Discover'),
           childrenPadding: const EdgeInsets.only(left: 16),
@@ -2093,6 +2093,58 @@ class _RemoteScreenState extends State<RemoteScreen>
       ],
     )),
   );
+
+  /// Cellular/offline mode keeps key management and saved-device editing
+  /// available, but offers no network-dependent controls or fake online state.
+  Widget _offlineHome() {
+    if (!_checkedWifi) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Column(
+      key: const ValueKey('taptether-offline-home'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.wifi_off, color: Theme.of(context).colorScheme.error),
+          const SizedBox(width: 10),
+          Expanded(child: Text(
+            'Join Wi-Fi to control your devices.',
+            key: const ValueKey('join-wifi-warning'),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
+              fontWeight: FontWeight.w700,
+            ),
+          )),
+        ]),
+        const SizedBox(height: 16),
+        Text('${savedComputers.length} saved computers · '
+            '${savedLgTvs.length + savedSamsungTvs.length} saved TVs',
+            style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 12),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.devices_outlined),
+          title: const Text('Manage saved devices'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: openDeviceManager,
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.key_outlined),
+          title: const Text('SSH keys'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: openSshKeys,
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.shield_outlined),
+          title: const Text('Settings & backups'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: openSecuritySettings,
+        ),
+      ],
+    );
+  }
 
   Widget _deviceStatus(String id) {
     final state = _online[id];
