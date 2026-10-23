@@ -200,6 +200,14 @@ class UbuntuSshProvisioner {
       final command = '''
 if ! ( $sudoCheck ); then exit 41; fi
 if ! sudo -n -v; then exit 41; fi
+# Keep sudo authorization valid through lengthy package operations.
+watch_parent=\$\$
+( while kill -0 "\$watch_parent" 2>/dev/null; do
+    sleep 25
+    sudo -n -v >/dev/null 2>&1 || exit
+  done ) </dev/null >/dev/null 2>&1 &
+watch_pid=\$!
+trap 'kill "\$watch_pid" 2>/dev/null || true' EXIT
 if ! command -v dpkg-deb >/dev/null 2>&1; then
   printf 'TAPTETHER_DPKG_BEGIN\n'
   printf 'dpkg-deb: error: package inspection utility is unavailable\n'
@@ -247,9 +255,13 @@ if ! bash '$stage/4-ubuntu-desktop-setup.sh' install; then exit 43; fi
             throw StateError(ubuntuPackageFailureMessage(
                 utf8.decode(bytes, allowMalformed: true)));
           case 43:
-            throw StateError('[SETUP-SERVICE] The Ubuntu agent setup failed after package '
-                'installation. Check systemd and /dev/uinput permissions '
-                'using: sudo systemctl status taptether-agent --no-pager');
+             final safeOutput = utf8.decode(bytes, allowMalformed: true);
+             final failedStep = RegExp(
+                 r'TAPTETHER_SETUP_FAILURE_STAGE:([a-z0-9-]+)')
+                 .firstMatch(safeOutput)?.group(1) ?? 'unknown';
+             throw StateError('[SETUP-SERVICE:$failedStep] Ubuntu package '
+                 'installed, but post-install setup did not finish. '
+                 'The step is included in this diagnostics report.');
           default:
             throw StateError('Installation stopped unexpectedly (exit '
                 '${code ?? "unknown"}). Check Ubuntu SSH and service logs.');
