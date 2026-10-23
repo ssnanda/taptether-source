@@ -2226,31 +2226,39 @@ class _RemoteScreenState extends State<RemoteScreen>
           ],
         ),
         const Divider(),
-        ListTile(
-          leading: const Icon(Icons.shield_outlined),
-          title: const Text('Security & Appearance'),
-          onTap: () {
-            Navigator.pop(context);
-            openSecuritySettings();
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.download_outlined),
-          title: const Text('Download agents'),
-          onTap: () {
-            Navigator.pop(context);
-            Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const AgentDownloadsScreen()));
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.info_outline),
-          title: const Text('About TapTether'),
-          onTap: () {
-            Navigator.pop(context);
-            Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => AboutTapTetherScreen(version: installedVersion)));
-          },
+        ExpansionTile(
+          key: const ValueKey('drawer-settings-more'),
+          leading: const Icon(Icons.settings_outlined),
+          title: const Text('Settings & More'),
+          childrenPadding: const EdgeInsets.only(left: 16),
+          children: [
+            ListTile(
+              leading: const Icon(Icons.shield_outlined),
+              title: const Text('Security & Appearance'),
+              onTap: () {
+                Navigator.pop(context);
+                openSecuritySettings();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.download_outlined),
+              title: const Text('Download agents'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const AgentDownloadsScreen()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('About TapTether'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => AboutTapTetherScreen(version: installedVersion)));
+              },
+            ),
+          ],
         ),
       ],
     )),
