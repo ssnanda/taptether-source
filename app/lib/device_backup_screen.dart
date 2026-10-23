@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'app_security.dart';
 import 'automatic_device_backup.dart';
@@ -17,12 +19,20 @@ class DeviceBackupScreen extends StatefulWidget {
 }
 
 class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
+  static const _passwordKey = 'taptether.backup.saved-password.v1';
+  static const _noPasswordKey = 'taptether.backup.unprotected.v1';
+  static const _lastManualKey = 'taptether.backup.last-manual-location.v1';
+  final _secure = const FlutterSecureStorage();
   final _store = DeviceBackupStore();
   final _auto = AutomaticDeviceBackup.instance;
   bool _busy = false;
   String? _error;
   int? _entries;
   int? _sshKeyCount;
+  Map<String, String> _records = {};
+  String? _rememberedPassword;
+  String? _lastManualLocation;
+  bool _usePassword = true;
 
   void _automaticChanged() {
     if (mounted) setState(() {});
@@ -34,6 +44,24 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     _auto.addListener(_automaticChanged);
     _refresh();
     _auto.initialize();
+    _loadBackupOptions();
+  }
+
+  Future<void> _loadBackupOptions() async {
+    try {
+      final password = await _secure.read(key: _passwordKey);
+      final noPassword = await _secure.read(key: _noPasswordKey);
+      final lastLocation = await _secure.read(key: _lastManualKey);
+      if (mounted) {
+        setState(() {
+          _rememberedPassword = password;
+          _usePassword = noPassword != 'true';
+          _lastManualLocation = lastLocation;
+        });
+      }
+    } catch (_) {
+      // Secure storage availability is reported by the backup operation.
+    }
   }
 
   Future<void> _refresh() async {
@@ -44,6 +72,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         setState(() {
           _entries = data.length;
           _sshKeyCount = keys.length;
+          _records = data;
         });
       }
     } catch (_) {
@@ -130,10 +159,20 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
       if (mounted) {
         setState(() => _error = error.message);
       }
-    } catch (error) {
+    } on MissingPluginException {
+      if (mounted) {
+        setState(() => _error =
+            'Files backup is unavailable in this build. Update TapTether.');
+      }
+    } on PlatformException catch (error) {
       if (mounted) {
         setState(() =>
-            _error = 'Backup operation failed: $error');
+            _error = error.message ?? 'Cannot access the selected Files folder.');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error =
+            'Backup could not finish. Check Files permissions and retry.');
       }
     } finally {
       if (mounted) {
