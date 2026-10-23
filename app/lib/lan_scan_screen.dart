@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'lan_scan.dart';
+import 'deep_port_scan.dart';
 import 'computer_store.dart';
 import 'scan_report.dart';
 import 'lg_webos_client.dart';
@@ -62,6 +63,13 @@ class _LanScanScreenState extends State<LanScanScreen> {
   int _completed = 0;
   int _total = 254;
   bool _scanWholeNetwork = true;
+  bool _scanTargetedIps = false;
+  bool _deepTcpPorts = false;
+  bool _deepOnlyResponsive = true;
+  int _deepCompleted = 0;
+  int _deepTotal = 0;
+  String? _deepCurrentIp;
+  DateTime _lastDeepProgress = DateTime.fromMillisecondsSinceEpoch(0);
   String? _error;
 
   @override
@@ -139,9 +147,174 @@ class _LanScanScreenState extends State<LanScanScreen> {
     });
   }
 
+
+  Future<bool> _confirmDeepNetwork() async {
+    if (!_deepTcpPorts || _scanTargetedIps) return true;
+    final full = _scanWholeNetwork && _network != null;
+    return await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Run a deep TCP scan?'),
+        content: Text(full
+            ? _deepOnlyResponsive
+                ? 'TapTether first scans this Wi-Fi network, then attempts '
+                  'TCP ports 1–65535 on responding hosts only. Devices '
+                  'with all quick-scan ports closed can be missed.'
+                : 'This tests all 65,535 TCP ports on EVERY address '
+                  'in the Wi-Fi subnet, including silent hosts. '
+                  'Millions of connections may take hours or longer '
+                  'and consume considerable battery.'
+            : _deepOnlyResponsive
+                ? 'TapTether first checks this /24, then tests all '
+                  '65,535 TCP ports on responding hosts. Silent '
+                  'devices can be missed.'
+                : 'This tests all 65,535 TCP ports for every address '
+                  'in the selected /24, including silent hosts. '
+                  'This can take hours or longer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Start deep scan')),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  Future<void> _runDeepTcp(List<String> targets) async {
+    if (_cancel || targets.isEmpty) {
+      if (targets.isEmpty) {
+        _report.add('No quick-scan responders. Uncheck '
+            '"Only deep-scan responsive hosts" or choose specific IPs.');
+      }
+      return;
+    }
+    final network = _network;
+    if (network == null) return;
+    final unique = targets.toSet().toList();
+    _deepTotal = unique.length * deepTcpPortCount;
+    _deepCompleted = 0;
+    _report.add('Deep scan: ${unique.length} local host(s); '
+      '65,535 TCP ports per host; up to 48 concurrent attempts '
+      'per host, 300ms timeout. TCP only; no response != offline.');
+    await scanDeepTcp(
+      hosts: unique,
+      network: network,
+      cancelled: () => _cancel || !mounted,
+      onProgress: (done, total, ip) {
+        final now = DateTime.now();
+        if (mounted && (now.difference(_lastDeepProgress) >
+            const Duration(milliseconds: 220) || done == total)) {
+          _lastDeepProgress = now;
+          setState(() {
+            _deepCompleted = done;
+            _deepTotal = total;
+            _deepCurrentIp = ip;
+          });
+        }
+      },
+      onHostCompleted: (result) {
+        if (!mounted) return;
+        _report.add('${result.ip}: probed ${result.checked} TCP ports; '
+            'open: ${result.openPorts.isEmpty
+                ? "none identified" : result.openPorts.join(", ")}'
+            '${result.openPorts.isEmpty
+                ? " (not proof of offline)" : ""}');
+        final existing = _hosts.where((item) =>
+            item.ip == result.ip).toList();
+        final mergedPorts = <int>{
+          if (existing.isNotEmpty) ...existing.first.openPorts,
+          ...result.openPorts,
+        }.toList()..sort();
+        setState(() {
+          _hosts = [
+            for (final item in _hosts)
+              if (item.ip != result.ip) item,
+            LanHost(
+              ip: result.ip,
+              hostname: existing.isEmpty
+                  ? result.ip : existing.first.hostname,
+              openPorts: mergedPorts,
+              macAddress: existing.isEmpty
+                  ? null : existing.first.macAddress,
+              platform: existing.isEmpty
+                  ? null : existing.first.platform,
+              agentAnnounced: existing.isNotEmpty &&
+                  existing.first.agentAnnounced,
+            ),
+          ];
+        });
+      },
+    );
+    _report.add(_cancel
+        ? 'Deep TCP scan stopped early at $_deepCompleted/$_deepTotal probes.'
+        : 'Deep TCP scan complete. Open ports are not proof of device identity.');
+  }
+
+  Future<void> _startTargetedScan() async {
+    final network = _network;
+    if (network == null) {
+      setState(() => _error = 'Join Wi-Fi to scan specific IPs.');
+      return;
+    }
+    late final List<String> targets;
+    try {
+      targets = parseDeepScanTargets(_specificIp.text, network);
+    } on FormatException catch (error) {
+      setState(() => _error = error.message);
+      return;
+    }
+    _report.clear();
+    _report.add('Targeted LAN scan: ${targets.join(", ")}');
+    _report.add('Mode: ${_deepTcpPorts ? "deep TCP 1–65535"
+        : "quick TCP ports"}');
+    setState(() {
+      _error = null;
+      _cancel = false;
+      _busy = true;
+      _completed = 0;
+      _total = targets.length;
+      _deepCompleted = 0;
+      _deepTotal = 0;
+      _hosts = [];
+      _verifiedAgents.clear();
+      _startedVerification.clear();
+      _pendingVerifications.clear();
+    });
+    try {
+      if (_deepTcpPorts) {
+        await _runDeepTcp(targets);
+      } else {
+        for (final ip in targets) {
+          if (_cancel) break;
+          final host = await checkPrivateLanIp(ip);
+          if (!mounted) break;
+          _report.add(host == null
+              ? '$ip: no quick TCP response (not proof of offline)'
+              : '$ip: TCP open ${host.openPorts.join(", ")}');
+          if (host != null) {
+            _verifyCandidate(host);
+            setState(() => _hosts = [..._hosts, host]);
+          }
+          setState(() => _completed++);
+        }
+        if (!_cancel) await Future.wait(_pendingVerifications);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error =
+          'Scan failed. Confirm the IPs are on your current Wi-Fi.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
   Future<void> _startScan() async {
     if (_busy) return;
     FocusScope.of(context).unfocus();
+    if (_scanTargetedIps) {
+      await _startTargetedScan();
+      return;
+    }
+    if (!await _confirmDeepNetwork() || !mounted) return;
     final prefix = _prefix.text.trim();
     if (!validPrivate24Prefix(prefix)) {
       setState(() => _error = 'Enter a private IPv4 /24 prefix (e.g. 192.168.1).');
@@ -179,6 +352,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
       _pendingVerifications.clear();
       _completed = 0;
       _total = total;
+      _deepCompleted = 0;
+      _deepTotal = 0;
+      _deepCurrentIp = null;
       _cancel = false;
       _busy = true;
     });
@@ -242,6 +418,18 @@ class _LanScanScreenState extends State<LanScanScreen> {
           : 'IP scan completed: $_completed of $_total addresses checked · '
               '${found.length} discovered device(s) · '
               '${_verifiedAgents.length} paired computer(s) authenticated');
+      if (_deepTcpPorts && !_cancel && mounted) {
+        final deepTargets = _deepOnlyResponsive
+            ? found.keys.toList()
+            : wholeNetwork
+                ? deepScanNetworkHosts(_network!)
+                : [
+                    for (var i = bounds.first.startHost;
+                        i <= bounds.first.endHost; i++)
+                      '$prefix.$i',
+                  ];
+        await _runDeepTcp(deepTargets);
+      }
       // A paired, authenticated desktop can read its own ARP cache;
       // mobile iOS cannot directly inspect other devices' MAC addresses.
       if (!_cancel && widget.macResolver != null) {
