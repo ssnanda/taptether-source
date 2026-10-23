@@ -42,7 +42,7 @@ void main() {
       lastPort: 65535,
       parallelism: 1,
       cancelled: () => cancelled,
-      probe: (_, _, _) async {
+      probe: (host, port, timeout) async {
         count++;
         if (count == 3) cancelled = true;
         return false;
