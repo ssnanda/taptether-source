@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -313,7 +312,8 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     }
     _lastManualLocation = location;
     await _secure.write(key: _lastManualKey, value: location);
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Backup saved to Files.')),
     );
