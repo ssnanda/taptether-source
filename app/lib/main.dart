@@ -1050,13 +1050,17 @@ class _RemoteScreenState extends State<RemoteScreen>
           (_checkingHeartbeat || _checkingTvStatus ||
               _recoveringDiscovery || _recoveringTvAddresses)) {
         if (DateTime.now().isAfter(deadline)) {
-          if (mounted) setState(() => _dashboardNotice =
-              'Network check is still running. Try Locate again shortly.');
+          if (mounted) {
+            setState(() => _dashboardNotice =
+                'Network check is still running. Try Locate again shortly.');
+          }
           return;
         }
         await Future<void>.delayed(const Duration(milliseconds: 250));
       }
-      if (!mounted || _wifiRange == null || !_appForeground) return;
+      if (!mounted || _wifiRange == null || !_appForeground) {
+        return;
+      }
       final computers = savedComputers.toList();
       final lgTvs = savedLgTvs.toList();
       final samsungTvs = savedSamsungTvs.toList();
