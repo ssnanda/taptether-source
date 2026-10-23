@@ -21,6 +21,15 @@ OLD_AUTOSTART="$HOME/.config/autostart/taptether-agent.desktop"
 CONFIG="$HOME/.config/taptether"
 AGENT='/usr/local/bin/taptether-agent'
 
+# Diagnostic stages never contain credentials or raw installer output.
+setup_step=preflight
+report_setup_failure() {
+  local result="$?"
+  if [[ "$result" != 0 ]]; then
+    printf 'TAPTETHER_SETUP_FAILURE_STAGE:%s\n' "$setup_step" >&2
+  fi
+}
+trap report_setup_failure EXIT
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 note() { printf 'TapTether: %s\n' "$*"; }
 user_bus() {
@@ -161,9 +170,12 @@ install() {
   homedir="$HOME"
   [[ "$username" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || fail 'Unsafe username for unit file.'
   [[ "$homedir" == /* && "$homedir" != *$'\n'* ]] || fail 'Invalid home directory.'
+  setup_step=uinput-permissions
   note 'Configuring /dev/uinput permissions for the service only.'
   setup_permissions
+  setup_step=update-service
   setup_update_service "$username" "$homedir"
+  setup_step=user-files
   mkdir -p "${CTL%/*}" "${APP%/*}" "$CONFIG" "${TRAY%/*}" "${TRAY_AUTOSTART%/*}"
   chmod 700 "$CONFIG"
   if [[ "$(realpath "${BASH_SOURCE[0]}")" != "$(realpath -m "$CTL")" ]]; then
@@ -195,6 +207,7 @@ install() {
   fi
   # The capture helper is a per-user graphical service, separate from the
   # background agent's privileged uinput group and independent of SSH login.
+  setup_step=screen-helper
   if [[ -s "$SCREEN_HELPER" ]]; then
     if command -v apt-get >/dev/null 2>&1; then
       sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -272,16 +285,20 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 SYSTEMD
+  setup_step=systemd-install
   sudo install -m 0644 "$tmp" "$SYS_SERVICE"
   rm -f "$tmp"
   sudo systemctl daemon-reload
   sudo systemctl enable "$UNIT"
+  setup_step=systemd-start
   sudo systemctl restart "$UNIT"
+  setup_step=agent-health
   ensure_running
   # Computer owner requested default ON for all agents. Existing explicit
   # disable marker must survive repair and updates.
   # Always prepare the narrow shutdown policy; preserve an existing OFF
   # preference without briefly enabling shutdown during the service restart.
+  setup_step=shutdown-policy
   enable_shutdown --preserve-preference
   # Earlier builds pinned the launcher to GNOME Favorites. Remove only
   # that legacy auto-pin; the tray remains available without a taskbar icon.
@@ -289,6 +306,7 @@ SYSTEMD
   note 'Agent running in the background and enabled at boot (even before login).'
   note 'The TapTether tray icon starts at the next graphical login.'
   note 'You can retrieve credentials later with: ~/.local/bin/taptetherctl pairing'
+  setup_step=pairing-details
   printf '\n====== TapTether pairing details ======\n'
   pairing
   printf '=======================================\n'
