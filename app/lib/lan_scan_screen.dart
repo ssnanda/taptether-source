@@ -438,7 +438,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
         }
         if (!_cancel) await Future.wait(_pendingVerifications);
       }
-      if (!_cancel && mounted) await _scanVendorHints(targets);
+      if (!_cancel && mounted) {
+        await _scanVendorHints(targets);
+      }
     } catch (_) {
       if (mounted) setState(() => _error =
           'Scan failed. Confirm the IPs are on your current Wi-Fi.');
