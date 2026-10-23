@@ -91,6 +91,8 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
         platform: device.platform, deviceId: device.deviceId,
         customName: name == null ? device.customName : true,
         macAddress: device.macAddress,
+        dnsName: device.dnsName.isNotEmpty ? device.dnsName
+            : (name != null && !device.customName ? device.name : ''),
         location: location ?? device.location,
       ));
       await _refresh();
@@ -151,7 +153,7 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
         if (mounted) await _refresh();
         return;
       case 'rename':
-        final name = await _ask('Rename device', 'Display name', device.name);
+        final name = await _ask('Rename computer', 'Nickname', device.name);
         if (name != null && mounted) await _edit(device, name: name);
         return;
       case 'address':
@@ -238,7 +240,7 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                       Text('Diagnostics'),
                     ])),
                 const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                const PopupMenuItem(value: 'address', child: Text('Change LAN address')),
+                const PopupMenuItem(value: 'address', child: Text('Advanced · Set IP manually')),
                 const PopupMenuDivider(),
                 const PopupMenuItem(value: 'home', child: Text('Location: Home')),
                 const PopupMenuItem(value: 'office', child: Text('Location: Office')),
