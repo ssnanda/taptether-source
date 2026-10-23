@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'lg_thinq_api.dart';
+import 'lg_thinq_device_screen.dart';
 
 class LgThinQScreen extends StatefulWidget {
   const LgThinQScreen({super.key, this.initialDevice, this.onChanged});
@@ -21,13 +22,10 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
   String? _error;
   List<LgThinQDevice> _found = const [];
   List<LgThinQDevice> _enabled = const [];
-  LgThinQDevice? _selected;
-  Map<String, String> _details = const {};
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.initialDevice;
     _load();
   }
 
@@ -103,17 +101,11 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
     await widget.onChanged?.call();
   });
 
-  Future<void> _inspect(LgThinQDevice device) => _run(() async {
-    final api = await _client();
-    final profile = await api.profile(device.id);
-    final status = await api.state(device.id);
-    final details = <String, String>{
-      if (device.model.isNotEmpty) 'Model': device.model,
-      ...safeThinQSummary(profile),
-      ...safeThinQSummary(status),
-    };
-    if (mounted) setState(() { _selected = device; _details = details; });
-  });
+  Future<void> _inspect(LgThinQDevice device) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => LgThinQDeviceScreen(device: device),
+    ));
+  }
 
   Future<void> _disconnect() => _run(() async {
     final approved = await showDialog<bool>(
@@ -137,8 +129,6 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
       _connected = false;
       _found = const [];
       _enabled = const [];
-      _selected = null;
-      _details = const {};
     });
     await widget.onChanged?.call();
   });
@@ -252,31 +242,12 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
                 child: TextButton.icon(
                   onPressed: _busy ? null : () => _inspect(device),
                   icon: const Icon(Icons.info_outline),
-                  label: const Text('Read model & status'),
+                  label: const Text('Open all features'),
                 ),
               ),
             ])),
         ],
-        if (_selected != null) ...[
-          const Divider(height: 30),
-          Text('${_selected!.name} · Device details',
-              style: Theme.of(context).textTheme.titleMedium),
-          if (_details.isEmpty)
-            const Text('No model or status fields returned by ThinQ.'),
-          for (final entry in _details.entries)
-            ListTile(
-              dense: true,
-              title: Text(entry.key),
-              subtitle: Text(entry.value),
-            ),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _inspect(_selected!),
-            icon: const Icon(Icons.refresh),
-            label: const Text('Refresh device status'),
-          ),
-          const Text('Read-only inspection. Remote appliance operation '
-              'will be added only after verifying model-specific capabilities.'),
-        ],
+
       ]),
     );
   }
