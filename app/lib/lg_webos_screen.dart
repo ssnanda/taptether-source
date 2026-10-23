@@ -35,16 +35,15 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   String _status = 'Choose an LG TV on this Wi-Fi.';
   String? _error;
 
+  bool get _detailMode => widget.initialHost != null;
   bool get _ready => !_busy && _session?.connected == true;
+  // A device opened from My Devices MUST never fall back to some other TV.
+  // Its saved identity is established by the exact tapped host on load;
+  // verified TLS/UUID recovery may subsequently update that host.
   LgTvDevice? get _selected {
-    if (_connected != null) return _connected;
-    if (_target != null) return _target;
-    if (widget.initialHost != null) {
-      for (final tv in _saved) {
-        if (tv.host == widget.initialHost) return tv;
-      }
-    }
-    return _saved.isEmpty ? null : _saved.first;
+    if (_detailMode) return _connected ?? _target;
+    return _connected ?? _target ??
+        (_saved.isEmpty ? null : _saved.first);
   }
 
   @override
@@ -194,7 +193,13 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         final matches = saved.where((tv) => tv.host == host);
         if (matches.isNotEmpty) {
           _target = matches.first;
+          setState(() => _status = 'Selected ${_target!.name} · $host');
           await _recover(force: true);
+        } else if (mounted) {
+          setState(() {
+            _status = 'This TV is no longer saved.';
+            _error = 'Return to My Devices and select a saved TV.';
+          });
         }
       }
     } catch (_) {
@@ -232,6 +237,14 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
 
   Future<void> _connect(LgTvDevice tv) async {
     if (_busy || _recovering) return;
+    // Do not allow a detail route to switch to a different TV by accident.
+    if (_detailMode && (_target == null ||
+        (tv.host != _target!.host &&
+        !(tv.deviceUuid.isNotEmpty &&
+          tv.deviceUuid == _target!.deviceUuid) &&
+        !(tv.tlsPin.isNotEmpty && tv.tlsPin == _target!.tlsPin)))) {
+      return;
+    }
     _target = tv;
     _suspended = false;
     setState(() {
@@ -505,12 +518,17 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     await _store.remove(tv.host);
     if (_target?.host == tv.host) _target = null;
     await _reloadSaved();
+    if (_detailMode && mounted) Navigator.of(context).pop();
   }
 
   Future<void> _power() async {
     final current = _selected;
-    if (current == null || _busy) return;
-    if (_ready) {
+    if (current == null || _busy || _recovering) return;
+    if (_detailMode && _target != null &&
+        current.host != _target!.host) {
+      return;
+    }
+    if (_ready && _connected?.host == current.host) {
       try {
         await _session!.powerOff();
         await _session!.disconnect();
@@ -563,13 +581,17 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     final tv = _selected;
     return Scaffold(
       appBar: AppBar(
-        title: Text(tv?.name ?? 'LG webOS TV',
+        title: Text(tv?.name ??
+            (_detailMode ? 'Opening selected LG TV…' : 'LG webOS TV'),
             maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
-          if (tv != null)
+          // In single-device mode the power target is named explicitly in
+          // the body. Avoid an ambiguous generic "On" action in the header.
+          if (tv != null && !_detailMode)
             TextButton.icon(
               key: const ValueKey('lg-power-toggle'),
-              onPressed: _busy ? null : _power,
+              tooltip: '${_ready ? "Turn off" : "Turn on"} ${tv.name} (${tv.host})',
+              onPressed: _busy || _recovering ? null : _power,
               icon: Icon(Icons.power_settings_new,
                   color: _ready ? Theme.of(context).colorScheme.error
                       : null),
@@ -627,6 +649,49 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
               onError: (error) {
                 if (mounted) setState(() => _error = error);
               },
+            ))
+          else if (_detailMode)
+            Expanded(child: ListView(
+              key: const ValueKey('lg-selected-tv-detail'),
+              children: [
+                if (tv == null)
+                  const Card(child: ListTile(
+                    leading: Icon(Icons.tv_off_outlined),
+                    title: Text('Selected TV unavailable'),
+                    subtitle: Text('Return to My Devices to select a saved TV.'),
+                  ))
+                else ...[
+                  Card(child: ListTile(
+                    key: const ValueKey('lg-selected-tv-card'),
+                    leading: const Icon(Icons.tv_outlined, size: 28),
+                    title: Text(tv.name),
+                    subtitle: Text('IP: ${tv.host}\n'
+                        '${_ready ? "Connected" : "Not connected"}'
+                        '${tv.macAddress.isEmpty ? "" : " · MAC saved"}'),
+                    isThreeLine: true,
+                  )),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    key: const ValueKey('lg-power-selected-tv'),
+                    onPressed: _busy || _recovering ? null : _power,
+                    icon: const Icon(Icons.power_settings_new),
+                    label: Text('Turn on ${tv.name}'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    key: const ValueKey('lg-connect-selected-tv'),
+                    onPressed: _busy || _recovering
+                        ? null : () => _connect(tv),
+                    icon: const Icon(Icons.link_outlined),
+                    label: Text('Connect to ${tv.name}'),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Power On sends a wake-up packet only to the saved '
+                      'MAC address of this TV. Network standby must be '
+                      'enabled on the TV.',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ],
             ))
           else
             Expanded(child: ListView(children: [
