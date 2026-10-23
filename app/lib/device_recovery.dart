@@ -28,7 +28,10 @@ List<String> recoveryCandidates(
       name.toLowerCase().replaceFirst(RegExp(r'\.local\.?$'), '').trim();
   ordered.sort((left, right) {
     int priority(DiscoveredDevice entry) {
-      if (normalized(entry.name) == normalized(saved.name)) return 0;
+      final trustedName = saved.dnsName.isNotEmpty ? saved.dnsName
+          : (saved.customName ? '' : saved.name);
+      if (trustedName.isNotEmpty &&
+          normalized(entry.name) == normalized(trustedName)) return 0;
       if (prefixFromIp(entry.host) == network.activePrefix) return 1;
       return 2;
     }
@@ -67,6 +70,7 @@ SavedComputer movedDevice(SavedComputer saved, String verifiedIp,
     location: currentLocation ?? saved.location,
     customName: saved.customName,
     macAddress: saved.macAddress,
+    dnsName: saved.dnsName,
   );
 }
 
@@ -131,7 +135,11 @@ Future<List<String>> resolveSavedAgentLanAddresses(
     SavedComputer saved, DetectedLanRange network, {
     Future<List<InternetAddress>> Function(String host)? lookup,
 }) async {
-  final name = localAgentDnsName(saved.name);
+  // A user's nickname (e.g. "Office Mac") is not a Bonjour/DNS name.
+  // Use the OS hostname learned through authenticated /api/info.
+  final trustedName = saved.dnsName.isNotEmpty ? saved.dnsName
+      : (saved.customName ? '' : saved.name);
+  final name = localAgentDnsName(trustedName);
   if (name == null) return const [];
   try {
     final addresses = await (lookup ?? InternetAddress.lookup)(name)
