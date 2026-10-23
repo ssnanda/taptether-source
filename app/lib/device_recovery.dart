@@ -31,7 +31,9 @@ List<String> recoveryCandidates(
       final trustedName = saved.dnsName.isNotEmpty ? saved.dnsName
           : (saved.customName ? '' : saved.name);
       if (trustedName.isNotEmpty &&
-          normalized(entry.name) == normalized(trustedName)) return 0;
+          normalized(entry.name) == normalized(trustedName)) {
+        return 0;
+      }
       if (prefixFromIp(entry.host) == network.activePrefix) return 1;
       return 2;
     }
