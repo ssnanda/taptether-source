@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -60,7 +59,9 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   Future<void> _restoreSaved(String filename) async {
     try {
       final bytes = await _auto.readBackup(filename);
-      if (mounted) await _import(backupBytes: bytes);
+      if (mounted) {
+        await _import(backupBytes: bytes);
+      }
     } catch (_) {
       if (mounted) setState(() => _error =
           'Cannot read this backup. Check iCloud Drive and try again.');
