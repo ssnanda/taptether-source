@@ -52,6 +52,8 @@ void main() {
     final allSubnets = tester.widget<CheckboxListTile>(
         find.byKey(const ValueKey('scan-whole-network')));
     expect(allSubnets.value, isTrue);
+    await tester.scrollUntilVisible(
+        find.text('Start network scan'), 220);
     await tester.tap(find.text('Start network scan'));
     await tester.pump();
     await tester.pump();
@@ -61,7 +63,8 @@ void main() {
     expect(verifiedIps, ['192.168.21.242']);
     // The result cards are below the fold on Flutter's test-sized phone.
     // Scroll while the scan is still waiting for the rest of the subnet.
-    await tester.drag(find.byType(ListView), const Offset(0, -520));
+    await tester.scrollUntilVisible(
+        find.text('Sandips-MBP'), 190);
     await tester.pumpAndSettle();
     expect(find.text('Sandips-MBP'), findsOneWidget);
     expect(find.byKey(const ValueKey('scan-verified-pairs')),
@@ -104,6 +107,8 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+        find.text('Start network scan'), 220);
     await tester.tap(find.text('Start network scan'));
     await tester.pumpAndSettle();
     expect(find.text('UnknownMac.local'), findsOneWidget);
