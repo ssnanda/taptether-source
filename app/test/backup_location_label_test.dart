@@ -15,6 +15,15 @@ void main() {
           'com~apple~CloudDocs/TapTether/Backups/my.ttbackup',
     ), 'iCloud Drive / TapTether / Backups');
   });
+  test('selected managed backup subfolder is visible', () {
+    expect(backupLocationLabel(
+      automaticFolder: 'iCloud Drive / TapTether',
+    ), 'iCloud Drive / TapTether');
+    expect(backupLocationLabel(
+      automaticFolder: 'Files / TapTether',
+    ), 'Files / TapTether');
+  });
+
   test('shows selected Files folder without leaking provider IDs', () {
     expect(backupLocationLabel(automaticFolder: 'Files / My Backups'),
         'Files / My Backups');
