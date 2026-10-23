@@ -31,6 +31,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   String? _rememberedPassword;
   String? _lastManualLocation;
   bool _usePassword = true;
+  List<Map<String, dynamic>> _backups = const [];
 
   void _automaticChanged() {
     if (mounted) setState(() {});
@@ -41,8 +42,28 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     super.initState();
     _auto.addListener(_automaticChanged);
     _refresh();
-    _auto.initialize();
+    _auto.initialize().then((_) => _loadBackups());
     _loadBackupOptions();
+  }
+
+  Future<void> _loadBackups() async {
+    if (!Platform.isIOS) return;
+    try {
+      final list = await _auto.listBackups();
+      if (mounted) setState(() => _backups = list);
+    } catch (_) {
+      if (mounted) setState(() => _backups = const []);
+    }
+  }
+
+  Future<void> _restoreSaved(String filename) async {
+    try {
+      final bytes = await _auto.readBackup(filename);
+      if (mounted) await _import(backupBytes: bytes);
+    } catch (_) {
+      if (mounted) setState(() => _error =
+          'Cannot read this backup. Check iCloud Drive and try again.');
+    }
   }
 
   Future<void> _loadBackupOptions() async {
@@ -300,27 +321,37 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (!mounted) {
       return;
     }
-    final day = DateTime.now().toUtc().toIso8601String().split('T').first;
-    final location = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save TapTether encrypted device backup',
-      fileName: 'TapTether-Devices-$day.ttbackup',
-      type: FileType.custom,
-      allowedExtensions: const ['ttbackup'],
-      bytes: encrypted,
-    );
-    if (!mounted || location == null) {
-      return;
+    if (Platform.isIOS) {
+      if (!_auto.folderAvailable) {
+        if (!await _auto.chooseFolder() || !mounted) return;
+      }
+      final filename = await _auto.saveManual(encrypted);
+      await _loadBackups();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Saved $filename in TapTether.')),
+      );
+    } else {
+      final stamp = DateTime.now().toUtc().toIso8601String()
+          .replaceAll(RegExp(r'[:.]'), '-');
+      final location = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save TapTether backup',
+        fileName: 'TapTether-Devices-$stamp.ttbackup',
+        type: FileType.custom,
+        allowedExtensions: const ['ttbackup'],
+        bytes: encrypted,
+      );
+      if (!mounted || location == null) return;
+      _lastManualLocation = location;
+      await _secure.write(key: _lastManualKey, value: location);
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Backup saved to Files.')));
     }
-    _lastManualLocation = location;
-    await _secure.write(key: _lastManualKey, value: location);
-    if (!mounted) return;
-    setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Backup saved to Files.')),
-    );
   });
 
-  Future<void> _import() => _run(() async {
+  Future<void> _import({Uint8List? backupBytes}) => _run(() async {
     if (!await AppSecurity.instance.authenticate(context,
         reason: 'Authorize restoring device credentials')) {
       return;
@@ -328,22 +359,23 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (!mounted) {
       return;
     }
-    final selection = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['ttbackup'],
-      allowMultiple: false,
-      withData: true,
-    );
-    if (selection == null || selection.files.isEmpty || !mounted) {
-      return;
-    }
-    final picked = selection.files.single;
-    if (picked.size > DeviceBackupCodec.maxFileBytes) {
-      throw const FormatException('Backup file exceeds size limit.');
-    }
-    Uint8List? bytes = picked.bytes;
-    if (bytes == null && picked.path != null) {
-      bytes = await File(picked.path!).readAsBytes();
+    Uint8List? bytes = backupBytes;
+    if (bytes == null) {
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['ttbackup'],
+        allowMultiple: false,
+        withData: true,
+      );
+      if (selection == null || selection.files.isEmpty || !mounted) return;
+      final picked = selection.files.single;
+      if (picked.size > DeviceBackupCodec.maxFileBytes) {
+        throw const FormatException('Backup file exceeds size limit.');
+      }
+      bytes = picked.bytes;
+      if (bytes == null && picked.path != null) {
+        bytes = await File(picked.path!).readAsBytes();
+      }
     }
     if (bytes == null || bytes.length > DeviceBackupCodec.maxFileBytes) {
       throw const FormatException('Unable to read selected backup.');
@@ -439,10 +471,11 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
 
   Future<void> _changeFolder() => _run(() async {
     final changed = await _auto.chooseFolder();
-    if (changed && _auto.enabled &&
-        !await _auto.backupNow(force: true)) {
+    if (!changed) return;
+    if (_auto.enabled && !await _auto.backupNow(force: true)) {
       throw StateError('Cannot save to the selected folder.');
     }
+    await _loadBackups();
   });
 
   @override
@@ -505,10 +538,43 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: _busy ? null : _import,
+            onPressed: _busy ? null : () => _import(),
             icon: const Icon(Icons.restore_outlined),
-            label: const Text('Restore backup'),
+            label: const Text('Restore from Files'),
           ),
+          if (Platform.isIOS && _auto.folderAvailable) ...[
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(child: Text('Recent backups',
+                style: Theme.of(context).textTheme.titleMedium)),
+              Text('${_backups.length}/10',
+                style: Theme.of(context).textTheme.bodySmall),
+            ]),
+            if (_backups.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('No backups in this folder yet.'))
+            else
+              for (final item in _backups) ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.history_outlined),
+                title: Text(() {
+                  final time = DateTime.tryParse(item['date']?.toString() ?? '')
+                      ?.toLocal();
+                  if (time == null) return 'Saved backup';
+                  return '${time.year}-${time.month.toString().padLeft(2, '0')}-'
+                      '${time.day.toString().padLeft(2, '0')}  '
+                      '${time.hour.toString().padLeft(2, '0')}:'
+                      '${time.minute.toString().padLeft(2, '0')}';
+                }()),
+                subtitle: Text((item['filename']?.toString() ?? '')
+                    .contains('-Manual-') ? 'Manual backup' : 'Automatic backup'),
+                trailing: const Icon(Icons.restore_outlined, size: 20),
+                onTap: _busy ? null : () => _restoreSaved(
+                    item['filename']?.toString() ?? ''),
+              ),
+          ],
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
