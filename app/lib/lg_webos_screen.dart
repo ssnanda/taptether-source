@@ -512,7 +512,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                     setDialogState(() { checking = true; hint = null; });
                     try {
                       final candidate = await widget.lookupMacHint!(tv.host);
-                      if (!dialog.mounted) return;
+                      if (!dialog.mounted) {
+                        return;
+                      }
                       final normalized = canonicalLgMac(candidate ?? '');
                       setDialogState(() {
                         checking = false;
@@ -526,10 +528,12 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                         }
                       });
                     } catch (_) {
-                      if (dialog.mounted) setDialogState(() {
-                        checking = false;
-                        hint = 'Could not retrieve a network MAC hint.';
-                      });
+                      if (dialog.mounted) {
+                        setDialogState(() {
+                          checking = false;
+                          hint = 'Could not retrieve a network MAC hint.';
+                        });
+                      }
                     }
                   },
                   icon: const Icon(Icons.search),
@@ -570,7 +574,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       ),
     );
     controller.dispose();
-    if (updated == null || !mounted) return;
+    if (updated == null || !mounted) {
+      return;
+    }
     final mac = canonicalLgMac(updated);
     if (updated.isNotEmpty && mac == null) {
       setState(() => _error = 'Enter a valid six-byte Wi-Fi MAC address.');
@@ -578,7 +584,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     }
     await _store.save(tv.copyWith(macAddress: mac ?? ''));
     await _reloadSaved();
-    if (mounted) setState(() => _error = null);
+    if (mounted) {
+      setState(() => _error = null);
+    }
   }
 
   Future<void> _forget(LgTvDevice tv) async {
