@@ -38,7 +38,8 @@ void main() {
     expect(find.text('My Devices'), findsOneWidget);
     expect(find.text('SSH Keys'), findsOneWidget);
     expect(find.text('Security & Appearance'), findsOneWidget);
-    expect(find.text('About'), findsOneWidget);
+    expect(find.text('About TapTether'), findsOneWidget);
+    expect(find.text('Download agents'), findsOneWidget);
     expect(find.text('TV Remotes'), findsNothing);
     expect(find.text('Add & Discover'), findsNothing);
     expect(find.text('Discover computers'), findsNothing);
