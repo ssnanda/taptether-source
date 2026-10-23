@@ -13,7 +13,7 @@ void main() {
         id: id, name: name, host: ip, deviceId: List.filled(32, 'a').join(),
         token: '', fingerprint: fingerprint,
         platform: 'darwin', location: 'home',
-        customName: true,
+        customName: true, dnsName: 'Sandips-MBP',
       );
 
   test('a /23 contains both halves and maps a roaming Mac', () {
@@ -44,6 +44,7 @@ void main() {
     expect(updated.deviceId, old.deviceId);
     expect(updated.name, 'Sandips-MBP');
     expect(updated.customName, isTrue);
+    expect(updated.dnsName, 'Sandips-MBP');
     expect(updated.location, 'office');
   });
 
@@ -65,6 +66,36 @@ void main() {
     expect(localAgentDnsName('example.com'), isNull);
     expect(localAgentDnsName('192.168.68.86'), isNull);
     expect(localAgentDnsName('bad/hostname'), isNull);
+  });
+
+  test('computer nicknames never become DNS identity hints', () async {
+    final network = rangeFromWifi(
+        '192.168.68.101', '255.255.255.0')!;
+    final renamed = SavedComputer(
+      id: 'home-mac', name: 'My Office Mac',
+      host: '192.168.1.10', token: '', fingerprint: fingerprint,
+      deviceId: List.filled(32, 'a').join(), platform: 'darwin',
+      customName: true, dnsName: 'Sandips-MBP',
+    );
+    final lookedUp = <String>[];
+    final addresses = await resolveSavedAgentLanAddresses(
+        renamed, network, lookup: (host) async {
+      lookedUp.add(host);
+      return [InternetAddress('192.168.68.222'),
+              InternetAddress('192.168.1.10')];
+    });
+    expect(lookedUp, ['sandips-mbp.local']);
+    expect(addresses, ['192.168.68.222']);
+    final missingHostname = SavedComputer(
+      id: 'old-mac', name: 'My Office Mac',
+      host: '192.168.1.10', token: '', fingerprint: fingerprint,
+      deviceId: List.filled(32, 'a').join(), platform: 'darwin',
+      customName: true,
+    );
+    expect(await resolveSavedAgentLanAddresses(
+        missingHostname, network, lookup: (host) async {
+      fail('Never DNS-resolve a user nickname: $host');
+    }), isEmpty);
   });
 
   test('DNS recovery keeps only addresses on current Wi-Fi CIDR', () async {
