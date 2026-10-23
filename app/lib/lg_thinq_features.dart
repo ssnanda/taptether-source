@@ -149,15 +149,27 @@ Object? _extractCurrent(Object? status, String resource,
     } else if (node is Map) {
       final here = _location(node) ?? zone;
       final resourceValue = node[resource];
-      if (resourceValue is Map && resourceValue.containsKey(key)) {
-        final actualLocation = _location(resourceValue) ?? here;
-        final match = location == null ||
-            location == actualLocation;
-        if (match) {
-          final value = resourceValue[key];
-          if (value is String || value is num || value is bool) {
-            found = value;
-            exact = location == null || actualLocation == location;
+      void takeValue(Map data, String? candidateLocation) {
+        if (!data.containsKey(key)) {
+          return;
+        }
+        final actualLocation = _location(data) ?? candidateLocation;
+        if (location != null && location != actualLocation) {
+          return;
+        }
+        final value = data[key];
+        if (value is String || value is num || value is bool) {
+          found = value;
+          exact = location == null || actualLocation == location;
+        }
+      }
+      if (resourceValue is Map) {
+        takeValue(resourceValue, here);
+      } else if (resourceValue is List) {
+        // Refrigerator temperature/door resources contain a zone array.
+        for (final item in resourceValue) {
+          if (item is Map) {
+            takeValue(item, here);
           }
         }
       }
@@ -185,9 +197,13 @@ List<ThinQFeature> thinQFeatures(Object? profile, Object? state) {
       String? location, bool inResource) {
     if (!_safeName(resource) || !_safeName(key) ||
         resource == 'location' || key == 'locationName' ||
-        key == 'unit' || key == 'location') return;
+        key == 'unit' || key == 'location') {
+      return;
+    }
     if (raw is! Map && raw is! String && raw is! bool &&
-        raw is! num) return;
+        raw is! num) {
+      return;
+    }
     final meta = raw is Map ? raw : <String, Object?>{};
     final type = meta['type']?.toString().toLowerCase() ??
         (raw is String ? 'string' : raw is bool ? 'boolean' : 'number');
