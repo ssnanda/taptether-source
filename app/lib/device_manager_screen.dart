@@ -9,13 +9,14 @@ import 'network_location.dart';
 class DeviceManagerScreen extends StatefulWidget {
   const DeviceManagerScreen({super.key, required this.store,
     required this.onConnect, required this.onUpdate,
-    required this.onDiagnostics,
+    required this.onDiagnostics, required this.onUninstall,
     this.online = const {}});
   final ComputerStore store;
   final Map<String, bool> online;
   final Future<void> Function(SavedComputer) onConnect;
   final Future<void> Function(SavedComputer) onUpdate;
   final Future<void> Function(SavedComputer) onDiagnostics;
+  final Future<void> Function(SavedComputer) onUninstall;
   @override
   State<DeviceManagerScreen> createState() => _DeviceManagerScreenState();
 }
@@ -133,6 +134,10 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
       case 'diagnostics':
         await widget.onDiagnostics(device);
         return;
+      case 'uninstall':
+        await widget.onUninstall(device);
+        if (mounted) await _refresh();
+        return;
       case 'connect':
         if (!canConnectSavedDevice(widget.online[device.id],
             connecting: _busy)) {
@@ -219,6 +224,13 @@ class _DeviceManagerScreenState extends State<DeviceManagerScreen> {
                       Text('Update Agent'),
                     ]),
                   ),
+                if (device.platform == 'linux' || device.platform == 'darwin')
+                  const PopupMenuItem(value: 'uninstall',
+                    child: Row(children: [
+                      Icon(Icons.delete_forever_outlined),
+                      SizedBox(width: 8),
+                      Text('Uninstall Agent…'),
+                    ])),
                 const PopupMenuItem(value: 'diagnostics',
                     child: Row(children: [
                       Icon(Icons.bug_report_outlined),
