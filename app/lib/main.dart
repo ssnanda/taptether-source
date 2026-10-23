@@ -1836,6 +1836,14 @@ class _RemoteScreenState extends State<RemoteScreen>
         paired: true,
         hasTlsPin: device.fingerprint.isNotEmpty,
         reportedOnline: _online[device.id],
+        locationLogKey: _computerLocationKey(device),
+        onLocate: _wifiRange == null ? null : _refreshDevicesManually,
+        currentHost: () {
+          for (final saved in savedComputers) {
+            if (saved.id == device.id) return saved.host;
+          }
+          return device.host;
+        },
         lastError: _online[device.id] == false
             ? 'Last authenticated heartbeat failed' : null,
         verifyAuthenticated: () async {
@@ -1877,6 +1885,16 @@ class _RemoteScreenState extends State<RemoteScreen>
         reportedOnline: _tvOnline['lg:${tv.host}'],
         model: tv.about['modelName'] ?? tv.about['model'] ?? '',
         about: tv.about,
+        locationLogKey: _lgLocationKey(tv),
+        onLocate: _wifiRange == null ? null : _refreshDevicesManually,
+        currentHost: () {
+          for (final saved in savedLgTvs) {
+            if (_lgLocationKey(saved) == _lgLocationKey(tv)) {
+              return saved.host;
+            }
+          }
+          return tv.host;
+        },
         verifyAuthenticated: tv.tlsPin.isEmpty ? null : () async {
           final valid = await matchesLgTlsPin(tv.host, tv.tlsPin);
           return {'TLS certificate identity': valid
@@ -1895,6 +1913,16 @@ class _RemoteScreenState extends State<RemoteScreen>
         hasTlsPin: tv.tlsPin.isNotEmpty,
         reportedOnline: _tvOnline['samsung:${tv.host}'],
         model: tv.model,
+        locationLogKey: _samsungLocationKey(tv),
+        onLocate: _wifiRange == null ? null : _refreshDevicesManually,
+        currentHost: () {
+          for (final saved in savedSamsungTvs) {
+            if (_samsungLocationKey(saved) == _samsungLocationKey(tv)) {
+              return saved.host;
+            }
+          }
+          return tv.host;
+        },
       ),
     ));
   }
