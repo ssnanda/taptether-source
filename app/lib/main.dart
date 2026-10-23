@@ -927,6 +927,10 @@ class _RemoteScreenState extends State<RemoteScreen>
         if (!mounted || !_appForeground) return;
         if (_online[saved.id] == true) continue;
         final addresses = await resolveSavedAgentLanAddresses(saved, network);
+        await _noteLocation(_computerLocationKey(saved),
+            addresses.isEmpty
+                ? 'DNS/mDNS: no candidate on current Wi-Fi'
+                : 'DNS/mDNS: ${addresses.length} local address candidate(s)');
         for (final address in addresses) {
           if (!mounted || !_appForeground) return;
           await _reconcileScannedAgent(address, passive: true);
@@ -936,6 +940,11 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (!mounted || !_appForeground ||
           (!force && savedComputers.every((d) => _online[d.id] == true))) {
         return;
+      }
+      for (final saved in savedComputers.where(
+          (device) => _online[device.id] != true)) {
+        await _noteLocation(_computerLocationKey(saved),
+            'UDP discovery: checking current Wi-Fi broadcast');
       }
       final candidates = await findNearbyDevices(
         duration: const Duration(seconds: 2),
@@ -965,6 +974,12 @@ class _RemoteScreenState extends State<RemoteScreen>
         maxHits: 16,
         timeout: const Duration(milliseconds: 300),
       );
+      for (final saved in savedComputers.where(
+          (device) => _online[device.id] != true)) {
+        await _noteLocation(_computerLocationKey(saved),
+            'TCP agent-port scan: ${responders.length} response(s), '
+            'all require saved TLS and phone-key authentication');
+      }
       var authenticated = 0;
       var unverifiedSavedAddress = false;
       final savedIps = savedComputers.map((device) => device.host).toSet();
@@ -1276,6 +1291,8 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (!passive) _scanVerifiedDeviceIds.add(saved.id);
       if (saved.host == ip) {
         if (mounted) setState(() => _online[saved.id] = true);
+        await _noteLocation(_computerLocationKey(saved),
+            'Verified agent identity at saved IP $ip');
         return saved.name;
       }
       try {
@@ -1287,6 +1304,8 @@ class _RemoteScreenState extends State<RemoteScreen>
           savedComputers = refreshed;
           _online[saved.id] = true;
         });
+        await _noteLocation(_computerLocationKey(saved),
+            'Verified TLS and phone-key identity: IP ${saved.host} → $ip');
         // Leave the user in the scan screen; the matching My Devices entry
         // is already updated and will open the correct IP when selected.
         return verified.name;
@@ -1744,13 +1763,31 @@ class _RemoteScreenState extends State<RemoteScreen>
       // first, then require existing TLS-pinned credentials before updating IP.
       for (final tv in missingLg) {
         if (!mounted || !_appForeground) break;
+        await _noteLocation(_lgLocationKey(tv),
+            'LG discovery started; require saved TLS pin and pairing key');
         final recovered = await relocateLgTv(tv);
-        if (recovered != null) await loadLgTvs();
+        if (recovered != null) {
+          await _noteLocation(_lgLocationKey(tv),
+              'LG identity verified; IP ${tv.host} → ${recovered.host}');
+          await loadLgTvs();
+        } else {
+          await _noteLocation(_lgLocationKey(tv),
+              'LG not found; saved pairing and IP retained');
+        }
       }
       for (final tv in missingSamsung) {
         if (!mounted || !_appForeground) break;
+        await _noteLocation(_samsungLocationKey(tv),
+            'Samsung discovery started; require saved identity and pairing');
         final recovered = await relocateSamsungTv(tv);
-        if (recovered != null) await loadSamsungTvs();
+        if (recovered != null) {
+          await _noteLocation(_samsungLocationKey(tv),
+              'Samsung identity verified; IP ${tv.host} → ${recovered.host}');
+          await loadSamsungTvs();
+        } else {
+          await _noteLocation(_samsungLocationKey(tv),
+              'Samsung not found; saved pairing and IP retained');
+        }
       }
     } finally {
       _recoveringTvAddresses = false;
