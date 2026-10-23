@@ -24,6 +24,7 @@ def main() -> None:
             "bin/2b-tt-deb.sh",
             "bin/4-validate-desktop-installers.py",
             "bin/4-ubuntu-desktop-setup.sh",
+            "bin/4-ubuntu-uninstall.sh",
             "bin/7-tt-update-ubuntu.sh",
             "bin/7b-tt-ubuntu-release-info.py",
             "bin/9-tt-system-update-ubuntu.sh",
