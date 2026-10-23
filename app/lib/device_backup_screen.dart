@@ -464,88 +464,90 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Device Backup & Restore')),
+    appBar: AppBar(title: const Text('Device backups')),
     body: ListView(padding: const EdgeInsets.all(20), children: [
-      const Icon(Icons.backup_outlined, size: 44),
-      const SizedBox(height: 10),
-      Text('Keep your devices after reinstalling',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 14),
-      const Text('Encrypted backups include computer and LG/Samsung '
-          'TV pairings, phone identity, SSH keys, network labels and '
-          'remote preferences. Deleting the app may erase its local data.'),
-      const SizedBox(height: 16),
-      const Text('Save the .ttbackup file to iCloud Drive or another '
-          'folder outside TapTether. This uses no TapTether cloud server.'),
-      const SizedBox(height: 16),
-      if (_entries != null)
-        Text('Saved secure-storage records: $_entries',
-            style: Theme.of(context).textTheme.bodySmall),
-      if (_busy) const LinearProgressIndicator(),
-      if (_error != null)
-        Padding(padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text(_error!, style: TextStyle(
-              color: Theme.of(context).colorScheme.error))),
-      const SizedBox(height: 12),
+      const Text('Keep your devices after reinstalling.'),
+      TextButton.icon(
+        onPressed: _entries == null ? null : _showContents,
+        icon: const Icon(Icons.info_outline, size: 18),
+        label: Text('${_entries ?? 0} saved records · View contents'),
+      ),
+      if (_busy || _auto.busy) const LinearProgressIndicator(),
+      if (_error != null) Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(_error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      ),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Protect with password'),
+        subtitle: Text(_usePassword
+            ? (_rememberedPassword == null
+                ? 'Set once, then back up with one tap'
+                : 'Remembered securely on this phone')
+            : 'Off · Backup file is not encrypted'),
+        value: _usePassword,
+        onChanged: _busy ? null : _toggleProtection,
+      ),
+      const SizedBox(height: 8),
       FilledButton.icon(
         onPressed: _busy ? null : _export,
-        icon: const Icon(Icons.file_upload_outlined),
-        label: const Text('Back up devices to Files'),
+        icon: const Icon(Icons.backup_outlined),
+        label: const Text('Back up now'),
       ),
       const SizedBox(height: 8),
       OutlinedButton.icon(
         onPressed: _busy ? null : _import,
-        icon: const Icon(Icons.file_download_outlined),
-        label: const Text('Restore devices from backup'),
+        icon: const Icon(Icons.restore_outlined),
+        label: const Text('Restore backup'),
       ),
-      const Divider(height: 32),
-      Text('Automatic iCloud Drive backup',
-          style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 6),
-      const Text('Choose an iCloud Drive folder once. TapTether then '
-          'saves an encrypted backup when paired devices, phone identity '
-          'or SSH keys change while the app is active. iOS controls '
-          'the actual iCloud upload.'),
-      if (Platform.isIOS)
+      if (_lastManualLocation != null) ...[
+        const SizedBox(height: 8),
+        Text('Last manual save: $_lastManualLocation',
+            style: Theme.of(context).textTheme.bodySmall),
+      ],
+      const Divider(height: 28),
+      if (Platform.isIOS) ...[
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('Automatic encrypted backup'),
-          subtitle: Text(_auto.enabled
-              ? (_auto.folderAvailable
-                  ? 'Destination: ${_auto.folderName ?? 'Files folder'}'
-                  : 'Folder permission needs attention')
-              : 'Off · Choose an iCloud Drive folder to enable'),
+          title: const Text('Automatic backup'),
+          subtitle: Text(_auto.enabled ? 'On · Files folder selected'
+              : 'Off · Save changes while the app is open'),
           value: _auto.enabled,
           onChanged: _busy || _auto.busy ? null : _toggleAutomatic,
-        )
-      else
-        const Text('Automatic Files backup is available on iOS. '
-            'Android still supports manual encrypted export.'),
-      if (_auto.enabled) ...[
-        if (_auto.lastBackup != null)
-          Text('Last encrypted file saved: '
-              '${_auto.lastBackup!.toLocal().toString().substring(0, 16)}',
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.folder_outlined),
+          title: const Text('Backup location'),
+          subtitle: Text(_auto.folderLocation ?? 'Not selected'),
+          trailing: TextButton(
+            onPressed: _busy || _auto.busy ? null : _changeFolder,
+            child: Text(_auto.folderName == null ? 'Choose' : 'Change'),
+          ),
+        ),
+        if (_auto.lastFileName != null)
+          Text('Latest: ${_auto.lastFileName}',
               style: Theme.of(context).textTheme.bodySmall),
-        if (_auto.busy) const LinearProgressIndicator(),
+        if (_auto.lastBackup != null)
+          Text('Saved: ${_auto.lastBackup!.toLocal().toString().substring(0, 16)}',
+              style: Theme.of(context).textTheme.bodySmall),
+        if (_auto.enabled) TextButton.icon(
+          onPressed: _busy || _auto.busy
+              ? null : _backupAutomaticallyNow,
+          icon: const Icon(Icons.sync_outlined),
+          label: const Text('Back up again'),
+        ),
         if (_auto.lastError != null)
           Text(_auto.lastError!, style: TextStyle(
               color: Theme.of(context).colorScheme.error)),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: _busy || _auto.busy ? null : _backupAutomaticallyNow,
-          icon: const Icon(Icons.cloud_upload_outlined),
-          label: const Text('Back up now'),
-        ),
       ],
-      const SizedBox(height: 12),
-      if (_sshKeyCount != null)
-        Text('SSH private keys available on this phone: $_sshKeyCount',
-            style: Theme.of(context).textTheme.bodySmall),
-      const SizedBox(height: 18),
-      const Text('This backup contains secret pairing tokens and '
-          'SSH private keys. Keep the password safe. It cannot be reset. '
-          'Make a new backup whenever you add or remove devices.'),
+      if (!_usePassword)
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Text('Anyone with a backup file can read its credentials.',
+              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ),
     ]),
   );
 }
