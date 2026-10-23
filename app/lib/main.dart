@@ -8,6 +8,7 @@ import 'lg_webos_client.dart';
 import 'lg_webos_screen.dart';
 import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
+import 'lg_thinq_device_screen.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
 import 'tv_network_status.dart';
@@ -2172,7 +2173,9 @@ class _RemoteScreenState extends State<RemoteScreen>
           ? 'Status not checked' : device.model}',
         maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: const Icon(Icons.cloud_outlined),
-      onTap: () => _openThinQ(device: device),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => LgThinQDeviceScreen(device: device),
+      )),
     ),
   );
 
