@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'lg_compact_remote.dart';
 import 'discovery.dart';
 import 'samsung_tv_client.dart';
+import 'device_diagnostics_screen.dart';
 import 'tv_lan_utils.dart';
 
 /// Samsung Smart View remote. All traffic stays on the current LAN.
@@ -294,6 +295,19 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
     await _reload();
   }
 
+
+  Future<void> _showDiagnostics(SamsungTvDevice tv) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => DeviceDiagnosticsScreen(
+        name: tv.name, host: tv.host, kind: 'samsung',
+        location: tv.location, paired: tv.token.isNotEmpty,
+        hasTlsPin: tv.tlsPin.isNotEmpty,
+        reportedOnline: _connected && _selectedDevice?.host == tv.host,
+        model: tv.model, lastError: _error,
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final tv = _selected;
@@ -312,6 +326,7 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
             tooltip: 'Samsung TV options',
             onSelected: (item) {
               switch (item) {
+                case 'diagnostics': unawaited(_showDiagnostics(tv));
                 case 'rename': unawaited(_rename(tv));
                 case 'mac': unawaited(_editMac(tv));
                 case 'disconnect': unawaited(_disconnect());
@@ -320,6 +335,7 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'rename', child: Text('Rename TV')),
+              const PopupMenuItem(value: 'diagnostics', child: Text('Diagnostics')),
               const PopupMenuItem(value: 'mac',
                   child: Text('TV identity / MAC')),
               if (_connected) const PopupMenuItem(
@@ -363,11 +379,18 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
                 title: Text(paired.name),
                 subtitle: Text(paired.host),
                 onTap: _busy ? null : () => _connect(paired),
-                trailing: IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  tooltip: 'Rename Samsung TV',
-                  onPressed: () => _rename(paired),
-                ),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                   IconButton(
+                     icon: const Icon(Icons.bug_report_outlined),
+                     tooltip: 'Diagnostics',
+                     onPressed: () => _showDiagnostics(paired),
+                   ),
+                   IconButton(
+                     icon: const Icon(Icons.edit_outlined),
+                     tooltip: 'Rename Samsung TV',
+                     onPressed: () => _rename(paired),
+                   ),
+                 ]),
               )),
             FilledButton.icon(
               onPressed: _busy || _finding ? null : _discover,
