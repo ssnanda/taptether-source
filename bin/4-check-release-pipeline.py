@@ -91,17 +91,20 @@ assert "name: TapTether-Ubuntu-installers" in workflow
 assert "actions/download-artifact@" in workflow
 assert "TAPTETHER_USE_PREBUILT_AGENTS: '1'" in workflow
 assert "TAPTETHER_USE_PREBUILT_AGENTS:-0" in stage
-assert "gh release create \"$VERSION_TAG\"" in publisher
-# A concurrent VERSION bump must not fail a completed binary release or roll
-# an older altstore.json over a newer version.
+assert 'gh release create "$TAG"' in publisher
 assert 'git show origin/main:VERSION' in publisher
-assert 'git worktree add --quiet --detach' in publisher
-assert 'git -C "$FEED_WORKTREE" push origin HEAD:main' in publisher
 assert 'if [[ "$remote_version" != "$VERSION" ]]; then' in publisher
-assert 'git push origin HEAD:main' not in publisher
-assert "--latest=false" in publisher
-assert "expected_assets=(" in publisher
-assert "already published" in publisher
+assert 'git worktree add' not in publisher
+assert 'git push origin' not in publisher
+assert '--target main' in publisher
+assert 'TAPTETHER_PUBLIC_RELEASE_TOKEN' in workflow
+assert 'gh release delete "$platform-current"' in publisher
+assert 'repos/$REPO/contents/altstore.json' in publisher
+assert 'VERSION_TAG=' not in publisher
+assert 'Source commit:' not in publisher
+assert 'Build workflow:' not in publisher
+assert 'expected_assets=(' in publisher
+assert 'Refusing older or duplicate release' in publisher
 assert "release-v0.6.2-request" not in workflow
 
 assert 'python3 bin/4-test-agent-release-feeds.py' in workflow
@@ -307,4 +310,4 @@ assert "Check a specific device" in scan_screen
 
 print("PASS: one Actions workflow, auto full Release on VERSION and per-platform agent-only manual releases")
 print("PASS: validate -> Ubuntu/Windows/macOS agents -> IPA/APK -> publish")
-print("PASS: weekly cleanup and immutable version-tagged Latest releases")
+print("PASS: binary-only public rolling releases; no historical tags")
