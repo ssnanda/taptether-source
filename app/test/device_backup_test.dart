@@ -23,6 +23,27 @@ void main() {
     expect(decrypted, records);
   });
 
+  test('protected files are recognized and restored with the password', () async {
+    final encrypted = await DeviceBackupCodec.encrypt(records, password);
+    expect(DeviceBackupCodec.needsPassword(encrypted), isTrue);
+    expect(await DeviceBackupCodec.restoreFile(
+        encrypted, password: password), records);
+    await expectLater(DeviceBackupCodec.restoreFile(encrypted),
+        throwsFormatException);
+  });
+
+  test('explicit unprotected files restore without a password', () async {
+    final backup = DeviceBackupCodec.exportUnprotected(records);
+    expect(DeviceBackupCodec.needsPassword(backup), isFalse);
+    expect(await DeviceBackupCodec.restoreFile(backup), records);
+    final tampered = jsonDecode(utf8.decode(backup)) as Map<String, dynamic>;
+    tampered['items'] = {'unrelated.secret': 'should-never-restore'};
+    await expectLater(
+      DeviceBackupCodec.restoreFile(utf8.encode(jsonEncode(tampered))),
+      throwsFormatException,
+    );
+  });
+
   test('backups use randomized salt and nonce', () async {
     final a = await DeviceBackupCodec.encrypt(records, password);
     final b = await DeviceBackupCodec.encrypt(records, password);
