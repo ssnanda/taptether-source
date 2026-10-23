@@ -34,8 +34,13 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
   String? _error;
 
   bool get _connected => _client?.connected == true;
-  SamsungTvDevice? get _selected => _selectedDevice ??
-      (_saved.isEmpty ? null : _saved.first);
+  bool get _detailMode => widget.initialHost != null;
+  // A My Devices detail route may only represent the tapped device.
+  // Never fall back to the first saved Samsung TV on another IP.
+  SamsungTvDevice? get _selected {
+    if (_detailMode) return _selectedDevice;
+    return _selectedDevice ?? (_saved.isEmpty ? null : _saved.first);
+  }
 
   @override
   void initState() {
@@ -50,7 +55,18 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
       setState(() => _saved = items);
       if (widget.initialHost != null) {
         final found = items.where((tv) => tv.host == widget.initialHost);
-        if (found.isNotEmpty) await _connect(found.first);
+        if (found.isNotEmpty) {
+          setState(() {
+            _selectedDevice = found.first;
+            _status = 'Selected ${found.first.name} · ${found.first.host}';
+          });
+          if (found.first.token.isNotEmpty) await _connect(found.first);
+        } else if (mounted) {
+          setState(() {
+            _status = 'This TV is no longer saved.';
+            _error = 'Return to My Devices to select a saved TV.';
+          });
+        }
       }
     } catch (_) {
       if (mounted) {
@@ -103,7 +119,12 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
 
   Future<void> _connect(SamsungTvDevice tv) async {
     if (_busy) return;
+    if (_detailMode && (_selectedDevice == null ||
+        tv.host != _selectedDevice!.host)) {
+      return;
+    }
     setState(() {
+      _selectedDevice = tv;
       _busy = true;
       _error = null;
       _status = tv.token.isEmpty
@@ -241,7 +262,12 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
 
   Future<void> _power() async {
     if (_busy) return;
-    if (_connected) {
+    final selected = _selected;
+    if (selected == null) return;
+    if (_detailMode && _selectedDevice?.host != selected.host) {
+      return;
+    }
+    if (_connected && _client?.device.host == selected.host) {
       try {
         await _client!.powerOff();
         await _client!.disconnect();
@@ -259,8 +285,7 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
       }
       return;
     }
-    final tv = _selected;
-    if (tv == null) return;
+    final tv = selected;
     try {
       await wakeSamsungTv(tv);
       if (mounted) {
@@ -293,6 +318,7 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
     }
     await _store.remove(tv.host);
     await _reload();
+    if (_detailMode && mounted) Navigator.of(context).pop();
   }
 
 
@@ -313,11 +339,14 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
     final tv = _selected;
     return Scaffold(
       appBar: AppBar(
-        title: Text(tv?.name ?? 'Samsung TV',
+        title: Text(tv?.name ??
+            (_detailMode ? 'Opening selected Samsung TV…' : 'Samsung TV'),
             maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
-          if (tv != null) TextButton.icon(
+          if (tv != null && (!_detailMode || _connected)) TextButton.icon(
             key: const ValueKey('samsung-power-toggle'),
+            tooltip: '${_connected ? "Turn off" : "Turn on"} '
+                '${tv.name} (${tv.host})',
             onPressed: _busy ? null : _power,
             icon: const Icon(Icons.power_settings_new),
             label: Text(_connected ? 'Off' : 'On'),
@@ -371,6 +400,48 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
                   setState(() => _error = error);
                 }
               },
+            ))
+          else if (_detailMode)
+            Expanded(child: ListView(
+              key: const ValueKey('samsung-selected-tv-detail'),
+              children: [
+                if (tv == null)
+                  const Card(child: ListTile(
+                    leading: Icon(Icons.tv_off_outlined),
+                    title: Text('Selected TV unavailable'),
+                    subtitle: Text('Return to My Devices to select a saved TV.'),
+                  ))
+                else ...[
+                  Card(child: ListTile(
+                    key: const ValueKey('samsung-selected-tv-card'),
+                    leading: const Icon(Icons.tv_outlined, size: 28),
+                    title: Text(tv.name),
+                    subtitle: Text('IP: ${tv.host}\n'
+                      '${_connected ? "Connected" : "Not connected"}'
+                      '${tv.macAddress.isEmpty ? "" : " · MAC saved"}'),
+                    isThreeLine: true,
+                  )),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    key: const ValueKey('samsung-power-selected-tv'),
+                    onPressed: _busy ? null : _power,
+                    icon: const Icon(Icons.power_settings_new),
+                    label: Text('Turn on ${tv.name}'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    key: const ValueKey('samsung-connect-selected-tv'),
+                    onPressed: _busy ? null : () => _connect(tv),
+                    icon: const Icon(Icons.link_outlined),
+                    label: Text('Connect to ${tv.name}'),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Power On sends a wake-up packet only to the saved '
+                      'MAC address of this TV. The TV must support '
+                      'network standby.',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ],
             ))
           else Expanded(child: ListView(children: [
             for (final paired in _saved)
