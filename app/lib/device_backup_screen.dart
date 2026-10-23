@@ -8,7 +8,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'app_security.dart';
 import 'automatic_device_backup.dart';
-import 'phone_ssh_keys.dart';
 import 'device_backup.dart';
 
 class DeviceBackupScreen extends StatefulWidget {
@@ -28,7 +27,6 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   bool _busy = false;
   String? _error;
   int? _entries;
-  int? _sshKeyCount;
   Map<String, String> _records = {};
   String? _rememberedPassword;
   String? _lastManualLocation;
@@ -67,11 +65,9 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   Future<void> _refresh() async {
     try {
       final data = await _store.snapshot();
-      final keys = await PhoneSshKeyStore().listKeys();
       if (mounted) {
         setState(() {
           _entries = data.length;
-          _sshKeyCount = keys.length;
           _records = data;
         });
       }
