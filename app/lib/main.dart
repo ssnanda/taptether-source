@@ -30,6 +30,7 @@ import 'about_taptether_screen.dart';
 import 'device_manager_screen.dart';
 import 'device_diagnostics_screen.dart';
 import 'device_location_log.dart';
+import 'device_dashboard_header.dart';
 import 'uninstall_agent_screen.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
@@ -1037,16 +1038,29 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   bool _locatingManually = false;
   Future<void> _refreshDevicesManually() async {
-    if (_wifiRange == null || _checkingHeartbeat || _recoveringDiscovery ||
-        _recoveringTvAddresses || _checkingTvStatus) {
-      return;
-    }
-    if (_locatingManually) return;
+    if (_wifiRange == null || _locatingManually) return;
     setState(() => _locatingManually = true);
-    final computers = savedComputers.toList();
-    final lgTvs = savedLgTvs.toList();
-    final samsungTvs = savedSamsungTvs.toList();
     try {
+      // A user-requested locate must not become a greyed-out, dead control
+      // just because a passive heartbeat or network scan is in flight.
+      final deadline = DateTime.now().add(const Duration(seconds: 20));
+      while (mounted && _wifiRange != null && _appForeground &&
+          (_checkingHeartbeat || _checkingTvStatus ||
+              _recoveringDiscovery || _recoveringTvAddresses)) {
+        if (DateTime.now().isAfter(deadline)) {
+          if (mounted) setState(() => _dashboardNotice =
+              'Network check is still running. Try Locate again shortly.');
+          return;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      if (!mounted || _wifiRange == null || !_appForeground) return;
+      final computers = savedComputers.toList();
+      final lgTvs = savedLgTvs.toList();
+      final samsungTvs = savedSamsungTvs.toList();
+      if (_dashboardNotice != null) {
+        setState(() => _dashboardNotice = null);
+      }
       await Future.wait([
         for (final device in computers)
           _noteLocation(_computerLocationKey(device),
@@ -2420,84 +2434,25 @@ class _RemoteScreenState extends State<RemoteScreen>
       checking: _checkingHeartbeat || _recoveringDiscovery,
     );
     return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(children: [
-        Expanded(child: Text('My Devices',
-          style: Theme.of(context).textTheme.headlineSmall)),
-        TextButton.icon(
-          onPressed: openDeviceManager,
-          icon: const Icon(Icons.settings_outlined),
-          label: const Text('Manage'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DeviceDashboardHeader(
+          showFilters: savedComputers.isNotEmpty || savedLgTvs.isNotEmpty ||
+              savedSamsungTvs.isNotEmpty,
+          locationFilter: _locationFilter,
+          detectedLocation: _detectedLocation,
+          showOffline: _showOffline,
+          onlineComputerCount: onlineComputerCount,
+          onlineTvCount: onlineTvCount,
+          locating: _locatingManually,
+          onManage: openDeviceManager,
+          onLocationChanged: (value) =>
+              setState(() => _locationFilter = value),
+          onShowOfflineChanged: (value) =>
+              setState(() => _showOffline = value),
+          onLocate: _refreshDevicesManually,
         ),
-      ]),
-      const SizedBox(height: 8),
-      if (savedComputers.isNotEmpty || savedLgTvs.isNotEmpty ||
-          savedSamsungTvs.isNotEmpty) ...[
-        Row(children: [
-          Expanded(child: DropdownButtonFormField<String>(
-            key: const ValueKey('device-location-filter'),
-            initialValue: _locationFilter,
-            decoration: const InputDecoration(
-              isDense: true, labelText: 'Location'),
-            items: [
-              DropdownMenuItem(value: 'automatic',
-                child: Text(_detectedLocation == null
-                    ? 'Current network'
-                     : 'Current · ${deviceLocations[_detectedLocation]!}')),
-              const DropdownMenuItem(
-                value: 'all', child: Text('All locations')),
-              for (final category in deviceLocations.entries)
-                DropdownMenuItem(value: category.key, child: Text(category.value)),
-            ],
-            onChanged: (value) {
-              if (value != null) setState(() => _locationFilter = value);
-            },
-          )),
-          IconButton(
-            key: const ValueKey('refresh-device-status'),
-            tooltip: 'Check device status',
-            onPressed: (_checkingHeartbeat || _checkingTvStatus ||
-                _locatingManually)
-                ? null : () async {
-                    await Future.wait([
-                      _refreshHeartbeats(), _refreshTvStatuses(),
-                    ]);
-                  },
-            icon: const Icon(Icons.refresh),
-          ),
-          IconButton(
-            key: const ValueKey('locate-saved-devices'),
-            tooltip: 'Locate saved devices on Wi-Fi (find changed IPs)',
-            onPressed: (_locatingManually || _recoveringDiscovery ||
-                _recoveringTvAddresses || _checkingHeartbeat ||
-                _checkingTvStatus)
-                ? null : _refreshDevicesManually,
-            icon: Icon(_locatingManually ? Icons.hourglass_top
-                : Icons.travel_explore),
-          ),
-        ]),
-        Row(children: [
-          Checkbox(
-            key: const ValueKey('show-offline-devices'),
-            value: _showOffline,
-            onChanged: (value) => setState(() => _showOffline = value ?? false),
-          ),
-          const Text('Show offline'),
-          const Spacer(),
-          Tooltip(
-            message: 'Devices currently online',
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.check_circle_outline, size: 16,
-                  color: Colors.green.shade700),
-              const SizedBox(width: 5),
-              Text('$onlineComputerCount computer · $onlineTvCount TVs',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w600)),
-            ]),
-          ),
-        ]),
+        const SizedBox(height: 12),
         if (_dashboardNotice != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -2522,7 +2477,6 @@ class _RemoteScreenState extends State<RemoteScreen>
             child: const Text(
                 'No saved devices match this filter.'),
           ),
-      ],
       if (savedComputers.isEmpty && savedLgTvs.isEmpty &&
           savedSamsungTvs.isEmpty)
         Card(child: Padding(
@@ -2659,17 +2613,25 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () => openSamsungTv(host: tv.host),
             ),
           ),
-      const SizedBox(height: 8),
+      const SizedBox(height: 24),
       Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
+        alignment: Alignment.centerRight,
+        child: FloatingActionButton(
           key: const ValueKey('quick-actions-toggle'),
+          heroTag: 'dashboard-add-device',
+          tooltip: _showQuickActions
+              ? 'Close add device options' : 'Add device',
+          elevation: 0,
           onPressed: () => setState(
               () => _showQuickActions = !_showQuickActions),
-          icon: Icon(_showQuickActions
-              ? Icons.expand_less : Icons.add_circle_outline),
-          label: Text(_showQuickActions
-              ? 'Close' : 'Add device'),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: Icon(
+              _showQuickActions ? Icons.close_rounded : Icons.add_rounded,
+              key: ValueKey(_showQuickActions),
+              size: 28,
+            ),
+          ),
         ),
       ),
       if (_showQuickActions) ...[
