@@ -1,0 +1,250 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+/// Optional LG cloud integration, completely separate from local pairing.
+/// Personal token and enabled device selection live only in secure storage.
+/// There are NO API calls without a user action.
+class LgThinQDevice {
+  const LgThinQDevice({
+    required this.id,
+    required this.name,
+    required this.type,
+    this.model = '',
+  });
+
+  final String id;
+  final String name;
+  final String type;
+  final String model;
+
+  bool get isAppliance => type.toUpperCase().contains('WASHER') ||
+      type.toUpperCase().contains('DRYER') ||
+      type.toUpperCase().contains('REFRIGERATOR') ||
+      type.toUpperCase().contains('WASHTOWER') ||
+      type.toUpperCase().contains('WASHCOMBO');
+
+  Map<String, String> toJson() => {
+    'id': id, 'name': name, 'type': type, 'model': model,
+  };
+
+  static LgThinQDevice? parse(Object? value) {
+    if (value is! Map) return null;
+    String field(String key) => value[key] is String
+        ? (value[key] as String).trim() : '';
+    final id = field('deviceId').isNotEmpty
+        ? field('deviceId') : field('id');
+    if (id.isEmpty || id.length > 180) return null;
+    final type = field('deviceType').isNotEmpty
+        ? field('deviceType') : field('type');
+    final alias = field('alias').isNotEmpty
+        ? field('alias') : field('name');
+    return LgThinQDevice(
+      id: id,
+      name: alias.isEmpty ? 'LG appliance' : alias,
+      type: type,
+      model: field('modelName').isNotEmpty
+          ? field('modelName') : field('model'),
+    );
+  }
+
+  static LgThinQDevice? fromSaved(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'];
+    if (id is! String || id.isEmpty || id.length > 180) return null;
+    return LgThinQDevice(
+      id: id,
+      name: raw['name'] is String ? raw['name'] as String : 'LG appliance',
+      type: raw['type'] is String ? raw['type'] as String : '',
+      model: raw['model'] is String ? raw['model'] as String : '',
+    );
+  }
+}
+
+List<LgThinQDevice> parseThinQDevices(Object? body) {
+  final list = body is List ? body
+      : body is Map ? (body['devices'] ?? body['items']) : null;
+  if (list is! List) return const [];
+  final devices = <String, LgThinQDevice>{};
+  for (final item in list) {
+    final parsed = LgThinQDevice.parse(item);
+    if (parsed != null) devices[parsed.id] = parsed;
+  }
+  return devices.values.toList();
+}
+
+class LgThinQStorage {
+  static const tokenKey = 'taptether.lg.thinq.pat.v1';
+  static const countryKey = 'taptether.lg.thinq.country.v1';
+  static const clientKey = 'taptether.lg.thinq.client-id.v1';
+  static const devicesKey = 'taptether.lg.thinq.enabled.v1';
+
+  LgThinQStorage({FlutterSecureStorage? storage})
+      : _storage = storage ?? const FlutterSecureStorage();
+
+  final FlutterSecureStorage _storage;
+
+  Future<String?> token() => _storage.read(key: tokenKey);
+  Future<String> country() async =>
+      await _storage.read(key: countryKey) ?? 'US';
+
+  Future<void> configure(String personalToken, String country) async {
+    if (personalToken.trim().length < 20) {
+      throw const FormatException('Enter a valid ThinQ personal access token.');
+    }
+    if (!const {'US', 'CA', 'IN', 'AU', 'GB', 'DE'}
+        .contains(country)) {
+      throw const FormatException('Choose a supported region.');
+    }
+    await _storage.write(key: tokenKey, value: personalToken.trim());
+    await _storage.write(key: countryKey, value: country);
+  }
+
+  Future<String> clientId() async {
+    final existing = await _storage.read(key: clientKey);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final random = Random.secure();
+    final octets = List<int>.generate(16, (_) => random.nextInt(256));
+    octets[6] = (octets[6] & 0x0f) | 0x40;
+    octets[8] = (octets[8] & 0x3f) | 0x80;
+    final hex = octets.map((n) => n.toRadixString(16).padLeft(2, '0')).join();
+    final value = '${hex.substring(0,8)}-${hex.substring(8,12)}-'
+        '${hex.substring(12,16)}-${hex.substring(16,20)}-'
+        '${hex.substring(20)}';
+    await _storage.write(key: clientKey, value: value);
+    return value;
+  }
+
+  Future<List<LgThinQDevice>> enabledDevices() async {
+    final raw = await _storage.read(key: devicesKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final value = jsonDecode(raw);
+      if (value is! List) return const [];
+      return value.map(LgThinQDevice.fromSaved)
+          .whereType<LgThinQDevice>().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> setEnabled(LgThinQDevice device, bool enable) async {
+    final saved = await enabledDevices();
+    saved.removeWhere((entry) => entry.id == device.id);
+    if (enable) saved.add(device);
+    await _storage.write(key: devicesKey,
+        value: jsonEncode(saved.map((d) => d.toJson()).toList()));
+  }
+
+  Future<void> disconnect() async {
+    await _storage.delete(key: tokenKey);
+    await _storage.delete(key: devicesKey);
+    // Keep stable client ID, which is not a user credential.
+  }
+}
+
+/// Public, published API identification key from LG's Apache-2.0 ThinQ SDK.
+/// This is NOT the user's personal access token.
+const lgThinQPublicApiKey = 'v6GFvkweNo7DK7yD3ylIZ9w52aKBU0eJ7wLXkSR3';
+
+String thinQRegion(String country) {
+  if (const {'US','CA'}.contains(country)) return 'aic';
+  if (const {'IN','AU'}.contains(country)) return 'kic';
+  return 'eic';
+}
+
+class LgThinQClient {
+  const LgThinQClient({
+    required this.personalToken,
+    required this.country,
+    required this.clientId,
+  });
+
+  final String personalToken;
+  final String country;
+  final String clientId;
+
+  Future<Object?> _get(String endpoint) async {
+    final http = HttpClient();
+    http.connectionTimeout = const Duration(seconds: 8);
+    try {
+      final uri = Uri.https('api-${thinQRegion(country)}.lgthinq.com',
+          '/$endpoint');
+      final req = await http.getUrl(uri).timeout(const Duration(seconds: 10));
+      req.headers.set('Authorization', 'Bearer $personalToken');
+      req.headers.set('x-country', country);
+      req.headers.set('x-client-id', clientId);
+      req.headers.set('x-api-key', lgThinQPublicApiKey);
+      req.headers.set('x-service-phase', 'OP');
+      final random = Random.secure();
+      final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+      req.headers.set('x-message-id', base64UrlEncode(bytes)
+          .replaceAll('=', ''));
+      // The PAT is sent only to the fixed official LG regional host.
+      req.followRedirects = false;
+      final resp = await req.close().timeout(const Duration(seconds: 12));
+      if (resp.isRedirect) {
+        await resp.drain<void>();
+        throw StateError('ThinQ redirected unexpectedly; no credentials sent.');
+      }
+      final raw = await utf8.decoder.bind(resp).join()
+          .timeout(const Duration(seconds: 12));
+      if (resp.statusCode != 200) {
+        throw StateError(resp.statusCode == 401 || resp.statusCode == 403
+            ? 'ThinQ token is invalid or lacks permission for this device.'
+            : 'ThinQ request failed (HTTP ${resp.statusCode}).');
+      }
+      final parsed = jsonDecode(raw);
+      if (parsed is! Map || parsed.containsKey('error')) {
+        throw StateError('ThinQ returned an error or unexpected response.');
+      }
+      return parsed['response'];
+    } on HandshakeException {
+      throw StateError('Could not verify LG ThinQ TLS certificate.');
+    } finally {
+      http.close(force: true);
+    }
+  }
+
+  Future<List<LgThinQDevice>> discover() async =>
+      parseThinQDevices(await _get('devices'));
+
+  Future<Object?> profile(String deviceId) async =>
+      _get('devices/${Uri.encodeComponent(deviceId)}/profile');
+
+  Future<Object?> state(String deviceId) async =>
+      _get('devices/${Uri.encodeComponent(deviceId)}/state');
+}
+
+/// Filter LG response to common non-sensitive status/model properties.
+/// Avoid exposing raw API payloads, identifiers, tokens or account details.
+Map<String, String> safeThinQSummary(Object? data) {
+  if (data is! Map) return const {};
+  const allowed = <String>{
+    'modelName', 'model', 'modelCode', 'deviceType', 'deviceState',
+    'runState', 'operation', 'remainingTime', 'remainTime',
+    'currentCourse', 'course', 'temperature', 'tempUnit',
+    'refrigeratorTemp', 'freezerTemp', 'doorState', 'doorOpen',
+    'filterLife', 'completionTime', 'washerOperationMode',
+    'dryerOperationMode', 'washerDryerOperationMode',
+  };
+  final result = <String, String>{};
+  void visit(Map object, int depth) {
+    if (depth > 4 || result.length >= 24) return;
+    for (final entry in object.entries) {
+      final key = entry.key.toString();
+      final value = entry.value;
+      if (allowed.contains(key) && value != null &&
+          (value is String || value is num || value is bool)) {
+        result[key] = value.toString().substring(
+            0, value.toString().length.clamp(0, 90));
+      } else if (value is Map) {
+        visit(value, depth + 1);
+      }
+    }
+  }
+  visit(data, 0);
+  return result;
+}
