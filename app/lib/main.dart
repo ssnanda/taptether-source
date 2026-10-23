@@ -997,7 +997,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> _refreshDevicesManually() async {
-    if (_checkingHeartbeat || _recoveringDiscovery ||
+    if (_wifiRange == null || _checkingHeartbeat || _recoveringDiscovery ||
         _recoveringTvAddresses || _checkingTvStatus) {
       return;
     }
@@ -1086,6 +1086,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> scanQrPairing() async {
+    if (_wifiRange == null) return;
     final scanned = await Navigator.of(context).push<PairingQR>(
       MaterialPageRoute(builder: (_) => const PairingScanner()),
     );
@@ -1097,7 +1098,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     await connect();
   }
 
-  Future<void> openAgentInstaller() => _launchAgentInstaller();
+  Future<void> openAgentInstaller() =>
+      _wifiRange == null ? Future<void>.value() : _launchAgentInstaller();
 
   Future<void> _launchAgentInstaller({
     SavedComputer? device,
@@ -1245,7 +1247,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> scanNetwork() async {
-    if (_scanningToReconcile) return;
+    if (_wifiRange == null || _scanningToReconcile) return;
     _scanningToReconcile = true;
     _scanVerifiedDeviceIds.clear();
     String? selected;
@@ -1288,7 +1290,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> searchNearby() async {
-    if (searching || _scanningToReconcile) return;
+    if (_wifiRange == null || searching || _scanningToReconcile) return;
     _scanningToReconcile = true;
     _scanVerifiedDeviceIds.clear();
     _discoveryReport.clear();
@@ -1301,7 +1303,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     try {
       // Read the Wi-Fi again so a recent SSID switch does not reuse a
       // stale subnet from the preceding heartbeat refresh.
-      final wifi = await detectLanRange() ?? _wifiRange;
+      final wifi = await detectLanRange();
       _discoveryReport.add('Wi-Fi: ${wifi?.ip ?? "unknown"} · '
           'CIDR: ${wifi?.cidr ?? "unknown"}');
       final prefixes = wifi?.scanPrefixes.take(8).toList();
@@ -1949,6 +1951,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   void showPairForm() {
+    if (_wifiRange == null) return;
     _stopScreen();
     if (agent.configured) agent.disconnect();
     setState(() {
@@ -2161,6 +2164,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> _chooseTvType() async {
+    if (_wifiRange == null) return;
     await showModalBottomSheet<void>(
       context: context,
       builder: (sheet) => SafeArea(child: Column(
@@ -2888,6 +2892,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<bool> connect({String? existingId, String? deviceId}) async {
+    if (_wifiRange == null) return false;
     _stopScreen();
     try {
       if (mounted) {
