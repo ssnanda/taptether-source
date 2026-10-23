@@ -52,7 +52,7 @@ String redactDiagnosticText(String value) {
   var safe = value.replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]'), ' ');
   safe = safe.replaceAll(RegExp(r'\bBearer\s+[^\s,;]+', caseSensitive: false),
       'Bearer [REDACTED]');
-  safe = safe.replaceAll(RegExp(
+  safe = safe.replaceAllMapped(RegExp(
       r'(token|client[_-]?key|password|secret|session|authorization|fingerprint|tls[_-]?pin)\s*[:=]\s*[^\s,;&}]+',
       caseSensitive: false),
       (match) => '${match.group(1)}=[REDACTED]');
