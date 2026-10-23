@@ -199,7 +199,7 @@ install() {
     # These packages run in the desktop session, never in the privileged agent.
     if command -v apt-get >/dev/null 2>&1; then
       sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
+        python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 qrencode \
         >/dev/null 2>&1 || note 'Tray dependencies unavailable; install python3-gi, GTK3 and Ayatana AppIndicator manually.'
     fi
   else
