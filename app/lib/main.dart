@@ -1847,6 +1847,17 @@ class _RemoteScreenState extends State<RemoteScreen>
         initialHost: host,
         initialLocation: _detectedLocation ?? 'other',
         onSaved: loadLgTvs,
+        // Optional and on-demand only. Paired desktop agents may reveal an
+        // ARP neighbor MAC, but iOS cannot independently confirm ownership.
+        // The LG detail screen always asks the user to review before saving.
+        lookupMacHint: (target) async {
+          final network = _wifiRange;
+          if (network == null || !lanRangeContains(network, target)) {
+            return null;
+          }
+          final neighbors = await _trustedMacDiscovery();
+          return canonicalLgMac(neighbors[target] ?? '');
+        },
       ),
     ));
     if (mounted) await loadLgTvs();
