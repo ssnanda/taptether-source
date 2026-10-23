@@ -83,7 +83,9 @@ class _LanHostDetailsScreenState extends State<LanHostDetailsScreen> {
   }
 
   Future<void> _scan() async {
-    if (_running || !(_quick || _lg || _samsung || _deep)) return;
+    if (_running || !(_quick || _lg || _samsung || _deep)) {
+      return;
+    }
     final ip = widget.device.ip;
     setState(() {
       _running = true;
@@ -106,7 +108,9 @@ class _LanHostDetailsScreenState extends State<LanHostDetailsScreen> {
           'Quick: $_quick; LG: $_lg; Samsung: $_samsung; Deep TCP: $_deep');
       if (_quick && !_cancel) {
         for (final port in lanScanPorts) {
-          if (_cancel) break;
+          if (_cancel) {
+            break;
+          }
           final result = await probeTcpPort(ip, port,
               timeout: const Duration(milliseconds: 500));
           _portStatus[port] = result;
