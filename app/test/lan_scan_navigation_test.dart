@@ -60,6 +60,10 @@ void main() {
   });
 
   testWidgets('checkboxes are available at network level', (tester) async {
+    // This tests configuration availability, not the ListView's scroll
+    // mechanics. A taller test viewport makes every option deterministic.
+    await tester.binding.setSurfaceSize(const Size(900, 2200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final network = rangeFromWifi('192.168.68.101',
         '255.255.252.0')!;
     await tester.pumpWidget(MaterialApp(
@@ -68,22 +72,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('scan-whole-network')),
         findsOneWidget);
-    await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-targeted-only')), 180, scrollable: find.byType(Scrollable).first);
-    expect(find.byKey(const ValueKey('scan-targeted-only')), findsOneWidget);
-    await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-vendor-lg')), 180, scrollable: find.byType(Scrollable).first);
-    expect(find.byKey(const ValueKey('scan-vendor-lg')), findsOneWidget);
-    await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-vendor-samsung')), 180, scrollable: find.byType(Scrollable).first);
-    expect(find.byKey(const ValueKey('scan-vendor-samsung')), findsOneWidget);
-    await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-deep-all-tcp')), 180, scrollable: find.byType(Scrollable).first);
-    expect(find.byKey(const ValueKey('scan-deep-all-tcp')), findsOneWidget);
-    await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('scan-targeted-only')), -180, scrollable: find.byType(Scrollable).first);
+    expect(find.byKey(const ValueKey('scan-targeted-only')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('scan-vendor-lg')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('scan-vendor-samsung')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('scan-deep-all-tcp')),
+        findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('scan-targeted-only')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('scan-target-ips')), findsOneWidget);
+    expect(find.byKey(const ValueKey('scan-target-ips')),
+        findsOneWidget);
   });
 }
