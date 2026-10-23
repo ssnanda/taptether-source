@@ -27,6 +27,7 @@ import 'app_security.dart';
 import 'automatic_device_backup.dart';
 import 'security_settings_screen.dart';
 import 'device_manager_screen.dart';
+import 'device_diagnostics_screen.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
 import 'qr_pairing.dart';
@@ -1693,6 +1694,82 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (mounted) await loadLgTvs();
   }
 
+
+  /// Diagnostics never enroll or re-pair a computer. The provided callback
+  /// authenticates using the same saved TLS pin and phone identity as a ping.
+  Future<void> openComputerDiagnostics(SavedComputer device) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => DeviceDiagnosticsScreen(
+        name: device.name,
+        host: device.host,
+        kind: device.platform,
+        location: device.location,
+        paired: true,
+        hasTlsPin: device.fingerprint.isNotEmpty,
+        reportedOnline: _online[device.id],
+        lastError: _online[device.id] == false
+            ? 'Last authenticated heartbeat failed' : null,
+        verifyAuthenticated: () async {
+          final connection = LocalAgent();
+          try {
+            final phone = device.deviceId.isNotEmpty
+                ? await _phoneIdentity() : null;
+            connection.configure(device.host, device.token, device.fingerprint,
+                identity: phone,
+                deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
+            final version = await connection.agentVersion()
+                .timeout(const Duration(seconds: 4));
+            if (version == null) {
+              await connection.send('ping')
+                  .timeout(const Duration(seconds: 4));
+            }
+            return <String, String>{
+              'Agent authorization': 'Accepted with saved certificate pin',
+              'Agent version': version ?? 'Not reported (ping accepted)',
+              'Agent hostname': connection.reportedHostname ?? 'Unavailable',
+              'Reported platform': connection.reportedPlatform ?? 'Unavailable',
+              'Screen capture': connection.screenCaptureSupported
+                  ? 'Supported' : 'Not reported/disabled',
+            };
+          } finally {
+            connection.disconnect();
+          }
+        },
+      ),
+    ));
+  }
+
+  Future<void> openLgDiagnostics(LgTvDevice tv) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => DeviceDiagnosticsScreen(
+        name: tv.name, host: tv.host, kind: 'lg',
+        location: tv.location, paired: tv.clientKey.isNotEmpty,
+        hasTlsPin: tv.tlsPin.isNotEmpty,
+        reportedOnline: _tvOnline['lg:${tv.host}'],
+        model: tv.about['modelName'] ?? tv.about['model'] ?? '',
+        about: tv.about,
+        verifyAuthenticated: tv.tlsPin.isEmpty ? null : () async {
+          final valid = await matchesLgTlsPin(tv.host, tv.tlsPin);
+          return {'TLS certificate identity': valid
+              ? 'Matches saved fingerprint (pairing not reattempted)'
+              : 'Not verified (certificate changed or TV unreachable)'};
+        },
+      ),
+    ));
+  }
+
+  Future<void> openSamsungDiagnostics(SamsungTvDevice tv) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => DeviceDiagnosticsScreen(
+        name: tv.name, host: tv.host, kind: 'samsung',
+        location: tv.location, paired: tv.token.isNotEmpty,
+        hasTlsPin: tv.tlsPin.isNotEmpty,
+        reportedOnline: _tvOnline['samsung:${tv.host}'],
+        model: tv.model,
+      ),
+    ));
+  }
+
   Future<void> openDeviceManager() async {
     final addNew = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => DeviceManagerScreen(
@@ -1700,6 +1777,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         online: Map<String, bool>.of(_online),
         onConnect: connectSaved,
         onUpdate: updateSavedAgent,
+        onDiagnostics: openComputerDiagnostics,
       ),
     ));
     if (!mounted) return;
@@ -2165,6 +2243,13 @@ class _RemoteScreenState extends State<RemoteScreen>
                     icon: const Icon(Icons.system_update_alt),
                     visualDensity: VisualDensity.compact,
                   ),
+                IconButton(
+                  key: ValueKey('diagnostics-computer-${device.id}'),
+                  tooltip: 'Diagnose ${device.name}',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => openComputerDiagnostics(device),
+                  icon: const Icon(Icons.bug_report_outlined),
+                ),
                 const SizedBox(width: 4),
                 _deviceStatus(device.id),
               ]),
@@ -2189,7 +2274,15 @@ class _RemoteScreenState extends State<RemoteScreen>
                 style: const TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text('LG webOS · Paired',
                   maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: _tvStatus('lg', tv.host),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  key: ValueKey('diagnostics-lg-${tv.host}'),
+                  tooltip: 'LG TV diagnostics',
+                  icon: const Icon(Icons.bug_report_outlined),
+                  onPressed: () => openLgDiagnostics(tv),
+                ),
+                _tvStatus('lg', tv.host),
+              ]),
               onTap: () => openLgWebOs(host: tv.host),
             ),
           ),
@@ -2207,7 +2300,15 @@ class _RemoteScreenState extends State<RemoteScreen>
                 style: const TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text('Samsung TV · Paired',
                   maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: _tvStatus('samsung', tv.host),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  key: ValueKey('diagnostics-samsung-${tv.host}'),
+                  tooltip: 'Samsung TV diagnostics',
+                  icon: const Icon(Icons.bug_report_outlined),
+                  onPressed: () => openSamsungDiagnostics(tv),
+                ),
+                _tvStatus('samsung', tv.host),
+              ]),
               onTap: () => openSamsungTv(host: tv.host),
             ),
           ),
