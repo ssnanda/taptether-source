@@ -8,36 +8,36 @@ void main() {
 
   setUp(() => FlutterSecureStorage.setMockInitialValues(<String, String>{}));
 
-  testWidgets('My Devices is the default dashboard; pairing is optional',
+  testWidgets('without Wi-Fi the dashboard has no LAN controls',
       (tester) async {
     await tester.pumpWidget(const TapTetherApp());
     await tester.pumpAndSettle();
-    expect(find.text('My Devices'), findsOneWidget);
-    expect(find.text('Not connected'), findsNothing);
+    expect(find.text('Join Wi-Fi to control your devices.'), findsOneWidget);
+    expect(find.text('Manage saved devices'), findsOneWidget);
+    expect(find.text('SSH keys'), findsOneWidget);
+    expect(find.text('Settings & backups'), findsOneWidget);
     expect(find.text('Pair with a computer agent'), findsNothing);
-    await tester.tap(find.text('Pair computer').first);
-    await tester.pump();
-    expect(find.text('Pair with a computer agent'), findsOneWidget);
+    expect(find.text('Scan IPs'), findsNothing);
+    expect(find.text('Not connected'), findsNothing);
   });
 
-  testWidgets('Drawer contains navigation and grouped setup actions',
+  testWidgets('offline drawer keeps settings but hides LAN features',
       (tester) async {
     await tester.pumpWidget(const TapTetherApp());
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Open navigation'));
     await tester.pumpAndSettle();
+    expect(find.text('My Devices'), findsOneWidget);
     expect(find.text('SSH Keys'), findsOneWidget);
     expect(find.text('Security & Appearance'), findsOneWidget);
-    expect(find.text('Add & Discover'), findsOneWidget);
-    await tester.tap(find.text('Add & Discover'));
-    await tester.pumpAndSettle();
-    expect(find.text('Discover computers'), findsOneWidget);
-    expect(find.text('Install Agent'), findsOneWidget);
-    expect(find.text('Install Ubuntu agent'), findsNothing);
+    expect(find.text('About'), findsOneWidget);
+    expect(find.text('TV Remotes'), findsNothing);
+    expect(find.text('Add & Discover'), findsNothing);
+    expect(find.text('Discover computers'), findsNothing);
+    expect(find.text('Install Agent'), findsNothing);
   });
 
-  testWidgets('Light appearance is used by default',
-      (tester) async {
+  testWidgets('Light appearance is used by default', (tester) async {
     await tester.pumpWidget(const TapTetherApp());
     await tester.pumpAndSettle();
     final material = tester.widget<MaterialApp>(find.byType(MaterialApp));
