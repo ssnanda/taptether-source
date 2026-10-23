@@ -37,6 +37,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('My Devices'), findsOneWidget);
     expect(find.text('SSH Keys'), findsOneWidget);
+    expect(find.text('Settings & More'), findsOneWidget);
+    await tester.tap(find.text('Settings & More'));
+    await tester.pumpAndSettle();
     expect(find.text('Security & Appearance'), findsOneWidget);
     expect(find.text('About TapTether'), findsOneWidget);
     expect(find.text('Download agents'), findsOneWidget);
