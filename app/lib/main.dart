@@ -6,6 +6,9 @@ import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'lg_webos_client.dart';
 import 'lg_webos_screen.dart';
+import 'lg_appliance_scan_screen.dart';
+import 'lg_thinq_api.dart';
+import 'lg_thinq_screen.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
 import 'tv_network_status.dart';
@@ -516,6 +519,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   List<SavedComputer> savedComputers = [];
   List<LgTvDevice> savedLgTvs = [];
   List<SamsungTvDevice> savedSamsungTvs = [];
+  List<LgThinQDevice> _enabledThinQ = const [];
   final Map<String, bool> _tvOnline = {};
   final Map<String, DateTime> _tvLastSeen = {};
   bool _checkingTvStatus = false;
@@ -686,6 +690,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
     unawaited(loadComputers());
+    unawaited(_loadEnabledThinQ());
     // Load both TV stores and current Wi-Fi before attempting a single
     // bounded startup address recovery (including after app reinstall/login).
     unawaited(Future.wait([
@@ -2123,6 +2128,44 @@ class _RemoteScreenState extends State<RemoteScreen>
     });
   }
 
+  Future<void> _loadEnabledThinQ() async {
+    try {
+      final items = await LgThinQStorage().enabledDevices();
+      if (mounted) setState(() => _enabledThinQ = items);
+    } catch (_) {
+      // Secure-store error cannot enable an unapproved device.
+      if (mounted) setState(() => _enabledThinQ = const []);
+    }
+  }
+
+  Future<void> _openThinQ({LgThinQDevice? device}) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => LgThinQScreen(
+        initialDevice: device,
+        onChanged: _loadEnabledThinQ,
+      ),
+    ));
+    if (mounted) await _loadEnabledThinQ();
+  }
+
+  Widget _thinQCard(LgThinQDevice device) => Card(
+    key: ValueKey('lg-thinq-${device.id}'),
+    child: ListTile(
+      leading: Icon(device.type.toUpperCase().contains('REFRIGERATOR')
+          ? Icons.kitchen_outlined
+          : device.type.toUpperCase().contains('DRYER')
+              ? Icons.dry_cleaning_outlined
+              : Icons.local_laundry_service_outlined, size: 28),
+      title: Text(device.name,
+        maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text('LG ThinQ cloud · ${device.model.isEmpty
+          ? 'Status not checked' : device.model}',
+        maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: const Icon(Icons.cloud_outlined),
+      onTap: () => _openThinQ(device: device),
+    ),
+  );
+
   Widget appDrawer() => Drawer(
     child: SafeArea(child: ListView(
       padding: EdgeInsets.zero,
@@ -2222,6 +2265,15 @@ class _RemoteScreenState extends State<RemoteScreen>
               },
             ),
             ListTile(
+              leading: const Icon(Icons.sensors_outlined),
+              title: const Text('LG appliance Wi-Fi diagnostics'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const LgApplianceScanScreen()));
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.install_desktop),
               title: const Text('Install Agent'),
               onTap: installingAgent ? null : () {
@@ -2245,6 +2297,23 @@ class _RemoteScreenState extends State<RemoteScreen>
                 Navigator.pop(context);
                 openSecuritySettings();
               },
+            ),
+            ExpansionTile(
+              key: const ValueKey('drawer-api-integrations'),
+              leading: const Icon(Icons.extension_outlined),
+              title: const Text('API Integrations'),
+              childrenPadding: const EdgeInsets.only(left: 12),
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.kitchen_outlined),
+                  title: const Text('LG ThinQ'),
+                  subtitle: const Text('Optional cloud appliance connection'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openThinQ();
+                  },
+                ),
+              ],
             ),
             ListTile(
               leading: const Icon(Icons.download_outlined),
@@ -2298,6 +2367,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             '${savedLgTvs.length + savedSamsungTvs.length} saved TVs',
             style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 12),
+        for (final device in _enabledThinQ) _thinQCard(device),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.devices_outlined),
@@ -2492,7 +2562,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                 'No saved devices match this filter.'),
           ),
       if (savedComputers.isEmpty && savedLgTvs.isEmpty &&
-          savedSamsungTvs.isEmpty)
+          savedSamsungTvs.isEmpty && _enabledThinQ.isEmpty)
         Card(child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -2627,6 +2697,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () => openSamsungTv(host: tv.host),
             ),
           ),
+      for (final device in _enabledThinQ) _thinQCard(device),
       const SizedBox(height: 24),
       Align(
         alignment: Alignment.centerRight,
