@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'app_security.dart';
 import 'automatic_device_backup.dart';
+import 'backup_location_label.dart';
 import 'device_backup.dart';
 
 class DeviceBackupScreen extends StatefulWidget {
@@ -444,14 +445,6 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     }
   });
 
-  Future<void> _backupAutomaticallyNow() => _run(() async {
-    final saved = await _auto.backupNow(force: true);
-    if (!saved) {
-      throw StateError(_auto.lastError ??
-          'Cannot verify the encrypted backup write.');
-    }
-  });
-
   @override
   void dispose() {
     _auto.removeListener(_automaticChanged);
@@ -461,89 +454,95 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Device backups')),
-    body: ListView(padding: const EdgeInsets.all(20), children: [
-      const Text('Keep your devices after reinstalling.'),
-      TextButton.icon(
-        onPressed: _entries == null ? null : _showContents,
-        icon: const Icon(Icons.info_outline, size: 18),
-        label: Text('${_entries ?? 0} saved records · View contents'),
-      ),
-      if (_busy || _auto.busy) const LinearProgressIndicator(),
-      if (_error != null) Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(_error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error)),
-      ),
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Protect with password'),
-        subtitle: Text(_usePassword
-            ? (_rememberedPassword == null
-                ? 'Set once, then back up with one tap'
-                : 'Remembered securely on this phone')
-            : 'Off · Backup file is not encrypted'),
-        value: _usePassword,
-        onChanged: _busy ? null : _toggleProtection,
-      ),
-      const SizedBox(height: 8),
-      FilledButton.icon(
-        onPressed: _busy ? null : _export,
-        icon: const Icon(Icons.backup_outlined),
-        label: const Text('Back up now'),
-      ),
-      const SizedBox(height: 8),
-      OutlinedButton.icon(
-        onPressed: _busy ? null : _import,
-        icon: const Icon(Icons.restore_outlined),
-        label: const Text('Restore backup'),
-      ),
-      if (_lastManualLocation != null) ...[
-        const SizedBox(height: 8),
-        Text('Last manual save: $_lastManualLocation',
-            style: Theme.of(context).textTheme.bodySmall),
-      ],
-      const Divider(height: 28),
-      if (Platform.isIOS) ...[
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Automatic backup'),
-          subtitle: Text(_auto.enabled ? 'On · Files folder selected'
-              : 'Off · Save changes while the app is open'),
-          value: _auto.enabled,
-          onChanged: _busy || _auto.busy ? null : _toggleAutomatic,
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.folder_outlined),
-          title: const Text('Backup location'),
-          subtitle: Text(_auto.folderLocation ?? 'Not selected'),
-          trailing: TextButton(
-            onPressed: _busy || _auto.busy ? null : _changeFolder,
-            child: Text(_auto.folderName == null ? 'Choose' : 'Change'),
+    body: Column(children: [
+      Expanded(child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+        children: [
+          ListTile(
+            key: const ValueKey('backup-location'),
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.folder_outlined),
+            title: const Text('Backup location'),
+            subtitle: Text(
+              backupLocationLabel(
+                automaticFolder: _auto.folderLocation,
+                manualPath: _lastManualLocation,
+              ),
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+            ),
+            trailing: IconButton(
+              key: const ValueKey('backup-location-choose'),
+              tooltip: 'Choose backup folder',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(
+                width: 36, height: 36),
+              padding: EdgeInsets.zero,
+              onPressed: _busy || _auto.busy ? null : _changeFolder,
+              icon: const Icon(Icons.folder_open_outlined, size: 21),
+            ),
+          ),
+          const Divider(height: 22),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Password protection'),
+            subtitle: _usePassword
+                ? null : const Text('Backup file is not encrypted'),
+            value: _usePassword,
+            onChanged: _busy ? null : _toggleProtection,
+          ),
+          const SizedBox(height: 14),
+          if (_busy || _auto.busy) const LinearProgressIndicator(),
+          if (_error != null) Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(_error!,
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.error)),
+          ),
+          FilledButton.icon(
+            onPressed: _busy ? null : _export,
+            icon: const Icon(Icons.backup_outlined),
+            label: const Text('Back up now'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _import,
+            icon: const Icon(Icons.restore_outlined),
+            label: const Text('Restore backup'),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _entries == null ? null : _showContents,
+              icon: const Icon(Icons.info_outline, size: 18),
+              label: Text('${_entries ?? 0} saved records'),
+            ),
+          ),
+        ],
+      )),
+      if (Platform.isIOS) SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Divider(height: 1),
+              SwitchListTile(
+                key: const ValueKey('automatic-backup'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Automatic backup'),
+                value: _auto.enabled,
+                onChanged: _busy || _auto.busy
+                    ? null : _toggleAutomatic,
+              ),
+              if (_auto.lastError != null && _auto.enabled)
+                Text(_auto.lastError!,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.error)),
+            ],
           ),
         ),
-        if (_auto.lastFileName != null)
-          Text('Latest: ${_auto.lastFileName}',
-              style: Theme.of(context).textTheme.bodySmall),
-        if (_auto.lastBackup != null)
-          Text('Saved: ${_auto.lastBackup!.toLocal().toString().substring(0, 16)}',
-              style: Theme.of(context).textTheme.bodySmall),
-        if (_auto.enabled) TextButton.icon(
-          onPressed: _busy || _auto.busy
-              ? null : _backupAutomaticallyNow,
-          icon: const Icon(Icons.sync_outlined),
-          label: const Text('Back up again'),
-        ),
-        if (_auto.lastError != null)
-          Text(_auto.lastError!, style: TextStyle(
-              color: Theme.of(context).colorScheme.error)),
-      ],
-      if (!_usePassword)
-        Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Text('Anyone with a backup file can read its credentials.',
-              style: TextStyle(color: Theme.of(context).colorScheme.error)),
-        ),
+      ),
     ]),
   );
 }
