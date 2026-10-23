@@ -92,6 +92,19 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
         return (root ? "iCloud Drive" : "Files") + " / TapTether"
     }
 
+    private func isManagedBackup(_ file: URL) -> Bool {
+        let name = file.lastPathComponent
+        return (name.hasPrefix("TapTether-Auto-") ||
+                name.hasPrefix("TapTether-Manual-")) &&
+            file.pathExtension == "ttbackup"
+    }
+
+    private func backupDate(_ file: URL) -> Date {
+        let attrs = try? file.resourceValues(
+            forKeys: [.contentModificationDateKey])
+        return attrs?.contentModificationDate ?? Date.distantPast
+    }
+
     private func folderStatus() -> [String: Any] {
         guard let url = selectedURL() else {
             return ["available": false]
@@ -209,9 +222,10 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                             at: target,
                             includingPropertiesForKeys: [.contentModificationDateKey])
                         let backups = contents.filter {
-                            $0.lastPathComponent.hasPrefix("TapTether-") &&
-                            $0.pathExtension == "ttbackup"
-                        }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+                            self.isManagedBackup($0)
+                        }.sorted {
+                            self.backupDate($0) > self.backupDate($1)
+                        }
                         for old in backups.dropFirst(10) {
                             try? FileManager.default.removeItem(at: old)
                         }
@@ -258,9 +272,10 @@ final class TapTetherCloudFolder: NSObject, UIDocumentPickerDelegate {
                             includingPropertiesForKeys:
                                 [.fileSizeKey, .contentModificationDateKey])
                         let backups = files.filter {
-                            $0.lastPathComponent.hasPrefix("TapTether-") &&
-                            $0.pathExtension == "ttbackup"
-                        }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+                            self.isManagedBackup($0)
+                        }.sorted {
+                            self.backupDate($0) > self.backupDate($1)
+                        }
                         let iso = ISO8601DateFormatter()
                         for file in backups.prefix(10) {
                             let attributes = try file.resourceValues(
