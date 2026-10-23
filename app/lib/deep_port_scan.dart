@@ -13,7 +13,9 @@ List<String> parseDeepScanTargets(
   final unique = <String>{};
   for (final text in input.split(RegExp(r'[,;\s]+'))) {
     final ip = text.trim();
-    if (ip.isEmpty) continue;
+    if (ip.isEmpty) {
+      continue;
+    }
     if (!lanRangeContains(network, ip)) {
       throw FormatException('$ip is not on the current Wi-Fi subnet.');
     }
@@ -107,7 +109,9 @@ Future<List<DeepHostResult>> scanDeepTcp({
   var totalChecked = 0;
   final results = <DeepHostResult>[];
   for (final host in hosts) {
-    if (cancelled?.call() ?? false) break;
+    if (cancelled?.call() ?? false) {
+      break;
+    }
     final openPorts = <int>[];
     var nextPort = firstPort;
     var hostChecked = 0;
@@ -115,7 +119,9 @@ Future<List<DeepHostResult>> scanDeepTcp({
       while (nextPort <= lastPort && !(cancelled?.call() ?? false)) {
         final port = nextPort++;
         final opened = await probe(host, port, timeout);
-        if (opened) openPorts.add(port);
+        if (opened) {
+          openPorts.add(port);
+        }
         hostChecked++;
         totalChecked++;
         if (totalChecked % 128 == 0 || totalChecked == total) {
