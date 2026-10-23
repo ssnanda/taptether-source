@@ -24,12 +24,21 @@ There is still ONE GitHub Actions workflow, with manual choices:
 | agent-windows + agent_version | Windows amd64/arm64 agent installers only | windows-current |
 
 An agent-only build is checked for syntax, Go behavior, package structure,
-version monotonicity and GitHub SHA-256 asset digests. It creates a permanently
-versioned release `agent-<platform>-v<version>` as well as the platform's
-rolling alias. **It does not modify** the IPA, APK, AltStore feed, `current`,
-or installers for other platforms. The agents and phone's Update Agent
-dialog select the newest verified platform release (or the latest full
-release) without downgrading.
+version monotonicity and GitHub SHA-256 asset digests. It publishes only the
+platform's rolling release, replacing its older binary assets. There are no
+historical/versioned public releases. **It does not modify** the IPA, APK,
+AltStore feed, or other platforms. The agents and phone's Update Agent dialog
+select the newest verified platform release (or the latest full release)
+without downgrading.
+
+**Migration note:** When the fresh public distribution repository has no
+`current` release yet, the first macOS-agent-only update creates a temporary
+`current` compatibility release containing only that macOS agent. Old agents
+require `current` to exist before they inspect `macos-current`. Subsequent
+macOS-only builds refresh this temporary baseline; the next full release
+replaces it with a synchronized IPA/APK/all-agents release. New macOS updaters
+also tolerate a missing `current` when `macos-current` exists. A real full
+`current` release remains untouched by agent-only updates.
 
 For example, after the coordinated `0.7.7+70` release:
 - Ubuntu-only fix: `agent-ubuntu` with `0.7.8+71`.
