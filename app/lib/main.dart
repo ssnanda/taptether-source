@@ -6,7 +6,6 @@ import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'lg_webos_client.dart';
 import 'lg_webos_screen.dart';
-import 'lg_appliance_scan_screen.dart';
 import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
 import 'samsung_tv_client.dart';
@@ -2262,15 +2261,6 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () {
                 Navigator.pop(context);
                 scanNetwork();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.sensors_outlined),
-              title: const Text('LG appliance Wi-Fi diagnostics'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const LgApplianceScanScreen()));
               },
             ),
             ListTile(
