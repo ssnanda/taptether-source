@@ -7,6 +7,8 @@ import 'deep_port_scan.dart';
 import 'computer_store.dart';
 import 'scan_report.dart';
 import 'lg_webos_client.dart';
+import 'samsung_tv_client.dart';
+import 'lg_appliance_discovery.dart';
 
 /// Injecting a scanner permits deterministic tests of authenticated
 /// scan-to-paired-device reconciliation without touching real network hosts.
@@ -64,6 +66,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
   int _total = 254;
   bool _scanWholeNetwork = true;
   bool _scanTargetedIps = false;
+  bool _scanLg = false;
+  bool _scanSamsung = false;
   bool _deepTcpPorts = false;
   bool _deepOnlyResponsive = true;
   int _deepCompleted = 0;
@@ -251,6 +255,65 @@ class _LanScanScreenState extends State<LanScanScreen> {
         : 'Deep TCP scan complete. Open ports are not proof of device identity.');
   }
 
+  Future<void> _scanVendorHints(List<String> ips) async {
+    if (_cancel || !mounted || (!_scanLg && !_scanSamsung)) return;
+    final network = _network;
+    if (network == null) return;
+    final targets = ips.toSet().where((ip) =>
+        lanRangeContains(network, ip)).take(4096).toList();
+    _report.add('Vendor read-only checks: '
+        '${_scanLg ? "LG" : ""} ${_scanSamsung ? "Samsung" : ""} '
+        '· only on selected/observed LAN hosts.');
+    if (_scanLg) {
+      try {
+        final clues = await LgApplianceLanDiscovery().scan(network);
+        _report.add('LG multicast advertisements: ${clues.length}');
+        for (final item in clues) {
+          _report.add('${item.ip}: possible LG ${item.name}; '
+              'model: ${item.model.isEmpty ? "not advertised" : item.model}; '
+              'server: ${item.server}');
+        }
+      } catch (_) {
+        _report.add('LG multicast discovery unavailable.');
+      }
+    }
+    var index = 0;
+    // Read-only network handshakes are bounded and never pair a TV.
+    Future<void> worker() async {
+      while (index < targets.length && !_cancel && mounted) {
+        final ip = targets[index++];
+        if (_scanLg) {
+          final lg3000 = await probeTcpPort(ip, 3000,
+              timeout: const Duration(milliseconds: 330));
+          final lg3001 = await probeTcpPort(ip, 3001,
+              timeout: const Duration(milliseconds: 330));
+          if (lg3000 == TcpProbeStatus.open ||
+              lg3001 == TcpProbeStatus.open) {
+            final hello = await readLgWebOsHello(ip,
+              connectTimeout: const Duration(milliseconds: 600),
+              replyTimeout: const Duration(seconds: 2));
+            _report.add('$ip: LG webOS ${hello == null
+                ? "ports open, protocol unverified"
+                : "read-only hello confirmed"}');
+          }
+        }
+        if (_scanSamsung) {
+          final samsung = await probeSamsungTv(ip,
+              timeout: const Duration(milliseconds: 700));
+          if (samsung != null) {
+            _report.add('$ip: Samsung Tizen/Smart View confirmed · '
+                'model ${samsung.model.isEmpty
+                    ? "not disclosed" : samsung.model}');
+          }
+        }
+      }
+    }
+    await Future.wait(List.generate(
+        targets.length < 12 ? targets.length : 12, (_) => worker()));
+    _report.add('Vendor checks finished. Open ports and device names '
+        'alone are not authenticated identity.');
+  }
+
   Future<void> _startTargetedScan() async {
     final network = _network;
     if (network == null) {
@@ -300,6 +363,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
         }
         if (!_cancel) await Future.wait(_pendingVerifications);
       }
+      if (!_cancel && mounted) await _scanVendorHints(targets);
     } catch (_) {
       if (mounted) setState(() => _error =
           'Scan failed. Confirm the IPs are on your current Wi-Fi.');
@@ -418,6 +482,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
           : 'IP scan completed: $_completed of $_total addresses checked · '
               '${found.length} discovered device(s) · '
               '${_verifiedAgents.length} paired computer(s) authenticated');
+      if (!_cancel && mounted && (_scanLg || _scanSamsung)) {
+        await _scanVendorHints(found.keys.toList());
+      }
       if (_deepTcpPorts && !_cancel && mounted) {
         final deepTargets = _deepOnlyResponsive
             ? found.keys.toList()
@@ -537,7 +604,9 @@ class _LanScanScreenState extends State<LanScanScreen> {
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('Discover nearby devices on your local Wi-Fi.'),
+          const Text('Choose what to scan on your current Wi-Fi. '
+            'Vendor checks are optional read-only discovery, '
+            'not pairing or remote control.'),
           const SizedBox(height: 12),
           if (_network != null) ...[
             Text('Phone Wi-Fi: ${_network!.ip} · Network: ${_network!.cidr}',
@@ -545,7 +614,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
             const SizedBox(height: 8),
             if (_network!.scanPrefixes.length > 1 &&
                 _network!.scanPrefixes.length <= 8)
-              SwitchListTile.adaptive(
+              CheckboxListTile(
                 key: const ValueKey('scan-whole-network'),
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Scan entire Wi-Fi network'),
@@ -553,14 +622,15 @@ class _LanScanScreenState extends State<LanScanScreen> {
                     '${_network!.scanPrefixes.length} ranges'),
                 value: _scanWholeNetwork,
                 onChanged: _busy ? null : (value) => setState(() {
-                  _scanWholeNetwork = value;
-                  if (value) {
+                  _scanWholeNetwork = value ?? false;
+                  if (_scanWholeNetwork) {
+                    _scanTargetedIps = false;
                     _editedPrefix = false;
                     _prefix.text = _network!.activePrefix;
                   }
                 }),
               ),
-            if (_network!.scanPrefixes.length > 1)
+            if (_network!.scanPrefixes.length > 1 && !_scanTargetedIps)
               DropdownButtonFormField<String>(
                 key: const ValueKey('lan-range-picker'),
                 initialValue: _network!.scanPrefixes.contains(_prefix.text)
@@ -587,7 +657,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
           ],
           TextField(
             controller: _prefix,
-            enabled: !_busy,
+            enabled: !_busy && !_scanTargetedIps,
             keyboardType: TextInputType.url,
             onChanged: (_) => setState(() {
               _editedPrefix = true;
@@ -599,11 +669,114 @@ class _LanScanScreenState extends State<LanScanScreen> {
               helperText: 'Detects the Wi-Fi subnet; you can also choose a /24 range.',
             ),
           ),
+          const Divider(height: 24),
+          Text('Scan options',
+            style: Theme.of(context).textTheme.titleMedium),
+          CheckboxListTile(
+            key: const ValueKey('scan-targeted-only'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Specific IP addresses'),
+            subtitle: const Text('Target one or more known devices'),
+            value: _scanTargetedIps,
+            onChanged: _busy ? null : (value) => setState(() {
+              _scanTargetedIps = value ?? false;
+              if (_scanTargetedIps) _scanWholeNetwork = false;
+            }),
+          ),
+          CheckboxListTile(
+            key: const ValueKey('scan-vendor-lg'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('LG'),
+            subtitle: const Text('LG webOS hello, ports 3000/3001, '
+                'appliance SSDP advertising'),
+            value: _scanLg,
+            onChanged: _busy ? null : (value) =>
+                setState(() => _scanLg = value ?? false),
+          ),
+          CheckboxListTile(
+            key: const ValueKey('scan-vendor-samsung'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Samsung'),
+            subtitle: const Text('Read-only Tizen device metadata on 8001'),
+            value: _scanSamsung,
+            onChanged: _busy ? null : (value) =>
+                setState(() => _scanSamsung = value ?? false),
+          ),
+          CheckboxListTile(
+            key: const ValueKey('scan-deep-all-tcp'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Deep scan · TCP 1–65535'),
+            subtitle: const Text('Advanced port scan. Slow, manual, '
+                'cancellable; no login or remote commands'),
+            value: _deepTcpPorts,
+            onChanged: _busy ? null : (value) =>
+                setState(() => _deepTcpPorts = value ?? false),
+          ),
+          if (_deepTcpPorts && !_scanTargetedIps)
+            CheckboxListTile(
+              key: const ValueKey('scan-deep-responsive-only'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Deep-scan responsive IPs only'),
+              subtitle: const Text('Faster. Uncheck to scan every IP, '
+                  'even devices with no common open ports.'),
+              value: _deepOnlyResponsive,
+              onChanged: _busy ? null : (value) =>
+                  setState(() => _deepOnlyResponsive = value ?? false),
+            ),
+          if (_scanTargetedIps) ...[
+            const SizedBox(height: 8),
+            TextField(
+              key: const ValueKey('scan-target-ips'),
+              controller: _specificIp,
+              enabled: !_busy,
+              autocorrect: false,
+              keyboardType: TextInputType.url,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Local IP addresses, comma-separated',
+                hintText: '192.168.68.73, 192.168.68.53, 192.168.68.72'),
+            ),
+            const SizedBox(height: 8),
+            if (_network != null &&
+                lanRangeContains(_network!, '192.168.68.73') &&
+                lanRangeContains(_network!, '192.168.68.53') &&
+                lanRangeContains(_network!, '192.168.68.72'))
+              Wrap(spacing: 7, runSpacing: 4, children: [
+                ActionChip(
+                  label: const Text('Washer'),
+                  onPressed: _busy ? null : () => setState(
+                      () => _specificIp.text = '192.168.68.73')),
+                ),
+                ActionChip(
+                  label: const Text('Dryer'),
+                  onPressed: _busy ? null : () => setState(
+                      () => _specificIp.text = '192.168.68.53')),
+                ),
+                ActionChip(
+                  label: const Text('Refrigerator'),
+                  onPressed: _busy ? null : () => setState(
+                      () => _specificIp.text = '192.168.68.72')),
+                ),
+                ActionChip(
+                  label: const Text('All 3 LG appliances'),
+                  onPressed: _busy ? null : () => setState(
+                      () => _specificIp.text =
+                          '192.168.68.73, 192.168.68.53, 192.168.68.72')),
+                ),
+              ]),
+          ],
           const SizedBox(height: 12),
           if (_busy) ...[
-            LinearProgressIndicator(value: _completed / _total),
+            LinearProgressIndicator(
+              value: _deepTotal > 0
+                  ? (_deepCompleted / _deepTotal).clamp(0.0, 1.0)
+                  : (_completed / _total).clamp(0.0, 1.0)),
             const SizedBox(height: 10),
-            Text('Checking $_completed of $_total addresses…'),
+            Text(_deepTotal > 0
+                ? 'Deep TCP: $_deepCompleted/$_deepTotal ports'
+                  '${_deepCurrentIp == null ? "" : " · $_deepCurrentIp"}'
+                : 'Checking $_completed of $_total addresses…'),
             const SizedBox(height: 8),
             OutlinedButton.icon(onPressed: () => _cancel = true,
                 icon: const Icon(Icons.stop_circle_outlined),
@@ -612,7 +785,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
             FilledButton.icon(
               onPressed: _startScan,
               icon: const Icon(Icons.radar),
-              label: const Text('Start IP scan'),
+              label: Text(_deepTcpPorts
+                  ? 'Start deep scan' : 'Start network scan'),
             ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -623,8 +797,8 @@ class _LanScanScreenState extends State<LanScanScreen> {
           Text('Check a specific device',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          Text('Test a computer or TV directly. LG webOS uses TCP '
-              '3000 (WebSocket) and 3001 (secure WebSocket).',
+          Text('Quickly check one IP without using the advanced options '
+              'above. LG webOS probes use TCP 3000/3001.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
           Row(children: [
