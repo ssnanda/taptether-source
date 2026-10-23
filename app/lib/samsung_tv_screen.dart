@@ -41,7 +41,7 @@ class _SamsungTvScreenState extends State<SamsungTvScreen> {
   // Never fall back to the first saved Samsung TV on another IP.
   SamsungTvDevice? get _selected {
     if (_detailMode) return _selectedDevice;
-    return _selectedDevice ?? (_saved.isEmpty ? null : _saved.first);
+    return _selectedDevice;
   }
 
   @override
