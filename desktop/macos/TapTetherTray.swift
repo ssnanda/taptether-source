@@ -549,7 +549,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         return details.components(separatedBy: .newlines).compactMap { line in
             let ip = line.trimmingCharacters(in: .whitespacesAndNewlines)
             let parts = ip.split(separator: ".").compactMap { UInt8($0) }
-            guard parts.count == 4, parts.map(String.init).joined(separator: ".") == ip else {
+            guard parts.count == 4, parts.map { String($0) }.joined(separator: ".") == ip else {
                 return nil
             }
             let lan = parts[0] == 10
