@@ -12,10 +12,18 @@ void main() {
       (tester) async {
     await tester.pumpWidget(const TapTetherApp());
     await tester.pumpAndSettle();
-    expect(find.text('Join Wi-Fi to control your devices.'), findsOneWidget);
-    expect(find.text('Manage saved devices'), findsOneWidget);
-    expect(find.text('SSH keys'), findsOneWidget);
-    expect(find.text('Settings & backups'), findsOneWidget);
+    // The platform Wi-Fi check may still be pending in a widget test.
+    // Neither the checking state nor confirmed offline mode may offer
+    // LAN-only actions or report fake connectivity.
+    final joined = find.text('Join Wi-Fi to control your devices.');
+    final checking = find.text('Checking Wi-Fi…');
+    expect(joined.evaluate().isNotEmpty || checking.evaluate().isNotEmpty,
+        isTrue);
+    if (joined.evaluate().isNotEmpty) {
+      expect(find.text('Manage saved devices'), findsOneWidget);
+      expect(find.text('SSH keys'), findsOneWidget);
+      expect(find.text('Settings & backups'), findsOneWidget);
+    }
     expect(find.text('Pair with a computer agent'), findsNothing);
     expect(find.text('Scan IPs'), findsNothing);
     expect(find.text('Not connected'), findsNothing);
