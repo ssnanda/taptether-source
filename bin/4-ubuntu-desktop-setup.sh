@@ -199,8 +199,14 @@ install() {
     # These packages run in the desktop session, never in the privileged agent.
     if command -v apt-get >/dev/null 2>&1; then
       sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 qrencode \
+        python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
         >/dev/null 2>&1 || note 'Tray dependencies unavailable; install python3-gi, GTK3 and Ayatana AppIndicator manually.'
+    fi
+    # QR rendering must not depend on every optional tray package resolving.
+    # A missing AppIndicator package must not prevent installing qrencode.
+    if ! command -v qrencode >/dev/null 2>&1; then
+      sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y qrencode >/dev/null 2>&1 ||
+        note 'QR renderer unavailable. Run: sudo apt install qrencode'
     fi
   else
     note 'Desktop tray script not staged; installer will still run the background agent.'
