@@ -887,7 +887,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (generation == _heartbeatGeneration) {
         _checkingHeartbeat = false;
         if (mounted) setState(() {});
-        if (mounted && savedComputers.isNotEmpty &&
+        if (!_locatingManually && mounted && savedComputers.isNotEmpty &&
             savedComputers.any((d) => _online[d.id] != true)) {
           unawaited(_recoverSavedDevices());
         }
@@ -1724,7 +1724,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         setState(() {});
         // A DHCP lease may change while other TVs stay online. Recover each
         // missing pairing independently, subject to the ten-minute cooldown.
-        if (!_recoveringTvAddresses && _appForeground &&
+        if (!_locatingManually && !_recoveringTvAddresses &&
+            _appForeground &&
             (savedLgTvs.any((tv) => _tvOnline['lg:${tv.host}'] == false) ||
              savedSamsungTvs.any((tv) =>
                  _tvOnline['samsung:${tv.host}'] == false))) {
@@ -1849,11 +1850,16 @@ class _RemoteScreenState extends State<RemoteScreen>
         verifyAuthenticated: () async {
           final connection = LocalAgent();
           try {
-            final phone = device.deviceId.isNotEmpty
+            final current = savedComputers.where(
+                (candidate) => candidate.id == device.id);
+            final verifiedDevice = current.isNotEmpty ? current.first : device;
+            final phone = verifiedDevice.deviceId.isNotEmpty
                 ? await _phoneIdentity() : null;
-            connection.configure(device.host, device.token, device.fingerprint,
+            connection.configure(verifiedDevice.host, verifiedDevice.token,
+                verifiedDevice.fingerprint,
                 identity: phone,
-                deviceId: device.deviceId.isNotEmpty ? device.deviceId : null);
+                deviceId: verifiedDevice.deviceId.isNotEmpty
+                    ? verifiedDevice.deviceId : null);
             final version = await connection.agentVersion()
                 .timeout(const Duration(seconds: 4));
             if (version == null) {
