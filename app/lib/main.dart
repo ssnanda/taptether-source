@@ -2297,7 +2297,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         : Theme.of(context).colorScheme.outline;
     final icon = connecting ? Icons.link
         : state == true ? Icons.check_circle
-        : locating ? Icons.travel_explore
+        : locating ? (_probingOfflineAgents
+            ? Icons.search : Icons.travel_explore)
         : checking ? Icons.sync
         : Icons.radio_button_unchecked;
     return Tooltip(
