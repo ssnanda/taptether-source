@@ -2,6 +2,7 @@
 // under launchd and continues working if this UI quits.
 // Bundled as TapTether Agent.app; no network or telemetry.
 import AppKit
+import CoreImage
 import Foundation
 import Darwin
 
@@ -69,6 +70,7 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         add(settingsMenu, "Open Accessibility settings", #selector(openAccessibilitySettings))
         add(settingsMenu, "Open Screen Recording settings", #selector(openScreenRecordingSettings))
         settingsMenu.addItem(.separator())
+        add(settingsMenu, "About TapTether Agent…", #selector(aboutTapTether))
         add(settingsMenu, "Uninstall TapTether…", #selector(uninstallTapTether))
         settingsItem.submenu = settingsMenu
         menu.addItem(settingsItem)
@@ -526,6 +528,48 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    @objc private func aboutTapTether() {
+        let alert = NSAlert()
+        alert.messageText = "TapTether Agent"
+        alert.alertStyle = .informational
+        alert.informativeText = "Version: " + versionFromAgent()
+            + "\nPlatform: macOS"
+            + "\nAgent status: " + (output("/bin/launchctl", ["print",
+                "gui/\(getuid())/\(agentLabel)"]).isEmpty ? "Stopped" : "Running")
+            + "\nControl port: 48321"
+            + "\nLAN-only · No accounts, telemetry, or analytics."
+        alert.addButton(withTitle: "Close")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    private func privatePairingIPs(_ details: String) -> [String] {
+        var seen = Set<String>()
+        return details.components(separatedBy: .newlines).compactMap { line in
+            let ip = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts = ip.split(separator: ".").compactMap { UInt8($0) }
+            guard parts.count == 4, parts.map(String.init).joined(separator: ".") == ip else {
+                return nil
+            }
+            let lan = parts[0] == 10
+                || (parts[0] == 192 && parts[1] == 168)
+                || (parts[0] == 172 && (16...31).contains(parts[1]))
+            guard lan, seen.insert(ip).inserted else { return nil }
+            return ip
+        }
+    }
+
+    private func pairingQRImage(_ url: String) -> NSImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(url.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        guard let image = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: 252, height: 252))
+    }
+
     @objc private func pairingInstructions() {
         guard FileManager.default.isExecutableFile(atPath: controller) else {
             promptSetup()
@@ -540,10 +584,50 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         let token = value(after: "Pairing token (PRIVATE):", in: details)
         let fingerprint = value(after: "TLS SHA-256 fingerprint:", in: details)
         let alert = NSAlert()
-        alert.messageText = "Private pairing details"
-        alert.informativeText = "Select any text below, or use a copy button. Keep the token private."
+        alert.messageText = "Pair your phone with TapTether"
+        alert.informativeText = "Open TapTether → Scan QR. This code contains private pairing credentials."
         alert.alertStyle = .informational
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 190))
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 8
+        stack.alignment = .centerX
+        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 425)
+        let addresses = privatePairingIPs(details)
+        if token.count >= 20 && fingerprint.count == 64 && !addresses.isEmpty {
+            let address = addresses.count == 1 ? addresses[0] : {
+                let selector = NSAlert()
+                selector.messageText = "Select the Mac LAN address"
+                selector.informativeText = "Choose the address on the same Wi-Fi network as your phone."
+                let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 350, height: 26))
+                popup.addItems(withTitles: addresses)
+                selector.accessoryView = popup
+                selector.addButton(withTitle: "Use selected address")
+                selector.addButton(withTitle: "Cancel")
+                guard selector.runModal() == .alertFirstButtonReturn else { return "" }
+                return popup.titleOfSelectedItem ?? ""
+            }()
+            if !address.isEmpty {
+                var parts = URLComponents()
+                parts.scheme = "taptether"
+                parts.host = "pair"
+                parts.queryItems = [
+                    URLQueryItem(name: "v", value: "1"),
+                    URLQueryItem(name: "host", value: address),
+                    URLQueryItem(name: "token", value: token),
+                    URLQueryItem(name: "fingerprint", value: fingerprint.uppercased())
+                ]
+                if let url = parts.url?.absoluteString,
+                   let qr = pairingQRImage(url) {
+                    let view = NSImageView(image: qr)
+                    view.imageScaling = .scaleProportionallyUpOrDown
+                    view.frame = NSRect(x: 0, y: 0, width: 252, height: 252)
+                    stack.addArrangedSubview(view)
+                    let label = NSTextField(labelWithString: "QR for " + address)
+                    stack.addArrangedSubview(label)
+                }
+            }
+        }
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 125))
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         let text = NSTextView(frame: scroll.bounds)
@@ -553,7 +637,8 @@ final class TapTetherMenu: NSObject, NSApplicationDelegate {
         text.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         text.textContainerInset = NSSize(width: 8, height: 8)
         scroll.documentView = text
-        alert.accessoryView = scroll
+        stack.addArrangedSubview(scroll)
+        alert.accessoryView = stack
         alert.addButton(withTitle: "Copy token")
         alert.addButton(withTitle: "Copy fingerprint")
         alert.addButton(withTitle: "Copy all")
