@@ -126,14 +126,15 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
               const SizedBox(height: 12),
               if (feature.options.isNotEmpty) ...[
                 for (final option in feature.options)
-                  RadioListTile<Object>(
+                  ListTile(
                     dense: true,
+                    leading: Icon(selection == option
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked),
                     title: Text(option is bool
                         ? (option ? 'On' : 'Off')
                         : option.toString().replaceAll('_', ' ')),
-                    value: option,
-                    groupValue: selection,
-                    onChanged: (value) => change(() => selection = value),
+                    onTap: () => change(() => selection = option),
                   ),
               ] else ...[
                 Text('Range: ${feature.minimum} – ${feature.maximum}'
