@@ -50,9 +50,10 @@ class DeviceLocationLog {
     try {
       final entries = jsonDecode(stored);
       if (entries is List) {
-        return entries.whereType<String>()
-            .map(safeMessageWithTimestamp)
-            .toList().take(maxEvents).toList();
+        final valid = entries.whereType<String>()
+            .map(safeMessageWithTimestamp).toList();
+        return valid.length <= maxEvents
+            ? valid : valid.sublist(valid.length - maxEvents);
       }
     } catch (_) {}
     return <String>[];
