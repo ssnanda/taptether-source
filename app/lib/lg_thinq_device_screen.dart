@@ -280,7 +280,7 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
     final divisions = ((feature.maximum! - minimum) / increment).round();
     if (increment <= 0 || divisions < 1 || divisions > 200) return;
     var index = (((feature.current as num) - minimum) / increment)
-        .round().clamp(0, divisions);
+        .round().clamp(0, divisions).toInt();
     final unit = feature.property.endsWith('F') ? '°F' : '°C';
     num numberAt(int position) {
       final value = minimum + position * increment;
