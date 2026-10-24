@@ -38,6 +38,8 @@ if [[ "${1:-}" == "--system" ]]; then
   uninstall_step=remove-package
   if dpkg-query -W -f='${Status}' taptether-agent 2>/dev/null \
       | grep -q 'install ok installed'; then
+    # The script execs dpkg, so its EXIT trap cannot run afterward.
+    printf 'TAPTETHER_UNINSTALL_ENTER_STAGE:remove-package\\n'
     # Exit via dpkg: do not read more of a package-owned script as it is removed.
     exec dpkg --remove taptether-agent
   fi
