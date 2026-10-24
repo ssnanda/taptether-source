@@ -4,11 +4,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/ssh_terminal_screen.dart';
 
 void main() {
-  test('SSH terminal preserves pasted commands and normalizes line endings', () {
-    expect(prepareSshTerminalInput('pwd\nwhoami'), 'pwd\nwhoami\n');
-    expect(prepareSshTerminalInput('pwd\r\nwhoami\r\n'), 'pwd\nwhoami\n');
-    expect(prepareSshTerminalInput('pwd\rwhoami'), 'pwd\nwhoami\n');
-    expect(prepareSshTerminalInput('whoami'), 'whoami\n');
+  test('SSH sends multiline scripts in one payload, preserving blank lines', () {
+    expect(prepareSshTerminalInput('pwd\nwhoami'), 'pwd\rwhoami\r');
+    expect(prepareSshTerminalInput('pwd\r\n\r\nwhoami\r\n'),
+        'pwd\r\rwhoami\r');
+    expect(prepareSshTerminalInput('pwd\rwhoami'), 'pwd\rwhoami\r');
+    expect(prepareSshTerminalInput('whoami'), 'whoami\r');
+    expect(prepareSshTerminalInput(''), '');
+    expect(prepareSshTerminalInput('echo one\n\necho two\n'),
+        'echo one\r\recho two\r');
+    expect(prepareSshTerminalInput("printf '[Service]\\nEnabled=yes\\n'\n"
+        'systemctl daemon-reload'),
+        "printf '[Service]\\nEnabled=yes\\n'\rsystemctl daemon-reload\r");
+  });
+
+  test('SSH output separates CR-only lines and split CRLF correctly', () {
+    final f = SshTerminalOutputFormatter();
+    expect(f.format('root@host:# pwd\r'), 'root@host:# pwd\n');
+    expect(f.format('\n/home/user\rnext\r\n'), '/home/user\nnext\n');
+    expect(f.format('a\nb\r'), 'a\nb\n');
+    expect(f.format('\nc'), 'c');
+    f.reset();
+    expect(f.format('fresh\r\n'), 'fresh\n');
   });
 
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +38,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SshTerminalScreen()));
     await tester.pumpAndSettle();
 
-    expect(find.text('SSH Terminal'), findsOneWidget);
+    expect(find.text('SSH'), findsOneWidget);
     expect(find.byKey(const ValueKey('ssh-host')), findsOneWidget);
     expect(find.byKey(const ValueKey('ssh-port')), findsOneWidget);
     expect(find.byKey(const ValueKey('ssh-username')), findsOneWidget);
