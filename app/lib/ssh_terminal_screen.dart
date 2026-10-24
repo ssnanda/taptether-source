@@ -344,7 +344,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     try {
       // A separate non-PTY channel preserves script input and reports
       // completion. It runs as the SSH login user, not a prior sudo shell.
-      process = await client.execute('bash -s')
+      process = await client.execute('bash -se')
           .timeout(const Duration(seconds: 15));
       _scriptSession = process;
       final stdoutDone = utf8.decoder.bind(process.stdout)
@@ -372,6 +372,25 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
       process?.close();
       _scriptSession = null;
       if (mounted) setState(() => _scriptBusy = false);
+    }
+  }
+
+  Future<void> _copyOutput() async {
+    if (_output.isEmpty) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: _output));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('SSH output copied'),
+          duration: Duration(seconds: 2),
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Unable to copy SSH output'),
+        ));
+      }
     }
   }
 
@@ -571,19 +590,28 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                     fontFamily: 'monospace', fontSize: 13, height: 1.35)),
               ),
             )),
-          if (_connected) ...[
+          if (_connected || _output.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(children: [
+                if (_connected) ...[
+                  TextButton(
+                    onPressed: _scriptBusy ? null : () => _signal([3]),
+                    child: const Text('Ctrl+C')),
+                  TextButton(
+                    onPressed: _scriptBusy ? null : () => _signal([9]),
+                    child: const Text('Tab')),
+                ],
                 TextButton(
-                  onPressed: () => _signal([3]),
-                  child: const Text('Ctrl+C')),
-                TextButton(
-                  onPressed: () => _signal([9]),
-                  child: const Text('Tab')),
-                TextButton(
-                  onPressed: () => setState(() => _output = ''),
+                  onPressed: _output.isEmpty ? null : () =>
+                      setState(() => _output = ''),
                   child: const Text('Clear')),
+                TextButton.icon(
+                  key: const ValueKey('ssh-copy-output'),
+                  onPressed: _output.isEmpty ? null : _copyOutput,
+                  icon: const Icon(Icons.copy_outlined, size: 17),
+                  label: const Text('Copy'),
+                ),
               ]),
             ),
             Padding(
