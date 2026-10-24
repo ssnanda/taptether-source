@@ -79,8 +79,10 @@ class SshTerminalScreen extends StatefulWidget {
 }
 
 class _SshCommandCard {
-  _SshCommandCard(this.command);
+  _SshCommandCard(this.command, String loginUser)
+      : cleaner = SshCommandOutputCleaner(loginUser);
   final SshQueuedCommand command;
+  final SshCommandOutputCleaner cleaner;
   String output = '';
   String status = 'Queued';
   int? exitCode;
@@ -367,6 +369,8 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
         if (chunk.exitCode != null) {
           setState(() {
             final item = _queue[_queueIndex];
+            final trailing = item.cleaner.flush();
+            if (trailing.isNotEmpty) item.output += trailing;
             item.exitCode = chunk.exitCode;
             item.status = chunk.exitCode == 0 ? 'Completed' : 'Failed';
             _queueIndex = -1;
@@ -385,9 +389,11 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
         _queueIndex >= _queue.length) {
       return;
     }
+    final cleaned = _queue[_queueIndex].cleaner.add(text);
+    if (cleaned.isEmpty) return;
     setState(() {
       final card = _queue[_queueIndex];
-      card.output += text;
+      card.output += cleaned;
       if (card.output.length > 32000) {
         card.output = card.output.substring(card.output.length - 32000);
       }
@@ -423,7 +429,8 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     setState(() {
       _error = null;
       _queue.clear();
-      _queue.addAll(commands.map(_SshCommandCard.new));
+      _queue.addAll(commands.map((command) =>
+          _SshCommandCard(command, _username.text.trim())));
       _queueActive = true;
       _editorCollapsed = true;
       _queueIndex = -1;
@@ -517,7 +524,8 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     for (var i = 0; i < _queue.length; i++) {
       final item = _queue[i];
       buffer.writeln();
-      if (item.command.section.isNotEmpty) {
+      if (item.command.section.isNotEmpty &&
+          (i == 0 || item.command.section != _queue[i - 1].command.section)) {
         buffer.writeln('# ${item.command.section}');
       }
       buffer.writeln('[${i + 1}/${_queue.length}] ${item.command.command}');
