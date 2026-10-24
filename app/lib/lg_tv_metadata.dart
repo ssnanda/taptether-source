@@ -10,7 +10,9 @@ Map<String, String> lgTvMetadataFromPayload(
     if (raw is! String && raw is! num && raw is! bool) return;
     final value = raw.toString().trim();
     if (value.isEmpty || value.length > limit ||
-        value.contains(RegExp(r'[\x00-\x1F]'))) return;
+        value.contains(RegExp(r'[\x00-\x1F]'))) {
+      return;
+    }
     out[key] = value;
   }
 
