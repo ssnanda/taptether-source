@@ -382,7 +382,9 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
 
   void _appendQueueOutput(String text) {
     if (!mounted || text.isEmpty || _queueIndex < 0 ||
-        _queueIndex >= _queue.length) return;
+        _queueIndex >= _queue.length) {
+      return;
+    }
     setState(() {
       final card = _queue[_queueIndex];
       card.output += text;
@@ -399,7 +401,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     final input = _command.text;
     if (input.trim().isEmpty) return;
     if (!isSshScriptInput(input)) {
-      _append('\n> ' + input + '\n');
+      _append('\n> $input\n');
       shell.write(Uint8List.fromList(utf8.encode(
           prepareSshTerminalInput(input))));
       _command.clear();
@@ -468,7 +470,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
         random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
     _queueDecoder = SshQueueOutputDecoder(token);
     final wrapped = wrapSshQueuedCommand(current.command.command, token);
-    shell.write(Uint8List.fromList(utf8.encode(wrapped + '\r')));
+    shell.write(Uint8List.fromList(utf8.encode('$wrapped\r')));
   }
 
   void _continueAfterShellSwitch() {
@@ -505,7 +507,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     if (!_connected || !_queueActive || _shell == null) return;
     final input = _promptResponse.text;
     if (input.isEmpty) return;
-    _shell!.write(Uint8List.fromList(utf8.encode(input + '\r')));
+    _shell!.write(Uint8List.fromList(utf8.encode('$input\r')));
     // Never put passwords or other prompt replies into the output or cards.
     _promptResponse.clear();
   }
@@ -516,14 +518,11 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
       final item = _queue[i];
       buffer.writeln();
       if (item.command.section.isNotEmpty) {
-        buffer.writeln('# ' + item.command.section);
+        buffer.writeln('# ${item.command.section}');
       }
-      buffer.writeln('[' + (i + 1).toString() + '/' +
-          _queue.length.toString() + '] ' + item.command.command);
+      buffer.writeln('[${i + 1}/${_queue.length}] ${item.command.command}');
       if (item.output.isNotEmpty) buffer.write(item.output);
-      buffer.writeln('\n[' + item.status +
-          (item.exitCode == null ? '' : ' · exit ' + item.exitCode.toString())
-          + ']');
+      buffer.writeln('\n[${item.status}${item.exitCode == null ? '' : ' · exit ${item.exitCode}'}]');
     }
     return buffer.toString();
   }
@@ -549,7 +548,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
   }
 
   Future<void> _copyCommandOutput(_SshCommandCard item) async {
-    final text = item.command.command + '\n' + item.output;
+    final text = '${item.command.command}\n${item.output}';
     await Clipboard.setData(ClipboardData(text: text));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -779,12 +778,10 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 4, vertical: 8),
                     child: Row(children: [
-                      Expanded(child: Text('Commands · ' +
-                          _queue.where((item) =>
+                      Expanded(child: Text('Commands · ${_queue.where((item) =>
                               item.status != 'Queued' &&
                               item.status != 'Running' &&
-                              item.status != 'Confirm new shell').length
-                              .toString() + '/' + _queue.length.toString(),
+                              item.status != 'Confirm new shell').length}/${_queue.length}',
                           style: Theme.of(context).textTheme.labelMedium)),
                       if (_queueActive)
                         const SizedBox(width: 16, height: 16,
@@ -802,7 +799,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                             style: Theme.of(context).textTheme.titleSmall),
                       ),
                     Card(
-                      key: ValueKey('ssh-queue-command-' + i.toString()),
+                      key: ValueKey('ssh-queue-command-$i'),
                       margin: const EdgeInsets.only(bottom: 8),
                       child: Padding(
                         padding: const EdgeInsets.all(10),
@@ -826,19 +823,17 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                                     : Theme.of(context).colorScheme.primary,
                               ),
                               const SizedBox(width: 6),
-                              Text('Command ' + (i + 1).toString(),
+                              Text('Command ${i + 1}',
                                   style: Theme.of(context)
                                       .textTheme.labelLarge),
                               const Spacer(),
                               Text(_queue[i].exitCode == null
                                       ? _queue[i].status
-                                      : 'Exit ' +
-                                          _queue[i].exitCode.toString(),
+                                      : 'Exit ${_queue[i].exitCode}',
                                   style: Theme.of(context)
                                       .textTheme.labelSmall),
                               IconButton(
-                                key: ValueKey('ssh-copy-command-' +
-                                    i.toString()),
+                                key: ValueKey('ssh-copy-command-$i'),
                                 tooltip: 'Copy command and output',
                                 visualDensity: VisualDensity.compact,
                                 onPressed: () =>
@@ -861,8 +856,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                                 color: Theme.of(context)
                                     .colorScheme.surfaceContainerHighest,
                                 child: SelectableText(_queue[i].output,
-                                  key: ValueKey('ssh-command-output-' +
-                                      i.toString()),
+                                  key: ValueKey('ssh-command-output-$i'),
                                   style: const TextStyle(
                                     fontFamily: 'monospace',
                                     fontSize: 12.5,
