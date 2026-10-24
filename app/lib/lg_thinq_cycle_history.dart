@@ -48,10 +48,14 @@ class ThinQCycleEntry {
   };
 
   static ThinQCycleEntry? fromJson(Object? source) {
-    if (source is! Map) return null;
+    if (source is! Map) {
+      return null;
+    }
     final start = DateTime.tryParse(source['startedAt']?.toString() ?? '');
     final last = DateTime.tryParse(source['lastSeenAt']?.toString() ?? '');
-    if (start == null || last == null) return null;
+    if (start == null || last == null) {
+      return null;
+    }
     final end = DateTime.tryParse(source['endedAt']?.toString() ?? '');
     return ThinQCycleEntry(
       startedAt: start,
@@ -79,11 +83,19 @@ String? thinQState(List<ThinQFeature> features) {
 
 int? thinQInteger(List<ThinQFeature> features, String name) {
   for (final f in features) {
-    if (f.property != name) continue;
+    if (f.property != name) {
+      continue;
+    }
     final value = f.current;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value);
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
   }
   return null;
 }
@@ -92,12 +104,16 @@ int? thinQMinutes(List<ThinQFeature> features,
     String hourField, String minuteField) {
   final hours = thinQInteger(features, hourField);
   final minutes = thinQInteger(features, minuteField);
-  if (hours == null && minutes == null) return null;
+  if (hours == null && minutes == null) {
+    return null;
+  }
   return (hours ?? 0) * 60 + (minutes ?? 0);
 }
 
 bool thinQIsRunning(String? state) {
-  if (state == null) return false;
+  if (state == null) {
+    return false;
+  }
   const notRunning = {
     'POWER_OFF', 'OFF', 'END', 'DONE', 'COMPLETE', 'COMPLETED',
     'STANDBY', 'READY', 'PAUSE', 'PAUSED', 'ERROR', 'STOP',
@@ -122,7 +138,9 @@ List<ThinQCycleEntry> observeThinQCycle(
     List<ThinQFeature> features,
     DateTime now) {
   final state = thinQState(features);
-  if (state == null) return old;
+  if (state == null) {
+    return old;
+  }
   final running = thinQIsRunning(state);
   final last = old.isEmpty ? null : old.first;
   final count = thinQInteger(features, 'cycleCount');
@@ -138,7 +156,9 @@ List<ThinQCycleEntry> observeThinQCycle(
     );
     return [fresh, ...old].take(80).toList();
   }
-  if (last == null || !last.active) return old;
+  if (last == null || !last.active) {
+    return old;
+  }
   // If the screen was closed between samples, retain a cautious outcome.
   // A missed END event is not proof the cycle completed successfully.
   final outcome = running ? 'observing'
@@ -167,9 +187,13 @@ class ThinQCycleHistoryStore {
   Future<List<ThinQCycleEntry>> read(String deviceId) async {
     try {
       final raw = await _storage.read(key: _key(deviceId));
-      if (raw == null) return [];
+      if (raw == null) {
+        return [];
+      }
       final parsed = jsonDecode(raw);
-      if (parsed is! List) return [];
+      if (parsed is! List) {
+        return [];
+      }
       return parsed.map(ThinQCycleEntry.fromJson)
           .whereType<ThinQCycleEntry>().take(80).toList();
     } catch (_) {
