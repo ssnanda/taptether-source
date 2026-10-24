@@ -298,6 +298,18 @@ SYSTEMD
   sudo -n -v || fail 'Sudo authorization expired before systemd configuration.'
   sudo install -m 0644 "$tmp" "$SYS_SERVICE"
   rm -f "$tmp"
+  # Older installers accidentally wrote literal backslash-n into this
+  # installer-owned drop-in. systemd rejects the entire service ("Bad message")
+  # before the normal shutdown-policy refresh can run. Repair this precise
+  # legacy format without changing the owner's local shutdown opt-out marker.
+  if [[ -f "$POWER_DROPIN" ]] &&
+     grep -Fq '[Service]\\nEnvironment=TAPTETHER_ENABLE_SHUTDOWN=' "$POWER_DROPIN"; then
+    setup_step=systemd-dropin-repair
+    tmp="$(mktemp)"
+    printf '[Service]\\nEnvironment=TAPTETHER_ENABLE_SHUTDOWN=1\\n' > "$tmp"
+    sudo install -m 0644 "$tmp" "$POWER_DROPIN"
+    rm -f "$tmp"
+  fi
   setup_step=systemd-reload
   sudo systemctl daemon-reload
   setup_step=systemd-enable
