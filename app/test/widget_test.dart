@@ -39,7 +39,8 @@ void main() {
     expect(find.text('Settings & More'), findsOneWidget);
     await tester.tap(find.text('Settings & More'));
     await tester.pumpAndSettle();
-    expect(find.text('SSH Terminal'), findsOneWidget);
+    expect(find.text('SSH'), findsOneWidget);
+    expect(find.text('Connect to a computer over Wi-Fi'), findsNothing);
     expect(find.text('SSH Keys'), findsOneWidget);
     expect(find.text('Security & Appearance'), findsOneWidget);
     expect(find.text('API Integrations'), findsOneWidget);
