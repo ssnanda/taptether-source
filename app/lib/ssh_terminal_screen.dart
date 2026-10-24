@@ -740,116 +740,275 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                 ],
               ),
             ),
-          if (_connected || _output.isNotEmpty)
-            Expanded(child: Container(
-              width: double.infinity,
-              color: Theme.of(context).colorScheme.inverseSurface,
-              padding: const EdgeInsets.all(12),
-              child: SingleChildScrollView(
-                controller: _outputScroll,
-                child: SelectableText(_output,
-                  key: const ValueKey('ssh-output'),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onInverseSurface,
-                    fontFamily: 'monospace', fontSize: 13, height: 1.35)),
-              ),
-            )),
-          if (_connected || _output.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(children: [
-                if (_connected) ...[
-                  TextButton(
-                    onPressed: _scriptBusy ? null : () => _signal([3]),
-                    child: const Text('Ctrl+C')),
-                  TextButton(
-                    onPressed: _scriptBusy ? null : () => _signal([9]),
-                    child: const Text('Tab')),
+          if (_connected || _output.isNotEmpty || _queue.isNotEmpty)
+            Expanded(child: ListView(
+              key: const ValueKey('ssh-history'),
+              controller: _outputScroll,
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+              children: [
+                if (_queue.isEmpty)
+                  Container(
+                    color: Theme.of(context).colorScheme.inverseSurface,
+                    padding: const EdgeInsets.all(12),
+                    child: SelectableText(_output,
+                      key: const ValueKey('ssh-output'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onInverseSurface,
+                        fontFamily: 'monospace', fontSize: 13, height: 1.3)),
+                  )
+                else ...[
+                  ExpansionTile(
+                    key: const ValueKey('ssh-session-log'),
+                    title: const Text('Session log'),
+                    subtitle: const Text('SSH welcome and shell output'),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        width: double.infinity,
+                        color: Theme.of(context).colorScheme.inverseSurface,
+                        child: SelectableText(_output,
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme
+                                .onInverseSurface)),
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 8),
+                    child: Row(children: [
+                      Expanded(child: Text('Commands · ' +
+                          _queue.where((item) =>
+                              item.status != 'Queued' &&
+                              item.status != 'Running' &&
+                              item.status != 'Confirm new shell').length
+                              .toString() + '/' + _queue.length.toString(),
+                          style: Theme.of(context).textTheme.labelMedium)),
+                      if (_queueActive)
+                        const SizedBox(width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2)),
+                    ]),
+                  ),
+                  for (var i = 0; i < _queue.length; i++) ...[
+                    if (_queue[i].command.section.isNotEmpty &&
+                        (i == 0 ||
+                        _queue[i].command.section !=
+                            _queue[i - 1].command.section))
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 10, 8, 3),
+                        child: Text(_queue[i].command.section,
+                            style: Theme.of(context).textTheme.titleSmall),
+                      ),
+                    Card(
+                      key: ValueKey('ssh-queue-command-' + i.toString()),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Icon(
+                                _queue[i].status == 'Completed'
+                                    ? Icons.check_circle_outline
+                                    : _queue[i].status == 'Failed'
+                                        ? Icons.error_outline
+                                        : _queue[i].status == 'Running' ||
+                                          _queue[i].status ==
+                                              'Confirm new shell'
+                                            ? Icons.pending_outlined
+                                            : Icons.circle_outlined,
+                                size: 19,
+                                color: _queue[i].status == 'Failed'
+                                    ? Theme.of(context).colorScheme.error
+                                    : Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text('Command ' + (i + 1).toString(),
+                                  style: Theme.of(context)
+                                      .textTheme.labelLarge),
+                              const Spacer(),
+                              Text(_queue[i].exitCode == null
+                                      ? _queue[i].status
+                                      : 'Exit ' +
+                                          _queue[i].exitCode.toString(),
+                                  style: Theme.of(context)
+                                      .textTheme.labelSmall),
+                              IconButton(
+                                key: ValueKey('ssh-copy-command-' +
+                                    i.toString()),
+                                tooltip: 'Copy command and output',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () =>
+                                    _copyCommandOutput(_queue[i]),
+                                icon: const Icon(Icons.copy_outlined,
+                                    size: 17),
+                              ),
+                            ]),
+                            SelectableText(_queue[i].command.command,
+                              style: Theme.of(context)
+                                  .textTheme.bodyMedium?.copyWith(
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w600,
+                                  )),
+                            if (_queue[i].output.isNotEmpty) ...[
+                              const Divider(height: 13),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(9),
+                                color: Theme.of(context)
+                                    .colorScheme.surfaceContainerHighest,
+                                child: SelectableText(_queue[i].output,
+                                  key: ValueKey('ssh-command-output-' +
+                                      i.toString()),
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 12.5,
+                                    height: 1.3,
+                                  )),
+                              ),
+                            ] else if (_queue[i].status == 'Running')
+                              Text('Waiting for command output…',
+                                  style: Theme.of(context)
+                                      .textTheme.bodySmall),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
+              ],
+            )),
+          if (_connected || _output.isNotEmpty || _queue.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Row(children: [
+                if (_connected && !_queueActive) ...[
+                  TextButton(onPressed: () => _signal([3]),
+                      child: const Text('Ctrl+C')),
+                  TextButton(onPressed: () => _signal([9]),
+                      child: const Text('Tab')),
+                ],
+                if (_queueActive)
+                  TextButton.icon(
+                    key: const ValueKey('ssh-stop-queue'),
+                    onPressed: _stopQueue,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('Stop'),
+                  ),
+                const Spacer(),
                 TextButton(
-                  onPressed: _output.isEmpty ? null : () =>
-                      setState(() => _output = ''),
-                  child: const Text('Clear')),
+                  onPressed: _queueActive ? null : () => setState(() {
+                    _output = '';
+                    _queue.clear();
+                  }),
+                  child: const Text('Clear'),
+                ),
                 TextButton.icon(
                   key: const ValueKey('ssh-copy-output'),
-                  onPressed: _output.isEmpty ? null : _copyOutput,
+                  onPressed: _output.isEmpty && _queue.isEmpty
+                      ? null : _copyOutput,
                   icon: const Icon(Icons.copy_outlined, size: 17),
-                  label: const Text('Copy'),
+                  label: const Text('Copy all'),
                 ),
               ]),
             ),
           if (_connected) ...[
-            if (_scriptBusy) ...[
+            if (_queueActive) ...[
+              if (_queueWaitingForShell)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: FilledButton.tonalIcon(
+                    key: const ValueKey('ssh-confirm-shell-switch'),
+                    onPressed: _continueAfterShellSwitch,
+                    icon: const Icon(Icons.terminal),
+                    label: const Text(
+                        'Continue when new shell prompt appears'),
+                  ),
+                ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.fromLTRB(12, 1, 12, 6),
                 child: Row(children: [
                   Expanded(child: TextField(
-                    key: const ValueKey('ssh-script-response'),
-                    controller: _scriptResponse,
-                    obscureText: true,
+                    key: const ValueKey('ssh-queue-prompt-response'),
+                    controller: _promptResponse,
+                    obscureText: _hidePromptResponse,
                     autocorrect: false,
                     enableSuggestions: false,
                     textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _replyToScript(),
-                    decoration: const InputDecoration(
-                      labelText: 'Sudo password / prompt response',
+                    onSubmitted: (_) => _replyToPrompt(),
+                    decoration: InputDecoration(
                       isDense: true,
+                      hintText: 'Answer sudo / interactive prompt',
+                      suffixIcon: IconButton(
+                        tooltip: 'Show or hide response',
+                        onPressed: () => setState(() =>
+                            _hidePromptResponse = !_hidePromptResponse),
+                        icon: Icon(_hidePromptResponse
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined),
+                      ),
                     ),
                   )),
                   TextButton(
-                    key: const ValueKey('ssh-script-reply'),
-                    onPressed: _replyToScript,
+                    key: const ValueKey('ssh-queue-reply'),
+                    onPressed: _replyToPrompt,
                     child: const Text('Reply'),
-                  ),
-                  IconButton(
-                    key: const ValueKey('ssh-script-cancel'),
-                    tooltip: 'Stop running script',
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    onPressed: _cancelScript,
                   ),
                 ]),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(12, 5, 12, 7),
-                child: Text('Script runs as the SSH login user, not '
-                    'a prior su/root shell. Reply only to a prompt '
-                    'shown in the output.',
-                    style: TextStyle(fontSize: 11)),
-              ),
             ],
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Row(children: [
-                Expanded(child: TextField(
-                  key: const ValueKey('ssh-command'),
-                  controller: _command,
-                  minLines: 3,
-                  maxLines: 7,
-                  readOnly: _scriptBusy,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  textCapitalization: TextCapitalization.none,
-                  decoration: const InputDecoration(
-                    hintText: 'Paste commands (blank lines supported)',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                )),
-                const SizedBox(width: 8),
-                ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: _command,
-                  builder: (_, value, __) => FilledButton(
-                    key: const ValueKey('ssh-send'),
-                    onPressed: _scriptBusy ? null : _send,
-                    child: Text(_scriptBusy ? 'Running…'
-                        : isSshScriptInput(value.text) ? 'Run script'
-                        : 'Send'),
-                  ),
+                Expanded(child: Text(
+                    _queueActive ? 'Running commands in current shell'
+                        : 'SSH command input',
+                    style: Theme.of(context).textTheme.labelMedium)),
+                TextButton.icon(
+                  key: const ValueKey('ssh-toggle-editor'),
+                  onPressed: _queueActive ? null : () => setState(() =>
+                      _editorCollapsed = !_editorCollapsed),
+                  icon: Icon(_editorCollapsed
+                      ? Icons.expand_less : Icons.expand_more),
+                  label: Text(_editorCollapsed
+                      ? 'New commands' : 'Collapse'),
                 ),
               ]),
             ),
+            if (!_editorCollapsed && !_queueActive)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(child: TextField(
+                      key: const ValueKey('ssh-command'),
+                      controller: _command,
+                      minLines: 2,
+                      maxLines: 6,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      textCapitalization: TextCapitalization.none,
+                      decoration: const InputDecoration(
+                        hintText: 'Paste commands, one per line',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    )),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      key: const ValueKey('ssh-send'),
+                      onPressed: _send,
+                      child: const Text('Run all'),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ]),
       ),
