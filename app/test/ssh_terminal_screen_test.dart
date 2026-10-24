@@ -18,6 +18,25 @@ void main() {
         "printf '[Service]\\nEnabled=yes\\n'\rsystemctl daemon-reload\r");
   });
 
+  test('SSH script detection and multiline input preserve literal line breaks',
+      () {
+    expect(isSshScriptInput('pwd'), isFalse);
+    expect(isSshScriptInput('pwd\nwhoami'), isTrue);
+    expect(isSshScriptInput('echo one\r\necho two'), isTrue);
+    expect(prepareSshScriptInput('pwd\nwhoami'),
+        'pwd\nwhoami\n');
+    expect(prepareSshScriptInput('echo one\r\n\r\necho two\r\n'),
+        'echo one\n\necho two\n');
+    expect(prepareSshScriptInput('echo one\recho two'),
+        'echo one\necho two\n');
+    expect(prepareSshScriptInput(''), isEmpty);
+    expect(prepareSshScriptInput('   \n  '), isEmpty);
+    const heredoc = 'cat > /tmp/example <<EOF\nline one\n\n'
+        'line three\nEOF\nprintf "done\\n"';
+    expect(prepareSshScriptInput(heredoc),
+        '$heredoc\n');
+  });
+
   test('SSH output separates CR-only lines and split CRLF correctly', () {
     final f = SshTerminalOutputFormatter();
     expect(f.format('root@host:# pwd\r'), 'root@host:# pwd\n');
