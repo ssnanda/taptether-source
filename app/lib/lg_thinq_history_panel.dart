@@ -76,7 +76,7 @@ class LgThinQHistoryPanel extends StatelessWidget {
                   '\nLast observed: ${time(entry.lastSeenAt)}'
                   '\nLast state: ${entry.lastState.replaceAll("_", " ")}'
                   '${entry.initialTotalMinutes == null
-                      ? "" : "\\nReported cycle: ${entry.initialTotalMinutes} min"}'
+                      ? "" : "\nReported cycle: ${entry.initialTotalMinutes} min"}'
                   '\n${entry.samples} status samples'),
               isThreeLine: true,
             )),
