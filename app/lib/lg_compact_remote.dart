@@ -392,9 +392,9 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
           _actionIcon('Volume up', Icons.volume_up_outlined, () =>
             unawaited(_run(widget.client.volumeUp))),
           _actionIcon('Play', Icons.play_arrow, () =>
-            unawaited(_run(() => widget.client.button('PLAY')))),
+            unawaited(_run(widget.client.playMedia))),
           _actionIcon('Pause', Icons.pause, () =>
-            unawaited(_run(() => widget.client.button('PAUSE')))),
+            unawaited(_run(widget.client.pauseMedia))),
         ]),
       ]);
     },
