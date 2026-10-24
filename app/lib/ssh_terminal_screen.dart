@@ -31,6 +31,15 @@ String prepareSshScriptInput(String input) {
   return normalized.endsWith('\n') ? normalized : '$normalized\n';
 }
 
+/// SSH exec carries the script in a quoted Bash argument, not PTY keystrokes
+/// or stdin. This preserves blank lines and leaves stdin available for sudo.
+String prepareSshScriptCommand(String input) {
+  final script = prepareSshScriptInput(input);
+  if (script.isEmpty) return '';
+  final quoted = script.replaceAll("'", "'\"'\"'");
+  return "bash -e -c '$quoted'";
+}
+
 /// Convert PTY carriage returns to visible line breaks. LF after CR must
 /// be ignored even when CR and LF arrive in separate SSH network packets.
 class SshTerminalOutputFormatter {
@@ -73,6 +82,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
   final _port = TextEditingController(text: '22');
   final _password = TextEditingController();
   final _command = TextEditingController();
+  final _scriptResponse = TextEditingController();
   final _outputScroll = ScrollController();
   final _outputFormatter = SshTerminalOutputFormatter();
   final _keyStore = PhoneSshKeyStore();
@@ -90,6 +100,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
   SSHSession? _shell;
   SSHSession? _scriptSession;
   bool _scriptBusy = false;
+  bool _scriptCanceled = false;
   StreamSubscription<String>? _stdout;
   StreamSubscription<String>? _stderr;
 
@@ -338,41 +349,66 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     if (!_connected || client == null || _scriptBusy) return;
     final script = prepareSshScriptInput(source);
     if (script.isEmpty) return;
-    setState(() => _scriptBusy = true);
-    _append('\n[Running multiline script via SSH bash]\n');
+    if (script.length > 16000) {
+      _append('\n[Script too long. Maximum 16,000 characters.]\n');
+      return;
+    }
+    setState(() {
+      _scriptBusy = true;
+      _scriptCanceled = false;
+    });
+    _append('\n[Running Bash script as SSH login user. '
+        'Sudo may request a password below.]\n');
     SSHSession? process;
     try {
-      // A separate non-PTY channel preserves script input and reports
-      // completion. It runs as the SSH login user, not a prior sudo shell.
-      process = await client.execute('bash -se')
-          .timeout(const Duration(seconds: 15));
+      // Script is passed as ONE safely quoted exec command, not PTY
+      // keystrokes. A PTY is allocated only for prompts such as sudo.
+      // stdin remains open and free for interactive password responses.
+      process = await client.execute(
+        prepareSshScriptCommand(script),
+        pty: const SSHPtyConfig(),
+      ).timeout(const Duration(seconds: 15));
       _scriptSession = process;
       final stdoutDone = utf8.decoder.bind(process.stdout)
           .listen(_append).asFuture<void>();
       final stderrDone = utf8.decoder.bind(process.stderr)
           .listen(_append).asFuture<void>();
-      process.stdin.add(Uint8List.fromList(utf8.encode(script)));
-      await process.stdin.close();
       final exitCode = await process.waitForExit(
           timeout: const Duration(minutes: 5));
       await Future.wait([stdoutDone, stderrDone])
           .timeout(const Duration(seconds: 10));
-      if (!mounted || _closedByUser) return;
-      _append('\n[Script finished · exit code $exitCode]\n');
+      if (!mounted || _closedByUser || _scriptCanceled) return;
+      _append('\n[Script finished · exit code ${exitCode ?? "unknown"}]\n');
       if (exitCode == 0 && _command.text == source) {
         _command.clear();
       }
     } catch (_) {
-      if (mounted && !_closedByUser) {
-        _append('\n[Script failed or timed out. Bash must be installed '
-            'on the SSH host; interactive password prompts are not supported '
-            'in script mode.]\n');
+      if (mounted && !_closedByUser && !_scriptCanceled) {
+        _append('\n[Script failed, connection lost, or timed out. '
+            'Review the output above and retry only if safe.]\n');
       }
     } finally {
       process?.close();
       _scriptSession = null;
+      _scriptResponse.clear();
       if (mounted) setState(() => _scriptBusy = false);
     }
+  }
+
+  void _replyToScript() {
+    final session = _scriptSession;
+    final text = _scriptResponse.text;
+    if (!_scriptBusy || session == null || text.isEmpty) return;
+    session.stdin.add(Uint8List.fromList(utf8.encode('$text\r')));
+    // Never display, cache or copy credentials typed here.
+    _scriptResponse.clear();
+  }
+
+  void _cancelScript() {
+    if (!_scriptBusy) return;
+    _scriptCanceled = true;
+    _scriptSession?.close();
+    _append('\n[Script interrupted. Some commands may have run.]\n');
   }
 
   Future<void> _copyOutput() async {
@@ -400,6 +436,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
 
   Future<void> _disconnect() async {
     _closedByUser = true;
+    _scriptCanceled = true;
     _scriptSession?.close();
     _scriptSession = null;
     final shell = _shell;
@@ -435,6 +472,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     _port.dispose();
     _password.dispose();
     _command.dispose();
+    _scriptResponse.dispose();
     _outputScroll.dispose();
     super.dispose();
   }
