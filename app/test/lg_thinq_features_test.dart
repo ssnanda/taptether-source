@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/lg_thinq_api.dart';
 import 'package:taptether/lg_thinq_features.dart';
 import 'package:taptether/lg_thinq_device_screen.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  // Live monitoring writes its local cycle journal during the first render.
+  // Mock platform keychain calls so widget tests never await a native channel.
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
   const washer = LgThinQDevice(
     id: 'washer-1', name: 'Top Load Washer',
     type: 'DEVICE_WASHER', model: 'TLTU7CBP',
