@@ -652,6 +652,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                 ),
               ]),
             ),
+          if (_connected) ...[
             if (_scriptBusy) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
