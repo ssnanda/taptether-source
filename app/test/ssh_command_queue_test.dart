@@ -79,6 +79,27 @@ sudo systemctl reset-failed taptether-agent.service''';
     expect(rest.output, isEmpty);
   });
 
+  test('per-command output hides shell prompts but preserves real logs', () {
+    final cleaner = SshCommandOutputCleaner('sandip');
+    expect(cleaner.add('sand'), isEmpty);
+    expect(cleaner.add('ip@sandip-iMac:~\$ \n'), isEmpty);
+    expect(cleaner.add('dpkg: package not installed\n'),
+        'dpkg: package not installed\n');
+    expect(cleaner.add('root@sandip-iMac:/root# '), isEmpty);
+    expect(cleaner.add('\nFailed to reset unit\n'),
+        'Failed to reset unit\n');
+    expect(cleaner.add('[sudo] password for sandip: '),
+        '[sudo] password for sandip: ');
+    expect(cleaner.flush(), isEmpty);
+  });
+
+  test('incomplete nonprompt output remains visible', () {
+    final cleaner = SshCommandOutputCleaner('sandip');
+    expect(cleaner.add('starting update…'), 'starting update…');
+    expect(cleaner.add('done\n'), 'done\n');
+    expect(cleaner.flush(), isEmpty);
+  });
+
   test('invalid marker does not fake command completion', () {
     final decoder = SshQueueOutputDecoder('abcdef1234567890');
     final chunk = decoder.add('\u001eOTHER:0\u001f\n');
