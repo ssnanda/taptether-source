@@ -2178,11 +2178,15 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// profile for these cards. Cache only in memory and cap polling frequency.
   Future<void> _refreshThinQStatuses({bool force = false}) async {
     if (!mounted || !_appForeground || !_pageVisible ||
-        _checkingThinQStatus || _enabledThinQ.isEmpty) return;
+        _checkingThinQStatus || _enabledThinQ.isEmpty) {
+      return;
+    }
     final now = DateTime.now();
     if (!force && _lastThinQStatusCheck != null &&
         now.difference(_lastThinQStatusCheck!) <
-            const Duration(minutes: 2)) return;
+            const Duration(minutes: 2)) {
+      return;
+    }
     _lastThinQStatusCheck = now;
     _checkingThinQStatus = true;
     try {
