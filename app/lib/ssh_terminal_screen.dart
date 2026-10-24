@@ -331,111 +331,208 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     }
   }
 
+  void _scrollToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_outputScroll.hasClients) return;
+      final position = _outputScroll.position;
+      if (position.extentAfter < 250) {
+        _outputScroll.jumpTo(position.maxScrollExtent);
+      }
+    });
+  }
+
   void _append(String text) {
     if (!mounted || _closedByUser) return;
-    // Simple readable shell output; full-screen TUI apps still require
-    // terminal cursor control, which this compact console does not emulate.
-    final safe = _outputFormatter.format(text);
     setState(() {
-      _output += safe;
+      _output += text;
       if (_output.length > 32000) {
         _output = _output.substring(_output.length - 32000);
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _outputScroll.hasClients) {
-        _outputScroll.jumpTo(_outputScroll.position.maxScrollExtent);
+    _scrollToEnd();
+  }
+
+  void _onShellOutput(String text) {
+    if (!mounted || _closedByUser) return;
+    final formatted = _outputFormatter.format(text);
+    if (_queueActive && _queueIndex >= 0 && _queueIndex < _queue.length) {
+      if (_queueWaitingForShell) {
+        _appendQueueOutput(formatted);
+        return;
+      }
+      final decoder = _queueDecoder;
+      if (decoder != null) {
+        final chunk = decoder.add(formatted);
+        if (chunk.output.isNotEmpty) _appendQueueOutput(chunk.output);
+        if (chunk.exitCode != null) {
+          setState(() {
+            final item = _queue[_queueIndex];
+            item.exitCode = chunk.exitCode;
+            item.status = chunk.exitCode == 0 ? 'Completed' : 'Failed';
+            _queueIndex = -1;
+            _queueDecoder = null;
+          });
+          _runNextQueueCommand();
+        }
+        return;
+      }
+    }
+    _append(formatted);
+  }
+
+  void _appendQueueOutput(String text) {
+    if (!mounted || text.isEmpty || _queueIndex < 0 ||
+        _queueIndex >= _queue.length) return;
+    setState(() {
+      final card = _queue[_queueIndex];
+      card.output += text;
+      if (card.output.length > 32000) {
+        card.output = card.output.substring(card.output.length - 32000);
       }
     });
+    _scrollToEnd();
   }
 
-  /// Single commands stay in the interactive shell. Multiline scripts
-  /// bypass the PTY so their blank lines, quotes and heredocs survive.
   void _send() {
     final shell = _shell;
-    if (!_connected || shell == null || _scriptBusy) return;
-    final command = _command.text;
-    if (command.trim().isEmpty) return;
-    if (isSshScriptInput(command)) {
-      unawaited(_runScript(command));
+    if (!_connected || shell == null || _queueActive) return;
+    final input = _command.text;
+    if (input.trim().isEmpty) return;
+    if (!isSshScriptInput(input)) {
+      _append('\n> ' + input + '\n');
+      shell.write(Uint8List.fromList(utf8.encode(
+          prepareSshTerminalInput(input))));
+      _command.clear();
       return;
     }
-    shell.write(Uint8List.fromList(utf8.encode(
-        prepareSshTerminalInput(command))));
-    _command.clear();
-  }
 
-  Future<void> _runScript(String source) async {
-    final client = _client;
-    if (!_connected || client == null || _scriptBusy) return;
-    final script = prepareSshScriptInput(source);
-    if (script.isEmpty) return;
-    if (script.length > 16000) {
-      _append('\n[Script too long. Maximum 16,000 characters.]\n');
+    List<SshQueuedCommand> commands;
+    try {
+      commands = parseSshCommandQueue(input);
+    } on FormatException catch (error) {
+      setState(() => _error = error.message);
+      return;
+    }
+    if (commands.isEmpty) return;
+    if (commands.length > 150) {
+      setState(() => _error = 'Limit Run All to 150 commands per batch.');
       return;
     }
     setState(() {
-      _scriptBusy = true;
-      _scriptCanceled = false;
+      _error = null;
+      _queue.clear();
+      _queue.addAll(commands.map(_SshCommandCard.new));
+      _queueActive = true;
+      _editorCollapsed = true;
+      _queueIndex = -1;
+      _queueWaitingForShell = false;
     });
-    _append('\n[Running Bash script as SSH login user. '
-        'Sudo may request a password below.]\n');
-    SSHSession? process;
-    try {
-      // Script is passed as ONE safely quoted exec command, not PTY
-      // keystrokes. A PTY is allocated only for prompts such as sudo.
-      // stdin remains open and free for interactive password responses.
-      process = await client.execute(
-        prepareSshScriptCommand(script),
-        pty: const SSHPtyConfig(),
-      ).timeout(const Duration(seconds: 15));
-      _scriptSession = process;
-      final stdoutDone = utf8.decoder.bind(process.stdout)
-          .listen(_append).asFuture<void>();
-      final stderrDone = utf8.decoder.bind(process.stderr)
-          .listen(_append).asFuture<void>();
-      final exitCode = await process.waitForExit(
-          timeout: const Duration(minutes: 5));
-      await Future.wait([stdoutDone, stderrDone])
-          .timeout(const Duration(seconds: 10));
-      if (!mounted || _closedByUser || _scriptCanceled) return;
-      _append('\n[Script finished · exit code ${exitCode ?? "unknown"}]\n');
-      if (exitCode == 0 && _command.text == source) {
-        _command.clear();
-      }
-    } catch (_) {
-      if (mounted && !_closedByUser && !_scriptCanceled) {
-        _append('\n[Script failed, connection lost, or timed out. '
-            'Review the output above and retry only if safe.]\n');
-      }
-    } finally {
-      process?.close();
-      _scriptSession = null;
-      _scriptResponse.clear();
-      if (mounted) setState(() => _scriptBusy = false);
+    _command.clear();
+    _runNextQueueCommand();
+  }
+
+  void _runNextQueueCommand() {
+    final shell = _shell;
+    if (!mounted || !_connected || !_queueActive || shell == null) return;
+    final next = _queue.indexWhere((item) => item.status == 'Queued');
+    if (next < 0) {
+      setState(() {
+        _queueActive = false;
+        _queueIndex = -1;
+        _queueWaitingForShell = false;
+        _queueDecoder = null;
+      });
+      return;
     }
+    final current = _queue[next];
+    setState(() {
+      _queueIndex = next;
+      current.status = 'Running';
+    });
+
+    if (current.command.shellTransition) {
+      // sudo su - (and similar commands) opens a *new* interactive shell.
+      // There is no exit marker until that child shell quits. Do not push
+      // subsequent commands into a password prompt. Wait for confirmation.
+      setState(() {
+        _queueWaitingForShell = true;
+        current.status = 'Confirm new shell';
+      });
+      shell.write(Uint8List.fromList(
+          utf8.encode(prepareSshTerminalInput(current.command.command))));
+      return;
+    }
+
+    final random = Random.secure();
+    final token = List.generate(16, (_) =>
+        random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+    _queueDecoder = SshQueueOutputDecoder(token);
+    final wrapped = wrapSshQueuedCommand(current.command.command, token);
+    shell.write(Uint8List.fromList(utf8.encode(wrapped + '\r')));
   }
 
-  void _replyToScript() {
-    final session = _scriptSession;
-    final text = _scriptResponse.text;
-    if (!_scriptBusy || session == null || text.isEmpty) return;
-    session.stdin.add(Uint8List.fromList(utf8.encode('$text\r')));
-    // Never display, cache or copy credentials typed here.
-    _scriptResponse.clear();
+  void _continueAfterShellSwitch() {
+    if (!_queueActive || !_queueWaitingForShell || _queueIndex < 0) return;
+    setState(() {
+      _queue[_queueIndex].status = 'Shell changed (confirmed)';
+      _queueIndex = -1;
+      _queueWaitingForShell = false;
+    });
+    _runNextQueueCommand();
   }
 
-  void _cancelScript() {
-    if (!_scriptBusy) return;
-    _scriptCanceled = true;
-    _scriptSession?.close();
-    _append('\n[Script interrupted. Some commands may have run.]\n');
+  void _stopQueue({bool sendInterrupt = true}) {
+    if (!_queueActive) return;
+    if (sendInterrupt && _connected && !_queueWaitingForShell) {
+      _signal([3]);
+    }
+    setState(() {
+      for (final item in _queue) {
+        if (item.status == 'Queued') item.status = 'Skipped';
+        if (item.status == 'Running' ||
+            item.status == 'Confirm new shell') {
+          item.status = 'Stopped';
+        }
+      }
+      _queueActive = false;
+      _queueIndex = -1;
+      _queueDecoder = null;
+      _queueWaitingForShell = false;
+    });
+  }
+
+  void _replyToPrompt() {
+    if (!_connected || !_queueActive || _shell == null) return;
+    final input = _promptResponse.text;
+    if (input.isEmpty) return;
+    _shell!.write(Uint8List.fromList(utf8.encode(input + '\r')));
+    // Never put passwords or other prompt replies into the output or cards.
+    _promptResponse.clear();
+  }
+
+  String _allVisibleOutput() {
+    final buffer = StringBuffer(_output);
+    for (var i = 0; i < _queue.length; i++) {
+      final item = _queue[i];
+      buffer.writeln();
+      if (item.command.section.isNotEmpty) {
+        buffer.writeln('# ' + item.command.section);
+      }
+      buffer.writeln('[' + (i + 1).toString() + '/' +
+          _queue.length.toString() + '] ' + item.command.command);
+      if (item.output.isNotEmpty) buffer.write(item.output);
+      buffer.writeln('\n[' + item.status +
+          (item.exitCode == null ? '' : ' · exit ' + item.exitCode.toString())
+          + ']');
+    }
+    return buffer.toString();
   }
 
   Future<void> _copyOutput() async {
-    if (_output.isEmpty) return;
+    final output = _allVisibleOutput();
+    if (output.trim().isEmpty) return;
     try {
-      await Clipboard.setData(ClipboardData(text: _output));
+      await Clipboard.setData(ClipboardData(text: output));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('SSH output copied'),
@@ -451,15 +548,24 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     }
   }
 
+  Future<void> _copyCommandOutput(_SshCommandCard item) async {
+    final text = item.command.command + '\n' + item.output;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Command output copied'),
+        duration: Duration(seconds: 2),
+      ));
+    }
+  }
+
   void _signal(List<int> bytes) {
     if (_connected) _shell?.write(Uint8List.fromList(bytes));
   }
 
   Future<void> _disconnect() async {
     _closedByUser = true;
-    _scriptCanceled = true;
-    _scriptSession?.close();
-    _scriptSession = null;
+    _stopQueue(sendInterrupt: false);
     final shell = _shell;
     final client = _client;
     _shell = null;
@@ -486,14 +592,13 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     _stdout?.cancel();
     _stderr?.cancel();
     _shell?.close();
-    _scriptSession?.close();
     unawaited(_client?.close() ?? Future<void>.value());
     _host.dispose();
     _username.dispose();
     _port.dispose();
     _password.dispose();
     _command.dispose();
-    _scriptResponse.dispose();
+    _promptResponse.dispose();
     _outputScroll.dispose();
     super.dispose();
   }
