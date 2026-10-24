@@ -8,6 +8,7 @@ class FakeLgRemote extends LgWebOsClient {
     host: '192.168.68.62', name: 'Family Room TV', clientKey: 'saved'));
 
   int clicks = 0;
+  final List<String> mediaCommands = [];
   @override
   bool get connected => true;
   @override
@@ -24,12 +25,43 @@ class FakeLgRemote extends LgWebOsClient {
   @override
   Future<void> pointerMove(int dx, int dy) async {}
   @override
-  Future<void> button(String name) async {}
+  Future<void> button(String name) async {
+    if (name == 'PLAY' || name == 'PAUSE') mediaCommands.add(name);
+  }
   @override
   Future<void> launchApp(String appId) async {}
 }
 
 void main() {
+  testWidgets('one Play/Pause control alternates distinct media actions',
+      (tester) async {
+    final fake = FakeLgRemote();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SizedBox(
+        width: 390, height: 600,
+        child: LgCompactRemote(
+          client: fake, device: fake.device, onError: (_) {}),
+      )),
+    ));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('lg-media-play-pause')),
+        findsOneWidget);
+    expect(find.byTooltip('Pause / Play'), findsOneWidget);
+    expect(find.byTooltip('Play'), findsNothing);
+    expect(find.byTooltip('Pause'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('lg-media-play-pause')));
+    await tester.pump();
+    expect(fake.mediaCommands, ['PAUSE']);
+    expect(find.byTooltip('Play / Pause'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('lg-media-play-pause')));
+    await tester.pump();
+    expect(fake.mediaCommands, ['PAUSE', 'PLAY']);
+    expect(find.byKey(const ValueKey('lg-media-play-pause')),
+        findsOneWidget);
+  });
+
   testWidgets('compact remote fits viewport without scrolling or number pad',
       (tester) async {
     final fake = FakeLgRemote();
