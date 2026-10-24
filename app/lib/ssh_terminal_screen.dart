@@ -10,11 +10,42 @@ import 'phone_ssh_keys.dart';
 import 'ssh_host_trust.dart';
 import 'ubuntu_install_validation.dart';
 
-/// Preserve pasted shell scripts as distinct commands, including CRLF text
-/// copied from other platforms. End the final command exactly once.
+/// Submit the entire multiline script with one SSH write. A PTY's Enter
+/// key is CR, not LF; preserve every blank line and append one final Enter
+/// only when the pasted script does not already end with a newline.
 String prepareSshTerminalInput(String input) {
   final normalized = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-  return normalized.endsWith('\n') ? normalized : '$normalized\n';
+  if (normalized.isEmpty) return '';
+  final terminated = normalized.endsWith('\n')
+      ? normalized : '$normalized\n';
+  return terminated.replaceAll('\n', '\r');
+}
+
+/// Convert PTY carriage returns to visible line breaks. LF after CR must
+/// be ignored even when CR and LF arrive in separate SSH network packets.
+class SshTerminalOutputFormatter {
+  bool _lastWasCr = false;
+
+  String format(String chunk) {
+    final buffer = StringBuffer();
+    for (final rune in chunk.runes) {
+      if (rune == 13) {
+        buffer.write('\n');
+        _lastWasCr = true;
+      } else if (rune == 10) {
+        if (!_lastWasCr) buffer.write('\n');
+        _lastWasCr = false;
+      } else {
+        _lastWasCr = false;
+        buffer.writeCharCode(rune);
+      }
+    }
+    return buffer.toString()
+        .replaceAll(RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'), '')
+        .replaceAll(RegExp(r'\x1B\][^\x07]*(?:\x07|\x1B\\)'), '');
+  }
+
+  void reset() => _lastWasCr = false;
 }
 
 /// SSH is intentionally limited to private LAN addresses. Agent pairings and
@@ -33,6 +64,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
   final _password = TextEditingController();
   final _command = TextEditingController();
   final _outputScroll = ScrollController();
+  final _outputFormatter = SshTerminalOutputFormatter();
   final _keyStore = PhoneSshKeyStore();
   final _trust = SshHostTrustStore();
   List<SavedComputer> _computers = const [];
@@ -163,6 +195,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
       _connecting = true;
       _error = null;
       _output = '';
+      _outputFormatter.reset();
       _closedByUser = false;
     });
     SSHClient? candidate;
@@ -256,12 +289,9 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
 
   void _append(String text) {
     if (!mounted || _closedByUser) return;
-    // Only presentation control sequences are removed from the text console.
-    // Full-screen TUI applications require a dedicated terminal emulator.
-    final safe = text.replaceAll(
-      RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'), '')
-        .replaceAll(RegExp(r'\x1B\][^\x07]*(?:\x07|\x1B\\)'), '')
-        .replaceAll('\r', '');
+    // Simple readable shell output; full-screen TUI apps still require
+    // terminal cursor control, which this compact console does not emulate.
+    final safe = _outputFormatter.format(text);
     setState(() {
       _output += safe;
       if (_output.length > 32000) {
@@ -279,7 +309,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     final shell = _shell;
     if (!_connected || shell == null) return;
     final command = _command.text;
-    if (command.isEmpty) return;
+    if (command.trim().isEmpty) return;
     shell.write(Uint8List.fromList(utf8.encode(
         prepareSshTerminalInput(command))));
     _command.clear();
@@ -332,7 +362,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     final active = _connected || _connecting;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SSH Terminal'),
+        title: const Text('SSH'),
         actions: [
           if (_connected)
             TextButton(onPressed: _disconnect,
@@ -467,14 +497,15 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
           if (_connected || _output.isNotEmpty)
             Expanded(child: Container(
               width: double.infinity,
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              color: Theme.of(context).colorScheme.inverseSurface,
               padding: const EdgeInsets.all(12),
               child: SingleChildScrollView(
                 controller: _outputScroll,
                 child: SelectableText(_output,
                   key: const ValueKey('ssh-output'),
-                  style: const TextStyle(
-                    fontFamily: 'monospace', fontSize: 13, height: 1.3)),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onInverseSurface,
+                    fontFamily: 'monospace', fontSize: 13, height: 1.35)),
               ),
             )),
           if (_connected) ...[
@@ -498,24 +529,24 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                 Expanded(child: TextField(
                   key: const ValueKey('ssh-command'),
                   controller: _command,
-                  minLines: 1,
-                  maxLines: 4,
+                  minLines: 3,
+                  maxLines: 7,
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
                   autocorrect: false,
                   enableSuggestions: false,
                   textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
-                    hintText: 'Command or multiline script',
+                    hintText: 'Paste commands (blank lines supported)',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
                 )),
-                IconButton.filled(
+                const SizedBox(width: 8),
+                FilledButton(
                   key: const ValueKey('ssh-send'),
-                  tooltip: 'Send command',
                   onPressed: _send,
-                  icon: const Icon(Icons.arrow_upward),
+                  child: const Text('Send all'),
                 ),
               ]),
             ),
