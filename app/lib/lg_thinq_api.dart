@@ -20,6 +20,10 @@ class LgThinQDevice {
   final String type;
   final String model;
 
+  LgThinQDevice renamed(String value) => LgThinQDevice(
+    id: id, name: value, type: type, model: model,
+  );
+
   /// ThinQ TV inventory is a read-only discovery hint, never a local pairing.
   bool get isTelevision {
     final category = type.toUpperCase();
@@ -91,6 +95,7 @@ class LgThinQStorage {
   static const countryKey = 'taptether.lg.thinq.country.v1';
   static const clientKey = 'taptether.lg.thinq.client-id.v1';
   static const devicesKey = 'taptether.lg.thinq.enabled.v1';
+  static const aliasesKey = 'taptether.lg.thinq.local-names.v1';
 
   LgThinQStorage({FlutterSecureStorage? storage})
       : _storage = storage ?? const FlutterSecureStorage();
@@ -128,14 +133,55 @@ class LgThinQStorage {
     return value;
   }
 
+  /// Local-only display names. Never sent to LG or used as an identifier.
+  Future<Map<String, String>> localNames() async {
+    final raw = await _storage.read(key: aliasesKey);
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final value = jsonDecode(raw);
+      if (value is! Map) return const {};
+      final result = <String, String>{};
+      for (final entry in value.entries) {
+        if (entry.key is String && entry.value is String &&
+            (entry.key as String).isNotEmpty &&
+            (entry.value as String).trim().isNotEmpty) {
+          result[entry.key as String] = entry.value as String;
+        }
+      }
+      return result;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<void> renameDevice(String id, String proposedName) async {
+    final name = proposedName.trim();
+    if (id.isEmpty || name.isEmpty || name.length > 50 ||
+        name.contains(RegExp(r'[\x00-\x1F]'))) {
+      throw const FormatException('Use a name between 1 and 50 characters.');
+    }
+    final names = <String, String>{...await localNames(), id: name};
+    await _storage.write(key: aliasesKey, value: jsonEncode(names));
+    final enabled = await enabledDevices();
+    if (enabled.any((device) => device.id == id)) {
+      final updated = enabled.map((device) => device.id == id
+          ? device.renamed(name) : device).toList();
+      await _storage.write(key: devicesKey, value:
+          jsonEncode(updated.map((device) => device.toJson()).toList()));
+    }
+  }
+
   Future<List<LgThinQDevice>> enabledDevices() async {
     final raw = await _storage.read(key: devicesKey);
     if (raw == null || raw.isEmpty) return const [];
     try {
       final value = jsonDecode(raw);
       if (value is! List) return const [];
+      final names = await localNames();
       return value.map(LgThinQDevice.fromSaved)
-          .whereType<LgThinQDevice>().toList();
+          .whereType<LgThinQDevice>()
+          .map((device) => names.containsKey(device.id)
+              ? device.renamed(names[device.id]!) : device).toList();
     } catch (_) {
       return const [];
     }
@@ -144,7 +190,11 @@ class LgThinQStorage {
   Future<void> setEnabled(LgThinQDevice device, bool enable) async {
     final saved = <LgThinQDevice>[...await enabledDevices()];
     saved.removeWhere((entry) => entry.id == device.id);
-    if (enable) saved.add(device);
+    if (enable) {
+      final names = await localNames();
+      saved.add(names.containsKey(device.id)
+          ? device.renamed(names[device.id]!) : device);
+    }
     await _storage.write(key: devicesKey,
         value: jsonEncode(saved.map((d) => d.toJson()).toList()));
   }
@@ -152,6 +202,7 @@ class LgThinQStorage {
   Future<void> disconnect() async {
     await _storage.delete(key: tokenKey);
     await _storage.delete(key: devicesKey);
+    await _storage.delete(key: aliasesKey);
     // Keep stable client ID, which is not a user credential.
   }
 }
