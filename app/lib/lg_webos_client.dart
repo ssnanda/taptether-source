@@ -690,13 +690,34 @@ class LgWebOsClient implements TvRemoteController {
     }
   }
 
+  /// Media playback uses distinct SSAP actions, not the pointer socket's
+  /// key events (which some apps interpret as a shared Play/Pause toggle).
+  Future<void> playMedia() async {
+    await request('ssap://media.controls/play');
+  }
+
+  Future<void> pauseMedia() async {
+    await request('ssap://media.controls/pause');
+  }
+
   @override
   Future<void> button(String name) async {
-    const allowed = {
-      'UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER', 'BACK', 'HOME',
-      'PLAY', 'PAUSE', 'STOP', 'REWIND', 'FASTFORWARD',
+    const mediaUris = <String, String>{
+      'PLAY': 'ssap://media.controls/play',
+      'PAUSE': 'ssap://media.controls/pause',
+      'STOP': 'ssap://media.controls/stop',
+      'REWIND': 'ssap://media.controls/rewind',
+      'FASTFORWARD': 'ssap://media.controls/fastForward',
     };
-    if (!allowed.contains(name)) {
+    final mediaUri = mediaUris[name];
+    if (mediaUri != null) {
+      await request(mediaUri);
+      return;
+    }
+    const navigation = {
+      'UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER', 'BACK', 'HOME',
+    };
+    if (!navigation.contains(name)) {
       throw const FormatException('Unsupported TV remote key');
     }
     await _openPointer();
