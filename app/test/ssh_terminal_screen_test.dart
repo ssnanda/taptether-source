@@ -61,7 +61,7 @@ systemctl --user daemon-reload
 sudo systemctl reset-failed taptether-agent.service''';
 
     final normalized = prepareSshScriptInput(sample);
-    expect(normalized.split('\n'), hasLength(19));
+    expect(normalized.split('\n'), hasLength(22));
     expect(normalized, contains('2>/dev/null || true\n'));
     expect(normalized, contains('\n\n# Remove installed package\n'));
     expect(normalized, contains('taptether-{agent,tray,screen}.desktop'));
