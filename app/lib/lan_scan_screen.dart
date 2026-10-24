@@ -931,8 +931,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
             onChanged: _busy ? null : (value) =>
                 setState(() => _scanLg = value ?? false),
           ),
-          if (_scanLg)
-            ListTile(
+          ListTile(
               key: const ValueKey('scan-thinq-tv-preview'),
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.cloud_outlined),
