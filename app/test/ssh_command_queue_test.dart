@@ -67,7 +67,7 @@ sudo systemctl reset-failed taptether-agent.service''';
         "echo 'hi there'; cd /tmp", token);
     expect(wrapped, contains('eval'));
     expect(wrapped, contains(r'''echo '"'"'hi there'"'"'; cd /tmp'''));
-    expect(wrapped, contains('TT_DONE_' + token));
+    expect(wrapped, contains('TT_DONE_$token'));
 
     final decoder = SshQueueOutputDecoder(token);
     expect(decoder.add('Installing...\n').output, 'Installing...\n');
