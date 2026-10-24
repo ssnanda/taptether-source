@@ -39,7 +39,7 @@ List<SshQueuedCommand> parseSshCommandQueue(String source) {
       final closing = heredoc.group(1)!;
       var closed = false;
       while (++i < lines.length) {
-        command += '\n' + lines[i];
+        command += '\n${lines[i]}';
         if (lines[i].trim() == closing) {
           closed = true;
           break;
@@ -56,7 +56,7 @@ List<SshQueuedCommand> parseSshCommandQueue(String source) {
           throw const FormatException(
               'A trailing backslash needs a following command line.');
         }
-        command += '\n' + lines[i];
+        command += '\n${lines[i]}';
       }
     } else if (RegExp(r'^(?:if|for|while|until|case|function)\b')
         .hasMatch(line)) {
@@ -99,7 +99,7 @@ class SshQueueOutputDecoder {
     _pending = '';
     final out = StringBuffer();
     int? exitCode;
-    final markerPrefix = _start + 'TT_DONE_' + token + ':';
+    final markerPrefix = '${_start}TT_DONE_$token:';
 
     while (buffer.isNotEmpty) {
       final start = buffer.indexOf(_start);
