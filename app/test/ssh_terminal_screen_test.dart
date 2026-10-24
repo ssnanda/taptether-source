@@ -37,6 +37,47 @@ void main() {
         '$heredoc\n');
   });
 
+  test('Bash script exec preserves a real multiline cleanup script', () {
+    const sample = r'''# Stop and disable services
+sudo systemctl disable --now taptether-agent.service 2>/dev/null || true
+systemctl --user disable --now taptether-agent.service taptether-screen.service 2>/dev/null || true
+
+# Remove installed package
+sudo dpkg --purge taptether-agent
+
+# Remove system-level leftovers
+sudo rm -f /etc/systemd/system/taptether-agent.service
+sudo rm -f /etc/systemd/system/taptether-update.service
+sudo rm -f /etc/systemd/system/taptether-agent.service.d/40-shutdown.conf
+
+# Remove user-level leftovers
+rm -f ~/.config/autostart/taptether-{agent,tray,screen}.desktop
+rm -rf ~/.local/share/taptether
+rm -rf ~/.cache/taptether
+
+# Reload services
+sudo systemctl daemon-reload
+systemctl --user daemon-reload
+sudo systemctl reset-failed taptether-agent.service''';
+
+    final normalized = prepareSshScriptInput(sample);
+    expect(normalized.split('\n'), hasLength(19));
+    expect(normalized, contains('2>/dev/null || true\n'));
+    expect(normalized, contains('\n\n# Remove installed package\n'));
+    expect(normalized, contains('taptether-{agent,tray,screen}.desktop'));
+    expect(normalized, endsWith('sudo systemctl reset-failed '
+        'taptether-agent.service\n'));
+    final command = prepareSshScriptCommand(sample);
+    expect(command, startsWith("bash -e -c '"));
+    expect(command, contains('sudo dpkg --purge taptether-agent'));
+    expect(command, contains('|| true'));
+    expect(command, contains('\n\n# Remove installed package'));
+    expect(command, endsWith("taptether-agent.service\n'"));
+    expect(prepareSshScriptCommand(''), isEmpty);
+    expect(prepareSshScriptCommand("printf '%s\\n' ok"),
+        contains("printf '\"'\"'%s\\n'\"'\"' ok"));
+  });
+
   test('SSH output separates CR-only lines and split CRLF correctly', () {
     final f = SshTerminalOutputFormatter();
     expect(f.format('root@host:# pwd\r'), 'root@host:# pwd\n');
