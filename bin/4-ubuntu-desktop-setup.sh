@@ -291,10 +291,16 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 SYSTEMD
-  setup_step=systemd-install
+  setup_step=systemd-write
+  # Optional tray dependencies may have taken time. Before writing system
+  # service state, verify sudo is still authorized rather than failing
+  # with an ambiguous "systemd-install" error.
+  sudo -n -v || fail 'Sudo authorization expired before systemd configuration.'
   sudo install -m 0644 "$tmp" "$SYS_SERVICE"
   rm -f "$tmp"
+  setup_step=systemd-reload
   sudo systemctl daemon-reload
+  setup_step=systemd-enable
   sudo systemctl enable "$UNIT"
   setup_step=systemd-start
   sudo systemctl restart "$UNIT"
