@@ -134,9 +134,10 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
         // Offline or partially installed agent; SSH recovery can still be safe
         // if this phone already remembers this exact SSH server identity.
       }
-      if (!canStartOfflineUbuntuUninstall(
-          agentVerified: agentVerified,
-          previouslyTrustedSshFingerprint: saved)) {
+      if ((_isMac && !agentVerified) ||
+          (!_isMac && !canStartOfflineUbuntuUninstall(
+            agentVerified: agentVerified,
+            previouslyTrustedSshFingerprint: saved))) {
         throw StateError('Agent is unreachable and this phone does not have '
             'a previously trusted SSH host key for this IP. '
             'Uninstall blocked to avoid removing another computer.');
@@ -295,7 +296,7 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
     'Status: $_status',
     'Result: ${_error ?? "No error reported"}',
     'Credentials, raw remote output, and pairing data excluded.',
-  ].join('\\n');
+  ].join('\n');
 
   Future<void> _copyDiagnostics() async {
     await Clipboard.setData(ClipboardData(text: _safeDiagnostics()));
