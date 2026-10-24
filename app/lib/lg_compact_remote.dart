@@ -25,6 +25,8 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
   String? _channel;
   int? _volume;
   bool _muted = false;
+  bool _mediaPlaying = true;
+  bool _mediaBusy = false;
   DateTime _lastPan = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -47,6 +49,23 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
     }
   }
 
+  Future<void> _toggleMedia() async {
+    if (_mediaBusy || !widget.client.connected) return;
+    setState(() => _mediaBusy = true);
+    try {
+      // TVs may not expose actual Netflix/YouTube playback state. Keep one
+      // button and alternate distinct commands only after a successful call.
+      await widget.client.button(_mediaPlaying ? 'PAUSE' : 'PLAY');
+      if (mounted) setState(() => _mediaPlaying = !_mediaPlaying);
+    } catch (error) {
+      if (mounted) {
+        widget.onError(error.toString().replaceFirst('Bad state: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _mediaBusy = false);
+    }
+  }
+
   Future<void> _loadApps() async {
     try {
       final apps = await widget.client.apps();
@@ -62,6 +81,7 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
       final id = await widget.client.foregroundApp();
       if (!mounted) return;
       setState(() {
+        if (id != _appId) _mediaPlaying = true;
         _appId = id;
         if (id == null || (!id.toLowerCase().contains('livetv') &&
             !id.toLowerCase().contains('broadcast'))) {
@@ -391,10 +411,12 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
               }))),
           _actionIcon('Volume up', Icons.volume_up_outlined, () =>
             unawaited(_run(widget.client.volumeUp))),
-          _actionIcon('Play', Icons.play_arrow, () =>
-            unawaited(_run(widget.client.playMedia))),
-          _actionIcon('Pause', Icons.pause, () =>
-            unawaited(_run(widget.client.pauseMedia))),
+          IconButton.outlined(
+            key: const ValueKey('lg-media-play-pause'),
+            tooltip: _mediaPlaying ? 'Pause / Play' : 'Play / Pause',
+            onPressed: _mediaBusy ? null : () => unawaited(_toggleMedia()),
+            icon: Icon(_mediaPlaying ? Icons.pause : Icons.play_arrow),
+          ),
         ]),
       ]);
     },
