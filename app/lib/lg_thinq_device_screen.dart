@@ -166,10 +166,11 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
         ? (feature.options.contains(feature.current)
             ? feature.current : feature.options.first)
         : null;
-    final numeric = TextEditingController(
-        text: feature.current is num
-            ? feature.current.toString()
-            : feature.minimum?.toString() ?? '');
+    // Let TextFormField own its controller through the dialog exit animation.
+    // Disposing a controller as soon as showDialog resolves is too early.
+    var numericValue = feature.current is num
+        ? feature.current.toString()
+        : feature.minimum?.toString() ?? '';
     final result = await showDialog<Object>(
       context: context,
       builder: (dialog) => StatefulBuilder(
@@ -200,9 +201,10 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                 Text('Range: ${feature.minimum} – ${feature.maximum}'
                     '${feature.unit == null ? "" : " ${feature.unit}"}'
                     ' · step ${feature.step ?? 1}'),
-                TextField(
+                TextFormField(
                   key: const ValueKey('thinq-numeric-value'),
-                  controller: numeric,
+                  initialValue: numericValue,
+                  onChanged: (text) => numericValue = text,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true, signed: true),
                   decoration: const InputDecoration(
@@ -224,7 +226,7 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
               key: const ValueKey('thinq-choose-control'),
               onPressed: () {
                 final chosen = feature.options.isNotEmpty
-                    ? selection : num.tryParse(numeric.text.trim());
+                    ? selection : num.tryParse(numericValue.trim());
                 if (chosen == null || !feature.permits(chosen)) {
                   ScaffoldMessenger.of(dialog).showSnackBar(
                     const SnackBar(content:
@@ -238,7 +240,6 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
         ),
       ),
     );
-    numeric.dispose();
     return result;
   }
 
