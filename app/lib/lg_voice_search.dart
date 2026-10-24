@@ -76,8 +76,10 @@ class _LgVoiceSearchSheetState extends State<LgVoiceSearchSheet> {
           }
           setState(() => _transcript = result.recognizedWords);
         },
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 4),
+        listenOptions: stt.SpeechListenOptions(
+          listenFor: const Duration(seconds: 30),
+          pauseFor: const Duration(seconds: 4),
+        ),
       );
       if (mounted) {
         setState(() => _listening = _recognizer.isListening);
