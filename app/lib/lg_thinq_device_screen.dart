@@ -254,30 +254,142 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
     await _submitControl(feature, choice);
   }
 
-  Future<void> _submitControl(ThinQFeature feature, Object choice) async {
+  bool _quickRefrigeratorControl(ThinQFeature feature) {
+    if (!widget.device.type.toUpperCase().contains('REFRIGERATOR')) {
+      return false;
+    }
+    return (feature.resource == 'temperatureInUnits' &&
+            const {'targetTemperatureF', 'targetTemperatureC'}
+                .contains(feature.property) &&
+            const {'FRIDGE', 'FREEZER'}.contains(feature.location)) ||
+        (feature.resource == 'refrigeration' &&
+            const {'expressMode', 'freshAirFilter'}
+                .contains(feature.property));
+  }
+
+  /// One sheet, one Apply. The control is still checked against the newest
+  /// LG model profile just before transmission.
+  Future<void> _editRefrigeratorSetpoint(ThinQFeature feature) async {
+    if (_busy || _sending || !feature.actionable ||
+        feature.current is! num ||
+        feature.minimum == null || feature.maximum == null) {
+      return;
+    }
+    final minimum = feature.minimum!;
+    final increment = feature.step ?? 1;
+    final divisions = ((feature.maximum! - minimum) / increment).round();
+    if (increment <= 0 || divisions < 1 || divisions > 200) return;
+    var index = (((feature.current as num) - minimum) / increment)
+        .round().clamp(0, divisions);
+    final unit = feature.property.endsWith('F') ? '°F' : '°C';
+    num numberAt(int position) {
+      final value = minimum + position * increment;
+      return value == value.roundToDouble() ? value.toInt() : value;
+    }
+    final chosen = await showModalBottomSheet<num>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheet) => StatefulBuilder(
+        builder: (sheet, update) {
+          final current = numberAt(index);
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 8, 22, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(feature.location == 'FREEZER'
+                      ? 'Freezer temperature' : 'Fridge temperature',
+                      style: Theme.of(sheet).textTheme.titleLarge),
+                  const SizedBox(height: 4),
+                  Text('Setpoint · ${numberAt(0)}$unit to '
+                      '${numberAt(divisions)}$unit',
+                      style: Theme.of(sheet).textTheme.bodySmall),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton.filledTonal(
+                        key: const ValueKey('thinq-sheet-minus'),
+                        icon: const Icon(Icons.remove),
+                        onPressed: index == 0 ? null
+                            : () => update(() => index--),
+                      ),
+                      Text('$current$unit',
+                          key: const ValueKey('thinq-sheet-value'),
+                          style: Theme.of(sheet).textTheme.displaySmall),
+                      IconButton.filledTonal(
+                        key: const ValueKey('thinq-sheet-plus'),
+                        icon: const Icon(Icons.add),
+                        onPressed: index == divisions ? null
+                            : () => update(() => index++),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    key: const ValueKey('thinq-sheet-slider'),
+                    value: index.toDouble(),
+                    min: 0, max: divisions.toDouble(),
+                    divisions: divisions,
+                    label: '$current$unit',
+                    onChanged: (value) =>
+                        update(() => index = value.round()),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('${numberAt(0)}$unit'),
+                      Text('${numberAt(divisions)}$unit'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    key: const ValueKey('thinq-apply-setpoint'),
+                    onPressed: current == feature.current ||
+                            !feature.permits(current)
+                        ? null : () => Navigator.pop(sheet, current),
+                    child: const Text('Apply temperature'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (chosen != null && mounted) {
+      await _submitControl(feature, chosen, skipConfirmation: true);
+    }
+  }
+
+  Future<void> _submitControl(ThinQFeature feature, Object choice,
+      {bool skipConfirmation = false}) async {
     if (_sending || _busy || !feature.permits(choice)) {
       return;
     }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => AlertDialog(
-        title: Text('Confirm ${feature.name}'),
-        content: Text('Send ${feature.name} = $choice to '
-            '${widget.device.name} through LG ThinQ? '
-            'For washers and dryers, Remote Start may need to be '
-            'armed on the appliance. LG may reject unavailable operations.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false),
+    if (!skipConfirmation || !_quickRefrigeratorControl(feature)) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: Text('Confirm ${feature.name}'),
+          content: Text('Send ${feature.name} = $choice to '
+              '${widget.device.name} through LG ThinQ? '
+              'Remote Start may need to be armed on the appliance.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
               child: const Text('Cancel')),
-          FilledButton(
-            key: const ValueKey('thinq-confirm-control'),
-            onPressed: () => Navigator.pop(dialog, true),
-            child: const Text('Send command')),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) {
-      return;
+            FilledButton(
+              key: const ValueKey('thinq-confirm-control'),
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Send command')),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
     }
     setState(() { _sending = true; _error = null; });
     try {
@@ -402,7 +514,7 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Row(children: [
+            if (!refrigerator) Row(children: [
               Icon(icon, size: 28),
               const SizedBox(width: 10),
               Expanded(child: Column(
@@ -416,7 +528,6 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                 ],
               )),
             ]),
-            const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
               child: SegmentedButton<int>(
@@ -457,8 +568,9 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                 checked: _checked,
                 refreshing: _busy || _sending,
                 onRefresh: _refresh,
-                onCommand: _submitControl,
-                onEdit: _control,
+                onCommand: (feature, choice) => _submitControl(
+                    feature, choice, skipConfirmation: true),
+                onEdit: _editRefrigeratorSetpoint,
               )
             else if (_tab == 0)
               LgThinQOverview(
