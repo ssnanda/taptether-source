@@ -11,6 +11,7 @@ import 'discovery.dart';
 import 'phone_ssh_keys.dart';
 import 'ssh_host_trust.dart';
 import 'ssh_provisioner.dart';
+import 'ubuntu_uninstall_recovery.dart';
 
 /// Removal is only available for a verified online pairing over a separate
 /// SSH login. The agent never exposes a remote-uninstall or shell API.
@@ -133,7 +134,9 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
         // Offline or partially installed agent; SSH recovery can still be safe
         // if this phone already remembers this exact SSH server identity.
       }
-      if (!agentVerified && saved == null) {
+      if (!canStartOfflineUbuntuUninstall(
+          agentVerified: agentVerified,
+          previouslyTrustedSshFingerprint: saved)) {
         throw StateError('Agent is unreachable and this phone does not have '
             'a previously trusted SSH host key for this IP. '
             'Uninstall blocked to avoid removing another computer.');
@@ -237,11 +240,7 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
             timeout: const Duration(seconds: 10));
         if (exitCode != 0) {
           final text = utf8.decode(bounded, allowMalformed: true);
-          final marker = RegExp(
-              r'TAPTETHER_UNINSTALL_FAILURE_STAGE:(stop-service|remove-service-files|reload-systemd|remove-package)')
-              .firstMatch(text)?.group(1);
-          final code = marker ?? (text.contains('TAPTETHER_UNINSTALL_ENTER_STAGE:remove-package')
-              ? 'remove-package' : 'system-or-sudo');
+          final code = ubuntuUninstallFailureStage(text);
           _failureStage = code;
           throw StateError('[UNINSTALL:$code] Ubuntu service/package '
               'removal failed. Verify sudo access and package health.');
