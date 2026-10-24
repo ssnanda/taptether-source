@@ -141,10 +141,12 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final devices = <String, LgThinQDevice>{
+    final listed = <String, LgThinQDevice>{
       for (final device in _enabled) device.id: device,
       for (final device in _found) device.id: device,
     }.values.toList();
+    final devices = listed.where((d) => !d.isTelevision).toList();
+    final televisions = _found.where((d) => d.isTelevision).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('LG ThinQ integration')),
       body: ListView(padding: const EdgeInsets.all(18), children: [
@@ -222,6 +224,21 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
           const SizedBox(height: 8),
           if (devices.isEmpty)
             const Text('Tap Discover to list devices in your LG account.'),
+          if (televisions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('TVs seen by ThinQ · Preview',
+                style: Theme.of(context).textTheme.titleMedium),
+            const Text('Read-only account discovery. TVs are not '
+                'imported, paired, or matched to a Wi-Fi address.'),
+            for (final tv in televisions)
+              Card(child: ListTile(
+                leading: const Icon(Icons.tv_outlined),
+                title: Text(tv.name),
+                subtitle: Text(tv.model.isNotEmpty
+                    ? tv.model : tv.type),
+                trailing: const Icon(Icons.visibility_outlined),
+              )),
+          ],
           for (final device in devices)
             Card(child: Column(children: [
               SwitchListTile(
