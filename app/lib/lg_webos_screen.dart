@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'lg_webos_client.dart';
+import 'lg_tv_info_collector.dart';
 import 'device_diagnostics_screen.dart';
 import 'lg_compact_remote.dart';
 
@@ -302,7 +303,13 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     try {
       final details = await client.identify(paired);
       if (!mounted || _session != client) return;
-      await _store.save(details);
+      // Additional read-only probes are optional on each firmware, so an
+      // unsupported service never interrupts pairing or remote commands.
+      final extra = await readLgTvSystemDetails(client);
+      if (!mounted || _session != client) return;
+      await _store.save(details.copyWith(
+        about: {...details.about, ...extra},
+      ));
       await _reloadSaved();
     } catch (_) {
       // Naming and control still work if TV identifier APIs are unavailable.
@@ -330,43 +337,115 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   }
 
   Future<void> _showAboutTv(LgTvDevice tv) async {
-    // Refresh on demand if connected; previously captured information remains
-    // readable while the TV is offline.
+    // One tap opens refreshed information when the paired LAN TV is online.
+    // Cached information is available offline, with no new pairing prompt.
     if (_ready && _session != null && _connected?.host == tv.host) {
       await _identify(_session!, _connected!);
     }
     if (!mounted) return;
-    final latest = _saved.where((item) =>
+    final matches = _saved.where((item) =>
         item.host == tv.host ||
         (tv.tlsPin.isNotEmpty && item.tlsPin == tv.tlsPin));
-    final details = latest.isEmpty ? tv : latest.first;
+    final details = matches.isEmpty ? tv : matches.first;
+    final about = details.about;
+    final heading = Theme.of(context).textTheme.titleSmall;
+
+    String? read(String key) {
+      final value = about[key]?.trim();
+      return value == null || value.isEmpty ? null : value;
+    }
+
+    String? checked() {
+      final raw = read('Last checked');
+      if (raw == null) return null;
+      final date = DateTime.tryParse(raw)?.toLocal();
+      return date == null
+          ? null
+          : '${MaterialLocalizations.of(context).formatMediumDate(date)} '
+              '${TimeOfDay.fromDateTime(date).format(context)}';
+    }
+
+    Widget section(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+      child: Text(label, style: heading),
+    );
+
+    final fields = <String>[
+      'Model', 'Product', 'Firmware', 'webOS version', 'webOS SDK',
+      'Software type', '4K UHD', '3D playback', 'HDMI inputs',
+      'Connected HDMI',
+    ];
+    final hasDetails = fields.any((label) => read(label) != null);
+    final extras = about.entries.where((entry) =>
+        !fields.contains(entry.key) && entry.key != 'Last checked' &&
+        entry.key != 'Serial number').toList();
+
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialog) => AlertDialog(
         title: const Text('About TV'),
+        contentPadding: const EdgeInsets.fromLTRB(22, 12, 22, 0),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView(
             shrinkWrap: true,
             children: [
+              section('Device'),
               _aboutLine('Name', details.name),
-              _aboutLine('IP address', details.host),
-              _aboutLine('Connection', details.secure
+              if (read('Model') != null)
+                _aboutLine('Model', read('Model')!),
+              if (read('Product') != null)
+                _aboutLine('Product', read('Product')!),
+              section('Software'),
+              if (read('Firmware') != null)
+                _aboutLine('Firmware', read('Firmware')!),
+              if (read('webOS version') != null)
+                _aboutLine('webOS version', read('webOS version')!),
+              if (read('webOS SDK') != null)
+                _aboutLine('SDK', read('webOS SDK')!),
+              if (!hasDetails)
+                const Text('This TV has not returned its model or software '
+                    'information through the paired LAN connection. '
+                    'The remote will still work normally.'),
+              if (about.keys.any((key) =>
+                  const {'4K UHD', '3D playback', 'HDMI inputs',
+                    'Connected HDMI'}.contains(key))) ...[
+                section('Capabilities & inputs'),
+                for (final label in const [
+                  '4K UHD', '3D playback', 'HDMI inputs', 'Connected HDMI',
+                ])
+                  if (read(label) != null)
+                    _aboutLine(label, read(label)!),
+              ],
+              section('Connection'),
+              _aboutLine('Address', details.host),
+              _aboutLine('Protocol', details.secure
                   ? 'Encrypted webOS LAN' : 'Legacy webOS LAN'),
-              if (details.macAddress.isNotEmpty)
-                _aboutLine('MAC address', details.macAddress),
-              if (details.deviceUuid.isNotEmpty)
-                _aboutLine('Device UUID', details.deviceUuid),
-              if (details.about.isEmpty)
-                const Text('Model and firmware information will be captured '
-                    'when the paired TV responds to device information queries.'),
-              for (final entry in details.about.entries)
-                _aboutLine(entry.key, entry.value),
+              if (checked() != null)
+                _aboutLine('Information checked', checked()!),
+              ExpansionTile(
+                key: const ValueKey('lg-tv-technical-details'),
+                title: const Text('Technical details'),
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                children: [
+                  if (details.macAddress.isNotEmpty)
+                    _aboutLine('MAC address', details.macAddress),
+                  if (details.deviceUuid.isNotEmpty)
+                    _aboutLine('Device UUID', details.deviceUuid),
+                  if (read('Serial number') != null)
+                    _aboutLine('Serial number', read('Serial number')!),
+                  if (read('Software type') != null)
+                    _aboutLine('Software type', read('Software type')!),
+                  for (final entry in extras)
+                    _aboutLine(entry.key, entry.value),
+                ],
+              ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context),
+          TextButton(onPressed: () => Navigator.pop(dialog),
               child: const Text('Close')),
         ],
       ),
@@ -374,10 +453,10 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   }
 
   Widget _aboutLine(String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 5),
+    padding: const EdgeInsets.symmetric(vertical: 4),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12)),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
         SelectableText(value),
       ],
     ),
