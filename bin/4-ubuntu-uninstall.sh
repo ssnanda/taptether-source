@@ -7,6 +7,10 @@ note() { printf 'TapTether uninstall: %s\n' "$*"; }
 if [[ "${1:-}" == "--system" ]]; then
   [[ "$(id -u)" == 0 ]] || fail 'System removal requires administrator authorization.'
   [[ $# -eq 1 ]] || fail 'Unexpected system removal arguments.'
+  # Fixed, safe progress markers: no user names, pairing tokens or remote
+  # command output. The phone may classify these without forwarding logs.
+  uninstall_step=stop-service
+  trap 'result=$?; if [[ "$result" != 0 ]]; then printf "TAPTETHER_UNINSTALL_FAILURE_STAGE:%s\\n" "$uninstall_step" >&2; fi' EXIT
   if [[ -f /etc/systemd/system/taptether-agent.service ]]; then
     systemctl disable --now taptether-agent.service \
       || fail 'Could not stop agent; no files removed.'
@@ -14,6 +18,7 @@ if [[ "${1:-}" == "--system" ]]; then
   if [[ -f /etc/systemd/system/taptether-update.service ]]; then
     systemctl stop taptether-update.service || true
   fi
+  uninstall_step=remove-service-files
   # Exact installer-owned paths; do not touch unrelated services or groups.
   rm -f -- \
     /etc/systemd/system/taptether-agent.service \
@@ -25,10 +30,12 @@ if [[ "${1:-}" == "--system" ]]; then
     /etc/udev/rules.d/80-taptether-uinput.rules \
     /usr/local/libexec/taptether-update-ubuntu.sh
   rmdir /etc/systemd/system/taptether-agent.service.d 2>/dev/null || true
+  uninstall_step=reload-systemd
   systemctl daemon-reload
   if command -v udevadm >/dev/null 2>&1; then
     udevadm control --reload-rules || true
   fi
+  uninstall_step=remove-package
   if dpkg-query -W -f='${Status}' taptether-agent 2>/dev/null \
       | grep -q 'install ok installed'; then
     # Exit via dpkg: do not read more of a package-owned script as it is removed.
