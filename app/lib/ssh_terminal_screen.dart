@@ -10,6 +10,13 @@ import 'phone_ssh_keys.dart';
 import 'ssh_host_trust.dart';
 import 'ubuntu_install_validation.dart';
 
+/// Preserve pasted shell scripts as distinct commands, including CRLF text
+/// copied from other platforms. End the final command exactly once.
+String prepareSshTerminalInput(String input) {
+  final normalized = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  return normalized.endsWith('\n') ? normalized : '$normalized\n';
+}
+
 /// SSH is intentionally limited to private LAN addresses. Agent pairings and
 /// SSH credentials are separate; nothing is uploaded or saved as shell history.
 class SshTerminalScreen extends StatefulWidget {
@@ -273,7 +280,8 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     if (!_connected || shell == null) return;
     final command = _command.text;
     if (command.isEmpty) return;
-    shell.write(Uint8List.fromList(utf8.encode('$command\n')));
+    shell.write(Uint8List.fromList(utf8.encode(
+        prepareSshTerminalInput(command))));
     _command.clear();
   }
 
@@ -490,15 +498,18 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                 Expanded(child: TextField(
                   key: const ValueKey('ssh-command'),
                   controller: _command,
-                  maxLines: 1,
+                  minLines: 1,
+                  maxLines: 4,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
                   autocorrect: false,
-                  textInputAction: TextInputAction.send,
+                  enableSuggestions: false,
+                  textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
-                    hintText: 'Enter command',
+                    hintText: 'Command or multiline script',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
-                  onSubmitted: (_) => _send(),
                 )),
                 IconButton.filled(
                   key: const ValueKey('ssh-send'),

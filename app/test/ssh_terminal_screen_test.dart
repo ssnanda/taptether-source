@@ -4,6 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/ssh_terminal_screen.dart';
 
 void main() {
+  test('SSH terminal preserves pasted commands and normalizes line endings', () {
+    expect(prepareSshTerminalInput('pwd\nwhoami'), 'pwd\nwhoami\n');
+    expect(prepareSshTerminalInput('pwd\r\nwhoami\r\n'), 'pwd\nwhoami\n');
+    expect(prepareSshTerminalInput('pwd\rwhoami'), 'pwd\nwhoami\n');
+    expect(prepareSshTerminalInput('whoami'), 'whoami\n');
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
