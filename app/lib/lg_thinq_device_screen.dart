@@ -9,6 +9,7 @@ import 'lg_thinq_history_panel.dart';
 import 'lg_thinq_energy_panel.dart';
 import 'lg_thinq_overview.dart';
 import 'lg_thinq_features.dart';
+import 'lg_thinq_refrigerator_overview.dart';
 
 /// Full feature inventory for one explicitly enabled ThinQ appliance.
 /// Shows every exposed profile resource/property and live status value,
@@ -162,7 +163,9 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
 
   Future<Object?> _chooseValue(ThinQFeature feature) async {
     Object? selection = feature.options.isNotEmpty
-        ? feature.options.first : null;
+        ? (feature.options.contains(feature.current)
+            ? feature.current : feature.options.first)
+        : null;
     final numeric = TextEditingController(
         text: feature.current is num
             ? feature.current.toString()
@@ -369,6 +372,7 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
     for (final feature in _features) {
       groups.putIfAbsent(feature.group, () => []).add(feature);
     }
+    final refrigerator = widget.device.type.toUpperCase().contains('REFRIGERATOR');
     final laundry = widget.device.type.toUpperCase().contains('WASHER') ||
         widget.device.type.toUpperCase().contains('DRYER');
     final icon = widget.device.type.toUpperCase().contains('REFRIGERATOR')
@@ -446,7 +450,16 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
             ],
             if (_busy && _features.isEmpty)
               const LinearProgressIndicator(),
-            if (_tab == 0)
+            if (_tab == 0 && refrigerator)
+              LgThinQRefrigeratorOverview(
+                features: _features,
+                checked: _checked,
+                refreshing: _busy || _sending,
+                onRefresh: _refresh,
+                onCommand: _submitControl,
+                onEdit: _control,
+              )
+            else if (_tab == 0)
               LgThinQOverview(
                 deviceName: widget.device.name,
                 deviceType: widget.device.type,
