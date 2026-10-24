@@ -278,110 +278,14 @@ class LgThinQClient {
 
   Future<Object?> energyUsage(String deviceId, String property,
       String period, String startDate, String endDate) async {
-    if (!RegExp(r'^[A-Za-z][A-Za-z0-9_]{0,60}
-
-/// Filter LG response to common non-sensitive status/model properties.
-/// Avoid exposing raw API payloads, identifiers, tokens or account details.
-Map<String, String> safeThinQSummary(Object? data) {
-  if (data is! Map) return const {};
-  const allowed = <String>{
-    'modelName', 'model', 'modelCode', 'deviceType', 'deviceState',
-    'runState', 'operation', 'remainingTime', 'remainTime',
-    'currentCourse', 'course', 'temperature', 'tempUnit',
-    'refrigeratorTemp', 'freezerTemp', 'doorState', 'doorOpen',
-    'filterLife', 'completionTime', 'washerOperationMode',
-    'dryerOperationMode', 'washerDryerOperationMode',
-  };
-  final result = <String, String>{};
-  void visit(Map object, int depth) {
-    if (depth > 4 || result.length >= 24) return;
-    for (final entry in object.entries) {
-      final key = entry.key.toString();
-      final value = entry.value;
-      if (allowed.contains(key) && value != null &&
-          (value is String || value is num || value is bool)) {
-        final text = value.toString();
-        result[key] = text.length <= 90 ? text : text.substring(0, 90);
-      } else if (value is Map) {
-        visit(value, depth + 1);
-      }
-    }
-  }
-  visit(data, 0);
-  return result;
-}
-).hasMatch(property) ||
+    if (!RegExp(r'^[A-Za-z][A-Za-z0-9_]{0,60}$').hasMatch(property) ||
         !const {'DAILY', 'MONTHLY'}.contains(period)) {
       throw const FormatException('Invalid energy query.');
     }
     final length = period == 'DAILY' ? 8 : 6;
     if (startDate.length != length || endDate.length != length ||
-        !RegExp(r'^\\d+
-
-/// Filter LG response to common non-sensitive status/model properties.
-/// Avoid exposing raw API payloads, identifiers, tokens or account details.
-Map<String, String> safeThinQSummary(Object? data) {
-  if (data is! Map) return const {};
-  const allowed = <String>{
-    'modelName', 'model', 'modelCode', 'deviceType', 'deviceState',
-    'runState', 'operation', 'remainingTime', 'remainTime',
-    'currentCourse', 'course', 'temperature', 'tempUnit',
-    'refrigeratorTemp', 'freezerTemp', 'doorState', 'doorOpen',
-    'filterLife', 'completionTime', 'washerOperationMode',
-    'dryerOperationMode', 'washerDryerOperationMode',
-  };
-  final result = <String, String>{};
-  void visit(Map object, int depth) {
-    if (depth > 4 || result.length >= 24) return;
-    for (final entry in object.entries) {
-      final key = entry.key.toString();
-      final value = entry.value;
-      if (allowed.contains(key) && value != null &&
-          (value is String || value is num || value is bool)) {
-        final text = value.toString();
-        result[key] = text.length <= 90 ? text : text.substring(0, 90);
-      } else if (value is Map) {
-        visit(value, depth + 1);
-      }
-    }
-  }
-  visit(data, 0);
-  return result;
-}
-).hasMatch(startDate) ||
-        !RegExp(r'^\\d+
-
-/// Filter LG response to common non-sensitive status/model properties.
-/// Avoid exposing raw API payloads, identifiers, tokens or account details.
-Map<String, String> safeThinQSummary(Object? data) {
-  if (data is! Map) return const {};
-  const allowed = <String>{
-    'modelName', 'model', 'modelCode', 'deviceType', 'deviceState',
-    'runState', 'operation', 'remainingTime', 'remainTime',
-    'currentCourse', 'course', 'temperature', 'tempUnit',
-    'refrigeratorTemp', 'freezerTemp', 'doorState', 'doorOpen',
-    'filterLife', 'completionTime', 'washerOperationMode',
-    'dryerOperationMode', 'washerDryerOperationMode',
-  };
-  final result = <String, String>{};
-  void visit(Map object, int depth) {
-    if (depth > 4 || result.length >= 24) return;
-    for (final entry in object.entries) {
-      final key = entry.key.toString();
-      final value = entry.value;
-      if (allowed.contains(key) && value != null &&
-          (value is String || value is num || value is bool)) {
-        final text = value.toString();
-        result[key] = text.length <= 90 ? text : text.substring(0, 90);
-      } else if (value is Map) {
-        visit(value, depth + 1);
-      }
-    }
-  }
-  visit(data, 0);
-  return result;
-}
-).hasMatch(endDate)) {
+        !RegExp(r'^\d+$').hasMatch(startDate) ||
+        !RegExp(r'^\d+$').hasMatch(endDate)) {
       throw const FormatException('Invalid energy usage date.');
     }
     return _get('devices/energy/${Uri.encodeComponent(deviceId)}/usage',
