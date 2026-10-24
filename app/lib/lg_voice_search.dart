@@ -33,7 +33,9 @@ class _LgVoiceSearchSheetState extends State<LgVoiceSearchSheet> {
   }
 
   Future<void> _begin() async {
-    if (_starting || _sending || _listening) return;
+    if (_starting || _sending || _listening) {
+      return;
+    }
     setState(() {
       _starting = true;
       _error = null;
@@ -41,20 +43,26 @@ class _LgVoiceSearchSheetState extends State<LgVoiceSearchSheet> {
     try {
       final ready = await _recognizer.initialize(
         onStatus: (status) {
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
           if (status == 'done' || status == 'notListening') {
             setState(() => _listening = false);
           }
         },
         onError: (error) {
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
           setState(() {
             _error = 'Speech recognition stopped: ${error.errorMsg}';
             _listening = false;
           });
         },
       );
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       if (!ready) {
         setState(() => _error =
             'Speech recognition is unavailable or permission was denied. '
@@ -63,20 +71,26 @@ class _LgVoiceSearchSheetState extends State<LgVoiceSearchSheet> {
       }
       await _recognizer.listen(
         onResult: (result) {
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
           setState(() => _transcript = result.recognizedWords);
         },
         listenFor: const Duration(seconds: 30),
         pauseFor: const Duration(seconds: 4),
       );
-      if (mounted) setState(() => _listening = _recognizer.isListening);
+      if (mounted) {
+        setState(() => _listening = _recognizer.isListening);
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _error =
             'Could not start speech recognition. Check microphone access.');
       }
     } finally {
-      if (mounted) setState(() => _starting = false);
+      if (mounted) {
+        setState(() => _starting = false);
+      }
     }
   }
 
@@ -86,11 +100,15 @@ class _LgVoiceSearchSheetState extends State<LgVoiceSearchSheet> {
     } catch (_) {
       // The device may stop recognition automatically after a pause.
     }
-    if (mounted) setState(() => _listening = false);
+    if (mounted) {
+      setState(() => _listening = false);
+    }
   }
 
   Future<void> _send() async {
-    if (_sending) return;
+    if (_sending) {
+      return;
+    }
     await _stop();
     if (!mounted) return;
     final text = _transcript.trim();
@@ -104,7 +122,9 @@ class _LgVoiceSearchSheetState extends State<LgVoiceSearchSheet> {
     });
     try {
       await widget.onSend(text);
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _error =
@@ -112,7 +132,9 @@ class _LgVoiceSearchSheetState extends State<LgVoiceSearchSheet> {
             'TV app and try again. Some apps block remote text entry.');
       }
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) {
+        setState(() => _sending = false);
+      }
     }
   }
 
