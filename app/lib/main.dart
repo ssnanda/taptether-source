@@ -39,6 +39,7 @@ import 'discovery.dart';
 import 'phone_identity.dart';
 import 'qr_pairing.dart';
 import 'ssh_key_screen.dart';
+import 'ssh_terminal_screen.dart';
 import 'install_agent_screen.dart';
 import 'lan_scan_screen.dart';
 import 'scan_report.dart';
@@ -2099,6 +2100,12 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  Future<void> openSshTerminal() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const SshTerminalScreen(),
+    ));
+  }
+
   Future<void> openSshKeys() async {
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => const SshKeyScreen(),
@@ -2215,14 +2222,6 @@ class _RemoteScreenState extends State<RemoteScreen>
             }
           },
         ),
-        ListTile(
-          leading: const Icon(Icons.key_outlined),
-          title: const Text('SSH Keys'),
-          onTap: () {
-            Navigator.pop(context);
-            openSshKeys();
-          },
-        ),
         if (_wifiRange != null) ExpansionTile(
           leading: const Icon(Icons.add_circle_outline),
           title: const Text('Add & Discover'),
@@ -2294,6 +2293,25 @@ class _RemoteScreenState extends State<RemoteScreen>
           title: const Text('Settings & More'),
           childrenPadding: const EdgeInsets.only(left: 16),
           children: [
+            ListTile(
+              key: const ValueKey('drawer-ssh-terminal'),
+              leading: const Icon(Icons.terminal),
+              title: const Text('SSH Terminal'),
+              subtitle: const Text('Connect to a computer over Wi-Fi'),
+              onTap: () {
+                Navigator.pop(context);
+                openSshTerminal();
+              },
+            ),
+            ListTile(
+              key: const ValueKey('drawer-ssh-keys'),
+              leading: const Icon(Icons.key_outlined),
+              title: const Text('SSH Keys'),
+              onTap: () {
+                Navigator.pop(context);
+                openSshKeys();
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.shield_outlined),
               title: const Text('Security & Appearance'),
