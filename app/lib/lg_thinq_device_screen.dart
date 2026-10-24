@@ -247,6 +247,13 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
     if (!mounted || choice == null) {
       return;
     }
+    await _submitControl(feature, choice);
+  }
+
+  Future<void> _submitControl(ThinQFeature feature, Object choice) async {
+    if (_sending || _busy || !feature.permits(choice)) {
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
