@@ -20,6 +20,14 @@ class LgThinQDevice {
   final String type;
   final String model;
 
+  /// ThinQ TV inventory is a read-only discovery hint, never a local pairing.
+  bool get isTelevision {
+    final category = type.toUpperCase();
+    return category == 'DEVICE_TV' || category == 'TV' ||
+        category == 'DEVICE_TELEVISION' ||
+        category.contains('DEVICE_TV_');
+  }
+
   bool get isAppliance => type.toUpperCase().contains('WASHER') ||
       type.toUpperCase().contains('DRYER') ||
       type.toUpperCase().contains('REFRIGERATOR') ||
