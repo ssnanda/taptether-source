@@ -20,6 +20,7 @@ python3 "$ROOT/bin/4-sync-app-version.py"
 cd "$ROOT/app"
 flutter pub get
 bash "$ROOT/bin/2f-tt-ios-cloud-backup.sh"
+bash "$ROOT/bin/2g-tt-voice-permissions.sh"
 # Fail immediately on invalid Dart instead of after agent compilation/Xcode packaging.
 flutter analyze
 "$ROOT/bin/2e-tt-stage-mobile-agents.sh"
