@@ -10,6 +10,7 @@ import 'scan_report.dart';
 import 'lg_webos_client.dart';
 import 'samsung_tv_client.dart';
 import 'lg_appliance_discovery.dart';
+import 'lg_thinq_api.dart';
 import 'lan_host_details_screen.dart';
 
 /// Injecting a scanner permits deterministic tests of authenticated
@@ -32,6 +33,7 @@ class LanScanScreen extends StatefulWidget {
     this.verifyPairedAgent,
     this.scanRange,
     this.initialNetwork,
+    this.thinQDiscover,
   });
   final String? initialIp;
   final List<SavedComputer> knownComputers;
@@ -42,6 +44,8 @@ class LanScanScreen extends StatefulWidget {
   final Future<String?> Function(String ip)? verifyPairedAgent;
   final LanRangeScanner? scanRange;
   final DetectedLanRange? initialNetwork;
+  /// Test injection; production uses the locally stored LG ThinQ token.
+  final Future<List<LgThinQDevice>> Function()? thinQDiscover;
 
   @override
   State<LanScanScreen> createState() => _LanScanScreenState();
@@ -71,6 +75,7 @@ class _LanScanScreenState extends State<LanScanScreen> {
   bool _scanTargetedIps = false;
   bool _scanLg = false;
   bool _scanSamsung = false;
+  bool _thinQPreviewBusy = false;
   bool _vendorBusy = false;
   int _vendorChecked = 0;
   int _vendorTotal = 0;
@@ -301,6 +306,85 @@ class _LanScanScreenState extends State<LanScanScreen> {
         return 0;
       });
     });
+  }
+
+  /// On-demand ThinQ TV preview. Does not save, import or pair a TV.
+  Future<void> _previewThinQTelevisions() async {
+    if (_busy || _thinQPreviewBusy) return;
+    setState(() => _thinQPreviewBusy = true);
+    try {
+      List<LgThinQDevice> inventory;
+      if (widget.thinQDiscover != null) {
+        inventory = await widget.thinQDiscover!();
+      } else {
+        final store = LgThinQStorage();
+        final token = await store.token();
+        if (token == null || token.isEmpty) {
+          throw StateError('Connect LG ThinQ under API Integrations '
+              'to preview account TVs.');
+        }
+        inventory = await LgThinQClient(
+          personalToken: token,
+          country: await store.country(),
+          clientId: await store.clientId(),
+        ).discover();
+      }
+      if (!mounted) return;
+      final televisions = inventory.where((tv) => tv.isTelevision).toList();
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (sheet) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 20),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(sheet).height * .6),
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  Text('LG ThinQ TV preview',
+                      style: Theme.of(sheet).textTheme.titleLarge),
+                  const SizedBox(height: 7),
+                  const Text('Cloud inventory only. No TV is imported, '
+                      'paired or assigned a Wi-Fi address. Use the local '
+                      'network scan to find a TV for pairing.'),
+                  const SizedBox(height: 9),
+                  if (televisions.isEmpty)
+                    const ListTile(
+                      leading: Icon(Icons.info_outline),
+                      title: Text('No TVs reported by this account'),
+                    ),
+                  for (final tv in televisions.take(30))
+                    ListTile(
+                      leading: const Icon(Icons.tv_outlined),
+                      title: Text(tv.name),
+                      subtitle: Text(tv.model.isNotEmpty
+                          ? tv.model : tv.type),
+                    ),
+                  FilledButton.tonal(
+                    onPressed: () => Navigator.pop(sheet),
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(error is StateError
+              ? error.message.toString()
+              : 'Unable to read ThinQ TV inventory.'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _thinQPreviewBusy = false);
+    }
   }
 
   Future<void> _scanVendorHints(List<String> ips) async {
@@ -847,6 +931,20 @@ class _LanScanScreenState extends State<LanScanScreen> {
             onChanged: _busy ? null : (value) =>
                 setState(() => _scanLg = value ?? false),
           ),
+          if (_scanLg)
+            ListTile(
+              key: const ValueKey('scan-thinq-tv-preview'),
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.cloud_outlined),
+              title: const Text('Preview TVs from ThinQ'),
+              subtitle: const Text('Read-only cloud model hints · no import'),
+              trailing: _thinQPreviewBusy
+                  ? const SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.chevron_right),
+              enabled: !_busy && !_thinQPreviewBusy,
+              onTap: _previewThinQTelevisions,
+            ),
           CheckboxListTile(
             key: const ValueKey('scan-vendor-samsung'),
             contentPadding: EdgeInsets.zero,
