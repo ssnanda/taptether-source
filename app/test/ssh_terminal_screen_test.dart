@@ -19,8 +19,11 @@ void main() {
     expect(find.byKey(const ValueKey('ssh-port')), findsOneWidget);
     expect(find.byKey(const ValueKey('ssh-username')), findsOneWidget);
     expect(find.byKey(const ValueKey('ssh-login-method')), findsOneWidget);
+    // With no saved phone key, password mode is the usable default.
+    expect(find.byKey(const ValueKey('ssh-password')), findsOneWidget);
+    await tester.tap(find.text('Phone key'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('No phone SSH key'), findsOneWidget);
-
     await tester.tap(find.text('Password'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('ssh-password')), findsOneWidget);
