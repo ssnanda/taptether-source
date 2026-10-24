@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'computer_store.dart';
+import 'ssh_command_queue.dart';
 import 'phone_ssh_keys.dart';
 import 'ssh_host_trust.dart';
 import 'ubuntu_install_validation.dart';
@@ -76,13 +78,21 @@ class SshTerminalScreen extends StatefulWidget {
   State<SshTerminalScreen> createState() => _SshTerminalScreenState();
 }
 
+class _SshCommandCard {
+  _SshCommandCard(this.command);
+  final SshQueuedCommand command;
+  String output = '';
+  String status = 'Queued';
+  int? exitCode;
+}
+
 class _SshTerminalScreenState extends State<SshTerminalScreen> {
   final _host = TextEditingController();
   final _username = TextEditingController();
   final _port = TextEditingController(text: '22');
   final _password = TextEditingController();
   final _command = TextEditingController();
-  final _scriptResponse = TextEditingController();
+  final _promptResponse = TextEditingController();
   final _outputScroll = ScrollController();
   final _outputFormatter = SshTerminalOutputFormatter();
   final _keyStore = PhoneSshKeyStore();
@@ -98,9 +108,13 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
   String? _error;
   SSHClient? _client;
   SSHSession? _shell;
-  SSHSession? _scriptSession;
-  bool _scriptBusy = false;
-  bool _scriptCanceled = false;
+  final List<_SshCommandCard> _queue = [];
+  int _queueIndex = -1;
+  bool _queueActive = false;
+  bool _queueWaitingForShell = false;
+  bool _editorCollapsed = false;
+  bool _hidePromptResponse = true;
+  SshQueueOutputDecoder? _queueDecoder;
   StreamSubscription<String>? _stdout;
   StreamSubscription<String>? _stderr;
 
@@ -219,6 +233,10 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
       _error = null;
       _output = '';
       _outputFormatter.reset();
+      _queue.clear();
+      _queueIndex = -1;
+      _queueActive = false;
+      _queueDecoder = null;
       _closedByUser = false;
     });
     SSHClient? candidate;
@@ -274,14 +292,17 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
       _client = candidate;
       candidate = null;
       _shell = shell;
-      _stdout = utf8.decoder.bind(shell.stdout).listen(_append,
+      _stdout = utf8.decoder.bind(shell.stdout).listen(_onShellOutput,
           onError: (_) => _append('\n[SSH output interrupted]\n'));
-      _stderr = utf8.decoder.bind(shell.stderr).listen(_append,
+      _stderr = utf8.decoder.bind(shell.stderr).listen(_onShellOutput,
           onError: (_) {});
       setState(() {
         _connected = true;
         _output = 'Connected to $username@$host:$port\n';
       });
+      // The app renders the command in its own card. Avoid PTY echo
+      // duplicating the long completion-marker wrapper in visible output.
+      shell.write(Uint8List.fromList(utf8.encode('stty -echo\r')));
       unawaited(shell.done.then((_) {
         if (mounted && !_closedByUser) {
           _append('\n[SSH session ended]\n');
