@@ -179,7 +179,7 @@ void main() {
 
   testWidgets('clicking enabled appliance opens all features and controls',
       (tester) async {
-    await tester.binding.setSurfaceSize(const Size(850, 1600));
+    await tester.binding.setSurfaceSize(const Size(900, 2200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final sent = <Map<String, Object?>>[];
     await tester.pumpWidget(MaterialApp(home: LgThinQDeviceScreen(
@@ -190,11 +190,15 @@ void main() {
     )));
     await tester.pumpAndSettle();
     expect(find.text('Top Load Washer'), findsWidgets);
-    expect(find.textContaining('All reported features'), findsOneWidget);
-    expect(find.text('Current State'), findsOneWidget);
-    expect(find.text('Remote Control Enabled'), findsOneWidget);
+    expect(find.textContaining('All reported features'), findsNothing);
+    expect(find.text('Overview'), findsOneWidget);
+    await tester.tap(find.text('Features'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Device features'), findsOneWidget);
     expect(find.byKey(const ValueKey('thinq-copy-features')),
         findsOneWidget);
+    await tester.tap(find.text('Operation · MAIN'));
+    await tester.pumpAndSettle();
     final operation = thinQFeatures(washerProfile, washerState)
         .singleWhere((f) => f.property == 'washerOperationMode');
     final button = find.byKey(ValueKey('thinq-control-${operation.identity}'));
