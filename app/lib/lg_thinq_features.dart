@@ -43,10 +43,24 @@ class ThinQFeature {
   String get currentText => current == null
       ? 'Not reported' : _valueLabel(current!);
 
-  bool get actionable => writable &&
-      (options.isNotEmpty ||
-       (minimum != null && maximum != null &&
-          (type == 'range' || type == 'number')));
+  bool get actionable {
+    // Legacy "temperature.targetTemperature" has no reliable unit on some
+    // refrigerators. Do not send ambiguous Celsius/Fahrenheit commands.
+    if (resource == 'temperature' && property == 'targetTemperature' &&
+        unit == null) {
+      return false;
+    }
+    // A setpoint outside the advertised range indicates incompatible
+    // current units or stale metadata. Keep the diagnostic, not a control.
+    if (current is num && minimum != null && maximum != null) {
+      final number = current as num;
+      if (number < minimum! || number > maximum!) return false;
+    }
+    return writable &&
+        (options.isNotEmpty ||
+         (minimum != null && maximum != null &&
+            (type == 'range' || type == 'number')));
+  }
 
   bool permits(Object value) {
     if (!actionable) {
