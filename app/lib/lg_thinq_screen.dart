@@ -100,10 +100,12 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
   Future<void> _discover() => _run(() async {
     final list = await (await _client()).discover();
     final names = await _store.localNames();
-    if (mounted) setState(() {
-      _found = list;
-      _localNames = names;
-    });
+    if (mounted) {
+      setState(() {
+        _found = list;
+        _localNames = names;
+      });
+    }
   });
 
   Future<void> _toggle(LgThinQDevice device, bool enabled) => _run(() async {
