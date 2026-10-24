@@ -145,3 +145,55 @@ class SshQueueOutputChunk {
   final String output;
   final int? exitCode;
 }
+
+/// Removes Bash prompts from per-command results, preserving actual output
+/// and incomplete sudo/password prompts that users need to see.
+/// Handles SSH packets that split the prompt across multiple chunks.
+class SshCommandOutputCleaner {
+  SshCommandOutputCleaner(this.loginUser);
+
+  final String loginUser;
+  String _pending = '';
+
+  static final RegExp _completePrompt = RegExp(
+    r'^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:[^\r\n]{0,160}[#$]\s*$',
+  );
+
+  bool _possiblePrompt(String raw) {
+    final value = raw.replaceAll('\r', '');
+    if (value.isEmpty) return false;
+    if (loginUser.startsWith(value) || 'root'.startsWith(value)) {
+      return true;
+    }
+    return RegExp(
+      r'^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]*(?::[^\r\n]{0,160})?$',
+    ).hasMatch(value);
+  }
+
+  String add(String chunk) {
+    final value = _pending + chunk;
+    _pending = '';
+    final lines = value.split('\n');
+    final out = StringBuffer();
+    for (var i = 0; i < lines.length - 1; i++) {
+      final line = lines[i];
+      if (!_completePrompt.hasMatch(line.trim())) {
+        out.write(line);
+        out.write('\n');
+      }
+    }
+    final tail = lines.last;
+    if (_possiblePrompt(tail)) {
+      _pending = tail;
+    } else {
+      out.write(tail);
+    }
+    return out.toString();
+  }
+
+  String flush() {
+    final tail = _pending;
+    _pending = '';
+    return _completePrompt.hasMatch(tail.trim()) ? '' : tail;
+  }
+}
