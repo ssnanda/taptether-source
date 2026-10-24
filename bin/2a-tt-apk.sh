@@ -14,6 +14,7 @@ python3 "$ROOT/bin/9-tt-brand-icons.py"
 python3 "$ROOT/bin/4-sync-app-version.py"
 cd "$ROOT/app"
 flutter pub get
+bash "$ROOT/bin/2g-tt-voice-permissions.sh"
 flutter analyze
 "$ROOT/bin/2e-tt-stage-mobile-agents.sh"
 flutter build apk --release "$@"
