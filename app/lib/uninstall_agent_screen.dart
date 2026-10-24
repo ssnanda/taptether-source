@@ -211,11 +211,25 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
           throw StateError('Mac agent uninstall failed. Try the Mac tray.');
         }
       } else {
+        // Preserve the packaged user cleanup before dpkg deletes its source.
+        // Some interrupted installs skipped creating this owner helper.
+        final ownerReady = await ssh.runWithResult(r'''
+if [ -r "$HOME/.local/bin/taptether-uninstall" ]; then exit 0; fi
+if [ -r /usr/share/taptether/4-ubuntu-uninstall.sh ]; then
+  install -D -m 0700 /usr/share/taptether/4-ubuntu-uninstall.sh "$HOME/.local/bin/taptether-uninstall"
+else
+  exit 2
+fi
+''').timeout(const Duration(seconds: 15));
+        if (ownerReady.exitCode != 0) {
+          throw StateError('[UNINSTALL:missing-helper] Ubuntu does not have '
+              'the packaged removal helper. Use local recovery on the computer.');
+        }
         // Ubuntu requires sudo for systemd/dpkg. Never run a caller-provided
         // shell command, path or URL. Only this fixed packaged uninstaller.
         final session = await ssh.execute(
             _sudo.text.isNotEmpty
-                ? 'sudo -S -p "" /bin/bash /usr/share/taptether/4-ubuntu-uninstall.sh --system'
+                ? 'sudo -k && sudo -S -p "" /bin/bash /usr/share/taptether/4-ubuntu-uninstall.sh --system'
                 : 'sudo -n /bin/bash /usr/share/taptether/4-ubuntu-uninstall.sh --system',
             pty: const SSHPtyConfig());
         if (_sudo.text.isNotEmpty) {
@@ -244,6 +258,19 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
           _failureStage = code;
           throw StateError('[UNINSTALL:$code] Ubuntu service/package '
               'removal failed. Verify sudo access and package health.');
+        }
+        // A zero exit status is not proof that a half-installed agent is gone.
+        final removed = await ssh.runWithResult(r'''
+if systemctl is-active --quiet taptether-agent.service; then exit 1; fi
+if [ -e /etc/systemd/system/taptether-agent.service ] ||
+   [ -e /usr/local/bin/taptether-agent ]; then exit 1; fi
+state="$(dpkg-query -W -f='${db:Status-Abbrev}' taptether-agent 2>/dev/null || true)"
+case "$state" in ""|?n*) ;; *) exit 1 ;; esac
+''').timeout(const Duration(seconds: 20));
+        if (removed.exitCode != 0) {
+          _failureStage = 'Verifying removal';
+          throw StateError('[UNINSTALL:incomplete] Ubuntu still reports a '
+              'TapTether service, executable, or package.');
         }
         if (mounted) {
           setState(() {

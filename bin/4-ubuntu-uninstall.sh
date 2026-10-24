@@ -10,10 +10,16 @@ if [[ "${1:-}" == "--system" ]]; then
   # Fixed, safe progress markers: no user names, pairing tokens or remote
   # command output. The phone may classify these without forwarding logs.
   uninstall_step=stop-service
-  trap 'result=$?; if [[ "$result" != 0 ]]; then printf "TAPTETHER_UNINSTALL_FAILURE_STAGE:%s\\n" "$uninstall_step" >&2; fi' EXIT
+  trap 'result=$?; if [[ "$result" != 0 ]]; then printf "TAPTETHER_UNINSTALL_FAILURE_STAGE:%s\n" "$uninstall_step" >&2; fi' EXIT
   if [[ -f /etc/systemd/system/taptether-agent.service ]]; then
-    systemctl disable --now taptether-agent.service \
-      || fail 'Could not stop agent; no files removed.'
+    # Broken systemd units may fail disable --now despite being stopped.
+    if ! systemctl disable --now taptether-agent.service; then
+      systemctl stop taptether-agent.service || true
+      systemctl disable taptether-agent.service || true
+    fi
+    if systemctl is-active --quiet taptether-agent.service; then
+      fail 'Agent service is still active; refusing to remove a running agent.'
+    fi
   fi
   if [[ -f /etc/systemd/system/taptether-update.service ]]; then
     systemctl stop taptether-update.service || true
@@ -36,12 +42,13 @@ if [[ "${1:-}" == "--system" ]]; then
     udevadm control --reload-rules || true
   fi
   uninstall_step=remove-package
-  if dpkg-query -W -f='${Status}' taptether-agent 2>/dev/null \
-      | grep -q 'install ok installed'; then
-    # The script execs dpkg, so its EXIT trap cannot run afterward.
-    printf 'TAPTETHER_UNINSTALL_ENTER_STAGE:remove-package\\n'
-    # Exit via dpkg: do not read more of a package-owned script as it is removed.
-    exec dpkg --remove taptether-agent
+  # An interrupted install can leave unpacked/half-configured/reinst-required
+  # or residual config-files states. Purge every state except not-installed.
+  package_state="$(dpkg-query -W -f='${db:Status-Abbrev}' taptether-agent 2>/dev/null || true)"
+  if [[ -n "$package_state" && "${package_state:1:1}" != "n" ]]; then
+    # Exec avoids reading a package-owned script after dpkg deletes it.
+    printf 'TAPTETHER_UNINSTALL_ENTER_STAGE:remove-package\n'
+    exec dpkg --purge taptether-agent
   fi
   rm -f -- /usr/local/bin/taptether-agent
   note 'Removed TapTether system services and legacy binary.'
