@@ -97,7 +97,7 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
             children: [
               InkWell(
                 key: ValueKey('thinq-setpoint-${label.toLowerCase()}'),
-                onTap: canEdit && !refreshing ? () => onEdit(feature!) : null,
+                onTap: canEdit && !refreshing ? () => onEdit(feature) : null,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(13, 13, 10, 5),
                   child: Column(
@@ -134,8 +134,8 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
                       key: ValueKey('thinq-${label.toLowerCase()}-minus'),
                       tooltip: 'Decrease $label target',
                       visualDensity: VisualDensity.compact,
-                      onPressed: !refreshing && feature!.permits(down!)
-                          ? () => onCommand(feature!, down!) : null,
+                      onPressed: !refreshing && feature.permits(down!)
+                          ? () => onCommand(feature, down) : null,
                       icon: const Icon(Icons.remove, size: 19),
                     ),
                     Text('Adjust', style: theme.textTheme.labelSmall),
@@ -143,8 +143,8 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
                       key: ValueKey('thinq-${label.toLowerCase()}-plus'),
                       tooltip: 'Increase $label target',
                       visualDensity: VisualDensity.compact,
-                      onPressed: !refreshing && feature!.permits(up!)
-                          ? () => onCommand(feature!, up!) : null,
+                      onPressed: !refreshing && feature.permits(up!)
+                          ? () => onCommand(feature, up) : null,
                       icon: const Icon(Icons.add, size: 19),
                     ),
                   ],
