@@ -67,7 +67,7 @@ void main() {
       'location': {'locationName':'MAIN'},
       'operation': {'washerOperationMode':'REMOTE_START'},
     });
-    expect(thinQSummaryLine(features), 'WASHING');
+    expect(thinQSummaryLine(features), 'WASHING · 35 min remaining');
   });
 
   test('dryer: all profile categories and readouts are displayed', () {
