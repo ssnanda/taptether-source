@@ -62,13 +62,15 @@ class LgThinQOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dryer = deviceType.toUpperCase().contains('DRYER');
     final laundry = deviceType.toUpperCase().contains('WASHER') ||
         deviceType.toUpperCase().contains('DRYER');
     final state = thinQState(features);
     final running = thinQIsRunning(state);
     final remaining = thinQMinutes(features, 'remainHour', 'remainMinute');
     final total = thinQMinutes(features, 'totalHour', 'totalMinute');
-    final remote = _field('remoteControlEnabled')?.current == true;
+    final remoteFeature = _field('remoteControlEnabled');
+    final remote = remoteFeature?.current == true;
     final counter = thinQInteger(features, 'cycleCount');
     final delay = _field('relativeHourToStart');
     final operation = _field('washerOperationMode') ??
@@ -112,6 +114,7 @@ class LgThinQOverview extends StatelessWidget {
                 Row(children: [
                   Icon(running ? Icons.autorenew :
                       thinQIsFinished(state) ? Icons.check_circle_outline
+                      : dryer ? Icons.dry_cleaning_outlined
                       : Icons.power_settings_new,
                       size: 25, color: shade.primary),
                   const SizedBox(width: 10),
@@ -172,15 +175,28 @@ class LgThinQOverview extends StatelessWidget {
         const SizedBox(height: 12),
         if (laundry) ...[
           Row(children: [
-            metric('Total cycle', total == null ? '—' : '$total min',
+            metric(dryer ? 'Reported duration' : 'Total cycle',
+                total == null ? '—' : '$total min',
                 icon: Icons.timelapse_outlined),
             const SizedBox(width: 9),
-            metric('Cycle count', counter == null ? '—' : '$counter',
-                icon: Icons.repeat_outlined),
-            const SizedBox(width: 9),
-            metric('Remote start', remote ? 'Ready' : 'Not ready',
+            if (!dryer) ...[
+              metric('Cycle count', counter == null ? '—' : '$counter',
+                  icon: Icons.repeat_outlined),
+              const SizedBox(width: 9),
+            ],
+            metric('Remote start',
+                remote ? 'Ready'
+                    : remoteFeature?.current == false
+                        ? 'Disabled' : 'Unknown',
                 icon: Icons.wifi_tethering),
           ]),
+          if (dryer && !running && total != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 4),
+              child: Text('LG reports a $total-minute program duration; '
+                  'the dryer is not currently counting down.',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
           const SizedBox(height: 14),
           Text('Controls',
               style: Theme.of(context).textTheme.titleMedium),
@@ -190,21 +206,23 @@ class LgThinQOverview extends StatelessWidget {
               if (choices.contains('START'))
                 FilledButton.icon(
                   key: const ValueKey('thinq-start'),
-                  onPressed: remote && !running && operation.permits('START')
+                  onPressed: !refreshing && remote && !running && state != null &&
+                          operation.permits('START')
                       ? () => onCommand(operation, 'START') : null,
                   icon: const Icon(Icons.play_arrow),
                   label: const Text('Start cycle')),
               if (choices.contains('STOP'))
                 OutlinedButton.icon(
                   key: const ValueKey('thinq-stop'),
-                  onPressed: running && operation.permits('STOP')
+                  onPressed: !refreshing && running && operation.permits('STOP')
                       ? () => onCommand(operation, 'STOP') : null,
                   icon: const Icon(Icons.stop_outlined),
                   label: const Text('Stop')),
               if (choices.contains('POWER_OFF'))
                 OutlinedButton.icon(
                   key: const ValueKey('thinq-power-off'),
-                  onPressed: state != 'POWER_OFF' &&
+                  onPressed: !refreshing && state != null &&
+                          state != 'POWER_OFF' && state != 'OFF' &&
                           operation.permits('POWER_OFF')
                       ? () => onCommand(operation, 'POWER_OFF') : null,
                   icon: const Icon(Icons.power_settings_new),
@@ -213,12 +231,16 @@ class LgThinQOverview extends StatelessWidget {
           else
             const Text('LG has not reported remote operation controls '
                 'for this model.'),
-          if (!remote) Padding(
+          if (!remote && choices.contains('START')) Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'Remote Start is off. Load the washer/dryer, close the '
-              'door or lid, and enable Remote Start on the appliance. '
-              'Tap Refresh to check again.',
+              dryer
+                  ? 'Start is unavailable while Remote Start is disabled. '
+                    'Load the dryer, close its door and enable Remote Start '
+                    'on the dryer. Tap Refresh to check again.'
+                  : 'Remote Start is off. Load the washer, close the '
+                    'door or lid, and enable Remote Start on the appliance. '
+                    'Tap Refresh to check again.',
               style: Theme.of(context).textTheme.bodySmall),
           ),
           if (delay != null) ...[
