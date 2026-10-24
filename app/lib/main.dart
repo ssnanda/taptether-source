@@ -2296,8 +2296,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             ListTile(
               key: const ValueKey('drawer-ssh-terminal'),
               leading: const Icon(Icons.terminal),
-              title: const Text('SSH Terminal'),
-              subtitle: const Text('Connect to a computer over Wi-Fi'),
+              title: const Text('SSH'),
               onTap: () {
                 Navigator.pop(context);
                 openSshTerminal();
