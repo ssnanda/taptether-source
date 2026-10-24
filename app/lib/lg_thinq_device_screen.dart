@@ -369,10 +369,11 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
     for (final feature in _features) {
       groups.putIfAbsent(feature.group, () => []).add(feature);
     }
-    final type = widget.device.type.toUpperCase();
-    final icon = type.contains('REFRIGERATOR')
+    final laundry = widget.device.type.toUpperCase().contains('WASHER') ||
+        widget.device.type.toUpperCase().contains('DRYER');
+    final icon = widget.device.type.toUpperCase().contains('REFRIGERATOR')
         ? Icons.kitchen_outlined
-        : type.contains('DRYER')
+        : widget.device.type.toUpperCase().contains('DRYER')
             ? Icons.dry_cleaning_outlined
             : Icons.local_laundry_service_outlined;
     return Scaffold(
@@ -381,132 +382,163 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
         actions: [
           IconButton(
             key: const ValueKey('thinq-copy-features'),
-            tooltip: 'Copy all feature diagnostics',
+            tooltip: 'Copy full diagnostics',
             onPressed: _copyDiagnostics,
-            icon: const Icon(Icons.copy_all_outlined)),
+            icon: const Icon(Icons.copy_outlined)),
           IconButton(
             key: const ValueKey('thinq-refresh-status'),
-            tooltip: 'Refresh ThinQ features and status',
+            tooltip: 'Refresh ThinQ status',
             onPressed: _busy || _sending ? null : _refresh,
             icon: const Icon(Icons.refresh)),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
-        child: ListView(padding: const EdgeInsets.all(16), children: [
-          Card(child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Icon(icon, size: 34),
-                  const SizedBox(width: 14),
-                  Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.device.name,
-                          style: Theme.of(context).textTheme.titleLarge),
-                      Text(widget.device.model.isEmpty
-                          ? 'LG ThinQ appliance' : widget.device.model),
-                      const Text('LG ThinQ cloud API'),
-                    ],
-                  )),
-                ]),
-                const SizedBox(height: 14),
-                Text(thinQSummaryLine(_features),
-                    style: Theme.of(context).textTheme.titleMedium),
-                if (_checked != null) Text(
-                  'Last refreshed: ${_checked!.hour.toString().padLeft(2, "0")}:'
-                  '${_checked!.minute.toString().padLeft(2, "0")}',
-                    style: Theme.of(context).textTheme.bodySmall),
-                if (_busy || _sending)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 10),
-                    child: LinearProgressIndicator()),
-              ],
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Row(children: [
+              Icon(icon, size: 28),
+              const SizedBox(width: 10),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.device.model.isEmpty
+                      ? 'LG ThinQ' : widget.device.model,
+                      style: Theme.of(context).textTheme.titleMedium),
+                  Text('Connected through LG ThinQ · Cloud',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              )),
+            ]),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<int>(
+                key: const ValueKey('thinq-detail-tabs'),
+                segments: [
+                  const ButtonSegment(value: 0,
+                      icon: Icon(Icons.home_outlined),
+                      label: Text('Overview')),
+                  if (laundry)
+                    const ButtonSegment(value: 1,
+                        icon: Icon(Icons.history),
+                        label: Text('History')),
+                  const ButtonSegment(value: 2,
+                      icon: Icon(Icons.tune),
+                      label: Text('Features')),
+                ],
+                selected: {_tab},
+                onSelectionChanged: (next) {
+                  setState(() => _tab = next.first);
+                },
+              ),
             ),
-          )),
-          const SizedBox(height: 6),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(_error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ),
-          if (_warning != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(_warning!),
-            ),
-          Row(children: [
-            Expanded(child: Text('All reported features (${_features.length})',
-                style: Theme.of(context).textTheme.titleMedium)),
-            Text('${_features.where((f) => f.actionable).length} controls',
-                style: Theme.of(context).textTheme.bodySmall),
-          ]),
-          const SizedBox(height: 6),
-          const Text('Everything reported by LG is listed below. '
-            'Controls appear only when LG supplies writable values '
-            'or ranges for this model. Unavailable values are labeled.'),
-          const SizedBox(height: 8),
-          if (!_busy && _features.isEmpty)
-            const Card(child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('LG returned no readable features. '
-                'Check the device profile/status permissions in your '
-                'personal access token, then refresh.'),
-            )),
-          for (final group in groups.entries)
-            Card(child: ExpansionTile(
-              key: ValueKey('thinq-group-${group.key}'),
-              initiallyExpanded: true,
-              title: Text(group.key),
-              subtitle: Text('${group.value.length} features · '
-                  '${group.value.where((f) => f.actionable).length} controls'),
-              children: [
-                for (final f in group.value)
-                  ListTile(
-                    dense: true,
-                    title: Text(f.name),
-                    subtitle: Text('${f.currentText}'
-                        '${f.unit == null ? "" : " ${f.unit}"}'
-                        '\n${f.type} · '
-                        '${f.actionable ? "Adjustable" :
-                            f.writable ? "LG writable (no safe options)" :
-                            "Read-only"}'),
-                    isThreeLine: true,
-                    trailing: f.actionable
-                        ? IconButton(
-                            key: ValueKey('thinq-control-${f.identity}'),
-                            tooltip: 'Change ${f.name}',
-                            onPressed: _busy || _sending
-                                ? null : () => _control(f),
-                            icon: const Icon(Icons.tune))
-                        : const Icon(Icons.info_outline, size: 17),
-                    onTap: f.actionable && !_busy && !_sending
-                        ? () => _control(f) : null,
-                  ),
-              ],
-            )),
-          const SizedBox(height: 12),
-          FilledButton.tonalIcon(
-            onPressed: _busy || _sending ? null : _refresh,
-            icon: const Icon(Icons.sync),
-            label: const Text('Refresh all features'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            key: const ValueKey('thinq-copy-report'),
-            onPressed: _copyDiagnostics,
-            icon: const Icon(Icons.copy),
-            label: const Text('Copy complete feature report'),
-          ),
-          const SizedBox(height: 10),
-          const Text('LG controls may require Remote Start to be enabled '
-            'on the washer or dryer. TapTether never runs commands '
-            'automatically or in the background.'),
-        ]),
+            const SizedBox(height: 13),
+            if (_error != null) ...[
+              Text(_error!, style: TextStyle(
+                color: Theme.of(context).colorScheme.error)),
+              const SizedBox(height: 9),
+            ],
+            if (_warning != null) ...[
+              Text(_warning!, style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 9),
+            ],
+            if (_busy && _features.isEmpty)
+              const LinearProgressIndicator(),
+            if (_tab == 0)
+              LgThinQOverview(
+                deviceName: widget.device.name,
+                deviceType: widget.device.type,
+                features: _features,
+                checked: _checked,
+                refreshing: _busy || _sending,
+                onRefresh: _refresh,
+                onCommand: _submitControl,
+                onSchedule: _control,
+              )
+            else if (_tab == 1 && laundry)
+              LgThinQHistoryPanel(
+                history: _history,
+                reportedCycleCount:
+                    thinQInteger(_features, 'cycleCount'),
+                onClear: _clearHistory,
+                energy: LgThinQEnergyPanel(device: widget.device),
+              )
+            else ...[
+              Row(children: [
+                Expanded(child: Text(
+                  'Device features (${_features.length})',
+                  style: Theme.of(context).textTheme.titleMedium)),
+                Text(
+                  '${_features.where((f) => f.actionable).length} controls',
+                  style: Theme.of(context).textTheme.bodySmall),
+              ]),
+              const SizedBox(height: 8),
+              Text('All data and writable options LG advertises '
+                  'for this model. Tap a section to expand it. '
+                  'Unsupported controls remain read-only.',
+                  style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 10),
+              if (!_busy && _features.isEmpty)
+                const Card(child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('No feature values returned. '
+                      'Refresh or check ThinQ permissions.'),
+                )),
+              for (final group in groups.entries)
+                Card(child: ExpansionTile(
+                  key: ValueKey('thinq-group-${group.key}'),
+                  initiallyExpanded: false,
+                  title: Text(group.key),
+                  subtitle: Text('${group.value.length} properties · '
+                      '${group.value.where((f) => f.actionable).length} '
+                      'adjustable'),
+                  children: [
+                    for (final item in group.value)
+                      ListTile(
+                        dense: true,
+                        title: Text(item.name),
+                        subtitle: Text('${item.currentText}'
+                            '${item.unit == null ? "" : " ${item.unit}"}'
+                            '\\n${item.type} · ${item.actionable
+                                ? "Adjustable"
+                                : item.writable
+                                    ? "LG writable · no allowed options"
+                                    : "Read-only"}'),
+                        isThreeLine: true,
+                        trailing: item.actionable
+                            ? IconButton(
+                                key: ValueKey(
+                                    'thinq-control-${item.identity}'),
+                                tooltip: 'Change ${item.name}',
+                                onPressed: _busy || _sending
+                                    ? null : () => _control(item),
+                                icon: const Icon(Icons.tune))
+                            : const Icon(Icons.info_outline, size: 16),
+                        onTap: item.actionable && !_busy && !_sending
+                            ? () => _control(item) : null,
+                      ),
+                  ],
+                )),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const ValueKey('thinq-copy-report'),
+                onPressed: _copyDiagnostics,
+                icon: const Icon(Icons.copy_outlined),
+                label: const Text('Copy all feature diagnostics'),
+              ),
+            ],
+            const SizedBox(height: 14),
+            if (_tab != 2)
+              OutlinedButton.icon(
+                onPressed: _busy || _sending ? null : _refresh,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh status'),
+              ),
+            const SizedBox(height: 12),
+          ],
+        ),
       ),
     );
   }
