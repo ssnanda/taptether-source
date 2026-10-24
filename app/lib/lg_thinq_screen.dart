@@ -22,6 +22,7 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
   String? _error;
   List<LgThinQDevice> _found = const [];
   List<LgThinQDevice> _enabled = const [];
+  Map<String, String> _localNames = const {};
 
   @override
   void initState() {
@@ -35,12 +36,14 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
         _store.token(),
         _store.country(),
         _store.enabledDevices(),
+        _store.localNames(),
       ]);
       if (!mounted) return;
       setState(() {
         _connected = (values[0] as String?)?.isNotEmpty == true;
         _country = values[1] as String;
         _enabled = values[2] as List<LgThinQDevice>;
+        _localNames = values[3] as Map<String, String>;
       });
     } catch (_) {
       if (mounted) {
@@ -83,15 +86,24 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
     }
     final api = await _client(token: proposed);
     final list = await api.discover();
+    final names = await _store.localNames();
     await _store.configure(proposed, _country);
     if (!mounted) return;
     _token.clear();
-    setState(() { _connected = true; _found = list; });
+    setState(() {
+      _connected = true;
+      _localNames = names;
+      _found = list;
+    });
   });
 
   Future<void> _discover() => _run(() async {
     final list = await (await _client()).discover();
-    if (mounted) setState(() => _found = list);
+    final names = await _store.localNames();
+    if (mounted) setState(() {
+      _found = list;
+      _localNames = names;
+    });
   });
 
   Future<void> _toggle(LgThinQDevice device, bool enabled) => _run(() async {
@@ -129,6 +141,7 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
       _connected = false;
       _found = const [];
       _enabled = const [];
+      _localNames = const {};
     });
     await widget.onChanged?.call();
   });
@@ -144,7 +157,8 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
     final listed = <String, LgThinQDevice>{
       for (final device in _enabled) device.id: device,
       for (final device in _found) device.id: device,
-    }.values.toList();
+    }.values.map((device) => _localNames.containsKey(device.id)
+        ? device.renamed(_localNames[device.id]!) : device).toList();
     final devices = listed.where((d) => !d.isTelevision).toList();
     final televisions = _found.where((d) => d.isTelevision).toList();
     return Scaffold(
@@ -244,8 +258,7 @@ class _LgThinQScreenState extends State<LgThinQScreen> {
               SwitchListTile(
                 key: ValueKey('thinq-enabled-${device.id}'),
                 title: Text(device.name),
-                subtitle: Text('${device.type}'
-                    '${device.model.isEmpty ? '' : ' · ${device.model}'}'),
+                subtitle: const Text('LG ThinQ appliance'),
                 secondary: Icon(device.type.toUpperCase().contains('REFRIGERATOR')
                     ? Icons.kitchen_outlined :
                     device.type.toUpperCase().contains('DRYER')
