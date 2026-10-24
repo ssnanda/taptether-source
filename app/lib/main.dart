@@ -9,6 +9,7 @@ import 'lg_webos_screen.dart';
 import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
 import 'lg_thinq_device_screen.dart';
+import 'lg_thinq_dashboard_status.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
 import 'tv_network_status.dart';
@@ -521,6 +522,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   List<LgTvDevice> savedLgTvs = [];
   List<SamsungTvDevice> savedSamsungTvs = [];
   List<LgThinQDevice> _enabledThinQ = const [];
+  final Map<String, ThinQDashboardStatus> _thinQStatuses = {};
+  DateTime? _lastThinQStatusCheck;
+  bool _checkingThinQStatus = false;
   final Map<String, bool> _tvOnline = {};
   final Map<String, DateTime> _tvLastSeen = {};
   bool _checkingTvStatus = false;
@@ -712,6 +716,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         unawaited(_refreshNetworkLocation());
         unawaited(_refreshHeartbeats());
         unawaited(_refreshTvStatuses());
+        unawaited(_refreshThinQStatuses());
       }
     });
   }
@@ -733,6 +738,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   void didPopNext() {
     _pageVisible = true;
     _syncScreen();
+    unawaited(_refreshThinQStatuses(force: true));
   }
 
   @override
@@ -753,6 +759,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       unawaited(_refreshNetworkLocation());
       unawaited(_refreshHeartbeats());
       unawaited(_refreshTvStatuses());
+      unawaited(_refreshThinQStatuses());
     } else {
       _stopScreen();
     }
@@ -2149,10 +2156,73 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> _loadEnabledThinQ() async {
     try {
       final items = await LgThinQStorage().enabledDevices();
-      if (mounted) setState(() => _enabledThinQ = items);
+      if (!mounted) return;
+      setState(() {
+        _enabledThinQ = items;
+        _thinQStatuses.removeWhere((id, _) =>
+            !items.any((device) => device.id == id));
+      });
+      unawaited(_refreshThinQStatuses(force: true));
     } catch (_) {
-      // Secure-store error cannot enable an unapproved device.
-      if (mounted) setState(() => _enabledThinQ = const []);
+      // A secure-store error must never enable unknown cloud devices.
+      if (mounted) {
+        setState(() {
+          _enabledThinQ = const [];
+          _thinQStatuses.clear();
+        });
+      }
+    }
+  }
+
+  /// Cloud status works over mobile data too. Never scan the LAN or fetch a
+  /// profile for these cards. Cache only in memory and cap polling frequency.
+  Future<void> _refreshThinQStatuses({bool force = false}) async {
+    if (!mounted || !_appForeground || !_pageVisible ||
+        _checkingThinQStatus || _enabledThinQ.isEmpty) return;
+    final now = DateTime.now();
+    if (!force && _lastThinQStatusCheck != null &&
+        now.difference(_lastThinQStatusCheck!) <
+            const Duration(minutes: 2)) return;
+    _lastThinQStatusCheck = now;
+    _checkingThinQStatus = true;
+    try {
+      final store = LgThinQStorage();
+      final token = await store.token();
+      if (token == null || token.isEmpty) return;
+      final client = LgThinQClient(
+        personalToken: token,
+        country: await store.country(),
+        clientId: await store.clientId(),
+      );
+      final results = await Future.wait(
+        _enabledThinQ.map((device) async {
+          try {
+            final state = await client.state(device.id);
+            return MapEntry<String, ThinQDashboardStatus?>(
+                device.id, ThinQDashboardStatus.fromState(device, state));
+          } catch (_) {
+            return MapEntry<String, ThinQDashboardStatus?>(
+                device.id, null);
+          }
+        }),
+      );
+      if (!mounted) return;
+      setState(() {
+        final ids = _enabledThinQ.map((d) => d.id).toSet();
+        for (final entry in results) {
+          if (!ids.contains(entry.key)) continue;
+          if (entry.value == null) {
+            // Do not keep displaying stale temperatures as live data.
+            _thinQStatuses.remove(entry.key);
+          } else {
+            _thinQStatuses[entry.key] = entry.value!;
+          }
+        }
+      });
+    } catch (_) {
+      // A failed account lookup leaves the list usable for navigation.
+    } finally {
+      _checkingThinQStatus = false;
     }
   }
 
@@ -2166,25 +2236,103 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (mounted) await _loadEnabledThinQ();
   }
 
-  Widget _thinQCard(LgThinQDevice device) => Card(
-    key: ValueKey('lg-thinq-${device.id}'),
-    child: ListTile(
-      leading: Icon(device.type.toUpperCase().contains('REFRIGERATOR')
-          ? Icons.kitchen_outlined
-          : device.type.toUpperCase().contains('DRYER')
-              ? Icons.dry_cleaning_outlined
-              : Icons.local_laundry_service_outlined, size: 28),
-      title: Text(device.name,
-        maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('LG ThinQ cloud · ${device.model.isEmpty
-          ? 'Status not checked' : device.model}',
-        maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.cloud_outlined),
-      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => LgThinQDeviceScreen(device: device),
-      )),
-    ),
-  );
+  Future<void> _openThinQDevice(LgThinQDevice device) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => LgThinQDeviceScreen(device: device),
+    ));
+    if (mounted) unawaited(_refreshThinQStatuses(force: true));
+  }
+
+  Future<void> _renameThinQDevice(LgThinQDevice device) async {
+    var proposed = device.name;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Rename appliance'),
+        content: TextFormField(
+          key: const ValueKey('thinq-rename-input'),
+          initialValue: device.name,
+          maxLength: 50,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Display name',
+            helperText: 'Only changes the name in TapTether',
+          ),
+          onChanged: (text) => proposed = text,
+          onFieldSubmitted: (text) => Navigator.pop(dialog, text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('thinq-rename-save'),
+            onPressed: () => Navigator.pop(dialog, proposed),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    final name = result.trim();
+    if (name == device.name) return;
+    if (name.isEmpty || name.length > 50 ||
+        name.contains(RegExp(r'[\x00-\x1F]'))) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Enter a name between 1 and 50 characters.'),
+      ));
+      return;
+    }
+    try {
+      await LgThinQStorage().renameDevice(device.id, name);
+      if (!mounted) return;
+      setState(() => _enabledThinQ = [
+        for (final saved in _enabledThinQ)
+          saved.id == device.id ? saved.renamed(name) : saved,
+      ]);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not save appliance name.'),
+        ));
+      }
+    }
+  }
+
+  Widget _thinQCard(LgThinQDevice device) {
+    final status = _thinQStatuses[device.id]?.label ??
+        (_checkingThinQStatus ? 'Checking status…' : 'Status unavailable');
+    final type = device.type.toUpperCase();
+    return Card(
+      key: ValueKey('lg-thinq-${device.id}'),
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14, vertical: 2),
+        leading: Icon(type.contains('REFRIGERATOR')
+            ? Icons.kitchen_outlined
+            : type.contains('DRYER')
+                ? Icons.dry_cleaning_outlined
+                : Icons.local_laundry_service_outlined,
+            size: 27),
+        title: Text(device.name, maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(status,
+            key: ValueKey('lg-thinq-status-${device.id}'),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: IconButton(
+          key: ValueKey('lg-thinq-rename-${device.id}'),
+          tooltip: 'Rename ${device.name}',
+          icon: const Icon(Icons.edit_outlined, size: 20),
+          onPressed: () => _renameThinQDevice(device),
+        ),
+        onTap: () => _openThinQDevice(device),
+      ),
+    );
+  }
 
   Widget appDrawer() => Drawer(
     child: SafeArea(child: ListView(
