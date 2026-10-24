@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'tv_remote_controller.dart';
 import 'lg_snapshot_pad.dart';
+import 'lg_voice_search.dart';
 
 /// Single-screen TV remote. Optional actions open overlays, never add rows.
 class LgCompactRemote extends StatefulWidget {
@@ -225,6 +226,21 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
     );
   }
 
+  Future<void> _openVoiceSearch() async {
+    if (!widget.client.connected) {
+      widget.onError('Connect to the TV before using voice search.');
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => LgVoiceSearchSheet(
+        onSend: widget.client.insertText,
+      ),
+    );
+  }
+
   Future<void> _openKeyboard() async {
     _typing.clear();
     await showModalBottomSheet<void>(
@@ -397,6 +413,7 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
             onPressed: _openDpad,
           ),
           _actionIcon('Keyboard', Icons.keyboard_outlined, _openKeyboard),
+          _actionIcon('Voice search', Icons.mic_none, _openVoiceSearch),
           _actionIcon('More controls', Icons.more_horiz, _moreControls),
         ]),
         SizedBox(height: tight ? 2 : 6),
