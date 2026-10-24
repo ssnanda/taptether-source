@@ -169,12 +169,12 @@ class LgThinQClient {
   final String country;
   final String clientId;
 
-  Future<Object?> _get(String endpoint) async {
+  Future<Object?> _get(String endpoint, {Map<String, String>? query}) async {
     final http = HttpClient();
     http.connectionTimeout = const Duration(seconds: 8);
     try {
       final uri = Uri.https('api-${thinQRegion(country)}.lgthinq.com',
-          '/$endpoint');
+          '/$endpoint', query);
       final req = await http.getUrl(uri).timeout(const Duration(seconds: 10));
       req.headers.set('Authorization', 'Bearer $personalToken');
       req.headers.set('x-country', country);
@@ -384,9 +384,13 @@ Map<String, String> safeThinQSummary(Object? data) {
 ).hasMatch(endDate)) {
       throw const FormatException('Invalid energy usage date.');
     }
-    return _get('devices/energy/${Uri.encodeComponent(deviceId)}/usage'
-        '?property=${Uri.encodeQueryComponent(property)}&period=$period'
-        '&startDate=$startDate&endDate=$endDate');
+    return _get('devices/energy/${Uri.encodeComponent(deviceId)}/usage',
+        query: {
+          'property': property,
+          'period': period,
+          'startDate': startDate,
+          'endDate': endDate,
+        });
   }
 }
 
