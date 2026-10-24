@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'lg_thinq_api.dart';
+import 'lg_thinq_cycle_history.dart';
+import 'lg_thinq_history_panel.dart';
+import 'lg_thinq_energy_panel.dart';
+import 'lg_thinq_overview.dart';
 import 'lg_thinq_features.dart';
 
 /// Full feature inventory for one explicitly enabled ThinQ appliance.
@@ -23,7 +29,8 @@ class LgThinQDeviceScreen extends StatefulWidget {
       _LgThinQDeviceScreenState();
 }
 
-class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
+class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
+    with WidgetsBindingObserver {
   final _store = LgThinQStorage();
   bool _busy = true;
   bool _sending = false;
@@ -33,11 +40,42 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
   Object? _profile;
   Object? _state;
   List<ThinQFeature> _features = const [];
+  final _historyStore = ThinQCycleHistoryStore();
+  List<ThinQCycleEntry> _history = const [];
+  Timer? _poll;
+  bool _foreground = true;
+  int _tab = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _refresh();
+    _historyStore.read(widget.device.id).then((entries) {
+      if (mounted && _history.isEmpty) {
+        setState(() => _history = entries);
+      }
+    });
+    _poll = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (mounted && _foreground && !_busy && !_sending) {
+        _refresh();
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground && mounted && !_busy && !_sending) {
+      _refresh();
+    }
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<LgThinQClient> _client() async {
@@ -63,6 +101,7 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
       final client = widget.fetchProfile != null &&
               widget.fetchState != null ? null : await _client();
       Object? profile = _profile, state = _state;
+      var freshStatus = false;
       final warnings = <String>[];
       try {
         profile = await (widget.fetchProfile != null
@@ -75,8 +114,24 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
         state = await (widget.fetchState != null
             ? widget.fetchState!(widget.device.id)
             : client!.state(widget.device.id));
+        freshStatus = true;
       } catch (_) {
         warnings.add('Current appliance status is unavailable.');
+      }
+      if (!mounted) {
+        return;
+      }
+      final items = thinQFeatures(profile, state);
+      final now = DateTime.now();
+      // Only successful fresh state readings may create history.
+      if (freshStatus && (widget.device.type.toUpperCase().contains('WASHER') ||
+          widget.device.type.toUpperCase().contains('DRYER'))) {
+        try {
+          _history = await _historyStore.record(
+              widget.device.id, items, now);
+        } catch (_) {
+          // History persistence never blocks live monitoring.
+        }
       }
       if (!mounted) {
         return;
@@ -84,8 +139,10 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
       setState(() {
         _profile = profile;
         _state = state;
-        _features = thinQFeatures(profile, state);
-        _checked = DateTime.now();
+        _features = items;
+        if (freshStatus) {
+          _checked = now;
+        }
         _warning = warnings.isEmpty ? null : warnings.join(' ');
         if (warnings.length == 2) {
           _error = 'LG ThinQ did not respond. '
@@ -247,6 +304,31 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen> {
       if (mounted) setState(() => _sending = false);
     }
     if (mounted) await _refresh();
+  }
+
+  Future<void> _clearHistory() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Clear local cycle history?'),
+        content: const Text('This clears observations saved by TapTether '
+            'for this appliance only. It does not affect LG ThinQ '
+            'history or any washer settings.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Clear')),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) {
+      return;
+    }
+    await _historyStore.clear(widget.device.id);
+    if (mounted) {
+      setState(() => _history = const []);
+    }
   }
 
   Future<void> _copyDiagnostics() async {
