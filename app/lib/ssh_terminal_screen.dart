@@ -652,6 +652,44 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                 ),
               ]),
             ),
+            if (_scriptBusy) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(children: [
+                  Expanded(child: TextField(
+                    key: const ValueKey('ssh-script-response'),
+                    controller: _scriptResponse,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _replyToScript(),
+                    decoration: const InputDecoration(
+                      labelText: 'Sudo password / prompt response',
+                      isDense: true,
+                    ),
+                  )),
+                  TextButton(
+                    key: const ValueKey('ssh-script-reply'),
+                    onPressed: _replyToScript,
+                    child: const Text('Reply'),
+                  ),
+                  IconButton(
+                    key: const ValueKey('ssh-script-cancel'),
+                    tooltip: 'Stop running script',
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    onPressed: _cancelScript,
+                  ),
+                ]),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(12, 5, 12, 7),
+                child: Text('Script runs as the SSH login user, not '
+                    'a prior su/root shell. Reply only to a prompt '
+                    'shown in the output.',
+                    style: TextStyle(fontSize: 11)),
+              ),
+            ],
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
               child: Row(children: [
