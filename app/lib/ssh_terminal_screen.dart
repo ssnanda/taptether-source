@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
@@ -232,13 +231,19 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
         }
       }));
     } on StateError catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() => _error = error.message);
+      }
     } catch (_) {
-      if (mounted) setState(() => _error =
-          'Unable to connect. Check Wi-Fi, port, and SSH service.');
+      if (mounted) {
+        setState(() => _error =
+            'Unable to connect. Check Wi-Fi, port, and SSH service.');
+      }
     } finally {
       await candidate?.close();
-      if (mounted) setState(() => _connecting = false);
+      if (mounted) {
+        setState(() => _connecting = false);
+      }
     }
   }
 
@@ -290,10 +295,12 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     await client?.close();
     _password.clear();
     _command.clear();
-    if (mounted) setState(() {
-      _connected = false;
-      _output += '\n[Disconnected]\n';
-    });
+    if (mounted) {
+      setState(() {
+        _connected = false;
+        _output += '\n[Disconnected]\n';
+      });
+    }
   }
 
   @override
