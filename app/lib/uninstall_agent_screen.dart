@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'computer_store.dart';
 import 'discovery.dart';
@@ -41,6 +42,8 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
   bool _erase = false;
   String _status = 'Not started';
   String? _error;
+  String _failureStage = 'Not started';
+  bool _offlineRecovery = false;
 
   bool get _isMac => widget.device.platform == 'darwin';
 
@@ -107,22 +110,44 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _failureStage = 'Checking the saved device';
+      _offlineRecovery = false;
       _status = 'Verifying paired device identity';
     });
     SSHClient? ssh;
     try {
-      // An IP can be reused. Refuse destructive SSH actions without
-      // authenticating this saved agent's existing TLS-pinned identity.
-      if (!isPrivateIPv4(widget.device.host) ||
-          !await widget.verifyDevice(widget.device)) {
-        throw StateError('The saved agent could not be authenticated at this '
-            'LAN address. Refresh My Devices before uninstalling.');
+      // Recover broken/offline Ubuntu services only with a PREVIOUSLY PINNED
+      // SSH host key. Never replace a failed TLS agent identity check with
+      // trust-on-first-use SSH, since an IP may be reassigned.
+      if (!isPrivateIPv4(widget.device.host)) {
+        throw StateError('Uninstall requires the device’s saved private IP.');
       }
-      if (!mounted) return;
-      setState(() => _status = 'Authenticating SSH host key');
       final host = widget.device.host;
       final trust = SshHostTrustStore();
       final saved = await trust.trustedFingerprint(host);
+      bool agentVerified = false;
+      try {
+        agentVerified = await widget.verifyDevice(widget.device)
+            .timeout(const Duration(seconds: 7));
+      } catch (_) {
+        // Offline or partially installed agent; SSH recovery can still be safe
+        // if this phone already remembers this exact SSH server identity.
+      }
+      if (!agentVerified && saved == null) {
+        throw StateError('Agent is unreachable and this phone does not have '
+            'a previously trusted SSH host key for this IP. '
+            'Uninstall blocked to avoid removing another computer.');
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _offlineRecovery = !agentVerified;
+        _failureStage = 'Verifying saved SSH host key';
+        _status = agentVerified
+            ? 'Authenticating SSH host key'
+            : 'Agent offline — checking previously trusted SSH identity';
+      });
       final identities = _login == SshLoginMethod.phoneKey
           ? await PhoneSshKeyStore().authenticationIdentities(id: _keyId)
           : null;
@@ -159,9 +184,21 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
       if (observed == null) {
         throw StateError('SSH host key could not be verified.');
       }
+      // Host changed while the agent was unavailable? Never trust it.
+      if (!agentVerified && saved != observed) {
+        throw StateError('Offline recovery blocked: trusted SSH host '
+            'fingerprint does not match this computer.');
+      }
       await trust.rememberAuthenticated(host, observed!);
-      if (!mounted) return;
-      setState(() => _status = 'Removing installed agent');
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _failureStage = 'Removing system package';
+        _status = _offlineRecovery
+            ? 'Trusted SSH host confirmed. Removing broken Ubuntu agent'
+            : 'Removing installed agent';
+      });
       if (_isMac) {
         final suffix = _erase ? '--erase-pairing' : '--keep-pairing';
         final result = await ssh.runWithResult(
@@ -182,15 +219,38 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
           session.stdin.add(Uint8List.fromList(
               utf8.encode('${_sudo.text}\n')));
         }
+        // Capture only bounded bytes for fixed diagnostic markers. Never
+        // expose stdout, stderr, passwords, paths or package log contents.
+        final bounded = <int>[];
+        Future<void> collect(Stream<Uint8List> source) async {
+          await for (final chunk in source) {
+            if (bounded.length < 16384) {
+              bounded.addAll(chunk.take(16384 - bounded.length));
+            }
+          }
+        }
         await Future.wait([
-          session.stdout.drain<void>(),
-          session.stderr.drain<void>(),
+          collect(session.stdout),
+          collect(session.stderr),
         ]).timeout(const Duration(minutes: 2));
         final exitCode = await session.waitForExit(
             timeout: const Duration(seconds: 10));
-                if (exitCode != 0) {
-          throw StateError('Ubuntu system package removal failed. '
-              'Run local diagnostics before retrying.');
+        if (exitCode != 0) {
+          final text = utf8.decode(bounded, allowMalformed: true);
+          final marker = RegExp(
+              r'TAPTETHER_UNINSTALL_FAILURE_STAGE:(stop-service|remove-service-files|reload-systemd|remove-package)')
+              .firstMatch(text)?.group(1);
+          final code = marker ?? (text.contains('TAPTETHER_UNINSTALL_ENTER_STAGE:remove-package')
+              ? 'remove-package' : 'system-or-sudo');
+          _failureStage = code;
+          throw StateError('[UNINSTALL:$code] Ubuntu service/package '
+              'removal failed. Verify sudo access and package health.');
+        }
+        if (mounted) {
+          setState(() {
+            _failureStage = 'Cleaning up user files';
+            _status = 'System package removed; cleaning up user tray';
+          });
         }
         final suffix = _erase ? '--complete-erase-pairing'
             : '--complete-keep-pairing';
@@ -198,12 +258,16 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
             'bash "\$HOME/.local/bin/taptether-uninstall" $suffix')
             .timeout(const Duration(seconds: 45));
         if (owner.exitCode != 0) {
-          throw StateError('System agent removed, but user tray cleanup failed. '
-              'Use the local uninstall helper to finish cleanup.');
+          throw StateError('[UNINSTALL:user-cleanup] System agent removed, '
+              'but desktop tray cleanup failed. '
+              'Check ~/.local/bin/taptether-uninstall on Ubuntu.');
         }
       }
       if (!mounted) return;
-      setState(() => _status = 'Agent removed');
+      setState(() {
+        _status = 'Agent removed successfully';
+        _failureStage = 'Complete';
+      });
       await widget.onUninstalled(widget.device, _erase);
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
@@ -211,11 +275,34 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
       // Remote stdout/stderr and credentials are deliberately never displayed.
       setState(() {
         _error = error is StateError ? error.message.toString()
-            : 'Uninstall could not complete. Check SSH and device diagnostics.';
+            : 'Uninstall could not complete at $_failureStage. '
+              'Check SSH and sudo access.';
+        _status = 'Uninstall stopped';
       });
     } finally {
       await ssh?.close();
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _safeDiagnostics() => [
+    'TapTether remote agent uninstall diagnostics',
+    'Platform: ${_isMac ? "macOS" : "Ubuntu"}',
+    'Device IP: ${widget.device.host}',
+    'SSH method: ${_login == SshLoginMethod.phoneKey ? "saved phone key" : "SSH password"}',
+    'Sudo password entered: ${_sudo.text.isNotEmpty ? "yes" : "no"}',
+    'Offline agent recovery: ${_offlineRecovery ? "yes, pinned SSH identity" : "no"}',
+    'Last stage: $_failureStage',
+    'Status: $_status',
+    'Result: ${_error ?? "No error reported"}',
+    'Credentials, raw remote output, and pairing data excluded.',
+  ].join('\\n');
+
+  Future<void> _copyDiagnostics() async {
+    await Clipboard.setData(ClipboardData(text: _safeDiagnostics()));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Safe uninstall diagnostics copied')));
     }
   }
 
@@ -294,6 +381,19 @@ class _UninstallAgentScreenState extends State<UninstallAgentScreen> {
           ),
           if (_busy) const LinearProgressIndicator(),
           Text('Status: $_status'),
+          if (_offlineRecovery)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Agent service was unavailable. '
+                  'Removal proceeds only because this phone previously '
+                  'trusted the exact SSH server key at this IP.'),
+            ),
+          OutlinedButton.icon(
+            key: const ValueKey('copy-uninstall-diagnostics'),
+            onPressed: _copyDiagnostics,
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Copy safe diagnostics'),
+          ),
           if (_error != null) Padding(padding: const EdgeInsets.only(top: 8),
             child: Text(_error!, style: TextStyle(
               color: Theme.of(context).colorScheme.error)),
