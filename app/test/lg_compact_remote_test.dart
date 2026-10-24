@@ -77,6 +77,7 @@ void main() {
     expect(find.text('Touchpad'), findsOneWidget);
     expect(find.byTooltip('Arrows and OK'), findsOneWidget);
     expect(find.byTooltip('Keyboard'), findsOneWidget);
+    expect(find.byTooltip('Voice search'), findsOneWidget);
     expect(find.text('1'), findsNothing);
     await tester.tap(find.text('Touchpad'));
     await tester.pump();
