@@ -21,6 +21,16 @@ String prepareSshTerminalInput(String input) {
   return terminated.replaceAll('\n', '\r');
 }
 
+/// Newline-delimited scripts use an independent SSH exec channel.
+bool isSshScriptInput(String input) =>
+    input.contains('\n') || input.contains('\r');
+
+String prepareSshScriptInput(String input) {
+  final normalized = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  if (normalized.trim().isEmpty) return '';
+  return normalized.endsWith('\n') ? normalized : '$normalized\n';
+}
+
 /// Convert PTY carriage returns to visible line breaks. LF after CR must
 /// be ignored even when CR and LF arrive in separate SSH network packets.
 class SshTerminalOutputFormatter {
@@ -78,6 +88,8 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
   String? _error;
   SSHClient? _client;
   SSHSession? _shell;
+  SSHSession? _scriptSession;
+  bool _scriptBusy = false;
   StreamSubscription<String>? _stdout;
   StreamSubscription<String>? _stderr;
 
@@ -305,14 +317,62 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     });
   }
 
+  /// Single commands stay in the interactive shell. Multiline scripts
+  /// bypass the PTY so their blank lines, quotes and heredocs survive.
   void _send() {
     final shell = _shell;
-    if (!_connected || shell == null) return;
+    if (!_connected || shell == null || _scriptBusy) return;
     final command = _command.text;
     if (command.trim().isEmpty) return;
+    if (isSshScriptInput(command)) {
+      unawaited(_runScript(command));
+      return;
+    }
     shell.write(Uint8List.fromList(utf8.encode(
         prepareSshTerminalInput(command))));
     _command.clear();
+  }
+
+  Future<void> _runScript(String source) async {
+    final client = _client;
+    if (!_connected || client == null || _scriptBusy) return;
+    final script = prepareSshScriptInput(source);
+    if (script.isEmpty) return;
+    setState(() => _scriptBusy = true);
+    _append('\n[Running multiline script via SSH bash]\n');
+    SSHSession? process;
+    try {
+      // A separate non-PTY channel preserves script input and reports
+      // completion. It runs as the SSH login user, not a prior sudo shell.
+      process = await client.execute('bash -s')
+          .timeout(const Duration(seconds: 15));
+      _scriptSession = process;
+      final stdoutDone = utf8.decoder.bind(process.stdout)
+          .listen(_append).asFuture<void>();
+      final stderrDone = utf8.decoder.bind(process.stderr)
+          .listen(_append).asFuture<void>();
+      process.stdin.add(Uint8List.fromList(utf8.encode(script)));
+      await process.stdin.close();
+      final exitCode = await process.waitForExit(
+          timeout: const Duration(minutes: 5));
+      await Future.wait([stdoutDone, stderrDone])
+          .timeout(const Duration(seconds: 10));
+      if (!mounted || _closedByUser) return;
+      _append('\n[Script finished · exit code $exitCode]\n');
+      if (exitCode == 0 && _command.text == source) {
+        _command.clear();
+      }
+    } catch (_) {
+      if (mounted && !_closedByUser) {
+        _append('\n[Script failed or timed out. Bash must be installed '
+            'on the SSH host; interactive password prompts are not supported '
+            'in script mode.]\n');
+      }
+    } finally {
+      process?.close();
+      _scriptSession = null;
+      if (mounted) setState(() => _scriptBusy = false);
+    }
   }
 
   void _signal(List<int> bytes) {
@@ -321,6 +381,8 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
 
   Future<void> _disconnect() async {
     _closedByUser = true;
+    _scriptSession?.close();
+    _scriptSession = null;
     final shell = _shell;
     final client = _client;
     _shell = null;
@@ -347,6 +409,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
     _stdout?.cancel();
     _stderr?.cancel();
     _shell?.close();
+    _scriptSession?.close();
     unawaited(_client?.close() ?? Future<void>.value());
     _host.dispose();
     _username.dispose();
@@ -531,6 +594,7 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                   controller: _command,
                   minLines: 3,
                   maxLines: 7,
+                  readOnly: _scriptBusy,
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
                   autocorrect: false,
@@ -543,10 +607,15 @@ class _SshTerminalScreenState extends State<SshTerminalScreen> {
                   ),
                 )),
                 const SizedBox(width: 8),
-                FilledButton(
-                  key: const ValueKey('ssh-send'),
-                  onPressed: _send,
-                  child: const Text('Send all'),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _command,
+                  builder: (_, value, __) => FilledButton(
+                    key: const ValueKey('ssh-send'),
+                    onPressed: _scriptBusy ? null : _send,
+                    child: Text(_scriptBusy ? 'Running…'
+                        : isSshScriptInput(value.text) ? 'Run script'
+                        : 'Send'),
+                  ),
                 ),
               ]),
             ),
