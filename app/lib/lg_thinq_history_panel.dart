@@ -18,8 +18,8 @@ class LgThinQHistoryPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     String time(DateTime date) =>
-        MaterialLocalizations.of(context).formatMediumDate(date) +
-        ' · ' + TimeOfDay.fromDateTime(date).format(context);
+        '${MaterialLocalizations.of(context).formatMediumDate(date)} · '
+        '${TimeOfDay.fromDateTime(date).format(context)}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
