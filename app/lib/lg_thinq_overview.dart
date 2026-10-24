@@ -28,13 +28,17 @@ class LgThinQOverview extends StatelessWidget {
 
   ThinQFeature? _field(String name) {
     for (final f in features) {
-      if (f.property == name) return f;
+      if (f.property == name) {
+        return f;
+      }
     }
     return null;
   }
 
   String _label(String? raw) {
-    if (raw == null) return 'Waiting for status';
+    if (raw == null) {
+      return 'Waiting for status';
+    }
     switch (raw) {
       case 'POWER_OFF': return 'Powered off';
       case 'READY': return 'Ready';
