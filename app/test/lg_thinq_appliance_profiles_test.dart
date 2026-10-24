@@ -213,7 +213,7 @@ void main() {
         .current, false);
   });
 
-  testWidgets('refrigerator shows setpoints and requires reviewed command',
+  testWidgets('refrigerator one-sheet selection sends one validated command',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(950, 2300));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -234,11 +234,12 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('thinq-setpoint-fridge')));
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byKey(const ValueKey('thinq-numeric-value')), '36');
-    await tester.tap(find.text('Review command'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('thinq-confirm-control')));
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byKey(const ValueKey('thinq-sheet-plus')));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('36°F'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('thinq-apply-setpoint')));
     await tester.pumpAndSettle();
     expect(commands, [{
       'temperatureInUnits': {
@@ -249,6 +250,44 @@ void main() {
     await tester.tap(find.text('Features'));
     await tester.pumpAndSettle();
     expect(find.text('Device features (14)'), findsOneWidget);
+  });
+
+  test('ThinQ TV detection cannot treat a television as an appliance', () {
+    final tvs = parseThinQDevices([
+      {'deviceId': 'tv1', 'deviceInfo': {
+        'deviceType': 'DEVICE_TV', 'alias': 'Living Room',
+        'modelName': 'OLED'
+      }},
+      {'deviceId': 'fridge', 'deviceInfo': {
+        'deviceType': 'DEVICE_REFRIGERATOR', 'alias': 'Kitchen'
+      }},
+    ]);
+    expect(tvs.length, 2);
+    expect(tvs.first.isTelevision, isTrue);
+    expect(tvs.first.isAppliance, isFalse);
+    expect(tvs.last.isTelevision, isFalse);
+  });
+
+  testWidgets('refrigerator single-step adjustment needs no extra dialog',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(950, 2300));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final sent = <Map<String, Object?>>[];
+    await tester.pumpWidget(MaterialApp(home: LgThinQDeviceScreen(
+      device: fridge,
+      fetchProfile: (_) async => refrigeratorProfile,
+      fetchState: (_) async => refrigeratorState,
+      sendControl: (_, payload) async => sent.add(payload),
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('thinq-fridge-plus')));
+    await tester.pumpAndSettle();
+    expect(sent, [
+      {'temperatureInUnits': {
+        'locationName': 'FRIDGE', 'targetTemperatureF': 34,
+      }},
+    ]);
+    expect(find.byKey(const ValueKey('thinq-confirm-control')), findsNothing);
   });
 
   testWidgets('dryer power-off stays idle with remote start disabled',
