@@ -101,9 +101,20 @@ class FridgeAlerts {
       deviceIds.remove(id);
       await _store.delete(key: '$_baselinePrefix$id');
     }
+    final previous = await _store.read(key: _alertKey);
     await _store.write(key: _alertKey,
         value: jsonEncode(deviceIds.toList()));
-    await syncBackgroundTask();
+    try {
+      await syncBackgroundTask();
+    } catch (_) {
+      // Do not show the notification bell enabled if OS scheduling failed.
+      if (previous == null) {
+        await _store.delete(key: _alertKey);
+      } else {
+        await _store.write(key: _alertKey, value: previous);
+      }
+      rethrow;
+    }
   }
 
   Future<void> syncBackgroundTask() async {
