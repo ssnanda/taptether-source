@@ -3079,6 +3079,36 @@ class _RemoteScreenState extends State<RemoteScreen>
     )),
   ]);
 
+  /// Refresh the shutdown capability without bypassing owner policy.
+  Future<void> refreshShutdownCapability() async {
+    try {
+      final version = await agent.agentVersion();
+      if (!mounted) return;
+      setState(() {});
+      if (version == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not read shutdown status from this agent.'),
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Unable to refresh computer permissions.'),
+        ));
+      }
+    }
+  }
+
+  Future<void> copyUbuntuShutdownCommand() async {
+    const command = '~/.local/bin/taptetherctl enable-shutdown';
+    await Clipboard.setData(const ClipboardData(text: command));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Ubuntu shutdown command copied'),
+      duration: Duration(seconds: 2),
+    ));
+  }
+
   Future<void> confirmShutdown() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -3833,8 +3863,39 @@ class _RemoteScreenState extends State<RemoteScreen>
                 icon: const Icon(Icons.power_settings_new),
                 label: const Text('Shut down computer'),
               ),
-              if (!agent.shutdownEnabled)
-                const Text('Shutdown is not enabled on this computer.'),
+              if (!agent.shutdownEnabled) ...[
+                const SizedBox(height: 5),
+                Text(
+                  _connectedPlatform == 'linux'
+                      ? 'Remote shutdown is disabled in Ubuntu. Run this '
+                        'on the Ubuntu computer, then refresh status:'
+                      : 'Remote shutdown is disabled by this computer '
+                        'or unavailable in the installed agent.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (_connectedPlatform == 'linux') ...[
+                  const SizedBox(height: 5),
+                  const SelectableText(
+                    '~/.local/bin/taptetherctl enable-shutdown',
+                    style: TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  ),
+                ],
+                Row(children: [
+                  if (_connectedPlatform == 'linux')
+                    TextButton.icon(
+                      key: const ValueKey('ubuntu-shutdown-copy'),
+                      onPressed: copyUbuntuShutdownCommand,
+                      icon: const Icon(Icons.copy_outlined, size: 16),
+                      label: const Text('Copy command'),
+                    ),
+                  TextButton.icon(
+                    key: const ValueKey('shutdown-refresh'),
+                    onPressed: refreshShutdownCapability,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Refresh status'),
+                  ),
+                ]),
+              ],
             ],
           ),
         ),
