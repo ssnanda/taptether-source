@@ -1,5 +1,6 @@
 import UIKit
 import Flutter
+import workmanager_apple
 
 // Flutter 3.41+ creates its implicit engine during UIScene startup.
 // At didFinishLaunching the app delegate's window is often nil, so
@@ -21,6 +22,13 @@ import Flutter
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Register background task handlers before UIKit's launch completes.
+    // The background Flutter engine needs its own plugin registration for
+    // Keychain, local notifications and network requests.
+    WorkmanagerPlugin.registerLaunchHandlers()
+    WorkmanagerPlugin.setPluginRegistrantCallback { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
     return super.application(application,
                              didFinishLaunchingWithOptions: launchOptions)
   }
