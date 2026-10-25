@@ -45,7 +45,10 @@ if [[ -s "$bundle/taptether_screen.py" ]]; then
     echo 'Screen dependencies may need manual installation.' >&2
   bash "$bundle/10-tt-ubuntu-screen-session.sh" install
 fi
-sudo systemctl restart taptether-agent.service
+# Complete missing shutdown policy from older/partial installations.
+# This is a local, user-initiated update; never clear the owner's opt-out
+# marker. Running the installer policy repair is safe and idempotent.
+"$HOME/.local/bin/taptetherctl" enable-shutdown --preserve-preference
 sudo systemctl is-active --quiet taptether-agent.service
-echo "Upgraded and restarted: $latest. Existing pairing identity was preserved."
+echo "Upgraded and restarted: $latest. Existing pairing identity and shutdown preference were preserved."
 echo "Updated screen helper is installed. Reconnect your phone; first Wayland capture needs local approval."
