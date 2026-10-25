@@ -32,7 +32,11 @@ void taptetherBackgroundDispatcher() {
 class FridgeAlerts {
   FridgeAlerts._();
   static final FridgeAlerts instance = FridgeAlerts._();
-  final _store = const FlutterSecureStorage();
+  final _store = const FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+  );
   final _notifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
@@ -82,6 +86,9 @@ class FridgeAlerts {
     if (enabled) {
       // Ask only when the user explicitly requests notifications.
       await initialize(allowPermissions: true);
+      // Explicit consent to perform LG checks after the first unlock on
+      // this device. The PAT remains in the non-syncing iOS Keychain.
+      await LgThinQStorage().enableBackgroundTokenAccess();
       deviceIds.add(id);
     } else {
       deviceIds.remove(id);
