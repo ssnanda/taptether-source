@@ -103,6 +103,23 @@ class LgThinQStorage {
   final FlutterSecureStorage _storage;
 
   Future<String?> token() => _storage.read(key: tokenKey);
+
+  /// User-initiated alert opt-in permits iOS Keychain access *after the
+  /// first device unlock* for OS-scheduled checks while the phone is locked.
+  /// The personal token stays in this device's Keychain, never synced.
+  Future<void> enableBackgroundTokenAccess() async {
+    final saved = await token();
+    if (saved == null || saved.isEmpty) {
+      throw StateError('Connect LG ThinQ before enabling alerts.');
+    }
+    await _storage.write(
+      key: tokenKey,
+      value: saved,
+      iOptions: const IOSOptions(
+        accessibility: KeychainAccessibility.first_unlock_this_device,
+      ),
+    );
+  }
   Future<String> country() async =>
       await _storage.read(key: countryKey) ?? 'US';
 
