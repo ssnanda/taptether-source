@@ -130,6 +130,7 @@ jobs:
           cd app
           flutter create --platforms=android --org com.taptether --project-name taptether .
           bash ../bin/2g-tt-voice-permissions.sh
+          bash ../bin/2h-tt-fridge-background.sh
           flutter pub get
       - name: Prepare bundled branding used by widget tests
         run: |
@@ -314,6 +315,7 @@ jobs:
           cd app
           flutter create --platforms=ios,android --org com.taptether --project-name taptether .
           bash ../bin/2g-tt-voice-permissions.sh
+          bash ../bin/2h-tt-fridge-background.sh
           flutter pub get
 
       - name: Render TapTether icons for every platform
