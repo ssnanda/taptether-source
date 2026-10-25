@@ -15,6 +15,7 @@ python3 "$ROOT/bin/4-sync-app-version.py"
 cd "$ROOT/app"
 flutter pub get
 bash "$ROOT/bin/2g-tt-voice-permissions.sh"
+bash "$ROOT/bin/2h-tt-fridge-background.sh"
 flutter analyze
 "$ROOT/bin/2e-tt-stage-mobile-agents.sh"
 flutter build apk --release "$@"
