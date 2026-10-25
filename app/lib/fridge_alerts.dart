@@ -17,7 +17,9 @@ const _baselinePrefix = 'taptether.fridge.alerts.baseline.v1.';
 void taptetherBackgroundDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     if (task != fridgeBackgroundJob &&
-        task != Workmanager.iOSBackgroundTask) return true;
+        task != Workmanager.iOSBackgroundTask) {
+      return true;
+    }
     DartPluginRegistrant.ensureInitialized();
     try {
       await FridgeAlerts.instance.checkAll();
@@ -42,7 +44,7 @@ class FridgeAlerts {
 
   Future<void> initialize({bool allowPermissions = false}) async {
     if (!_initialized) {
-      await _notifications.initialize(const InitializationSettings(
+      await _notifications.initialize(settings: const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         iOS: DarwinInitializationSettings(
           requestAlertPermission: false,
@@ -128,7 +130,9 @@ class FridgeAlerts {
     );
     for (final device in devices) {
       if (!enabled.contains(device.id) ||
-          !device.type.toUpperCase().contains('REFRIGERATOR')) continue;
+          !device.type.toUpperCase().contains('REFRIGERATOR')) {
+        continue;
+      }
       try {
         final state = await client.state(device.id);
         await observe(device, state);
@@ -183,8 +187,8 @@ class FridgeAlerts {
       final id = (device.id.hashCode ^ after.identity.hashCode)
           & 0x7fffffff;
       await _notifications.show(
-        id, title, body,
-        const NotificationDetails(
+        id: id, title: title, body: body,
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'taptether_refrigerator',
             'Refrigerator temperature changes',
