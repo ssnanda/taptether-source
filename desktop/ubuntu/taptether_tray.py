@@ -37,9 +37,73 @@ for module_name in ("AyatanaAppIndicator3", "AppIndicator3"):
 CTL = Path.home() / ".local" / "bin" / "taptetherctl"
 ICON = Path.home() / ".local" / "share" / "icons" / "hicolor" / "512x512" / "apps" / "taptether.png"
 SHUTDOWN_DISABLED = Path.home() / ".config" / "taptether" / "remote-shutdown-disabled"
+SHUTDOWN_DROPIN = Path("/etc/systemd/system/taptether-agent.service.d/40-shutdown.conf")
+SHUTDOWN_POLICY = Path("/etc/polkit-1/rules.d/80-taptether-shutdown.rules")
 SCREEN_HELPER = Path("/usr/share/taptether/taptether_screen.py")
 SCREEN_SOCKET = Path("/run/user") / str(os.getuid()) / "taptether-screen.sock"
 SCREEN_DISABLED = Path.home() / ".config" / "taptether" / "screen-sharing-disabled"
+
+
+def shutdown_policy_ready():
+    """A local opt-in alone cannot grant logind's power permission."""
+    try:
+        return (SHUTDOWN_POLICY.is_file() and SHUTDOWN_DROPIN.is_file() and
+                "Environment=TAPTETHER_ENABLE_SHUTDOWN=1" in
+                SHUTDOWN_DROPIN.read_text(encoding="utf-8"))
+    except OSError:
+        return False
+
+
+def allow_remote_shutdown():
+    return not SHUTDOWN_DISABLED.exists() and shutdown_policy_ready()
+
+
+def change_shutdown_preference(enabled):
+    """No credentials, no shell elevation, and no automatic poweroff."""
+    if enabled:
+        if not shutdown_policy_ready():
+            return False
+        SHUTDOWN_DISABLED.unlink(missing_ok=True)
+    else:
+        SHUTDOWN_DISABLED.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        SHUTDOWN_DISABLED.touch(mode=0o600, exist_ok=True)
+        SHUTDOWN_DISABLED.chmod(0o600)
+    return True
+
+
+def open_shutdown_setup():
+    """Ask the computer owner for sudo in a visible local terminal.
+
+    Never silently enable privileged system services from a tray checkbox.
+    """
+    if not CTL.is_file():
+        message("Remote shutdown", "Install / Repair the agent first.",
+                error=True)
+        return False
+    import shlex
+    command = (shlex.quote(str(CTL)) + " enable-shutdown; "
+               "code=$?; echo; "
+               "if [ $code -ne 0 ]; then "
+               "echo 'Shutdown setup failed; see the error above.'; fi; "
+               "echo 'Press Enter to close'; read -r reply; exit $code")
+    launchers = (
+        ["gnome-terminal", "--", "/bin/bash", "-lc", command],
+        ["x-terminal-emulator", "-e", "/bin/bash", "-lc", command],
+    )
+    for args in launchers:
+        if not shutil.which(args[0]):
+            continue
+        try:
+            subprocess.Popen(args, start_new_session=True,
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            return True
+        except OSError:
+            continue
+    message("Remote shutdown",
+            "Open a terminal and run: ~/.local/bin/taptetherctl enable-shutdown",
+            error=True)
+    return False
 
 
 def screen_sharing_allowed():
@@ -454,6 +518,33 @@ def menu(version):
     add_menu_item(m, "Pair Device", pair_device)
     add_menu_item(m, "Check for Updates…", update_from_tray)
 
+    # A visible privacy/power control, not buried under Settings.
+    shutdown = Gtk.CheckMenuItem(label="Allow remote shutdown")
+    shutdown.set_active(allow_remote_shutdown())
+
+    def change_shutdown(item):
+        requested = item.get_active()
+        try:
+            if not change_shutdown_preference(requested):
+                # This agent was installed before shutdown setup completed.
+                # Start local owner-authorized repair rather than showing ON
+                # when systemd/polkit would still refuse a shutdown.
+                item.handler_block_by_func(change_shutdown)
+                item.set_active(False)
+                item.handler_unblock_by_func(change_shutdown)
+                open_shutdown_setup()
+            refresh()
+        except OSError:
+            item.handler_block_by_func(change_shutdown)
+            item.set_active(allow_remote_shutdown())
+            item.handler_unblock_by_func(change_shutdown)
+            message("Remote shutdown",
+                    "Could not change local shutdown preference.",
+                    error=True)
+
+    shutdown.connect("toggled", change_shutdown)
+    m.append(shutdown)
+
     settings_item = Gtk.MenuItem(label="Settings")
     settings = Gtk.Menu()
     add_menu_item(settings, "Restart agent",
@@ -501,26 +592,8 @@ def menu(version):
                   lambda item: manage_screen_helper("status", item))
     screen_item.set_submenu(screen_menu)
     settings.append(screen_item)
-    shutdown = Gtk.CheckMenuItem(label="Allow remote shutdown")
-    shutdown.set_active(not SHUTDOWN_DISABLED.exists())
-
-    def change_shutdown(item):
-        try:
-            if item.get_active():
-                SHUTDOWN_DISABLED.unlink(missing_ok=True)
-            else:
-                SHUTDOWN_DISABLED.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                SHUTDOWN_DISABLED.touch(mode=0o600, exist_ok=True)
-                SHUTDOWN_DISABLED.chmod(0o600)
-        except OSError:
-            item.handler_block_by_func(change_shutdown)
-            item.set_active(not item.get_active())
-            item.handler_unblock_by_func(change_shutdown)
-            message("Remote shutdown", "Could not change local shutdown preference.",
-                    error=True)
-
-    shutdown.connect("toggled", change_shutdown)
-    settings.append(shutdown)
+    add_menu_item(settings, "Repair shutdown permission…",
+                  lambda _: open_shutdown_setup())
     add_menu_item(settings, "About TapTether Agent…", show_about_agent)
     settings.append(Gtk.SeparatorMenuItem())
     add_menu_item(settings, "Uninstall TapTether…", uninstall_from_tray)
@@ -567,6 +640,9 @@ def menu(version):
         sharing.set_active(allowed)
         sharing.handler_unblock_by_func(toggle_sharing)
         screen_toggle.set_label("Stop Screen Helper" if helper_active else "Start Screen Helper")
+        shutdown.handler_block_by_func(change_shutdown)
+        shutdown.set_active(allow_remote_shutdown())
+        shutdown.handler_unblock_by_func(change_shutdown)
         return True
 
     refresh()
