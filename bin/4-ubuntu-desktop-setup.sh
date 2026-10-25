@@ -310,6 +310,12 @@ SYSTEMD
     sudo install -m 0644 "$tmp" "$POWER_DROPIN"
     rm -f "$tmp"
   fi
+  # Make remote shutdown policy part of the initial service configuration,
+  # before systemd starts the agent. A partially finished install must not
+  # leave a running agent which always reports shutdown unavailable.
+  # An owner's persistent OFF marker survives this setup.
+  setup_step=shutdown-policy
+  enable_shutdown --preserve-preference --configure-only
   setup_step=systemd-reload
   sudo systemctl daemon-reload
   setup_step=systemd-enable
@@ -318,12 +324,7 @@ SYSTEMD
   sudo systemctl restart "$UNIT"
   setup_step=agent-health
   ensure_running
-  # Computer owner requested default ON for all agents. Existing explicit
-  # disable marker must survive repair and updates.
-  # Always prepare the narrow shutdown policy; preserve an existing OFF
-  # preference without briefly enabling shutdown during the service restart.
-  setup_step=shutdown-policy
-  enable_shutdown --preserve-preference
+  # Shutdown policy was configured before the service first started.
   # Earlier builds pinned the launcher to GNOME Favorites. Remove only
   # that legacy auto-pin; the tray remains available without a taskbar icon.
   unpin_legacy_launcher
@@ -361,7 +362,14 @@ permissions() {
 }
 enable_shutdown() {
   # Polkit grants only system shutdown, not generic sudo or root privileges.
-  local username temp
+  local username temp preserve_preference=0 configure_only=0 argument
+  for argument in "$@"; do
+    case "$argument" in
+      --preserve-preference) preserve_preference=1 ;;
+      --configure-only) configure_only=1 ;;
+      *) fail "Unknown shutdown setup option: $argument" ;;
+    esac
+  done
   username="$(id -un)"
   [[ "$username" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || fail 'Invalid username'
   sudo install -d -m 0755 "$(dirname "$POWER_RULE")" "$(dirname "$POWER_DROPIN")"
@@ -381,8 +389,11 @@ EOF
   rm -f "$temp"
   sudo systemctl daemon-reload
   mkdir -p "$CONFIG"
-  if [[ "${1:-}" != "--preserve-preference" ]]; then
+  if [[ "$preserve_preference" != 1 ]]; then
     rm -f "$POWER_DISABLED"
+  fi
+  if [[ "$configure_only" == 1 ]]; then
+    return 0
   fi
   sudo systemctl restart "$UNIT"
   if [[ -f "$POWER_DISABLED" ]]; then
