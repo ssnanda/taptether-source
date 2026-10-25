@@ -55,15 +55,20 @@ class FridgeAlerts {
       _initialized = true;
     }
     if (allowPermissions) {
+      bool? granted;
       if (Platform.isIOS) {
-        await _notifications.resolvePlatformSpecificImplementation<
+        granted = await _notifications.resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin>()?.requestPermissions(
           alert: true, badge: false, sound: true,
         );
       } else if (Platform.isAndroid) {
-        await _notifications.resolvePlatformSpecificImplementation<
+        granted = await _notifications.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
             ?.requestNotificationsPermission();
+      }
+      if (granted == false) {
+        throw StateError('Notifications are blocked. Enable them in '
+            'phone Settings before turning on refrigerator alerts.');
       }
     }
   }
