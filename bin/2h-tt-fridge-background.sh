@@ -42,4 +42,27 @@ if android.is_file():
             manifest.insert(0, el)
     tree.write(android, encoding='utf-8', xml_declaration=True)
     print('Configured Android local notification permission')
+
+# Local notifications require core library desugaring in the generated
+# Android app even when we only show immediate notifications.
+kts = root / 'app/android/app/build.gradle.kts'
+groovy = root / 'app/android/app/build.gradle'
+gradle = kts if kts.is_file() else groovy
+if gradle.is_file():
+    source = gradle.read_text()
+    if 'isCoreLibraryDesugaringEnabled' not in source and kts.is_file():
+        source = source.replace('compileOptions {',
+                                'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                                1)
+    elif 'coreLibraryDesugaringEnabled' not in source and groovy.is_file():
+        source = source.replace('compileOptions {',
+                                'compileOptions {\n        coreLibraryDesugaringEnabled true',
+                                1)
+    if 'com.android.tools:desugar_jdk_libs:' not in source:
+        line = ('coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")'
+                if kts.is_file() else
+                "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'")
+        source += '\ndependencies {\n    ' + line + '\n}\n'
+    gradle.write_text(source)
+    print('Configured Android notification desugaring')
 PY
