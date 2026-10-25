@@ -10,6 +10,8 @@ import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
 import 'lg_thinq_device_screen.dart';
 import 'lg_thinq_dashboard_status.dart';
+import 'fridge_alerts.dart';
+import 'package:workmanager/workmanager.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
 import 'tv_network_status.dart';
@@ -53,7 +55,19 @@ import 'package:url_launcher/url_launcher.dart';
 final RouteObserver<ModalRoute<dynamic>> _remoteRouteObserver =
     RouteObserver<ModalRoute<dynamic>>();
 
-void main() => runApp(const TapTetherApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isIOS || Platform.isAndroid) {
+    try {
+      await Workmanager().initialize(taptetherBackgroundDispatcher);
+      await FridgeAlerts.instance.syncBackgroundTask();
+    } catch (_) {
+      // OS background task support can be unavailable on a simulator;
+      // foreground ThinQ and other remote features remain usable.
+    }
+  }
+  runApp(const TapTetherApp());
+}
 
 class TapTetherApp extends StatefulWidget {
   const TapTetherApp({super.key});
@@ -522,6 +536,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   List<LgTvDevice> savedLgTvs = [];
   List<SamsungTvDevice> savedSamsungTvs = [];
   List<LgThinQDevice> _enabledThinQ = const [];
+  Set<String> _fridgeAlertsEnabled = {};
   final Map<String, ThinQDashboardStatus> _thinQStatuses = {};
   DateTime? _lastThinQStatusCheck;
   bool _checkingThinQStatus = false;
@@ -2156,8 +2171,10 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> _loadEnabledThinQ() async {
     try {
       final items = await LgThinQStorage().enabledDevices();
+      final alertIds = await FridgeAlerts.instance.enabledDevices();
       if (!mounted) return;
       setState(() {
+        _fridgeAlertsEnabled = alertIds;
         _enabledThinQ = items;
         _thinQStatuses.removeWhere((id, _) =>
             !items.any((device) => device.id == id));
@@ -2202,6 +2219,10 @@ class _RemoteScreenState extends State<RemoteScreen>
         _enabledThinQ.map((device) async {
           try {
             final state = await client.state(device.id);
+            if (device.type.toUpperCase().contains('REFRIGERATOR') &&
+                _fridgeAlertsEnabled.contains(device.id)) {
+              await FridgeAlerts.instance.observe(device, state);
+            }
             return MapEntry<String, ThinQDashboardStatus?>(
                 device.id, ThinQDashboardStatus.fromState(device, state));
           } catch (_) {
@@ -2305,6 +2326,32 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  Future<void> _toggleFridgeAlerts(LgThinQDevice device) async {
+    final enabled = !_fridgeAlertsEnabled.contains(device.id);
+    try {
+      await FridgeAlerts.instance.setEnabled(device.id, enabled);
+      if (!mounted) return;
+      setState(() {
+        _fridgeAlertsEnabled = enabled
+            ? {..._fridgeAlertsEnabled, device.id}
+            : ({..._fridgeAlertsEnabled}..remove(device.id));
+      });
+      if (enabled) {
+        unawaited(FridgeAlerts.instance.checkAll());
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Refrigerator alerts enabled. Background checks '
+              'depend on phone scheduling and may be delayed.'),
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not change refrigerator alert settings.'),
+        ));
+      }
+    }
+  }
+
   Widget _thinQCard(LgThinQDevice device) {
     final status = _thinQStatuses[device.id]?.label ??
         (_checkingThinQStatus ? 'Checking status…' : 'Status unavailable');
@@ -2327,12 +2374,26 @@ class _RemoteScreenState extends State<RemoteScreen>
         subtitle: Text(status,
             key: ValueKey('lg-thinq-status-${device.id}'),
             maxLines: 1, overflow: TextOverflow.ellipsis),
-        trailing: IconButton(
-          key: ValueKey('lg-thinq-rename-${device.id}'),
-          tooltip: 'Rename ${device.name}',
-          icon: const Icon(Icons.edit_outlined, size: 20),
-          onPressed: () => _renameThinQDevice(device),
-        ),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (type.contains('REFRIGERATOR'))
+            IconButton(
+              key: ValueKey('lg-thinq-alert-${device.id}'),
+              tooltip: _fridgeAlertsEnabled.contains(device.id)
+                  ? 'Turn off temperature-change notifications'
+                  : 'Notify when refrigerator temperatures change',
+              icon: Icon(_fridgeAlertsEnabled.contains(device.id)
+                  ? Icons.notifications_active_outlined
+                  : Icons.notifications_none_outlined,
+                  size: 21),
+              onPressed: () => _toggleFridgeAlerts(device),
+            ),
+          IconButton(
+            key: ValueKey('lg-thinq-rename-${device.id}'),
+            tooltip: 'Rename ${device.name}',
+            icon: const Icon(Icons.edit_outlined, size: 20),
+            onPressed: () => _renameThinQDevice(device),
+          ),
+        ]),
         onTap: () => _openThinQDevice(device),
       ),
     );
