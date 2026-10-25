@@ -21,6 +21,13 @@ for text in (tray, helper):
 assert 'SCREEN_DISABLED = Path.home() / ".config" / "taptether" / "screen-sharing-disabled"' in tray
 assert 'SCREEN_DISABLED = STATE_DIR / "screen-sharing-disabled"' in helper
 assert 'sharing = Gtk.CheckMenuItem(label="Allow screen sharing (Snapshot / Live)")' in tray
+assert 'shutdown = Gtk.CheckMenuItem(label="Allow remote shutdown")' in tray
+assert 'm.append(shutdown)' in tray
+assert 'shutdown_policy_ready()' in tray
+assert 'change_shutdown_preference(requested)' in tray
+assert 'open_shutdown_setup()' in tray
+assert 'shutdown.handler_block_by_func(change_shutdown)' in tray
+assert 'enable-shutdown' in tray
 assert 'screen_request(b"D")' in tray
 assert 'if not sharing_allowed():' in helper
 assert 'GLib.idle_add(self.disable_capture)' in helper
