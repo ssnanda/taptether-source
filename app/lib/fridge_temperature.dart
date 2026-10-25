@@ -38,7 +38,9 @@ List<FridgeTemperatureReading> fridgeReadings(Object? state) {
     if (rule == null || feature.current is! num) continue;
     final zone = (feature.location ?? '').toUpperCase();
     if (zone != 'FRIDGE' && zone != 'REFRIGERATOR' &&
-        zone != 'FREEZER') continue;
+        zone != 'FREEZER') {
+      continue;
+    }
     final canonical = zone == 'REFRIGERATOR' ? 'FRIDGE' : zone;
     final bits = rule.split(':');
     final kind = bits[0];
