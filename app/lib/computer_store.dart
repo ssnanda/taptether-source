@@ -90,35 +90,33 @@ class ComputerStore {
         .whereType<Map>()
         .map((entry) => SavedComputer.fromJson(Map<String, dynamic>.from(entry)))
         .toList();
+    // A deviceId is the ID of *this phone's public key as enrolled on the
+    // agent*. The SAME phone has the SAME deviceId on every Mac, Ubuntu and
+    // Windows agent. It must NEVER identify or deduplicate computers.
+    // Agent identity is the pinned TLS certificate fingerprint; the saved
+    // record ID separately identifies the phone's local list entry.
     final seenIds = <String>{};
     final seenPins = <String>{};
-    final seenAgentIds = <String>{};
     return devices.where((device) {
       final pin = device.fingerprint.toUpperCase();
-      if (!seenIds.add(device.id) || seenPins.contains(pin) ||
-          (device.deviceId.isNotEmpty &&
-              seenAgentIds.contains(device.deviceId))) {
+      if (seenIds.contains(device.id) || seenPins.contains(pin)) {
         return false;
       }
+      seenIds.add(device.id);
       seenPins.add(pin);
-      if (device.deviceId.isNotEmpty) {
-        seenAgentIds.add(device.deviceId);
-      }
       return true;
     }).toList();
   }
 
   Future<List<SavedComputer>> upsert(SavedComputer device) async {
     final devices = await read();
-    // DHCP can reuse an IP address for another machine. Address alone is
-    // not a stable device identity; deduplicate by saved record ID or the
-    // pinned certificate of the same authenticated agent.
+    // Phone enrollment IDs are shared across all computers paired to this
+    // phone. Only merge the same saved record or the same verified agent
+    // certificate. Never merge by deviceId, hostname, MAC, or DHCP address.
     final pin = device.fingerprint.toUpperCase();
     devices.removeWhere((existing) =>
         existing.id == device.id ||
-        (pin.length == 64 && existing.fingerprint.toUpperCase() == pin) ||
-        (device.deviceId.isNotEmpty &&
-            existing.deviceId == device.deviceId));
+        (pin.length == 64 && existing.fingerprint.toUpperCase() == pin));
     devices.insert(0, device);
     if (devices.length > 25) devices.removeRange(25, devices.length);
     await _storage.write(
