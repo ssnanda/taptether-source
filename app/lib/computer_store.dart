@@ -26,6 +26,8 @@ class SavedComputer {
   final String token;
   final String fingerprint;
   final String platform;
+  // Enrollment ID of the phone's public key; shared by multiple computers.
+  // Never use as a unique computer identifier.
   final String deviceId;
   final String location;
   final bool customName;
