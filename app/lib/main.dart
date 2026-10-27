@@ -14,6 +14,8 @@ import 'fridge_alerts.dart';
 import 'package:workmanager/workmanager.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
+import 'xbox_smartglass.dart';
+import 'xbox_remote_screen.dart';
 import 'tv_network_status.dart';
 import 'remote_layout_settings.dart';
 import 'remote_mode_bar.dart';
@@ -535,6 +537,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   List<SavedComputer> savedComputers = [];
   List<LgTvDevice> savedLgTvs = [];
   List<SamsungTvDevice> savedSamsungTvs = [];
+  List<XboxConsole> savedXboxConsoles = [];
   List<LgThinQDevice> _enabledThinQ = const [];
   Set<String> _fridgeAlertsEnabled = {};
   final Map<String, ThinQDashboardStatus> _thinQStatuses = {};
@@ -710,6 +713,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
     unawaited(loadComputers());
+    unawaited(loadXboxConsoles());
     unawaited(_loadEnabledThinQ());
     // Load both TV stores and current Wi-Fi before attempting a single
     // bounded startup address recovery (including after app reinstall/login).
@@ -1737,6 +1741,26 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  Future<void> loadXboxConsoles() async {
+    try {
+      final consoles = await XboxConsoleStore().read();
+      if (mounted) setState(() => savedXboxConsoles = consoles);
+    } catch (_) {
+      // Saved metadata stays in secure device storage.
+    }
+  }
+
+  Future<void> openXboxRemote({String? host}) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => XboxRemoteScreen(
+        initialHost: host,
+        initialLocation: _detectedLocation ?? 'other',
+        onSaved: loadXboxConsoles,
+      ),
+    ));
+    if (mounted) await loadXboxConsoles();
+  }
+
   Future<void> _refreshTvStatuses() async {
     if (!mounted || !_appForeground || _checkingTvStatus) return;
     _checkingTvStatus = true;
@@ -2465,6 +2489,14 @@ class _RemoteScreenState extends State<RemoteScreen>
               },
             ),
             ListTile(
+              leading: const Icon(Icons.videogame_asset_outlined),
+              title: const Text('Add Xbox'),
+              onTap: () {
+                Navigator.pop(context);
+                openXboxRemote();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.qr_code_scanner),
               title: const Text('Scan QR'),
               onTap: () {
@@ -2598,7 +2630,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         ]),
         const SizedBox(height: 16),
         Text('${savedComputers.length} saved computers · '
-            '${savedLgTvs.length + savedSamsungTvs.length} saved TVs',
+            '${savedLgTvs.length + savedSamsungTvs.length} saved TVs · '
+            '${savedXboxConsoles.length} Xbox',
             style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 12),
         for (final device in _enabledThinQ) _thinQCard(device),
@@ -2726,6 +2759,15 @@ class _RemoteScreenState extends State<RemoteScreen>
               unawaited(openSamsungTv());
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.videogame_asset_outlined),
+            title: const Text('Xbox One / Series'),
+            subtitle: const Text('Discover and wake Xbox on Wi-Fi'),
+            onTap: () {
+              Navigator.pop(sheet);
+              unawaited(openXboxRemote());
+            },
+          ),
         ],
       )),
     );
@@ -2756,7 +2798,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       children: [
         DeviceDashboardHeader(
           showFilters: savedComputers.isNotEmpty || savedLgTvs.isNotEmpty ||
-              savedSamsungTvs.isNotEmpty,
+              savedSamsungTvs.isNotEmpty || savedXboxConsoles.isNotEmpty,
           locationFilter: _locationFilter,
           detectedLocation: _detectedLocation,
           showOffline: _showOffline,
@@ -2796,7 +2838,8 @@ class _RemoteScreenState extends State<RemoteScreen>
                 'No saved devices match this filter.'),
           ),
       if (savedComputers.isEmpty && savedLgTvs.isEmpty &&
-          savedSamsungTvs.isEmpty && _enabledThinQ.isEmpty)
+          savedSamsungTvs.isEmpty && savedXboxConsoles.isEmpty &&
+          _enabledThinQ.isEmpty)
         Card(child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -2931,6 +2974,21 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () => openSamsungTv(host: tv.host),
             ),
           ),
+      for (final xbox in savedXboxConsoles)
+        Card(
+          key: ValueKey('xbox-${xbox.uuid}'),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 5),
+            leading: const Icon(Icons.videogame_asset_outlined, size: 29),
+            title: Text(xbox.name, maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Xbox · Saved · Status not checked'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => openXboxRemote(host: xbox.host),
+          ),
+        ),
       for (final device in _enabledThinQ) _thinQCard(device),
       const SizedBox(height: 24),
       Align(
