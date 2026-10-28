@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Build, sign, and install a standalone TapTether app on a USB iPhone.
+# Repository VERSION is authoritative for Flutter version, signed app and IPA.
 # Usage: ./bin/3-install-iphone.sh [--list-devices|list-devices] [--device ID] [--build-mode release|debug] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--help]
 #   --list-devices, list-devices  List detected eligible USB iPhones.
 #   --device ID                  Select one detected device.
 #   --no-launch                  Install without launching the app.
 #   --dry-run                    Validate device without building/installing.
 #   --build-mode release|debug    Release (default) launches from Home Screen; debug requires tooling.
-#   --skip-build                 Reuse signed app ONLY if build mode matches the recorded build.
+#   --skip-build                 Reuse a signed app only if build mode AND VERSION match.
 #   --installer auto|apple|usb   Apple first, then optional USB fallback (default auto).
 #   -h, --help                   Show this help.
 set -euo pipefail
@@ -103,6 +104,14 @@ if ! xcrun devicectl device info details --device "$DEVICE_ID" >/dev/null 2>&1; 
 fi
 echo "Device: $DEVICE_NAME ($DEVICE_ID)"
 [[ -f "$ROOT/app/pubspec.yaml" ]] || die 'Flutter app/pubspec.yaml not found.'
+SOURCE_VERSION="$(tr -d '\r\n' < "$ROOT/VERSION")"
+if [[ "$SOURCE_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\+([0-9]+)$ ]]; then
+  EXPECTED_BUILD_NAME="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+  EXPECTED_BUILD_NUMBER="${BASH_REMATCH[4]}"
+else
+  die "Invalid repository VERSION: $SOURCE_VERSION"
+fi
+echo "TapTether version: $SOURCE_VERSION"
 command -v plutil >/dev/null || die 'plutil not found.'
 if (( DRY_RUN )); then
   echo 'DRY RUN: no Flutter project generation, build, signing, or installation.'
@@ -111,13 +120,14 @@ if (( DRY_RUN )); then
 fi
 BUILD_MODE_RECORD="$ROOT/app/build/iphone-install-build-mode.txt"
 if (( SKIP_BUILD )); then
-  if [[ ! -f "$BUILD_MODE_RECORD" || "$(cat "$BUILD_MODE_RECORD")" != "$BUILD_MODE" ]]; then
-    die "Cannot use --skip-build: no verified $BUILD_MODE build recorded. Existing Runner.app may be a Debug build. Rebuild with ./bin/3-install-iphone.sh --installer usb (omit --skip-build)."
+  if [[ ! -f "$BUILD_MODE_RECORD" || "$(cat "$BUILD_MODE_RECORD")" != "$BUILD_MODE|$SOURCE_VERSION" ]]; then
+    die "Cannot use --skip-build: no signed $BUILD_MODE app verified for TapTether $SOURCE_VERSION. Rebuild with ./bin/3-install-iphone.sh --installer usb (omit --skip-build)."
   fi
   echo "Using previously signed $BUILD_MODE TapTether app (--skip-build)."
 else
 # Clear the recorded build mode before building to prevent reusing a stale binary.
 rm -f "$BUILD_MODE_RECORD"
+python3 "$ROOT/bin/4-sync-app-version.py"
 cd "$ROOT/app"
 # Flutter-generated iOS runner is not stored in this repo; generate when absent.
 if [[ ! -d ios/Runner.xcodeproj ]]; then
@@ -136,7 +146,7 @@ LOG="$ROOT/app/build/iphone-install-build.log"
 mkdir -p "$ROOT/app/build"
 echo "Build log: $LOG"
 banner SIGNING
-if ! flutter build ios --"$BUILD_MODE" >"$LOG" 2>&1; then
+if ! flutter build ios --"$BUILD_MODE" --build-name "$EXPECTED_BUILD_NAME" --build-number "$EXPECTED_BUILD_NUMBER" >"$LOG" 2>&1; then
   tail -n 35 "$LOG" >&2 || true
   if grep -Eq "Invalid .Podfile. file|already has a platform set" "$LOG"; then
     die 'CocoaPods Podfile validation failed, not code signing. Check app/ios/Podfile for duplicate platform declarations; the generated-file staging script should maintain one.'
@@ -152,12 +162,17 @@ APP="$ROOT/app/build/ios/iphoneos/Runner.app"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist" 2>/dev/null || true)"
 APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print CFBundleDisplayName' "$APP/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print CFBundleName' "$APP/Info.plist" 2>/dev/null || echo Runner)"
 [[ -n "$BUNDLE_ID" ]] || die 'Missing bundle identifier in built app.'
+BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Info.plist" 2>/dev/null || true)"
+BUILT_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP/Info.plist" 2>/dev/null || true)"
+if [[ "$BUILT_VERSION" != "$EXPECTED_BUILD_NAME" || "$BUILT_NUMBER" != "$EXPECTED_BUILD_NUMBER" ]]; then
+  die "Refusing to install stale/mismatched app: built version $BUILT_VERSION+$BUILT_NUMBER; expected $SOURCE_VERSION. Rebuild without --skip-build."
+fi
 codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || die 'App is not signed correctly.'
 # Only record the mode after a completed build and successful signature verification.
 if (( ! SKIP_BUILD )); then
-  printf '%s\n' "$BUILD_MODE" > "$BUILD_MODE_RECORD"
+  printf '%s|%s\n' "$BUILD_MODE" "$SOURCE_VERSION" > "$BUILD_MODE_RECORD"
 fi
-printf 'App: %s\nBundle identifier: %s\nBuild: %s (signed)\n' "$APP_NAME" "$BUNDLE_ID" "$BUILD_MODE"
+printf 'App: %s\nBundle identifier: %s\nVersion: %s\nMode: %s (signed)\n' "$APP_NAME" "$BUNDLE_ID" "$SOURCE_VERSION" "$BUILD_MODE"
 if [[ "$BUILD_MODE" == debug ]]; then
   echo 'WARNING: Debug builds on iOS 14+ require Flutter/Xcode tooling to launch.' >&2
 fi
