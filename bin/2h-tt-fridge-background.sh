@@ -45,8 +45,8 @@ if podfile.is_file():
     selected = max([minimum, *versions])
     declaration = f"platform :ios, '{selected[0]}.{selected[1]}'"
     # Remove all active duplicates and insert one canonical declaration.
-    source = platform_pattern.sub('', source).lstrip('\\n')
-    podfile.write_text(declaration + '\\n' + source)
+    source = platform_pattern.sub('', source).lstrip('\n')
+    podfile.write_text(declaration + '\n' + source)
 project = root / 'app/ios/Runner.xcodeproj/project.pbxproj'
 if project.is_file():
     import re
