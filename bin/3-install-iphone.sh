@@ -5,6 +5,8 @@
 #   --device ID                  Select one detected device.
 #   --no-launch                  Install without launching the app.
 #   --dry-run                    Validate device without building/installing.
+#   --skip-build                 Reuse an already signed app; no rebuild.
+#   --installer auto|apple|usb   Apple first, then optional USB fallback (default auto).
 #   -h, --help                   Show this help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,14 +14,16 @@ DEVICE_ID=''
 LIST=0
 NO_LAUNCH=0
 DRY_RUN=0
+SKIP_BUILD=0
+INSTALLER=auto
 LOG=''
 banner(){ printf '\n========== %s ==========\n' "$1"; }
 die(){ banner FAILED >&2; echo "$*" >&2; [[ -z "$LOG" ]] || echo "Build log: $LOG" >&2; exit 1; }
 usage(){
 cat <<'HELP'
-Usage: ./bin/3-install-iphone.sh [list-devices|--list-devices] [--device ID] [--no-launch] [--dry-run] [--help]
+Usage: ./bin/3-install-iphone.sh [--list-devices] [--device ID] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--help]
 Install a signed Debug build on a paired, USB-connected physical iPhone.
-Configure Xcode > Settings > Accounts and Runner > Signing & Capabilities first.
+Uses your Xcode signing configuration. Optional USB fallback: brew install ideviceinstaller libimobiledevice.
 HELP
 }
 while (($#)); do
@@ -28,10 +32,13 @@ while (($#)); do
     --list-devices|list-devices) LIST=1; shift ;;
     --no-launch) NO_LAUNCH=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --skip-build) SKIP_BUILD=1; shift ;;
+    --installer) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; INSTALLER="$2"; shift 2 ;;
     --device) if [[ $# -lt 2 ]]; then echo 'Missing value for --device' >&2; usage >&2; exit 2; fi; DEVICE_ID="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+case "$INSTALLER" in auto|apple|usb) ;; *) echo "Unknown installer: $INSTALLER" >&2; usage >&2; exit 2 ;; esac
 [[ "$(uname)" == Darwin ]] || die 'A Mac with Xcode is required.'
 for tool in xcodebuild xcrun python3 flutter; do command -v "$tool" >/dev/null || die "Missing $tool"; done
 xcodebuild -version >/dev/null 2>&1 || die 'Select full Xcode with xcode-select.'
@@ -97,6 +104,7 @@ if (( DRY_RUN )); then
   [[ -d "$ROOT/app/ios" ]] && echo 'iOS project exists.' || echo 'Flutter iOS project will be generated if missing.'
   exit 0
 fi
+if (( ! SKIP_BUILD )); then
 cd "$ROOT/app"
 # Flutter-generated iOS runner is not stored in this repo; generate when absent.
 if [[ ! -d ios/Runner.xcodeproj ]]; then
@@ -125,6 +133,9 @@ if ! flutter build ios --debug >"$LOG" 2>&1; then
     die 'Flutter iOS build failed before installation. Review the build log above for the actual error.'
   fi
 fi
+else
+  echo 'Using existing signed TapTether app (--skip-build).'
+fi
 APP="$ROOT/app/build/ios/iphoneos/Runner.app"
 [[ -d "$APP" ]] || die "Signed app not found at $APP"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist" 2>/dev/null || true)"
@@ -133,9 +144,42 @@ APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print CFBundleDisplayName' "$APP/Info.pl
 codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || die 'App is not signed correctly.'
 printf 'App: %s\nBundle identifier: %s\nBuild: Debug (signed)\n' "$APP_NAME" "$BUNDLE_ID"
 banner INSTALLING
-xcrun devicectl device install app --device "$DEVICE_ID" "$APP" || die 'Install failed. Unlock phone, trust Mac and confirm Developer Mode, signing team, and provisioning.'
+APPLE_OK=0
+APPLE_LOG="$ROOT/app/build/iphone-devicectl-install.log"
+if [[ "$INSTALLER" != usb ]]; then
+  if xcrun devicectl device install app --device "$DEVICE_ID" "$APP" >"$APPLE_LOG" 2>&1; then
+    cat "$APPLE_LOG"
+    APPLE_OK=1
+  else
+    tail -n 16 "$APPLE_LOG" >&2 || true
+    echo 'Apple device install failed. Checking independent USB installer...' >&2
+  fi
+fi
+if [[ "$APPLE_OK" == 0 && "$INSTALLER" != apple ]]; then
+  if ! command -v ideviceinstaller >/dev/null || ! command -v idevice_id >/dev/null; then
+    die 'USB fallback missing. Install with: brew install ideviceinstaller libimobiledevice ; then retry --skip-build --installer usb. No Xcode upgrade required.'
+  fi
+  USB_DEVICES="$(idevice_id -l | tr -d '\r' | sed '/^[[:space:]]*$/d')"
+  USB_COUNT="$(printf '%s\n' "$USB_DEVICES" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
+  [[ "$USB_COUNT" == 1 ]] || die "USB installer found $USB_COUNT device(s); connect only one USB iPhone. idevice_id: $USB_DEVICES"
+  USB_UDID="$USB_DEVICES"
+  echo "USB target: $USB_UDID"
+  IPA_DIR="$(mktemp -d)"
+  trap 'rm -f "$device_json"; rm -rf "$IPA_DIR"' EXIT
+  mkdir -p "$IPA_DIR/Payload"
+  cp -R "$APP" "$IPA_DIR/Payload/Runner.app"
+  (cd "$IPA_DIR" && /usr/bin/zip -qry "$ROOT/app/build/TapTether-usb.ipa" Payload)
+  echo 'Installing signed IPA through USB app-installation service...'
+  if ! ideviceinstaller --udid "$USB_UDID" install "$ROOT/app/build/TapTether-usb.ipa"; then
+    die 'USB installation failed. The signed IPA remains in app/build/TapTether-usb.ipa. Review USB installation error above.'
+  fi
+fi
 if (( ! NO_LAUNCH )); then
-  xcrun devicectl device process launch --device "$DEVICE_ID" "$BUNDLE_ID" || die 'Installed successfully, but launch failed. Check device trust and permissions.'
+  if [[ "$APPLE_OK" == 1 ]]; then
+    xcrun devicectl device process launch --device "$DEVICE_ID" "$BUNDLE_ID" || die 'Installed but failed to launch.'
+  else
+    echo 'USB installation complete. Open TapTether on your iPhone Home Screen.'
+  fi
 fi
 banner 'INSTALLATION COMPLETE'
 echo "$APP_NAME ($BUNDLE_ID) installed on $DEVICE_NAME."
