@@ -50,7 +50,7 @@ for d in j.get("result",{}).get("devices",[]):
     if transport not in ("wired","usb"): continue
     device_id=str(d.get("identifier") or "")
     if not device_id: continue
-    state=str(d.get("state") or "")
+    state=str(d.get("state") or p.get("state") or p.get("connectionState") or "not-reported")
     print("\t".join([device_id,name or model,state]))
 PY
 )"
@@ -66,7 +66,16 @@ chosen="$(printf '%s\n' "$matches" | head -n1)"
 DEVICE_ID="$(printf '%s\n' "$chosen" | cut -f1)"
 DEVICE_NAME="$(printf '%s\n' "$chosen" | cut -f2)"
 state="$(printf '%s\n' "$chosen" | cut -f3)"
-[[ "$state" == connected || "$state" == available ]] || die "iPhone state: $state. Unlock, enable Developer Mode, pair and reconnect."
+# CoreDevice on current Xcode releases commonly omits the top-level state.
+# Confirm availability with an actual device query instead of rejecting an absent field.
+case "${state,,}" in
+  connected|available|ready|not-reported) ;;
+  disconnected|unavailable|not-paired|unpaired) die "iPhone reports state: $state. Unlock, trust Mac, and reconnect." ;;
+  *) echo "Device reports state '$state'; verifying with CoreDevice..." ;;
+esac
+if ! xcrun devicectl device info details --device "$DEVICE_ID" >/dev/null 2>&1; then
+  die "CoreDevice cannot query $DEVICE_NAME ($DEVICE_ID). Check USB cable, pairing, trust, Developer Mode, and that the phone is unlocked."
+fi
 echo "Device: $DEVICE_NAME ($DEVICE_ID)"
 [[ -f "$ROOT/app/pubspec.yaml" ]] || die 'Flutter app/pubspec.yaml not found.'
 command -v plutil >/dev/null || die 'plutil not found.'
