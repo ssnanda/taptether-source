@@ -105,6 +105,7 @@ jobs:
       - name: Check shell and Python syntax
         run: |
           for script in bin/*.sh; do bash -n "$script"; done
+          python3 bin/4-sync-app-version.py --check
           python3 -m py_compile desktop/ubuntu/taptether_tray.py desktop/ubuntu/taptether_screen.py bin/6-tt-generate-altstore.py bin/9-tt-brand-icons.py bin/4-test-deb-packaging.py
           python3 bin/4-check-release-pipeline.py
           python3 bin/4-test-deb-packaging.py
