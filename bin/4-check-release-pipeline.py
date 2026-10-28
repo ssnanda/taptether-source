@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static checks for TapTether's single gated automatic/manual workflow."""
+"""Static checks for TapTether's explicitly requested full-release workflow."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,18 +19,19 @@ assert "task:" in workflow
 assert all(f"- {mode}" in workflow for mode in ("release", "build", "validate", "agent-ubuntu", "agent-macos", "agent-windows"))
 assert "          - cleanup" not in workflow
 assert "  push:\n    branches: [main, fix/v0.6-remote-scan-mac-details]" in workflow, (
-    "Main production releases and explicit branch-only Windows validation"
+    "Explicit agent-only push updates; full releases require workflow dispatch"
 )
 assert "github.ref == 'refs/heads/main'" in workflow
-assert "    paths:\n      - VERSION" in workflow, (
-    "Automatically run releases only for explicit VERSION changes"
+assert "    paths:\n      - VERSION" not in workflow, (
+    "VERSION pushes must not publish automatically before iPhone installation"
 )
-assert "github.event_name == 'push' || inputs.task == 'release'" in workflow
+assert "if: ${{ inputs.task == 'release' }}" in workflow
+assert "if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build') }}" in workflow
 
 assert "  validate:" in workflow
 assert "  build-ubuntu:" in workflow
 assert "    needs: validate" in workflow
-assert "github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build'" in workflow
+assert "github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build'" not in workflow
 assert "  build-and-publish:" in workflow
 assert "    needs: [build-ubuntu, build-windows]" in workflow
 assert "  build-windows:" in workflow
@@ -82,7 +83,7 @@ assert "run: bash bin/2b-tt-macos.sh" in workflow
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
 assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
 assert "run: bash bin/6-tt-publish-latest.sh" in workflow
-assert "if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' }}" in workflow
+assert "if: ${{ inputs.task == 'release' }}" in workflow
 assert "if: ${{ inputs.task == 'build' }}" in workflow
 assert "TapTether-complete-build-" in workflow
 assert "retention-days: 1" in workflow
@@ -106,6 +107,11 @@ assert 'Build workflow:' not in publisher
 assert 'expected_assets=(' in publisher
 assert 'Refusing older or duplicate release' in publisher
 assert "release-v0.6.2-request" not in workflow
+iphone_installer = (ROOT / "bin" / "3-install-iphone.sh").read_text()
+assert "    --publish) PUBLISH=1; shift ;;" in iphone_installer
+assert "gh workflow run taptether.yml -R ssnanda/taptether-source --ref main -f task=release" in iphone_installer
+assert iphone_installer.index("banner 'INSTALLATION COMPLETE'") < iphone_installer.index("if (( PUBLISH )); then", iphone_installer.index("banner 'INSTALLATION COMPLETE'"))
+assert "gh release upload" not in iphone_installer  # Never publish personal signing credentials
 
 assert 'python3 bin/4-test-agent-release-feeds.py' in workflow
 assert 'python3 bin/4-guard-release-sync.py' in publisher

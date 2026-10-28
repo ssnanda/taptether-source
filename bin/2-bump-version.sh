@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Bump the app version, commit, and push main (may trigger GitHub Actions).
+# Bump the app version, commit, and push main (does not publish a release).
+# Publish only after successful iPhone install: 3-install-iphone.sh --publish.
 # Usage: ./bin/2-bump-version.sh [patch|minor|major]
 #   patch          Default: increment patch and build number.
 #   minor          Increment minor and build number.

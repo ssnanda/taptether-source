@@ -1,7 +1,7 @@
 name: 'TapTether - Build, Release & Maintenance'
 
-# One workflow: version bumps on main publish automatically after all checks.
-# Manual Release/Build/Validate remain available; weekly cleanup has no build.
+# A full release requires explicit workflow_dispatch task=release AFTER local iPhone installation.
+# VERSION commits never automatically publish. Agent-only pushes remain supported.
 on:
   workflow_dispatch:
     inputs:
@@ -34,10 +34,9 @@ on:
       - '.github/workflows/taptether.yml'
   push:
     branches: [main, fix/v0.6-remote-scan-mac-details]
-    # Branch VERSION bumps validate/build Windows without publishing.
-    # Only main can publish a release.
+    # Only independent agent feeds trigger push workflows.
+    # Source VERSION changes alone do NOT trigger full release builds.
     paths:
-      - VERSION
       - 'versions/ubuntu-agent.txt'
       - 'versions/macos-agent.txt'
   schedule:
@@ -60,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Release preflight (only before publishing)
-        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' }}
+        if: ${{ inputs.task == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: |
@@ -176,7 +175,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'agent-ubuntu:') || startsWith(github.event.head_commit.message, 'agent-macos:'))) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -212,7 +211,7 @@ jobs:
 
   build-windows:
     needs: validate
-    if: ${{ (github.event_name == 'push' || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'agent-ubuntu:') || startsWith(github.event.head_commit.message, 'agent-macos:'))) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -270,7 +269,7 @@ jobs:
 
   build-and-publish:
     needs: [build-ubuntu, build-windows]
-    if: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.task == 'release' || inputs.task == 'build') && !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'agent-ubuntu:')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build') }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -391,7 +390,7 @@ jobs:
           retention-days: 1
 
       - name: Publish current IPA, APK and agents to GitHub Releases
-        if: ${{ github.event_name == 'push' || inputs.task == 'release' }}
+        if: ${{ inputs.task == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-latest.sh
@@ -578,8 +577,8 @@ jobs:
 
   cleanup-history:
     needs: build-and-publish
-    # Weekly or after successful automatic/manual releases; keep Build-mode artifacts.
-    if: ${{ always() && (github.event_name == 'schedule' || ((github.event_name == 'push' || inputs.task == 'release') && needs.build-and-publish.result == 'success')) }}
+    # Weekly or after successful explicitly requested releases; keep Build-mode artifacts.
+    if: ${{ always() && (github.event_name == 'schedule' || (inputs.task == 'release' && needs.build-and-publish.result == 'success')) }}
     continue-on-error: true
     permissions:
       contents: read
