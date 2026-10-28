@@ -99,7 +99,7 @@ if command -v flutter >/dev/null 2>&1; then
   fi
 else
   echo 'Flutter not found. Dart sources/scripts will be generated now.'
-  echo 'Install Flutter and run ./bin/0-doctor.sh --repair to create iOS/Android runners.'
+  echo 'Install Flutter and run ./bin/9-doctor.sh --repair to create iOS/Android runners.'
 fi
 
 # The Flutter-generated starter screen is replaced only on a first bootstrap.
@@ -750,7 +750,7 @@ func TestLANRestrictions(t *testing.T){
 }
 TT_GO_TEST
 
-write_new bin/0-doctor.sh <<'TT_DOCTOR'
+write_new bin/9-doctor.sh <<'TT_DOCTOR'
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -1289,7 +1289,7 @@ case "${1:-}" in
 esac
 TT_DESKTOP_SH
 
-write_new bin/4-test.sh <<'TT_TEST_SH'
+write_new bin/9-test.sh <<'TT_TEST_SH'
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -1323,8 +1323,8 @@ Private LAN-only remote-control prototype. Single repository containing a Flutte
 1. Place `bootstrap-taptether.sh` in `/Users/sandip/Projects/taptether`.
 2. `cd /Users/sandip/Projects/taptether`.
 3. `bash bootstrap-taptether.sh`.
-4. `./bin/0-doctor.sh` (use `--repair` if native Flutter runners weren't created).
-5. `./bin/4-test.sh`.
+4. `./bin/9-doctor.sh` (use `--repair` if native Flutter runners weren't created).
+5. `./bin/9-test.sh`.
 6. `./bin/3-push-project.sh` to commit and push initial source files.
 
 Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IPA. On Ubuntu 26.04, native `/dev/uinput` input supports GNOME Wayland and X11. Restricted permissions are configured by `bin/4-ubuntu-desktop-setup.sh`; see [WAYLAND.md](WAYLAND.md).
@@ -1333,7 +1333,7 @@ Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IP
 
 | Script | Function |
 |---|---|
-| `./bin/0-doctor.sh` | Check prerequisites; `--repair` creates Flutter runners |
+| `./bin/9-doctor.sh` | Check prerequisites; `--repair` creates Flutter runners |
 | `./bin/1-bump-version.sh [patch\|minor\|major]` | Increment VERSION and Flutter build number; git commit **and push main** |
 | `./bin/2a-tt-ipa.sh` | Create **unsigned** IPA by default for later signing (e.g. AltStore) |
 | `./bin/2a-tt-ipa.sh --signed` | Flutter signed IPA; needs Xcode signing configured |
@@ -1347,11 +1347,11 @@ Requires git, Go 1.22+, Flutter SDK, Android SDK for APK, and Xcode/macOS for IP
 | `./bin/2c-tt-samsung-tv.sh` | Explain TV vendor SDK prerequisites, no fake build |
 | `./bin/3-run-agent.sh` | Start Go agent on current computer |
 | `./bin/3-push-project.sh` | Review and commit all nonignored project files to main |
-| `./bin/4-test.sh` | Go tests + Flutter analyze/tests (when Flutter installed) |
+| `./bin/9-test.sh` | Go tests + Flutter analyze/tests (when Flutter installed) |
 | `./bin/4-ubuntu-desktop-setup.sh` | SSH-installable Ubuntu X11 desktop launcher, graphical-login autostart, user service, pairing details |
 | `./bin/2d-tt-all.sh` | Build all available Go targets, Ubuntu installers and available mobile targets |
 | `./bin/4-ubuntu-desktop-setup.sh` | Configure native uinput permissions, GNOME dock and desktop autostart |
-| `./bin/5-tt-remote-install-ubuntu.sh` | Build, install and configure the Ubuntu agent over SSH |
+| `./bin/5-install-agent-ubuntu.sh` | Build, install and configure the Ubuntu agent over SSH |
 
 
 ## Ubuntu desktop launcher and SSH setup
@@ -1369,7 +1369,7 @@ Use SSH to manage the agent: `ssh sandip@192.168.68.87 '~/.local/bin/taptetherct
 
 ## Try Ubuntu remote control (Wayland / X11)
 
-1. On macOS run `./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87`. It builds both Linux agents, securely copies the matching .deb over SSH and sets up restricted uinput permissions, desktop autostart and a GNOME dock launcher.
+1. On macOS run `./bin/5-install-agent-ubuntu.sh sandip@192.168.68.87`. It builds both Linux agents, securely copies the matching .deb over SSH and sets up restricted uinput permissions, desktop autostart and a GNOME dock launcher.
 2. **Log out and log in to Ubuntu** or reboot once to activate `taptether` group membership.
 3. From macOS use `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl start'` or just let TapTether start at graphical login.
 4. Retrieve LAN IP/token/TLS fingerprint via `ssh sandip@192.168.68.87 '~/.local/bin/taptetherctl pairing'`. Keep the token private.
@@ -1739,14 +1739,14 @@ func TestVirtualDeviceLayout(t *testing.T) {
 }
 TT_UINPUT_TEST
 
-write_new bin/5-tt-remote-install-ubuntu.sh <<'TT_UBUNTU_REMOTE'
+write_new bin/5-install-agent-ubuntu.sh <<'TT_UBUNTU_REMOTE'
 #!/usr/bin/env bash
 # Build and install current TapTether agent over SSH; service starts and prints pairing values.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOST="${1:-sandip@192.168.68.87}"
 [[ "$HOST" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$ ]] || {
-  echo 'Usage: ./bin/5-tt-remote-install-ubuntu.sh user@host' >&2; exit 2;
+  echo 'Usage: ./bin/5-install-agent-ubuntu.sh user@host' >&2; exit 2;
 }
 version="$(cat "$ROOT/VERSION")"
 "$ROOT/bin/2b-tt-ubuntu.sh"
@@ -1773,7 +1773,7 @@ TapTether on Linux now supports native `/dev/uinput` virtual devices. This works
 
 ## Install/update from Mac
 
-Run `./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87` from the TapTether repository. The script builds Linux amd64 and arm64 installers, copies the detected architecture over SSH, installs it, adds your Ubuntu user to the restricted `taptether` group, configures `/dev/uinput`, and creates the per-user desktop autostart and dock launcher.
+Run `./bin/5-install-agent-ubuntu.sh sandip@192.168.68.87` from the TapTether repository. The script builds Linux amd64 and arm64 installers, copies the detected architecture over SSH, installs it, adds your Ubuntu user to the restricted `taptether` group, configures `/dev/uinput`, and creates the per-user desktop autostart and dock launcher.
 
 **First-time security setup requires sudo.** Log out of the Ubuntu graphical desktop and log back in (or reboot) to apply group membership. A running SSH shell cannot acquire newly added supplementary groups without a new login. It does not run the agent as root. `taptether` group membership grants access to a powerful virtual keyboard/mouse interface; only grant it to trusted users.
 
@@ -1832,6 +1832,6 @@ if command -v flutter >/dev/null 2>&1; then
 fi
 
 touch .taptether-bootstrapped
-printf '\nBootstrap completed. Next:\n  ./bin/0-doctor.sh\n  ./bin/4-test.sh\n  ./bin/3-push-project.sh\n'
+printf '\nBootstrap completed. Next:\n  ./bin/9-doctor.sh\n  ./bin/9-test.sh\n  ./bin/3-push-project.sh\n'
 printf 'Build: ./bin/2a-tt-apk.sh | ./bin/2a-tt-ipa.sh | ./bin/2b-tt-ubuntu.sh\n'
 printf 'Version + GitHub push: ./bin/1-bump-version.sh patch\n'
