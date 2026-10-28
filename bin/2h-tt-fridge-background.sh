@@ -31,14 +31,22 @@ if ios.is_file():
 # Workmanager's iOS background engine requires iOS 14 or later.
 podfile = root / 'app/ios/Podfile'
 if podfile.is_file():
-    source = podfile.read_text()
+    # Normalize to exactly one active platform declaration. Flutter-generated
+    # Podfiles may already specify iOS 15+; never prepend a duplicate.
     import re
-    source, count = re.subn(
-        r"""^#?\s*platform :ios, ['"]1[0123]\.[0-9]+['"]""",
-        "platform :ios, '14.0'", source, count=1, flags=re.MULTILINE)
-    if count == 0 and "platform :ios, '14.0'" not in source:
-        source = "platform :ios, '14.0'\n" + source
-    podfile.write_text(source)
+    source = podfile.read_text()
+    platform_pattern = re.compile(
+        r"""^\s*platform\s+:ios\s*,\s*['"]([0-9]+(?:\.[0-9]+)?)['"].*$""",
+        re.MULTILINE,
+    )
+    versions = [tuple(int(n) for n in m.group(1).split('.'))
+                for m in platform_pattern.finditer(source)]
+    minimum = (14, 0)
+    selected = max([minimum, *versions])
+    declaration = f"platform :ios, '{selected[0]}.{selected[1]}'"
+    # Remove all active duplicates and insert one canonical declaration.
+    source = platform_pattern.sub('', source).lstrip('\n')
+    podfile.write_text(declaration + '\n' + source)
 project = root / 'app/ios/Runner.xcodeproj/project.pbxproj'
 if project.is_file():
     import re
