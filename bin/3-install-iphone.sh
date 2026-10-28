@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Build, sign, and install TapTether on a USB-connected iPhone.
-# Usage: ./bin/3-install-iphone.sh [--list-devices|list-devices] [--device ID] [--no-launch] [--dry-run] [--help]
+# Build, sign, and install a standalone TapTether app on a USB iPhone.
+# Usage: ./bin/3-install-iphone.sh [--list-devices|list-devices] [--device ID] [--build-mode release|debug] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--help]
 #   --list-devices, list-devices  List detected eligible USB iPhones.
 #   --device ID                  Select one detected device.
 #   --no-launch                  Install without launching the app.
 #   --dry-run                    Validate device without building/installing.
-#   --skip-build                 Reuse an already signed app; no rebuild.
+#   --build-mode release|debug    Release (default) launches from Home Screen; debug requires tooling.
+#   --skip-build                 Reuse signed app ONLY if build mode matches the recorded build.
 #   --installer auto|apple|usb   Apple first, then optional USB fallback (default auto).
 #   -h, --help                   Show this help.
 set -euo pipefail
@@ -15,14 +16,16 @@ LIST=0
 NO_LAUNCH=0
 DRY_RUN=0
 SKIP_BUILD=0
+BUILD_MODE=release
 INSTALLER=auto
 LOG=''
 banner(){ printf '\n========== %s ==========\n' "$1"; }
 die(){ banner FAILED >&2; echo "$*" >&2; [[ -z "$LOG" ]] || echo "Build log: $LOG" >&2; exit 1; }
 usage(){
 cat <<'HELP'
-Usage: ./bin/3-install-iphone.sh [--list-devices] [--device ID] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--help]
-Install a signed Debug build on a paired, USB-connected physical iPhone.
+Usage: ./bin/3-install-iphone.sh [--list-devices] [--device ID] [--build-mode release|debug] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--help]
+Install a signed Release build (default) that runs from the iPhone Home Screen.
+--build-mode debug is for Flutter/Xcode debugging; Debug apps cannot launch normally from Home Screen.
 Uses your Xcode signing configuration. Optional USB fallback: brew install ideviceinstaller libimobiledevice.
 HELP
 }
@@ -33,12 +36,14 @@ while (($#)); do
     --no-launch) NO_LAUNCH=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
+    --build-mode) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; BUILD_MODE="$2"; shift 2 ;;
     --installer) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; INSTALLER="$2"; shift 2 ;;
     --device) if [[ $# -lt 2 ]]; then echo 'Missing value for --device' >&2; usage >&2; exit 2; fi; DEVICE_ID="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 case "$INSTALLER" in auto|apple|usb) ;; *) echo "Unknown installer: $INSTALLER" >&2; usage >&2; exit 2 ;; esac
+case "$BUILD_MODE" in release|debug) ;; *) echo "Unknown build mode: $BUILD_MODE" >&2; usage >&2; exit 2 ;; esac
 [[ "$(uname)" == Darwin ]] || die 'A Mac with Xcode is required.'
 for tool in xcodebuild xcrun python3 flutter; do command -v "$tool" >/dev/null || die "Missing $tool"; done
 xcodebuild -version >/dev/null 2>&1 || die 'Select full Xcode with xcode-select.'
@@ -104,7 +109,14 @@ if (( DRY_RUN )); then
   [[ -d "$ROOT/app/ios" ]] && echo 'iOS project exists.' || echo 'Flutter iOS project will be generated if missing.'
   exit 0
 fi
-if (( ! SKIP_BUILD )); then
+BUILD_MODE_RECORD="$ROOT/app/build/iphone-install-build-mode.txt"
+if (( SKIP_BUILD )); then
+  if [[ ! -f "$BUILD_MODE_RECORD" || "$(cat "$BUILD_MODE_RECORD")" != "$BUILD_MODE" ]]; then
+    die "Cannot use --skip-build: no verified $BUILD_MODE build recorded. Existing Runner.app may be a Debug build. Rebuild with ./bin/3-install-iphone.sh --installer usb (omit --skip-build)."
+  fi
+else
+# Clear the recorded build mode before building to prevent reusing a stale binary.
+rm -f "$BUILD_MODE_RECORD"
 cd "$ROOT/app"
 # Flutter-generated iOS runner is not stored in this repo; generate when absent.
 if [[ ! -d ios/Runner.xcodeproj ]]; then
@@ -123,7 +135,7 @@ LOG="$ROOT/app/build/iphone-install-build.log"
 mkdir -p "$ROOT/app/build"
 echo "Build log: $LOG"
 banner SIGNING
-if ! flutter build ios --debug >"$LOG" 2>&1; then
+if ! flutter build ios --"$BUILD_MODE" >"$LOG" 2>&1; then
   tail -n 35 "$LOG" >&2 || true
   if grep -Eq "Invalid .Podfile. file|already has a platform set" "$LOG"; then
     die 'CocoaPods Podfile validation failed, not code signing. Check app/ios/Podfile for duplicate platform declarations; the generated-file staging script should maintain one.'
@@ -134,7 +146,7 @@ if ! flutter build ios --debug >"$LOG" 2>&1; then
   fi
 fi
 else
-  echo 'Using existing signed TapTether app (--skip-build).'
+  echo "Using previously signed $BUILD_MODE TapTether app (--skip-build)."
 fi
 APP="$ROOT/app/build/ios/iphoneos/Runner.app"
 [[ -d "$APP" ]] || die "Signed app not found at $APP"
@@ -142,7 +154,14 @@ BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.pl
 APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print CFBundleDisplayName' "$APP/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print CFBundleName' "$APP/Info.plist" 2>/dev/null || echo Runner)"
 [[ -n "$BUNDLE_ID" ]] || die 'Missing bundle identifier in built app.'
 codesign --verify --deep --strict "$APP" >/dev/null 2>&1 || die 'App is not signed correctly.'
-printf 'App: %s\nBundle identifier: %s\nBuild: Debug (signed)\n' "$APP_NAME" "$BUNDLE_ID"
+# Only record the mode after a completed build and successful signature verification.
+if (( ! SKIP_BUILD )); then
+  printf '%s\n' "$BUILD_MODE" > "$BUILD_MODE_RECORD"
+fi
+printf 'App: %s\nBundle identifier: %s\nBuild: %s (signed)\n' "$APP_NAME" "$BUNDLE_ID" "$BUILD_MODE"
+if [[ "$BUILD_MODE" == debug ]]; then
+  echo 'WARNING: Debug builds on iOS 14+ require Flutter/Xcode tooling to launch.' >&2
+fi
 banner INSTALLING
 APPLE_OK=0
 APPLE_LOG="$ROOT/app/build/iphone-devicectl-install.log"
@@ -168,6 +187,8 @@ if [[ "$APPLE_OK" == 0 && "$INSTALLER" != apple ]]; then
   trap 'rm -f "$device_json"; rm -rf "$IPA_DIR"' EXIT
   mkdir -p "$IPA_DIR/Payload"
   cp -R "$APP" "$IPA_DIR/Payload/Runner.app"
+  # Never update an old Debug IPA in place: zip could retain stale entries.
+  rm -f "$ROOT/app/build/TapTether-usb.ipa"
   (cd "$IPA_DIR" && /usr/bin/zip -qry "$ROOT/app/build/TapTether-usb.ipa" Payload)
   echo 'Installing signed IPA through USB app-installation service...'
   if ! ideviceinstaller --udid "$USB_UDID" install "$ROOT/app/build/TapTether-usb.ipa"; then
