@@ -146,6 +146,7 @@ if ! flutter build ios --"$BUILD_MODE" >"$LOG" 2>&1; then
     die 'Flutter iOS build failed before installation. Review the build log above for the actual error.'
   fi
 fi
+fi  # End --skip-build versus build selection.
 APP="$ROOT/app/build/ios/iphoneos/Runner.app"
 [[ -d "$APP" ]] || die "Signed app not found at $APP"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist" 2>/dev/null || true)"
