@@ -32,6 +32,32 @@ void main() {
         throwsFormatException);
   });
 
+  test('saved automatic backup password restores without prompting',
+      () async {
+    final encrypted = await DeviceBackupCodec.encrypt(records, password);
+    final recovered = await DeviceBackupCodec.tryRestoreUsingSavedPasswords(
+      encrypted,
+      <String?>[null, 'wrong-but-long-passphrase', password],
+    );
+    expect(recovered, records);
+  });
+
+  test('unknown backup password does not decrypt protected backup', () async {
+    final encrypted = await DeviceBackupCodec.encrypt(records, password);
+    final recovered = await DeviceBackupCodec.tryRestoreUsingSavedPasswords(
+      encrypted, <String?>[null, '', 'wrong-but-long-passphrase'],
+    );
+    expect(recovered, isNull);
+  });
+
+  test('passwordless files restore without saved credentials', () async {
+    final plain = DeviceBackupCodec.exportUnprotected(records);
+    final recovered = await DeviceBackupCodec.tryRestoreUsingSavedPasswords(
+      plain, <String?>[null],
+    );
+    expect(recovered, records);
+  });
+
   test('explicit unprotected files restore without a password', () async {
     final backup = DeviceBackupCodec.exportUnprotected(records);
     expect(DeviceBackupCodec.needsPassword(backup), isFalse);

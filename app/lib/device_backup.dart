@@ -35,6 +35,29 @@ class DeviceBackupCodec {
     return bytes;
   }
 
+  /// Try Keychain-stored backup passwords without prompting or exposing them.
+  /// A failed match does not alter the encrypted file or return any secrets.
+  /// Only the correct passphrase can authenticate an encrypted backup.
+  static Future<Map<String, String>?> tryRestoreUsingSavedPasswords(
+      List<int> bytes, Iterable<String?> passwords) async {
+    if (!needsPassword(bytes)) {
+      return restoreFile(bytes);
+    }
+    final attempted = <String>{};
+    for (final password in passwords) {
+      if (password == null || password.isEmpty ||
+          !attempted.add(password)) {
+        continue;
+      }
+      try {
+        return await decrypt(bytes, password);
+      } on FormatException {
+        // Another saved password may be from a different backup generation.
+      }
+    }
+    return null;
+  }
+
   static bool needsPassword(List<int> bytes) {
     final payload = _envelope(bytes);
     if (payload['format'] == unprotectedFormat) {

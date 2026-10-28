@@ -20,6 +20,7 @@ class DeviceBackupScreen extends StatefulWidget {
 
 class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   static const _passwordKey = 'taptether.backup.saved-password.v1';
+  static const _automaticPasswordKey = 'taptether.auto-backup.password.v1';
   static const _noPasswordKey = 'taptether.backup.unprotected.v1';
   static const _lastManualKey = 'taptether.backup.last-manual-location.v1';
   final _secure = const FlutterSecureStorage();
@@ -165,7 +166,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             Text(confirm
                 ? 'Choose and remember a password of at least 12 characters.'
-                : 'Enter the password used to create the backup.'),
+                : 'TapTether checked passwords saved on this iPhone, but none unlocked this encrypted backup. Enter the original backup password. Without it, the backup cannot be decrypted.'),
             const SizedBox(height: 12),
             TextField(
               controller: first, autofocus: true,
@@ -493,22 +494,24 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (!mounted) {
       return;
     }
-    // Read the file format first. Unprotected backups need no password;
-    // encrypted backups first try the passphrase saved on this phone.
+    // An unprotected file needs no password. For an encrypted file, try
+    // both backup secrets retained in this phone's Keychain before prompting.
+    // This does not bypass encryption: only an authenticating password works.
     Map<String, String> verified;
     if (DeviceBackupCodec.needsPassword(bytes)) {
-      if (_rememberedPassword != null) {
-        try {
-          verified = await DeviceBackupCodec.restoreFile(bytes,
-              password: _rememberedPassword);
-        } on FormatException {
-          if (!mounted) return;
-          final password = await _password(confirm: false);
-          if (password == null) return;
-          verified = await DeviceBackupCodec.restoreFile(bytes,
-              password: password);
-        }
+      String? savedAutomaticPassword;
+      try {
+        savedAutomaticPassword =
+            await _secure.read(key: _automaticPasswordKey);
+      } catch (_) {
+        // Keychain data may be unavailable after reinstall or migration.
+      }
+      final restored = await DeviceBackupCodec.tryRestoreUsingSavedPasswords(
+        bytes, <String?>[_rememberedPassword, savedAutomaticPassword]);
+      if (restored != null) {
+        verified = restored;
       } else {
+        if (!mounted) return;
         final password = await _password(confirm: false);
         if (password == null) return;
         verified = await DeviceBackupCodec.restoreFile(bytes,
