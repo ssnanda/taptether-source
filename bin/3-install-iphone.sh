@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build, sign, and install a standalone TapTether app on a USB iPhone.
 # Repository VERSION is authoritative for Flutter version, signed app and IPA.
-# Usage: ./bin/3-install-iphone.sh [--list-devices|list-devices] [--device ID] [--build-mode release|debug] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--help]
+# Usage: ./bin/3-install-iphone.sh [--list-devices|list-devices] [--device ID] [--build-mode release|debug] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--publish] [--help]
 #   --list-devices, list-devices  List detected eligible USB iPhones.
 #   --device ID                  Select one detected device.
 #   --no-launch                  Install without launching the app.
@@ -9,6 +9,7 @@
 #   --build-mode release|debug    Release (default) launches from Home Screen; debug requires tooling.
 #   --skip-build                 Reuse a signed app only if build mode AND VERSION match.
 #   --installer auto|apple|usb   Apple first, then optional USB fallback (default auto).
+#   --publish                    After successful Release install, request a full public release through GitHub Actions.
 #   -h, --help                   Show this help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,15 +20,18 @@ DRY_RUN=0
 SKIP_BUILD=0
 BUILD_MODE=release
 INSTALLER=auto
+PUBLISH=0
 LOG=''
 banner(){ printf '\n========== %s ==========\n' "$1"; }
 die(){ banner FAILED >&2; echo "$*" >&2; [[ -z "$LOG" ]] || echo "Build log: $LOG" >&2; exit 1; }
 usage(){
 cat <<'HELP'
-Usage: ./bin/3-install-iphone.sh [--list-devices] [--device ID] [--build-mode release|debug] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--help]
+Usage: ./bin/3-install-iphone.sh [--list-devices] [--device ID] [--build-mode release|debug] [--no-launch] [--dry-run] [--skip-build] [--installer auto|apple|usb] [--publish] [--help]
 Install a signed Release build (default) that runs from the iPhone Home Screen.
 --build-mode debug is for Flutter/Xcode debugging; Debug apps cannot launch normally from Home Screen.
 Uses your Xcode signing configuration. Optional USB fallback: brew install ideviceinstaller libimobiledevice.
+--publish starts a full GitHub Actions public release ONLY after install succeeds.
+It never uploads your personal-development-signed IPA; requires gh CLI with workflow access.
 HELP
 }
 while (($#)); do
@@ -37,6 +41,7 @@ while (($#)); do
     --no-launch) NO_LAUNCH=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
+    --publish) PUBLISH=1; shift ;;
     --build-mode) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; BUILD_MODE="$2"; shift 2 ;;
     --installer) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; INSTALLER="$2"; shift 2 ;;
     --device) if [[ $# -lt 2 ]]; then echo 'Missing value for --device' >&2; usage >&2; exit 2; fi; DEVICE_ID="$2"; shift 2 ;;
@@ -45,6 +50,10 @@ while (($#)); do
 done
 case "$INSTALLER" in auto|apple|usb) ;; *) echo "Unknown installer: $INSTALLER" >&2; usage >&2; exit 2 ;; esac
 case "$BUILD_MODE" in release|debug) ;; *) echo "Unknown build mode: $BUILD_MODE" >&2; usage >&2; exit 2 ;; esac
+if (( PUBLISH )); then
+  [[ "$BUILD_MODE" == release ]] || { echo '--publish requires a Release build.' >&2; exit 2; }
+  (( ! DRY_RUN && ! LIST )) || { echo '--publish cannot be used with --dry-run or --list-devices.' >&2; exit 2; }
+fi
 [[ "$(uname)" == Darwin ]] || die 'A Mac with Xcode is required.'
 for tool in xcodebuild xcrun python3 flutter; do command -v "$tool" >/dev/null || die "Missing $tool"; done
 xcodebuild -version >/dev/null 2>&1 || die 'Select full Xcode with xcode-select.'
@@ -219,3 +228,43 @@ fi
 banner 'INSTALLATION COMPLETE'
 echo "$APP_NAME ($BUNDLE_ID) installed on $DEVICE_NAME."
 echo "Build log: $LOG"
+
+if (( PUBLISH )); then
+  # Publish a separate unsigned distribution from GitHub Actions, never the
+  # personal-device signed IPA used to verify the installation on this phone.
+  banner 'REQUESTING PUBLIC RELEASE'
+  publish_fail(){ echo "PUBLICATION NOT REQUESTED: $*" >&2; exit 1; }
+  command -v gh >/dev/null 2>&1 || publish_fail 'Install GitHub CLI: brew install gh; gh auth login'
+  gh auth status >/dev/null 2>&1 || publish_fail 'Run gh auth login first.'
+  [[ "$(git -C "$ROOT" branch --show-current)" == main ]] || publish_fail 'Publish only from main.'
+  case "$(git -C "$ROOT" remote get-url origin)" in
+    git@github.com:ssnanda/taptether-source.git|ssh://git@github.com/ssnanda/taptether-source.git|https://github.com/ssnanda/taptether-source.git|https://github.com/ssnanda/taptether-source) ;;
+    *) publish_fail 'Source origin is not ssnanda/taptether-source.' ;;
+  esac
+  [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]] || publish_fail 'Tracked source has local edits; commit or revert before publishing.'
+  git -C "$ROOT" fetch --quiet origin main || publish_fail 'Cannot check latest source main.'
+  [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$(git -C "$ROOT" rev-parse FETCH_HEAD)" ]] || publish_fail 'Checkout is not current GitHub main; pull and reinstall.'
+  PUBLIC_TITLE="$(gh release view current -R ssnanda/taptether.com --json name --jq '.name' 2>/dev/null)" || publish_fail 'Cannot read the current public release.'
+  if ! python3 - "$SOURCE_VERSION" "$PUBLIC_TITLE" <<'PY'
+import re, sys
+source, title = sys.argv[1:]
+match = re.match(r'^TapTether (\d+\.\d+\.\d+\+\d+)(?:\s|$)', title)
+def parts(value):
+    m = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)\+(\d+)', value)
+    if not m: raise SystemExit('Invalid version: ' + repr(value))
+    return tuple(map(int, m.groups()))
+if match is None: raise SystemExit('Public release name has no valid version: ' + title)
+if parts(source) <= parts(match.group(1)):
+    raise SystemExit('Refusing older/duplicate public release: ' + source + ' <= ' + match.group(1))
+print('Requesting public release: ' + source)
+PY
+  then
+    publish_fail 'Public release version check failed.'
+  fi
+  if ! gh workflow run taptether.yml -R ssnanda/taptether-source --ref main -f task=release; then
+    publish_fail 'Workflow dispatch failed; check GitHub Actions access (gh auth refresh -s workflow).'
+  fi
+  echo 'PUBLICATION REQUESTED (not yet published). Check GitHub Actions for the result:'
+  echo 'https://github.com/ssnanda/taptether-source/actions/workflows/taptether.yml'
+  echo 'Public downloads after successful release: https://github.com/ssnanda/taptether.com/releases/tag/current'
+fi
