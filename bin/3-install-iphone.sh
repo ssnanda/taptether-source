@@ -117,7 +117,13 @@ echo "Build log: $LOG"
 banner SIGNING
 if ! flutter build ios --debug >"$LOG" 2>&1; then
   tail -n 35 "$LOG" >&2 || true
-  die 'Build/signing failed. Open ios/Runner.xcworkspace in Xcode, select Runner > Signing & Capabilities, choose your configured Team, and enable Automatic Signing. Complete any Apple account prompt in Xcode; this script will not retry authentication.'
+  if grep -Eq "Invalid .Podfile. file|already has a platform set" "$LOG"; then
+    die 'CocoaPods Podfile validation failed, not code signing. Check app/ios/Podfile for duplicate platform declarations; the generated-file staging script should maintain one.'
+  elif grep -Eiq "provisioning|code signing|signing certificate|development team" "$LOG"; then
+    die 'iOS code signing failed. In Xcode choose Runner (not RunnerTests) > Signing & Capabilities, your Team, and Automatic Signing.'
+  else
+    die 'Flutter iOS build failed before installation. Review the build log above for the actual error.'
+  fi
 fi
 APP="$ROOT/app/build/ios/iphoneos/Runner.app"
 [[ -d "$APP" ]] || die "Signed app not found at $APP"
