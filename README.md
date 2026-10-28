@@ -33,7 +33,7 @@ The GitHub Actions workflow Build TapTether agents also produces downloadable ag
 
 ## Ubuntu over SSH
 
-    ./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87
+    ./bin/5-install-agent-ubuntu.sh sandip@192.168.68.87
 
 Install, start at boot and show pairing token and TLS fingerprint. Retrieve details later from your Mac:
 
@@ -251,7 +251,7 @@ The updater reads the public GitHub Release API only when invoked, downloads the
 
 **Upgrade an earlier Ubuntu installation** from the Mac first (earlier controllers do not know the new command):
 
-    ./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87
+    ./bin/5-install-agent-ubuntu.sh sandip@192.168.68.87
 
 That installs the new agent and copies the update helper to the computer. Thereafter, use the SSH check-update/update commands above.
 
@@ -300,7 +300,7 @@ TapTether now supports:
 - Platform network permissions generated into the iOS and Android runners as part of the icon/build preparation.
 
 **On Ubuntu:** Install the latest agent using
-\`./bin/5-tt-remote-install-ubuntu.sh sandip@192.168.68.87\` from the Mac. Allow trusted LAN UDP/48322 inbound if your host firewall blocks discovery; do not open it to the public Internet.
+\`./bin/5-install-agent-ubuntu.sh sandip@192.168.68.87\` from the Mac. Allow trusted LAN UDP/48322 inbound if your host firewall blocks discovery; do not open it to the public Internet.
 
 **Compatibility:** Old agents still accept manual IP+token+fingerprint pairing, but will not appear in discovery until upgraded. The pairing tokens and certificate identities remain unchanged when upgrading.
 
@@ -413,7 +413,7 @@ Source changes are not automatically published to the rolling release.
 - **Haptic feedback:** Optional phone feedback after a successful click or key
   control event. Default on, independently toggleable.
 - **Tests:** Expanded Linux keyboard mapping tests and Unicode clipboard chunking
-  tests. Run `./bin/4-test.sh` locally. Flutter SDK and real-device verification
+  tests. Run `./bin/9-test.sh` locally. Flutter SDK and real-device verification
   are still required before merging or publishing.
 
 **Still planned for subsequent v0.6 increments:** Authenticated opt-in file

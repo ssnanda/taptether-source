@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
+# Bump the app version, commit, and push main (may trigger GitHub Actions).
+# Usage: ./bin/2-bump-version.sh [patch|minor|major]
+#   patch          Default: increment patch and build number.
+#   minor          Increment minor and build number.
+#   major          Increment major and build number.
+#   -h, --help     Show this help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then sed -n "2,10p" "$0" | sed "s/^# //"; exit 0; fi
 kind="${1:-patch}"
 case "$kind" in patch|minor|major) ;; *) echo 'Usage: ./bin/2-bump-version.sh [patch|minor|major]' >&2;exit 2;;esac
 [[ -d .git ]] || { echo 'Not a git repository' >&2; exit 1; }

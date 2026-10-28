@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# USB iPhone development build and install, using native Apple tools.
+# Build, sign, and install TapTether on a USB-connected iPhone.
+# Usage: ./bin/3-install-iphone.sh [--list-devices|list-devices] [--device ID] [--no-launch] [--dry-run] [--help]
+#   --list-devices, list-devices  List detected eligible USB iPhones.
+#   --device ID                  Select one detected device.
+#   --no-launch                  Install without launching the app.
+#   --dry-run                    Validate device without building/installing.
+#   -h, --help                   Show this help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE_ID=''
@@ -11,7 +17,7 @@ banner(){ printf '\n========== %s ==========\n' "$1"; }
 die(){ banner FAILED >&2; echo "$*" >&2; [[ -z "$LOG" ]] || echo "Build log: $LOG" >&2; exit 1; }
 usage(){
 cat <<'HELP'
-Usage: ./bin/3-install-iphone.sh [--device ID] [--list-devices] [--no-launch] [--dry-run] [--help]
+Usage: ./bin/3-install-iphone.sh [list-devices|--list-devices] [--device ID] [--no-launch] [--dry-run] [--help]
 Install a signed Debug build on a paired, USB-connected physical iPhone.
 Configure Xcode > Settings > Accounts and Runner > Signing & Capabilities first.
 HELP
@@ -19,11 +25,11 @@ HELP
 while (($#)); do
   case "$1" in
     --help|-h) usage; exit 0 ;;
-    --list-devices) LIST=1; shift ;;
+    --list-devices|list-devices) LIST=1; shift ;;
     --no-launch) NO_LAUNCH=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
-    --device) [[ $# -ge 2 ]] || die '--device requires a value'; DEVICE_ID="$2"; shift 2 ;;
-    *) die "Unknown option: $1" ;;
+    --device) if [[ $# -lt 2 ]]; then echo 'Missing value for --device' >&2; usage >&2; exit 2; fi; DEVICE_ID="$2"; shift 2 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 [[ "$(uname)" == Darwin ]] || die 'A Mac with Xcode is required.'
@@ -55,10 +61,17 @@ for d in j.get("result",{}).get("devices",[]):
 PY
 )"
 if (( LIST )); then
-  [[ -n "$device_rows" ]] && printf '%s\n' "$device_rows" || echo 'No wired iPhones detected.'
+  if [[ -n "$device_rows" ]]; then printf '%s\n' "$device_rows"; else
+    echo 'No wired iPhones detected. CoreDevice currently reports:'
+    xcrun devicectl list devices || true
+  fi
   exit 0
 fi
-[[ -n "$device_rows" ]] || die 'No USB iPhone. Connect by cable, unlock, trust this Mac, and enable Developer Mode.'
+if [[ -z "$device_rows" ]]; then
+  echo 'No eligible wired iPhone was found. CoreDevice reports:' >&2
+  xcrun devicectl list devices >&2 || true
+  die 'Check connection in Xcode > Window > Devices and Simulators. Run ./bin/3-install-iphone.sh --list-devices to retry.'
+fi
 matches="$(printf '%s\n' "$device_rows" | awk -F '\t' -v id="$DEVICE_ID" 'id=="" || $1==id')"
 [[ -n "$matches" ]] || die 'Requested device was not found over USB.'
 [[ "$(printf '%s\n' "$matches" | wc -l | tr -d ' ')" == 1 ]] || die 'Multiple USB iPhones: use --list-devices and --device ID.'

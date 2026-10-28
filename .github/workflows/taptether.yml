@@ -341,7 +341,7 @@ jobs:
           test -s desktop/macos/TapTetherTray.swift
           xcrun swiftc -typecheck desktop/macos/TapTetherTray.swift
           grep -q 'TapTetherTray' bin/2b-tt-macos.sh
-          grep -q 'taptether_tray.py' bin/5-tt-remote-install-ubuntu.sh
+          grep -q 'taptether_tray.py' bin/5-install-agent-ubuntu.sh
 
       - name: Build native macOS agents (Intel and Apple Silicon)
         run: bash bin/2b-tt-macos.sh
