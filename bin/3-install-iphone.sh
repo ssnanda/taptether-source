@@ -187,6 +187,8 @@ if [[ "$APPLE_OK" == 0 && "$INSTALLER" != apple ]]; then
   trap 'rm -f "$device_json"; rm -rf "$IPA_DIR"' EXIT
   mkdir -p "$IPA_DIR/Payload"
   cp -R "$APP" "$IPA_DIR/Payload/Runner.app"
+  # Never update an old Debug IPA in place: zip could retain stale entries.
+  rm -f "$ROOT/app/build/TapTether-usb.ipa"
   (cd "$IPA_DIR" && /usr/bin/zip -qry "$ROOT/app/build/TapTether-usb.ipa" Payload)
   echo 'Installing signed IPA through USB app-installation service...'
   if ! ideviceinstaller --udid "$USB_UDID" install "$ROOT/app/build/TapTether-usb.ipa"; then
