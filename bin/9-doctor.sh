@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
+# Check local development prerequisites; optionally generate Flutter platforms.
+# Usage: ./bin/9-doctor.sh [--repair] [--help]
+#   --repair       Generate/repair Flutter iOS and Android projects.
+#   -h, --help     Show this help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then sed -n "2,7p" "$0" | sed "s/^# //"; exit 0; fi
+[[ $# -eq 0 || ( $# -eq 1 && "${1:-}" == --repair ) ]] || { echo "Unknown option: ${1:-}" >&2; sed -n "2,7p" "$0" >&2; exit 2; }
 cd "$ROOT"
 echo 'TapTether toolchain check'
 for app in git flutter dart go python3; do

@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# USB iPhone development build and install, using native Apple tools.
+# Build, sign, and install TapTether on a USB-connected iPhone.
+# Usage: ./bin/3-install-iphone.sh [--list-devices|list-devices] [--device ID] [--no-launch] [--dry-run] [--help]
+#   --list-devices, list-devices  List detected eligible USB iPhones.
+#   --device ID                  Select one detected device.
+#   --no-launch                  Install without launching the app.
+#   --dry-run                    Validate device without building/installing.
+#   -h, --help                   Show this help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE_ID=''

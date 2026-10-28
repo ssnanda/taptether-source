@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Safely synchronize TapTether's local main branch with GitHub.
+# Synchronize local main with GitHub.
+# Usage: ./bin/1-pull-latest.sh [-f|--force] [--dry-run] [--help]
+#   -f, --force    Discard local tracked edits/commits and untracked files (ignored files kept).
+#   --dry-run      Fetch and report an available update without applying it.
+#   -h, --help     Show this help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DRY_RUN=0

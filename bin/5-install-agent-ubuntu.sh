@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Build and install current TapTether agent over SSH; service starts and prints pairing values.
+# Build and deploy the Ubuntu desktop agent over SSH.
+# Usage: ./bin/5-install-agent-ubuntu.sh USER@HOST [--help]
+#   USER@HOST      Required SSH destination for installation.
+#   -h, --help     Show this help.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then sed -n "2,7p" "$0" | sed "s/^# //"; exit 0; fi
+[[ $# -eq 1 ]] || { echo "Usage: ./bin/5-install-agent-ubuntu.sh USER@HOST" >&2; exit 2; }
 HOST="${1:-}"
 [[ "$HOST" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$ ]] || {
   echo 'Usage: ./bin/5-install-agent-ubuntu.sh user@host' >&2; exit 2;
