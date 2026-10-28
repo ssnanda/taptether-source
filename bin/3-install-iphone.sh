@@ -114,6 +114,7 @@ if (( SKIP_BUILD )); then
   if [[ ! -f "$BUILD_MODE_RECORD" || "$(cat "$BUILD_MODE_RECORD")" != "$BUILD_MODE" ]]; then
     die "Cannot use --skip-build: no verified $BUILD_MODE build recorded. Existing Runner.app may be a Debug build. Rebuild with ./bin/3-install-iphone.sh --installer usb (omit --skip-build)."
   fi
+  echo "Using previously signed $BUILD_MODE TapTether app (--skip-build)."
 else
 # Clear the recorded build mode before building to prevent reusing a stale binary.
 rm -f "$BUILD_MODE_RECORD"
@@ -144,9 +145,6 @@ if ! flutter build ios --"$BUILD_MODE" >"$LOG" 2>&1; then
   else
     die 'Flutter iOS build failed before installation. Review the build log above for the actual error.'
   fi
-fi
-else
-  echo "Using previously signed $BUILD_MODE TapTether app (--skip-build)."
 fi
 APP="$ROOT/app/build/ios/iphoneos/Runner.app"
 [[ -d "$APP" ]] || die "Signed app not found at $APP"
