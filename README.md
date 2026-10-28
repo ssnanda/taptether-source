@@ -945,3 +945,7 @@ updating My Devices. No secret or device identity is sent to unverified hosts.
 - Client isolation, AP firewall rules, or inaccessible ports still prevent
   control regardless of saved pairing. Certificate identity is never inferred
   from a hostname, MAC address, or DHCP IP alone.
+
+## Everyday developer commands
+
+See [Numbered developer commands](README-developer-commands.md) for source updates, version bumps, direct USB iPhone installation, and desktop-agent builders. Existing legacy build scripts remain for CI compatibility.

@@ -8,8 +8,8 @@ case "$kind" in patch|minor|major) ;; *) echo 'Usage: ./bin/1-bump-version.sh [p
 [[ "$(git branch --show-current)" == main ]] || { echo 'Switch to the main branch before bumping/pushing.' >&2; exit 1; }
 remote="$(git remote get-url origin 2>/dev/null || true)"
 case "$remote" in
-  git@github.com:ssnanda/taptether.com.git|ssh://git@github.com/ssnanda/taptether.com.git|https://github.com/ssnanda/taptether.com.git|https://github.com/ssnanda/taptether.com) ;;
-  *) echo "Refusing push: origin is not ssnanda/taptether.com ($remote)" >&2;exit 1;;
+  git@github.com:ssnanda/taptether-source.git|ssh://git@github.com/ssnanda/taptether-source.git|https://github.com/ssnanda/taptether-source.git|https://github.com/ssnanda/taptether-source) ;;
+  *) echo "Refusing push: origin is not ssnanda/taptether-source ($remote)" >&2;exit 1;;
 esac
 # Avoid mixing a version-only commit with already-staged unrelated edits.
 if ! git diff --cached --quiet; then echo 'Commit/unstage currently staged changes first.' >&2;exit 1;fi
@@ -45,4 +45,4 @@ else
 fi
 git commit -m "chore: bump TapTether to $version"
 git push -u origin main
-echo "Pushed version $version to github.com/ssnanda/taptether.com (main)"
+echo "Pushed version $version to github.com/ssnanda/taptether-source (main)"
