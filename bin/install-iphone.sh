@@ -68,7 +68,7 @@ DEVICE_NAME="$(printf '%s\n' "$chosen" | cut -f2)"
 state="$(printf '%s\n' "$chosen" | cut -f3)"
 # CoreDevice on current Xcode releases commonly omits the top-level state.
 # Confirm availability with an actual device query instead of rejecting an absent field.
-case "${state,,}" in
+case "$state" in
   connected|available|ready|not-reported) ;;
   disconnected|unavailable|not-paired|unpaired) die "iPhone reports state: $state. Unlock, trust Mac, and reconnect." ;;
   *) echo "Device reports state '$state'; verifying with CoreDevice..." ;;
