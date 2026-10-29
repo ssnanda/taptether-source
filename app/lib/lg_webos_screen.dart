@@ -656,7 +656,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                     } else {
                       controller.text = suggested!;
                       hint = '$source suggested this MAC. '
-                          'Confirm it belongs to this TV before saving.';
+                          'Verify it belongs to this TV before saving.';
                     }
                   });
                 },
