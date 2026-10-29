@@ -207,13 +207,15 @@ String? canonicalLgMac(String raw) {
 /// LG exposes separate Wi-Fi and Ethernet MACs. Guessing between both can
 /// make Power On silently fail when the TV changes connection type.
 String? lgMacFromWebOsNetworkInfo(Object? response, String host) {
-  if (response is! Map || response['returnValue'] == false) return null;
+  if (response is! Map || response['returnValue'] == false) {
+    return null;
+  }
   final interfaces = <Map<String, Object?>>[];
   for (final name in ['wifiInfo', 'wiredInfo']) {
     final raw = response[name];
     if (raw is Map) {
       final mac = canonicalLgMac(raw['macAddress']?.toString() ?? '');
-      if (mac == null) continue;
+      if (mac == null) { continue; }
       interfaces.add({
         'mac': mac,
         'ip': raw['ipAddress']?.toString() ?? '',
@@ -222,14 +224,14 @@ String? lgMacFromWebOsNetworkInfo(Object? response, String host) {
       });
     }
   }
-  if (interfaces.isEmpty) return null;
+  if (interfaces.isEmpty) { return null; }
   // The currently paired IP is authoritative if the service returns it.
   final matching = interfaces.where((item) => item['ip'] == host).toList();
-  if (matching.length == 1) return matching.single['mac'] as String;
+  if (matching.length == 1) { return matching.single['mac'] as String; }
   final active = interfaces.where((item) =>
       item['state'] == 'connected').toList();
-  if (active.length == 1) return active.single['mac'] as String;
-  if (interfaces.length == 1) return interfaces.single['mac'] as String;
+  if (active.length == 1) { return active.single['mac'] as String; }
+  if (interfaces.length == 1) { return interfaces.single['mac'] as String; }
   // Both interfaces can exist even if only one connects; when in doubt
   // request a human confirmation instead of saving the wrong wake target.
   return null;
