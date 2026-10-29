@@ -1,7 +1,7 @@
 name: 'TapTether - Build, Release & Maintenance'
 
 # Full releases require explicit workflow_dispatch task=release after device installation.
-# LG TV MAC discovery (0.8.35): validation after Flutter VERSION sync; manual release only.
+# LG TV MAC discovery (0.8.35): validate analyzer-clean source; manual release only.
 # One-time exception: [publish 195] in a main squash-merge commit triggers version
 # 0.8.34+195 only, after the user explicitly asked us to dispatch this build.
 # VERSION commits never automatically publish. Agent-only pushes remain supported.
