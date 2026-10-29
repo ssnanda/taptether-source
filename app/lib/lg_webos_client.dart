@@ -203,6 +203,38 @@ String? canonicalLgMac(String raw) {
       hex.substring(index * 2, index * 2 + 2)).join(':');
 }
 
+/// Resolve the network adapter that actually belongs to this TV's IP.
+/// LG exposes separate Wi-Fi and Ethernet MACs. Guessing between both can
+/// make Power On silently fail when the TV changes connection type.
+String? lgMacFromWebOsNetworkInfo(Object? response, String host) {
+  if (response is! Map || response['returnValue'] == false) return null;
+  final interfaces = <Map<String, Object?>>[];
+  for (final name in ['wifiInfo', 'wiredInfo']) {
+    final raw = response[name];
+    if (raw is Map) {
+      final mac = canonicalLgMac(raw['macAddress']?.toString() ?? '');
+      if (mac == null) continue;
+      interfaces.add({
+        'mac': mac,
+        'ip': raw['ipAddress']?.toString() ?? '',
+        'state': raw['state']?.toString().toLowerCase() ?? '',
+        'plugged': raw['plugged'],
+      });
+    }
+  }
+  if (interfaces.isEmpty) return null;
+  // The currently paired IP is authoritative if the service returns it.
+  final matching = interfaces.where((item) => item['ip'] == host).toList();
+  if (matching.length == 1) return matching.single['mac'] as String;
+  final active = interfaces.where((item) =>
+      item['state'] == 'connected').toList();
+  if (active.length == 1) return active.single['mac'] as String;
+  if (interfaces.length == 1) return interfaces.single['mac'] as String;
+  // Both interfaces can exist even if only one connects; when in doubt
+  // request a human confirmation instead of saving the wrong wake target.
+  return null;
+}
+
 /// Wake packets are limited to the current private LAN.
 Future<void> wakeLgTv(LgTvDevice tv) async {
   final mac = canonicalLgMac(tv.macAddress);
@@ -805,16 +837,21 @@ class LgWebOsClient implements TvRemoteController {
     try {
       final payload = await request(
           'ssap://com.webos.service.connectionmanager/getinfo');
-      String? readMac(Object? item) {
-        if (item is Map && item['macAddress'] is String) {
-          return canonicalLgMac(item['macAddress'] as String);
-        }
-        return null;
-      }
-      mac = readMac(payload['wifiInfo']) ??
-          readMac(payload['wiredInfo']) ?? mac;
+      mac = lgMacFromWebOsNetworkInfo(payload, paired.host) ?? mac;
     } catch (_) {
       // Older firmware may not expose network details.
+    }
+    if (canonicalLgMac(mac) == null) {
+      try {
+        // Some firmwares put active IP/connection state here, while getinfo
+        // returns both hardware addresses without active-interface hints.
+        final status = await request(
+            'ssap://com.webos.service.connectionmanager/getStatus')
+            .timeout(const Duration(seconds: 3));
+        mac = lgMacFromWebOsNetworkInfo(status, paired.host) ?? mac;
+      } catch (_) {
+        // TV firmware may not expose network status over paired SSAP.
+      }
     }
     try {
       final result = await _send({'type': 'hello'},
