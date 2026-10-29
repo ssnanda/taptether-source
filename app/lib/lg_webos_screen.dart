@@ -647,7 +647,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                       // TV pairing remains usable without a MAC.
                     }
                   }
-                  if (!dialog.mounted) return;
+                  if (!dialog.mounted) { return; }
                   setDialogState(() {
                     checking = false;
                     if (suggested == null) {
