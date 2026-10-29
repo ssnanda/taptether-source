@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'lg_webos_client.dart';
 import 'lg_tv_info_collector.dart';
+import 'lg_thinq_tv_mac.dart';
 import 'device_diagnostics_screen.dart';
 import 'lg_compact_remote.dart';
 
@@ -307,7 +308,22 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       // unsupported service never interrupts pairing or remote commands.
       final extra = await readLgTvSystemDetails(client);
       if (!mounted || _session != client) return;
+      // webOS provides the preferred local MAC. When unavailable, ThinQ
+      // inventory is a secondary hint, usable automatically ONLY if it
+      // identifies the very same TV by UUID or serial number.
+      var mac = canonicalLgMac(details.macAddress);
+      if (mac == null) {
+        try {
+          final hint = await findThinQTvMac(details)
+              .timeout(const Duration(seconds: 6));
+          mac = hint?.mac;
+        } catch (_) {
+          // Optional cloud account / unsupported TV inventory.
+        }
+      }
+      if (!mounted || _session != client) return;
       await _store.save(details.copyWith(
+        macAddress: mac ?? details.macAddress,
         about: {...details.about, ...extra},
       ));
       await _reloadSaved();
@@ -550,6 +566,19 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     await _reloadSaved();
   }
 
+  /// Try cloud discovery only when ThinQ proves the same paired TV.
+  /// Unverified ARP/MAC hints must be reviewed by the user, not silently
+  /// assigned to another TV. Never use a TV name as wake authority.
+  Future<String?> _verifiedCloudMac(LgTvDevice tv) async {
+    try {
+      final hint = await findThinQTvMac(tv)
+          .timeout(const Duration(seconds: 6));
+      return canonicalLgMac(hint?.mac ?? '');
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _editMac(LgTvDevice tv) async {
     final controller = TextEditingController(text: tv.macAddress);
     var checking = false;
@@ -583,44 +612,59 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                   border: OutlineInputBorder(),
                 ),
               ),
-              if (widget.lookupMacHint != null) ...[
-                const SizedBox(height: 6),
-                TextButton.icon(
-                  key: const ValueKey('lg-find-mac-hint'),
-                  onPressed: checking ? null : () async {
-                    setDialogState(() { checking = true; hint = null; });
-                    try {
-                      final candidate = await widget.lookupMacHint!(tv.host);
-                      if (!dialog.mounted) {
-                        return;
-                      }
-                      final normalized = canonicalLgMac(candidate ?? '');
-                      setDialogState(() {
-                        checking = false;
-                        if (normalized == null) {
-                          hint = 'No network MAC hint found. Enter it '
-                              'from your router or TV settings.';
-                        } else {
-                          controller.text = normalized;
-                          hint = 'Possible MAC from a paired computer. '
-                              'Verify it belongs to this TV before saving.';
-                        }
-                      });
-                    } catch (_) {
-                      if (dialog.mounted) {
-                        setDialogState(() {
-                          checking = false;
-                          hint = 'Could not retrieve a network MAC hint.';
-                        });
+              const SizedBox(height: 6),
+              TextButton.icon(
+                key: const ValueKey('lg-find-mac-hint'),
+                onPressed: checking ? null : () async {
+                  setDialogState(() { checking = true; hint = null; });
+                  String? suggested;
+                  String source = '';
+                  try {
+                    // Try the owner-connected LG cloud first, but only
+                    // auto-trust a vendor identifier matching this TV.
+                    final strong = await _verifiedCloudMac(tv);
+                    if (strong != null) {
+                      suggested = strong;
+                      source = 'LG ThinQ (verified TV identity)';
+                    } else {
+                      final reviewable = await findThinQTvMac(tv,
+                          requireVerification: false)
+                          .timeout(const Duration(seconds: 6));
+                      suggested = canonicalLgMac(reviewable?.mac ?? '');
+                      if (suggested != null) {
+                        source = 'LG ThinQ (name match only)';
                       }
                     }
-                  },
-                  icon: const Icon(Icons.search),
-                  label: Text(checking
-                      ? 'Checking paired computers…'
-                      : 'Look up MAC on local network'),
-                ),
-              ],
+                  } catch (_) {
+                    // Cloud unavailable: optionally fall back to LAN hint.
+                  }
+                  if (suggested == null && widget.lookupMacHint != null) {
+                    try {
+                      suggested = canonicalLgMac(
+                        await widget.lookupMacHint!(tv.host) ?? '');
+                      if (suggested != null) source = 'local neighbor table';
+                    } catch (_) {
+                      // TV pairing remains usable without a MAC.
+                    }
+                  }
+                  if (!dialog.mounted) return;
+                  setDialogState(() {
+                    checking = false;
+                    if (suggested == null) {
+                      hint = 'No MAC address was exposed by LG ThinQ '
+                          'or the local network. Check the TV settings.';
+                    } else {
+                      controller.text = suggested!;
+                      hint = '$source suggested this MAC. '
+                          'Confirm it belongs to this TV before saving.';
+                    }
+                  });
+                },
+                icon: const Icon(Icons.search),
+                label: Text(checking
+                    ? 'Checking LG and local network…'
+                    : 'Find MAC automatically'),
+              ),
               if (hint != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -691,17 +735,27 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         current.host != _target!.host) {
       return;
     }
-    // Don't pretend a failed wake occurred when setup is incomplete.
-    // In the real app, an unknown MAC opens setup. Injected wake actions
-    // keep existing isolation tests deterministic.
+    // First power-on can fill a missing MAC directly from an existing
+    // trusted LG ThinQ account, if its immutable TV identity matches.
+    // This does not pair a different TV or grant cloud power control.
+    var wakeTarget = current;
     if (canonicalLgMac(current.macAddress) == null &&
         widget.wakeDevice == null) {
-      await _editMac(current);
-      return;
+      final cloudMac = await _verifiedCloudMac(current);
+      if (!mounted || (_detailMode && _target?.host != current.host)) {
+        return;
+      }
+      if (cloudMac == null) {
+        await _editMac(current);
+        return;
+      }
+      wakeTarget = current.copyWith(macAddress: cloudMac);
+      await _store.save(wakeTarget);
+      await _reloadSaved();
     }
     _waking = true;
     try {
-      await (widget.wakeDevice ?? wakeLgTv)(current);
+      await (widget.wakeDevice ?? wakeLgTv)(wakeTarget);
       _suspended = false;
       if (mounted) {
         setState(() {
