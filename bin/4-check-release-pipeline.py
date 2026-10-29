@@ -17,7 +17,7 @@ assert "workflow_dispatch:" in workflow
 assert "schedule:" in workflow
 assert "task:" in workflow
 assert all(f"- {mode}" in workflow for mode in ("release", "build", "validate", "agent-ubuntu", "agent-macos", "agent-windows"))
-assert "          - cleanup" not in workflow
+assert "          - cleanup" in workflow
 assert "  push:\n    branches: [main, fix/v0.6-remote-scan-mac-details]" in workflow, (
     "Explicit agent-only push updates; full releases require workflow dispatch"
 )
@@ -125,8 +125,11 @@ assert "  agent-only-macos:" in workflow
 assert "  agent-only-windows:" in workflow
 assert "  cleanup-history:" in workflow
 assert "    needs: build-and-publish" in workflow
+assert "    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup'" in workflow
 assert "always() && (github.event_name == 'schedule'" in workflow
-assert "inputs.task == 'cleanup'" not in workflow
+assert "inputs.task == 'cleanup'" in workflow
+assert "inputs.task != 'cleanup'" in workflow
+assert "contains(github.event.head_commit.message, '[cleanup actions]')" in workflow
 assert "needs.build-and-publish.result == 'success'" in workflow
 
 # Regression guards: the Mac Finder installer must report and recover from
@@ -318,6 +321,6 @@ assert "device.scanSubtitle" in scan_screen
 assert "Check a specific device" in scan_screen
 
 
-print("PASS: one Actions workflow, auto full Release on VERSION and per-platform agent-only manual releases")
+print("PASS: one Actions workflow, explicit full release after iPhone install, manual cleanup")
 print("PASS: validate -> Ubuntu/Windows/macOS agents -> IPA/APK -> publish")
 print("PASS: binary-only public rolling releases; no historical tags")
