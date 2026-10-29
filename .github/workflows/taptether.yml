@@ -34,11 +34,14 @@ on:
       - '.github/workflows/taptether.yml'
   push:
     branches: [main, fix/v0.6-remote-scan-mac-details]
-    # Only independent agent feeds trigger push workflows.
-    # Source VERSION changes alone do NOT trigger full release builds.
+    # Agent feeds publish separately; an explicit [build xbox] merge runs a
+    # build-only workflow (never a public release). No VERSION push release.
     paths:
       - 'versions/ubuntu-agent.txt'
       - 'versions/macos-agent.txt'
+      - 'app/lib/xbox_*.dart'
+      - 'app/test/xbox_*.dart'
+      - '.github/workflows/taptether.yml'
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
     - cron: '37 4 * * 0'
@@ -175,7 +178,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -211,7 +214,7 @@ jobs:
 
   build-windows:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -269,7 +272,7 @@ jobs:
 
   build-and-publish:
     needs: [build-ubuntu, build-windows]
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -374,7 +377,7 @@ jobs:
         run: bash bin/2a-tt-apk.sh --no-publish
 
       - name: Make validated builds available (Build mode only)
-        if: ${{ inputs.task == 'build' }}
+        if: ${{ inputs.task == 'build' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build xbox]')) }}
         uses: actions/upload-artifact@v4
         with:
           name: TapTether-complete-build-${{ github.run_id }}
@@ -387,7 +390,7 @@ jobs:
             dist/macos/TapTetherInputCore-*.tar.gz
             dist/windows/*.zip
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
       - name: Publish current IPA, APK and agents to GitHub Releases
         if: ${{ inputs.task == 'release' }}
