@@ -654,7 +654,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                       hint = 'No MAC address was exposed by LG ThinQ '
                           'or the local network. Check the TV settings.';
                     } else {
-                      controller.text = suggested!;
+                      controller.text = suggested;
                       hint = '$source suggested this MAC. '
                           'Verify it belongs to this TV before saving.';
                     }
