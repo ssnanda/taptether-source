@@ -29,7 +29,7 @@ assert "if: ${{ inputs.task == 'release' || (github.event_name == 'push' && gith
 assert "- 'app/lib/xbox_*.dart'" in workflow
 assert "- '.github/workflows/taptether.yml'" in workflow
 assert "[build xbox]" in workflow
-assert "if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) }}" in workflow
+assert "if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 195]')) }}" in workflow
 
 assert "  validate:" in workflow
 assert "  build-ubuntu:" in workflow
