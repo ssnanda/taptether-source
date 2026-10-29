@@ -587,6 +587,71 @@ jobs:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-agent-only.sh macos
 
+  # One-time publication of the fully validated 0.8.35+196 build artifact.
+  # Reuses the iOS, Android and agent packages from successful CI run 40962701309.
+  publish-verified-ipa-196:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish built 196]') }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify successful build provenance and release version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(cat VERSION)" = '0.8.35+196'
+          test "$(git rev-parse HEAD^)" = '01a6ff803f59ceda9ec71a62945f9798f7ae4460'
+          gh api repos/ssnanda/taptether-source/actions/runs/40962701309 \
+            --jq '[.conclusion, .head_sha] | join(" ")' \
+            | grep -Fx 'success 01a6ff803f59ceda9ec71a62945f9798f7ae4460'
+
+      - name: Retrieve exact validated IPA, APK, and agent packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 40962701309 -R ssnanda/taptether-source \
+            -n TapTether-complete-build-40962701309 -D dist
+          test -s dist/ios/TapTether-0.8.35+196-unsigned.ipa
+          test -s dist/android/TapTether-0.8.35+196.apk
+          python3 bin/4-validate-desktop-installers.py --platform all
+          echo 'Previously validated release packages retrieved intact.'
+
+      - name: Recreate distribution icon
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow
+          python3 bin/9-tt-brand-icons.py
+          test -s dist/branding/TapTether-icon.png
+
+      - name: Publish built 0.8.35+196 to public rolling release
+        env:
+          GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo '::error::Missing TAPTETHER_PUBLIC_RELEASE_TOKEN'; exit 1;
+          }
+          test "$(gh api repos/ssnanda/taptether.com --jq '.permissions.push')" = true
+          bash bin/6-tt-publish-latest.sh
+
+      - name: Verify public IPA and release title
+        env:
+          GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release view current -R ssnanda/taptether.com \
+            --json name --jq '.name' | grep -Fx 'TapTether 0.8.35+196 (rolling downloads)'
+          gh api repos/ssnanda/taptether.com/releases/tags/current \
+            --jq '.assets[].name' | grep -Fx 'TapTether.ipa'
+
   cleanup-history:
     needs: build-and-publish
     # Weekly, explicitly requested cleanup, one-shot maintenance merge, or a successful release.
