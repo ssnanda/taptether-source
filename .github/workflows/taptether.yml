@@ -1,6 +1,7 @@
 name: 'TapTether - Build, Release & Maintenance'
 
 # Full releases require explicit workflow_dispatch task=release after device installation.
+# LG TV automatic MAC discovery (0.8.35): run existing CI on this workflow change; no automatic release.
 # One-time exception: [publish 195] in a main squash-merge commit triggers version
 # 0.8.34+195 only, after the user explicitly asked us to dispatch this build.
 # VERSION commits never automatically publish. Agent-only pushes remain supported.
