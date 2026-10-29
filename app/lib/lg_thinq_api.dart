@@ -342,6 +342,11 @@ class LgThinQClient {
   Future<List<LgThinQDevice>> discover() async =>
       parseThinQDevices(await _get('devices'));
 
+  /// Read-only ThinQ inventory used only for optional TV MAC discovery.
+  /// The caller must filter it to a matching TV. This does not issue power
+  /// commands or expose the account's other device details in the UI.
+  Future<Object?> tvNetworkInventory() => _get('devices');
+
   Future<Object?> profile(String deviceId) async =>
       _get('devices/${Uri.encodeComponent(deviceId)}/profile');
 
