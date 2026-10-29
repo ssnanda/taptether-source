@@ -62,6 +62,12 @@ void main() {
     expect(parseXboxDiscovery(certificatePending, '192.168.68.122'), isNull);
   });
 
+  test('rejects a discovery reply from a non-Xbox magic prefix', () {
+    final packet = _response();
+    packet[0] = 0xef;
+    expect(parseXboxDiscovery(packet, '192.168.68.122'), isNull);
+  });
+
   test('standby wake packet includes exact Live ID and no account data', () {
     final packet = xboxWakePacket('FD12345678901234');
     expect(packet.take(6), [0xdd, 2, 0, 19, 0, 2]);
