@@ -91,8 +91,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             : 'Found ${results.length} Xbox console(s).';
       });
     } catch (error) {
-      if (mounted) setState(() => _error =
-          error.toString().replaceFirst('Bad state: ', ''));
+      if (mounted) {
+        setState(() => _error =
+            error.toString().replaceFirst('Bad state: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -125,8 +127,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       });
       await widget.onSaved?.call();
     } catch (error) {
-      if (mounted) setState(() => _error =
-          error.toString().replaceFirst('Bad state: ', ''));
+      if (mounted) {
+        setState(() => _error =
+            error.toString().replaceFirst('Bad state: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -143,11 +147,15 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     setState(() { _busy = true; _error = null; });
     try {
       await (widget.wake?.call(device) ?? wakeXbox(device));
-      if (mounted) setState(() => _message =
-          'Wake packets sent. This does not confirm that Xbox woke up.');
+      if (mounted) {
+        setState(() => _message =
+            'Wake packets sent. This does not confirm that Xbox woke up.');
+      }
     } catch (error) {
-      if (mounted) setState(() => _error =
-          error.toString().replaceFirst('Bad state: ', ''));
+      if (mounted) {
+        setState(() => _error =
+            error.toString().replaceFirst('Bad state: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
