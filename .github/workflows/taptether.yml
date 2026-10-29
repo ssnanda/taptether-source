@@ -1,7 +1,8 @@
 name: 'TapTether - Build, Release & Maintenance'
 
 # Full releases require explicit workflow_dispatch task=release after device installation.
-# LG TV MAC discovery (0.8.35): validate analyzer-clean source; manual release only.
+# Build-only: [build ipa] on main produces downloadable IPA/APK/agent CI artifacts.
+# LG TV MAC discovery (0.8.35): release remains manual, after device installation.
 # One-time exception: [publish 195] in a main squash-merge commit triggers version
 # 0.8.34+195 only, after the user explicitly asked us to dispatch this build.
 # VERSION commits never automatically publish. Agent-only pushes remain supported.
@@ -186,7 +187,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 195]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 195]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -222,7 +223,7 @@ jobs:
 
   build-windows:
     needs: validate
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 195]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 195]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -280,7 +281,7 @@ jobs:
 
   build-and-publish:
     needs: [build-ubuntu, build-windows]
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 195]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 195]')) }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -385,7 +386,7 @@ jobs:
         run: bash bin/2a-tt-apk.sh --no-publish
 
       - name: Make validated builds available (Build mode only)
-        if: ${{ inputs.task == 'build' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build xbox]')) }}
+        if: ${{ inputs.task == 'build' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) }}
         uses: actions/upload-artifact@v4
         with:
           name: TapTether-complete-build-${{ github.run_id }}
