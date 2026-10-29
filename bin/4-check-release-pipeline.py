@@ -26,7 +26,10 @@ assert "    paths:\n      - VERSION" not in workflow, (
     "VERSION pushes must not publish automatically before iPhone installation"
 )
 assert "if: ${{ inputs.task == 'release' }}" in workflow
-assert "if: ${{ github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build') }}" in workflow
+assert "- 'app/lib/xbox_*.dart'" in workflow
+assert "- '.github/workflows/taptether.yml'" in workflow
+assert "[build xbox]" in workflow
+assert "if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) }}" in workflow
 
 assert "  validate:" in workflow
 assert "  build-ubuntu:" in workflow
@@ -84,7 +87,8 @@ assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
 assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
 assert "run: bash bin/6-tt-publish-latest.sh" in workflow
 assert "if: ${{ inputs.task == 'release' }}" in workflow
-assert "if: ${{ inputs.task == 'build' }}" in workflow
+assert "if: ${{ inputs.task == 'build' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build xbox]')) }}" in workflow
+assert workflow.count("if: ${{ inputs.task == 'release' }}") >= 2
 assert "TapTether-complete-build-" in workflow
 assert "retention-days: 1" in workflow
 
