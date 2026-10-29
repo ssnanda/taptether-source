@@ -34,6 +34,27 @@ The public `current` release already contains `0.8.34+194`; the next version is 
 
 `--publish` is optional; a normal iPhone installation only installs locally. Version bumps and pull requests **no longer automatically publish**. GitHub Actions minutes are used when requesting a full release. The private repository must have `TAPTETHER_PUBLIC_RELEASE_TOKEN`, and `gh auth login` must have sufficient workflow permissions. The public IPA is unsigned and requires separate signing for installation on other phones.
 
+## Public IPA and Actions cleanup
+
+The public iOS download is `https://github.com/ssnanda/taptether.com/releases/download/current/TapTether.ipa`. That asset already exists in the older public `current` release, but **source version 0.8.34+195 is not published until a full release workflow succeeds**. The public IPA is unsigned (for redistribution with each recipient's own signing method), **not** the personally signed USB IPA installed on your iPhone.
+
+If you already installed and tested the current source version, you can request publishing **without reinstalling** using:
+
+```bash
+gh workflow run taptether.yml -R ssnanda/taptether-source --ref main -f task=release
+gh run list -R ssnanda/taptether-source --workflow taptether.yml --limit 5
+```
+
+The request queues a new CI build: a successfully queued workflow is **not** an uploaded IPA. Watch the full workflow to confirm its `build-and-publish` job completed and confirm the public release title and downloadable IPA match `VERSION`.
+
+The repository has **one workflow file**; old entries visible in GitHub Actions are *workflow run history*, not additional workflow definitions. To remove historical completed workflow runs and temporary Actions artifacts without compiling the app or agents, use:
+
+```bash
+gh workflow run taptether.yml -R ssnanda/taptether-source --ref main -f task=cleanup
+```
+
+This requires GitHub Actions permissions. Cleanup preserves active runs and published downloads/AltStore metadata, but deletes completed logs and temporary artifacts; it **does not refund consumed GitHub Actions minutes**. Weekly cleanup and post-release cleanup continue automatically. The maintenance PR adding this option also requests a one-time cleanup of older runs on merge.
+
 ## Notes
 `VERSION` is the single authoritative app version; `app/pubspec.yaml` is kept in sync and the iPhone installer passes that same version and build number to Flutter. The iPhone installer verifies the signed `Runner.app` metadata before installing. For the newest app: run `./bin/1-pull-latest.sh` and then `./bin/3-install-iphone.sh --installer usb` **without** `--skip-build`. `--skip-build` is allowed only when both the signed build mode and exact source version match. Pulling source never builds or installs the app.
 
