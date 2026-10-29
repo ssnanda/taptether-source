@@ -71,7 +71,9 @@ XboxConsole? parseXboxDiscovery(List<int> packet, String host) {
     final view = ByteData.sublistView(bytes);
     final payloadLength = view.getUint16(2, Endian.big);
     if (view.getUint16(4, Endian.big) != 0 ||
-        payloadLength != bytes.length - 6) return null;
+        payloadLength != bytes.length - 6) {
+      return null;
+    }
     final flags = view.getUint32(6, Endian.big);
     if (flags & 0x08 != 0) return null; // certificate is pending
     if (view.getUint16(10, Endian.big) != 1) return null; // Xbox One family
@@ -81,7 +83,9 @@ XboxConsole? parseXboxDiscovery(List<int> packet, String host) {
       final size = view.getUint16(offset, Endian.big);
       offset += 2;
       if (size < 1 || size > 128 || offset + size + 1 > bytes.length ||
-          bytes[offset + size] != 0) return null;
+          bytes[offset + size] != 0) {
+        return null;
+      }
       final value = utf8.decode(bytes.sublist(offset, offset + size));
       offset += size + 1;
       return (value, offset);
@@ -91,7 +95,9 @@ XboxConsole? parseXboxDiscovery(List<int> packet, String host) {
     final uuid = readString();
     if (consoleName == null || uuid == null ||
         consoleName.$1.trim().isEmpty || uuid.$1.trim().isEmpty ||
-        offset + 6 > bytes.length) return null;
+        offset + 6 > bytes.length) {
+      return null;
+    }
     offset += 4; // last error
     final certificateSize = view.getUint16(offset, Endian.big);
     offset += 2;
@@ -120,7 +126,9 @@ String? xboxLiveIdFromDer(List<int> certificate) {
   for (var index = 0; index + 7 < certificate.length; index++) {
     if (certificate[index] != 0x06 || certificate[index + 1] != 0x03 ||
         certificate[index + 2] != 0x55 || certificate[index + 3] != 0x04 ||
-        certificate[index + 4] != 0x03) continue;
+        certificate[index + 4] != 0x03) {
+      continue;
+    }
     final type = certificate[index + 5];
     if (type != 0x0c && type != 0x13 && type != 0x16) continue;
     final length = certificate[index + 6];
@@ -178,7 +186,9 @@ Future<List<XboxConsole>> discoverXboxConsoles({
       final reply = datagram!;
       final ip = reply.address.address;
       if (reply.port != 5050 || !lanRangeContains(network, ip) ||
-          (targetIp != null && ip != targetIp)) continue;
+          (targetIp != null && ip != targetIp)) {
+        continue;
+      }
       final candidate = parseXboxDiscovery(reply.data, ip);
       if (candidate != null) found[candidate.uuid] = candidate;
     }
