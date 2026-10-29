@@ -22,14 +22,14 @@ class ThinQTvMacHint {
 List<ThinQTvMacHint> parseThinQTvMacHints(Object? raw) {
   final entries = raw is List ? raw :
       raw is Map ? (raw['devices'] ?? raw['items']) : null;
-  if (entries is! List) return const [];
+  if (entries is! List) { return const []; }
   String str(Object? value) => value is String ? value.trim() : '';
   final results = <ThinQTvMacHint>[];
 
   for (final entry in entries.take(80)) {
-    if (entry is! Map) continue;
+    if (entry is! Map) { continue; }
     final device = LgThinQDevice.parse(entry);
-    if (device == null || !device.isTelevision) continue;
+    if (device == null || !device.isTelevision) { continue; }
     final info = entry['deviceInfo'] is Map
         ? entry['deviceInfo'] as Map : entry;
     final network = entry['networkInfo'] is Map
@@ -42,7 +42,7 @@ List<ThinQTvMacHint> parseThinQTvMacHints(Object? raw) {
         'deviceUUID', 'deviceUuid', 'uuid', 'serialNumber', 'serialNo',
       ]) {
         final value = str(node[key]);
-        if (value.length >= 8) identifiers.add(value.toUpperCase());
+        if (value.length >= 8) { identifiers.add(value.toUpperCase()); }
       }
     }
     // LG ThinQ deviceId is a cloud account identifier; it must NOT be
@@ -58,7 +58,7 @@ List<ThinQTvMacHint> parseThinQTvMacHints(Object? raw) {
     final macs = fields.map(canonicalLgMac).whereType<String>().toSet();
     // Conflicting Wi-Fi/Ethernet MACs with no reported active interface
     // need review. They cannot be selected automatically.
-    if (macs.length != 1) continue;
+    if (macs.length != 1) { continue; }
     results.add(ThinQTvMacHint(
       mac: macs.single,
       alias: device.name,
@@ -87,8 +87,8 @@ ThinQTvMacHint? matchingThinQMacHint(
     {bool requireVerification = true}) {
   final verified = hints.where((hint) =>
       thinQHintVerifiedForTv(hint, tv)).toList();
-  if (verified.length == 1) return verified.single;
-  if (requireVerification || verified.length > 1) return null;
+  if (verified.length == 1) { return verified.single; }
+  if (requireVerification || verified.length > 1) { return null; }
   final name = tv.name.trim().toLowerCase();
   final byName = hints.where((hint) =>
       hint.alias.trim().toLowerCase() == name).toList();
