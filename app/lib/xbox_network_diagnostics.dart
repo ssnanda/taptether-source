@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'lan_scan.dart';
 import 'xbox_smartglass.dart';
 
@@ -37,6 +35,27 @@ class XboxNetworkReport {
 /// Constrains full scans to four /24 slices (up to 1,024 local addresses).
 /// For a /22 (such as 192.168.68.0/22), this covers the entire CIDR.
 /// Larger ranges explicitly report truncation rather than claiming success.
+String formatXboxNetworkDiagnostics(XboxNetworkReport report) {
+  final rows = <String>[
+    'TapTether Xbox LAN diagnostics',
+    'Wi-Fi CIDR: ${report.cidr}',
+    if (report.targetIp != null) 'Target IP: ${report.targetIp}',
+    'Address probes: ${report.checkedAddresses}/${report.totalAddresses}',
+    'Legacy Xbox UDP 5050 requests: ${report.udpStats.sent}',
+    'Legacy Xbox replies: ${report.udpStats.replies}',
+    'Compatible replies: ${report.udpStats.compatible}',
+    'Other UDP replies: ${report.udpStats.malformed}',
+    'TCP-visible hosts: ${report.tcpHosts.length}',
+    if (report.truncated) 'NOTICE: Scan limited to first four /24 ranges',
+    for (final entry in report.targetPorts.entries)
+      'Target TCP ${entry.key}: ${tcpProbeLabel(entry.value)}',
+    for (final host in report.tcpHosts)
+      '${host.ip} TCP: ${host.openPorts.join(", ")}',
+    'Note: TCP or UDP reachability is not authenticated Xbox identity.',
+  ];
+  return rows.join('\\n');
+}
+
 List<String> xboxDiagnosticPrefixes(DetectedLanRange range) =>
     range.scanPrefixes.take(4).toList();
 
