@@ -64,8 +64,10 @@ Future<void> main() async {
       await Workmanager().initialize(taptetherBackgroundDispatcher);
       await FridgeAlerts.instance.syncBackgroundTask();
     } catch (_) {
-      // OS background task support can be unavailable on a simulator;
-      // foreground ThinQ and other remote features remain usable.
+      // A failed registration must be visible in background diagnostics.
+      try {
+        await FridgeAlerts.instance.recordScheduleFailure();
+      } catch (_) {}
     }
   }
   runApp(const TapTetherApp());
@@ -2401,6 +2403,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> _fridgeAlertMenu(LgThinQDevice device) async {
     final checked = await FridgeAlerts.instance.lastChecked(device.id);
     final interval = await FridgeAlerts.instance.intervalMinutes(device.id);
+    final background = await FridgeAlerts.instance.backgroundDiagnostics();
+    final refreshStatus =
+        await FridgeAlerts.instance.backgroundRefreshPermission();
     if (!mounted) return;
     final selection = await showModalBottomSheet<String>(
       context: context,
@@ -2414,10 +2419,17 @@ class _RemoteScreenState extends State<RemoteScreen>
                 ? 'No confirmed LG temperature reading yet.'
                 : 'Last LG reading: ${checked.toLocal()}'),
           ),
-          const ListTile(
+          ListTile(
+            leading: const Icon(Icons.sync_outlined),
+            title: const Text('iPhone Background App Refresh'),
+            subtitle: Text(refreshStatus),
+          ),
+          ListTile(
             dense: true,
-            title: Text('iOS decides when background checks run. '
-                'Alerts are not instant.'),
+            title: const Text('Background monitor status'),
+            subtitle: Text('Task: ${background["schedule"]}\n'
+                'Last iOS wake: ${background["lastWake"]!.isEmpty ? "Never" : background["lastWake"]}\n'
+                'Result: ${background["outcome"]}'),
           ),
           ListTile(
             leading: const Icon(Icons.timer_outlined),

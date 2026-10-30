@@ -9,7 +9,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'discovery.dart';
 import 'lan_scan.dart';
 
-/// Xbox One/Series SmartGlass UDP discovery and standby wake only.
+/// Legacy Xbox One SmartGlass UDP discovery and standby wake only.
+/// Newer Series X|S firmware is not guaranteed to respond.
 /// Controller input requires a separate authenticated, encrypted session.
 /// A discovery certificate fingerprint is a change detector, NOT proof that
 /// the responding LAN host is the rightful owner of the Xbox identity.

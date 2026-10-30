@@ -9,6 +9,7 @@ import UserNotifications
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var cloudFolder: TapTetherCloudFolder?
+  private var backgroundRefreshChannel: FlutterMethodChannel?
 
   func didInitializeImplicitFlutterEngine(
     _ engineBridge: FlutterImplicitEngineBridge
@@ -17,6 +18,23 @@ import UserNotifications
     let folder = TapTetherCloudFolder()
     folder.register(messenger: engineBridge.applicationRegistrar.messenger())
     cloudFolder = folder
+    let channel = FlutterMethodChannel(
+      name: "taptether/background-refresh",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "status" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      switch UIApplication.shared.backgroundRefreshStatus {
+      case .available: result("available")
+      case .denied: result("denied")
+      case .restricted: result("restricted")
+      @unknown default: result("unknown")
+      }
+    }
+    backgroundRefreshChannel = channel
   }
 
   override func application(

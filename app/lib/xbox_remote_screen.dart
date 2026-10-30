@@ -34,7 +34,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
   List<XboxConsole> _found = [];
   XboxConsole? _selected;
   bool _busy = false;
-  String _message = 'Discover your Xbox on the same Wi-Fi.';
+  String _message = 'Check for legacy Xbox discovery on Wi-Fi.';
   String? _error;
 
   @override
@@ -87,8 +87,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           if (matches.isNotEmpty) _selected = matches.first;
         }
         _message = results.isEmpty
-            ? 'No SmartGlass discovery reply. Try Xbox LAN IP.'
-            : 'Found ${results.length} Xbox console(s).';
+            ? 'No legacy discovery reply (UDP 5050). '
+              'Current Xbox firmware may not support this protocol; '
+              'a manual IP check cannot bypass that limitation.'
+            : 'Found ${results.length} compatible Xbox console(s).';
       });
     } catch (error) {
       if (mounted) {
@@ -188,7 +190,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     final saved = selected != null &&
         _saved.any((d) => _sameIdentity(d, selected));
     return Scaffold(
-      appBar: AppBar(title: const Text('Xbox Remote')),
+      appBar: AppBar(title: const Text('Xbox discovery')),
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -249,16 +251,21 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           )),
           const SizedBox(height: 12),
           Card(child: ListTile(
-            leading: const Icon(Icons.sports_esports_outlined),
-            title: const Text('Controller and media buttons'),
-            subtitle: const Text('Not yet enabled. Xbox requires an '
-                'encrypted SmartGlass session before sending input.'),
+            leading: const Icon(Icons.info_outline),
+            title: const Text('Xbox compatibility'),
+            subtitle: const Text(
+                'TapTether currently uses the older Xbox One discovery '
+                'protocol. Xbox Series X|S may not respond. '
+                'Current Xbox settings: Settings → Devices & connections '
+                '→ Remote features → Enable remote features. '
+                'That setting does not guarantee legacy protocol support. '
+                'Controller/media control is not available yet.'),
           )),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _busy ? null : () => _scan(),
             icon: const Icon(Icons.radar),
-            label: Text(_busy ? 'Searching…' : 'Discover Xbox on Wi-Fi'),
+            label: Text(_busy ? 'Checking…' : 'Check Xbox compatibility'),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -296,10 +303,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
                 setState(() => _selected = candidate),
           ),
           const SizedBox(height: 14),
-          Text('Local-first preview · Xbox One / Series family. '
-              'Discovery replies are unauthenticated. Verify the '
-              'console in person before saving it. No Xbox account, '
-              'cloud API or agent is used.',
+          Text('Legacy SmartGlass compatibility test only. '
+              'No modern Xbox Remote Play or authenticated controller '
+              'session is implemented. Verify discovered consoles '
+              'in person; discovery replies are unauthenticated.',
               style: Theme.of(context).textTheme.bodySmall),
         ],
       )),

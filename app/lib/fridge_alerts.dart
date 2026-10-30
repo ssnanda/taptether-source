@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/services.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'fridge_temperature.dart';
@@ -14,6 +15,9 @@ const _alertKey = 'taptether.fridge.alerts.enabled.v1';
 const _baselinePrefix = 'taptether.fridge.alerts.baseline.v1.';
 const _lastCheckedPrefix = 'taptether.fridge.alerts.checked.v1.';
 const _intervalPrefix = 'taptether.fridge.alerts.interval.v1.';
+const _backgroundRunKey = 'taptether.fridge.background.run.v1';
+const _backgroundResultKey = 'taptether.fridge.background.result.v1';
+const _backgroundRequestKey = 'taptether.fridge.background.request.v1';
 
 /// Short intervals are useful when TapTether is open for testing.
 /// Background work on iOS is scheduled by the OS, not by this timer.
@@ -40,10 +44,17 @@ void taptetherBackgroundDispatcher() {
     }
     DartPluginRegistrant.ensureInitialized();
     try {
-      await FridgeAlerts.instance.checkAll();
+      await FridgeAlerts.instance.recordBackgroundWake();
+      final count = await FridgeAlerts.instance.checkAll();
+      await FridgeAlerts.instance.recordBackgroundResult(
+        'LG checked $count refrigerator${count == 1 ? "" : "s"}',
+      );
       return true;
     } catch (_) {
-      // Workmanager can retry transient connection/plugin errors.
+      // Sanitized status, not credentials or raw LG API responses.
+      try {
+        await FridgeAlerts.instance.recordBackgroundResult('LG check failed');
+      } catch (_) {}
       return false;
     }
   });
@@ -94,6 +105,55 @@ class FridgeAlerts {
             'In iPhone Settings → Notifications → TapTether, enable '
             'Allow Notifications, Banners and Sounds.');
       }
+    }
+  }
+
+  Future<void> recordBackgroundWake() =>
+      _store.write(key: _backgroundRunKey,
+          value: DateTime.now().toUtc().toIso8601String());
+
+  Future<void> recordBackgroundResult(String status) =>
+      _store.write(key: _backgroundResultKey, value: status);
+
+  Future<void> recordScheduleFailure() =>
+      _store.write(key: _backgroundRequestKey,
+          value: 'Background task registration failed');
+
+  Future<Map<String, String>> backgroundDiagnostics() async {
+    final fields = await Future.wait([
+      _store.read(key: _backgroundRequestKey),
+      _store.read(key: _backgroundRunKey),
+      _store.read(key: _backgroundResultKey),
+    ]);
+    return {
+      'schedule': fields[0] ?? 'Not requested',
+      'lastWake': fields[1] ?? '',
+      'outcome': fields[2] ?? 'No background LG check yet',
+    };
+  }
+
+  /// Native iOS reports whether Background App Refresh is enabled.
+  /// Even "available" is not a promise that iOS will grant runtime.
+  Future<String> backgroundRefreshPermission() async {
+    if (!Platform.isIOS) return 'Not applicable on this device';
+    try {
+      final value = await const MethodChannel(
+        'taptether/background-refresh',
+      ).invokeMethod<String>('status');
+      switch (value) {
+        case 'available':
+          return 'Available (iOS decides timing)';
+        case 'denied':
+          return 'Disabled in iPhone Settings';
+        case 'restricted':
+          return 'Restricted by iPhone';
+        default:
+          return 'Unknown';
+      }
+    } on PlatformException {
+      return 'Could not read iPhone setting';
+    } on MissingPluginException {
+      return 'iPhone setting unavailable';
     }
   }
 
@@ -297,6 +357,8 @@ class FridgeAlerts {
     final enabled = await enabledDevices();
     if (enabled.isEmpty) {
       await Workmanager().cancelByUniqueName(fridgeBackgroundJob);
+      await _store.write(
+          key: _backgroundRequestKey, value: 'No alerts enabled');
       return;
     }
     // WorkManager cannot schedule sub-15-minute background polling.
@@ -308,20 +370,29 @@ class FridgeAlerts {
       frequency: Duration(minutes: fridgeBackgroundMinutes(configured)),
       constraints: Constraints(networkType: NetworkType.connected),
     );
+    await _store.write(
+      key: _backgroundRequestKey,
+      value: 'Requested ${DateTime.now().toLocal().toIso8601String()} '
+          '(${fridgeBackgroundMinutes(configured)}-minute minimum)',
+    );
   }
 
-  Future<void> checkAll() async {
+  Future<int> checkAll() async {
     final enabled = await enabledDevices();
-    if (enabled.isEmpty) return;
+    if (enabled.isEmpty) return 0;
     final store = LgThinQStorage();
     final token = await store.token();
-    if (token == null || token.isEmpty) return;
+    if (token == null || token.isEmpty) {
+      throw StateError('LG ThinQ account unavailable for background check.');
+    }
     final devices = await store.enabledDevices();
     final client = LgThinQClient(
       personalToken: token,
       country: await store.country(),
       clientId: await store.clientId(),
     );
+    var checked = 0;
+    var failed = 0;
     for (final device in devices) {
       if (!enabled.contains(device.id) ||
           !device.type.toUpperCase().contains('REFRIGERATOR')) {
@@ -329,11 +400,21 @@ class FridgeAlerts {
       }
       try {
         final state = await client.state(device.id);
+        if (fridgeReadings(state).isEmpty) {
+          failed++;
+          continue;
+        }
         await observe(device, state);
+        checked++;
       } catch (_) {
         // Keep previous baseline so outages never generate false changes.
+        failed++;
       }
     }
+    if (failed > 0 || checked == 0) {
+      throw StateError('Background LG polling was incomplete.');
+    }
+    return checked;
   }
 
   Future<void> observe(LgThinQDevice device, Object? state) async {

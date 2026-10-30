@@ -97,6 +97,15 @@ assert "presentBanner: true" in fridge_notifications
 assert "presentList: true" in fridge_notifications
 assert "showTestNotification()" in mobile_dashboard
 assert "Notification failed: $error" in mobile_dashboard
+assert "taptether/background-refresh" in native_notifications
+assert "BGTaskSchedulerPermittedIdentifiers" in (
+    ROOT / "bin" / "2h-tt-fridge-background.sh").read_text()
+assert "recordBackgroundWake" in fridge_notifications
+assert "recordBackgroundResult" in fridge_notifications
+assert "Background monitor status" in mobile_dashboard
+xbox_ui = (ROOT / "app" / "lib" / "xbox_remote_screen.dart").read_text()
+assert "Check Xbox compatibility" in xbox_ui
+assert "Xbox app preferences" not in xbox_ui
 
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
 assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
