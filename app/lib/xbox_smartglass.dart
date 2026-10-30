@@ -163,11 +163,40 @@ List<int> xboxWakePacket(String liveId) {
   ];
 }
 
-/// Scans ONLY after an explicit user action and accepts responses on the
-/// active private Wi-Fi subnet. No internet discovery or background scan.
+/// Optional counters distinguish no UDP reply from a malformed legacy reply.
+/// A response is never treated as authenticated pairing.
+class XboxDiscoveryStats {
+  int sent = 0;
+  int replies = 0;
+  int malformed = 0;
+  int compatible = 0;
+}
+
+/// An explicit full-network scan sends one legacy discovery packet to every
+/// local address in up to four /24 blocks, not just to multicast/broadcast.
+/// Other, silent devices are detected separately by TCP port scanning.
+List<String> xboxScanTargets(DetectedLanRange network,
+    {int maxHosts = 1024}) {
+  final found = <String>[];
+  for (final prefix in network.scanPrefixes.take(4)) {
+    final bounds = scanPrefixBounds(network, prefix);
+    for (var host = bounds.startHost; host <= bounds.endHost; host++) {
+      final ip = '$prefix.$host';
+      if (ip != network.ip && lanRangeContains(network, ip)) {
+        found.add(ip);
+      }
+      if (found.length >= maxHosts) return found;
+    }
+  }
+  return found;
+}
+
+/// Only explicit user actions can initiate discovery. Never scan on startup.
 Future<List<XboxConsole>> discoverXboxConsoles({
   String? targetIp,
   Duration duration = const Duration(milliseconds: 1600),
+  bool fullNetwork = false,
+  XboxDiscoveryStats? diagnostics,
 }) async {
   final network = await detectLanRange();
   if (network == null) {
@@ -187,11 +216,17 @@ Future<List<XboxConsole>> discoverXboxConsoles({
       final reply = datagram!;
       final ip = reply.address.address;
       if (reply.port != 5050 || !lanRangeContains(network, ip) ||
-          (targetIp != null && ip != targetIp)) {
+          (targetIp != null && !fullNetwork && ip != targetIp)) {
         continue;
       }
+      diagnostics?.replies++;
       final candidate = parseXboxDiscovery(reply.data, ip);
-      if (candidate != null) found[candidate.uuid] = candidate;
+      if (candidate != null) {
+        found[candidate.uuid] = candidate;
+        diagnostics?.compatible++;
+      } else {
+        diagnostics?.malformed++;
+      }
     }
   });
   try {
@@ -202,9 +237,27 @@ Future<List<XboxConsole>> discoverXboxConsoles({
             lanBroadcastAddress(network), '239.255.255.250'];
     for (final endpoint in endpoints.toSet()) {
       try {
-        socket.send(packet, InternetAddress(endpoint), 5050);
+        if (socket.send(packet, InternetAddress(endpoint), 5050) > 0) {
+          diagnostics?.sent++;
+        }
       } on SocketException {
         // Some Wi-Fi networks forbid broadcast/multicast; use manual IP.
+      }
+    }
+    if (fullNetwork) {
+      final targets = xboxScanTargets(network);
+      // Throttle to avoid overwhelming Wi-Fi and avoid unbounded scans.
+      for (var i = 0; i < targets.length; i++) {
+        try {
+          if (socket.send(packet, InternetAddress(targets[i]), 5050) > 0) {
+            diagnostics?.sent++;
+          }
+        } on SocketException {
+          // A single filtered destination must not abort the sweep.
+        }
+        if ((i + 1) % 24 == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 24));
+        }
       }
     }
     await Future<void>.delayed(duration);
