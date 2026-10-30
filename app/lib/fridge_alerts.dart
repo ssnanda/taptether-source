@@ -13,6 +13,24 @@ const fridgeBackgroundJob = 'com.taptether.taptether.fridge-watch';
 const _alertKey = 'taptether.fridge.alerts.enabled.v1';
 const _baselinePrefix = 'taptether.fridge.alerts.baseline.v1.';
 const _lastCheckedPrefix = 'taptether.fridge.alerts.checked.v1.';
+const _intervalPrefix = 'taptether.fridge.alerts.interval.v1.';
+
+/// Short intervals are useful when TapTether is open for testing.
+/// Background work on iOS is scheduled by the OS, not by this timer.
+const fridgeCheckIntervals = <int>[1, 5, 15, 30, 60];
+const fridgeDefaultCheckMinutes = 15;
+
+bool fridgeCheckIsDue(DateTime now, DateTime? lastChecked, int minutes) =>
+    lastChecked == null ||
+    !now.isBefore(lastChecked.add(Duration(minutes: minutes)));
+
+int fridgeBackgroundMinutes(Iterable<int> configured) {
+  var shortest = fridgeDefaultCheckMinutes;
+  for (final minutes in configured) {
+    if (minutes < shortest) shortest = minutes;
+  }
+  return shortest < 15 ? 15 : shortest;
+}
 
 @pragma('vm:entry-point')
 void taptetherBackgroundDispatcher() {
@@ -42,6 +60,7 @@ class FridgeAlerts {
   );
   final _notifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  bool _checkingForeground = false;
 
   Future<void> initialize({bool allowPermissions = false}) async {
     if (!_initialized) {
@@ -88,6 +107,65 @@ class FridgeAlerts {
 
   Future<bool> isEnabled(String id) async =>
       (await enabledDevices()).contains(id);
+
+  Future<int> intervalMinutes(String id) async {
+    final raw = await _store.read(key: '$_intervalPrefix$id');
+    final configured = int.tryParse(raw ?? '');
+    return configured != null && fridgeCheckIntervals.contains(configured)
+        ? configured : fridgeDefaultCheckMinutes;
+  }
+
+  Future<void> setIntervalMinutes(String id, int minutes) async {
+    if (!fridgeCheckIntervals.contains(minutes)) {
+      throw ArgumentError.value(minutes, 'minutes', 'Unsupported interval');
+    }
+    if (!(await isEnabled(id))) {
+      throw StateError('Enable refrigerator alerts before setting an interval.');
+    }
+    final key = '$_intervalPrefix$id';
+    final previous = await _store.read(key: key);
+    await _store.write(key: key, value: '$minutes');
+    try {
+      await syncBackgroundTask();
+    } catch (_) {
+      if (previous == null) {
+        await _store.delete(key: key);
+      } else {
+        await _store.write(key: key, value: previous);
+      }
+      rethrow;
+    }
+  }
+
+  /// Checks only due saved refrigerators. Never starts a scan or a
+  /// perpetual iOS background timer; the owner calls this while foreground.
+  Future<void> checkForegroundDue() async {
+    if (_checkingForeground) return;
+    _checkingForeground = true;
+    try {
+      final enabled = await enabledDevices();
+      if (enabled.isEmpty) return;
+      final devices = await LgThinQStorage().enabledDevices();
+      for (final device in devices) {
+        if (!enabled.contains(device.id) ||
+            !device.type.toUpperCase().contains('REFRIGERATOR')) {
+          continue;
+        }
+        final due = fridgeCheckIsDue(
+          DateTime.now(), await lastChecked(device.id),
+          await intervalMinutes(device.id),
+        );
+        if (!due) continue;
+        try {
+          await checkDevice(device);
+        } catch (_) {
+          // Failed checks do not advance lastChecked, so they can retry.
+        }
+      }
+    } finally {
+      _checkingForeground = false;
+    }
+  }
 
   Future<Object?> _fetchState(String id) async {
     final store = LgThinQStorage();
@@ -205,6 +283,7 @@ class FridgeAlerts {
     if (!enabled) {
       await _store.delete(key: baselineKey);
       await _store.delete(key: checkedKey);
+      await _store.delete(key: '$_intervalPrefix$id');
     }
   }
 
@@ -215,10 +294,13 @@ class FridgeAlerts {
       await Workmanager().cancelByUniqueName(fridgeBackgroundJob);
       return;
     }
+    // WorkManager cannot schedule sub-15-minute background polling.
+    // iOS may also defer tasks regardless of the requested frequency.
+    final configured = await Future.wait(enabled.map(intervalMinutes));
     await Workmanager().registerPeriodicTask(
       fridgeBackgroundJob,
       fridgeBackgroundJob,
-      frequency: const Duration(minutes: 15),
+      frequency: Duration(minutes: fridgeBackgroundMinutes(configured)),
       constraints: Constraints(networkType: NetworkType.connected),
     );
   }
