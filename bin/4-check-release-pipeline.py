@@ -84,6 +84,20 @@ assert "python3 bin/4-test-macos-agent-recovery.py" in workflow, (
 assert "python3 bin/4-test-macos-input-core.py" in workflow
 assert "run: bash bin/2b-tt-ubuntu.sh" in workflow
 assert "run: bash bin/2b-tt-macos.sh" in workflow
+# Foreground iOS notifications must retain a native notification-center
+# delegate; a successful show() call alone does not guarantee a banner.
+native_notifications = (ROOT / "bin" / "ios" / "AppDelegate.swift").read_text()
+fridge_notifications = (ROOT / "app" / "lib" / "fridge_alerts.dart").read_text()
+mobile_dashboard = (ROOT / "app" / "lib" / "main.dart").read_text()
+ios_staging = (ROOT / "bin" / "2f-tt-ios-cloud-backup.sh").read_text()
+assert "import UserNotifications" in native_notifications
+assert "UNUserNotificationCenter.current().delegate = self" in native_notifications
+assert "cp \"$ROOT/bin/ios/AppDelegate.swift\" \"$IOS/AppDelegate.swift\"" in ios_staging
+assert "presentBanner: true" in fridge_notifications
+assert "presentList: true" in fridge_notifications
+assert "showTestNotification()" in mobile_dashboard
+assert "Notification failed: $error" in mobile_dashboard
+
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
 assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
 assert "run: bash bin/6-tt-publish-latest.sh" in workflow
