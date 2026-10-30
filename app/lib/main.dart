@@ -543,6 +543,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final Map<String, ThinQDashboardStatus> _thinQStatuses = {};
   DateTime? _lastThinQStatusCheck;
   bool _checkingThinQStatus = false;
+  Timer? _fridgeMonitorTimer;
   final Map<String, bool> _tvOnline = {};
   final Map<String, DateTime> _tvLastSeen = {};
   bool _checkingTvStatus = false;
@@ -738,6 +739,13 @@ class _RemoteScreenState extends State<RemoteScreen>
         unawaited(_refreshThinQStatuses());
       }
     });
+    // Only the foreground timer is configurable below 15 minutes.
+    // iOS suspends Dart timers when the app is backgrounded.
+    _fridgeMonitorTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (_appForeground) {
+        unawaited(FridgeAlerts.instance.checkForegroundDue());
+      }
+    });
   }
 
   @override
@@ -781,6 +789,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       // Recheck on resume despite the usual two-minute status cache.
       // iOS may have skipped cloud refresh while TapTether was suspended.
       unawaited(_refreshThinQStatuses(force: true));
+      unawaited(FridgeAlerts.instance.checkForegroundDue());
     } else {
       _stopScreen();
     }
@@ -2391,6 +2400,7 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Future<void> _fridgeAlertMenu(LgThinQDevice device) async {
     final checked = await FridgeAlerts.instance.lastChecked(device.id);
+    final interval = await FridgeAlerts.instance.intervalMinutes(device.id);
     if (!mounted) return;
     final selection = await showModalBottomSheet<String>(
       context: context,
@@ -2408,6 +2418,13 @@ class _RemoteScreenState extends State<RemoteScreen>
             dense: true,
             title: Text('iOS decides when background checks run. '
                 'Alerts are not instant.'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('Check interval'),
+            subtitle: Text('Every $interval minute${interval == 1 ? "" : "s"} '
+                'while TapTether is open'),
+            onTap: () => Navigator.pop(sheet, 'interval'),
           ),
           ListTile(
             leading: const Icon(Icons.refresh),
@@ -2432,6 +2449,10 @@ class _RemoteScreenState extends State<RemoteScreen>
       await _toggleFridgeAlerts(device, disable: true);
       return;
     }
+    if (selection == 'interval') {
+      await _chooseFridgeInterval(device, interval);
+      return;
+    }
     try {
       if (selection == 'test') {
         await FridgeAlerts.instance.showTestNotification();
@@ -2451,6 +2472,48 @@ class _RemoteScreenState extends State<RemoteScreen>
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Alert check failed. Verify LG account connection '
               'and iPhone notification permissions.'),
+        ));
+      }
+    }
+  }
+
+  Future<void> _chooseFridgeInterval(
+      LgThinQDevice device, int current) async {
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      builder: (sheet) => SafeArea(child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const ListTile(
+            title: Text('Refrigerator check interval'),
+            subtitle: Text('1 and 5 minutes are useful for testing while '
+                'TapTether is open. Background checks on iPhone remain '
+                'system-controlled, with no guaranteed delivery time.'),
+          ),
+          for (final minutes in fridgeCheckIntervals)
+            ListTile(
+              leading: Icon(minutes == current
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked),
+              title: Text('Every $minutes minute${minutes == 1 ? "" : "s"}'),
+              onTap: () => Navigator.pop(sheet, minutes),
+            ),
+        ],
+      )),
+    );
+    if (!mounted || selected == null || selected == current) return;
+    try {
+      await FridgeAlerts.instance.setIntervalMinutes(device.id, selected);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Check interval set to $selected '
+            'minute${selected == 1 ? "" : "s"} while TapTether is open. '
+            'iOS background checks may be delayed.'),
+      ));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not save refrigerator check interval.'),
         ));
       }
     }
@@ -3490,6 +3553,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
     _wifiCheckTimer?.cancel();
+    _fridgeMonitorTimer?.cancel();
     final listener = _announcementSubscription;
     if (listener != null) unawaited(listener.cancel());
     _announcementSocket?.close();
