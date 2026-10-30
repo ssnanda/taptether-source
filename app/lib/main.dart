@@ -4048,14 +4048,14 @@ class _RemoteScreenState extends State<RemoteScreen>
       child: Container(
         height: height,
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(immersive ? 0 : 16),
+          gradient: TapTetherDashboardVisuals.trackpadDecoration(context,
+              immersive: immersive).gradient,
+          borderRadius: BorderRadius.circular(immersive ? 0 : 25),
           border: immersive ? null : Border.all(
-            color: Theme.of(context).colorScheme.primary
-                .withValues(alpha: 0.25))),
-        child: immersive ? null : Center(child: Icon(Icons.touch_app, size: 36,
-            color: Theme.of(context).colorScheme.onPrimaryContainer
-                .withValues(alpha: 0.5))),
+            color: TapTetherDashboardVisuals.teal.withValues(alpha: .27),
+            width: 1.4)),
+        child: immersive ? null
+            : TapTetherDashboardVisuals.trackpadHint(context),
       ),
     ),
   );
@@ -4724,18 +4724,12 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Widget _connectedControls() {
-    final colors = Theme.of(context).colorScheme;
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Icon(Icons.circle, color: _connectionLost ? colors.error
-            : colors.primary, size: 11),
-        const SizedBox(width: 8),
-        Expanded(child: Text(discoveredName ?? host.text.trim(),
-            maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium)),
-
-      ]),
+      TapTetherDashboardVisuals.connectedDeviceHeader(context,
+        name: discoveredName ?? host.text.trim(),
+        offline: _connectionLost),
+      const SizedBox(height: 9),
       if (_connectionLost) _connectionBanner(),
       if (_agentInputDenied && !_connectionLost)
         Card(
@@ -4765,16 +4759,30 @@ class _RemoteScreenState extends State<RemoteScreen>
       _remoteInputSurface(),
       const SizedBox(height: 8),
       Row(children: [
-        Expanded(child: OutlinedButton(
+        Expanded(child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF2172E8),
+            backgroundColor: const Color(0xFFE8F3FF),
+            side: const BorderSide(color: Color(0xFF80B8F7)),
+            padding: const EdgeInsets.symmetric(vertical: 15),
+          ),
           onPressed: _connectionLost ? null :
               () => command('click', {'button': 'left'}),
-          child: const Text('Left click'),
+          icon: const Icon(Icons.mouse_outlined, size: 20),
+          label: const Text('Left click'),
         )),
-        const SizedBox(width: 8),
-        Expanded(child: OutlinedButton(
+        const SizedBox(width: 9),
+        Expanded(child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF087F81),
+            backgroundColor: const Color(0xFFE4FAF6),
+            side: const BorderSide(color: Color(0xFF65CDBE)),
+            padding: const EdgeInsets.symmetric(vertical: 15),
+          ),
           onPressed: _connectionLost ? null :
               () => command('click', {'button': 'right'}),
-          child: const Text('Right click'),
+          icon: const Icon(Icons.mouse_outlined, size: 20),
+          label: const Text('Right click'),
         )),
       ]),
       const SizedBox(height: 8),
@@ -4850,13 +4858,19 @@ class _RemoteScreenState extends State<RemoteScreen>
         leading: IconButton(
           key: ValueKey(connected ? 'back-to-devices' : 'open-navigation'),
           tooltip: connected ? 'Back to My Devices' : 'Open navigation',
-          icon: Icon(connected ? Icons.arrow_back : Icons.menu),
+          icon: Icon(connected ? Icons.arrow_back_rounded
+              : Icons.menu_rounded),
           onPressed: connected
               ? _backToMyDevices
               : () => _scaffoldKey.currentState?.openDrawer(),
         ),
         title: Text(connected ? (discoveredName ?? 'Remote') : 'TapTether',
-            maxLines: 1, overflow: TextOverflow.ellipsis),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: FontWeight.w800, letterSpacing: -.6,
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.white : TapTetherDashboardVisuals.navy,
+            )),
         actions: connected ? [
           IconButton(
             key: const ValueKey('rename-active-computer'),
@@ -4874,7 +4888,10 @@ class _RemoteScreenState extends State<RemoteScreen>
       ),
       body: connected && landscape
           ? SafeArea(child: _landscapeImmersive())
-          : SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
+          : DecoratedBox(
+              decoration: TapTetherDashboardVisuals.pageBackground(context),
+              child: SafeArea(child: ListView(
+                padding: const EdgeInsets.all(16), children: [
         if (!connected && _wifiRange != null) updateNotices(),
         if (!connected && _wifiRange == null)
           _offlineHome(),
@@ -4911,7 +4928,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           ],
 
         ],
-      ])),
+      ]))),
     );
   }
 }
