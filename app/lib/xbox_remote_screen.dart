@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'discovery.dart';
 import 'lan_scan.dart';
@@ -364,8 +365,23 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     return Card(child: Padding(
       padding: const EdgeInsets.all(12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Network diagnostics',
-            style: Theme.of(context).textTheme.titleMedium),
+        Row(children: [
+          Expanded(child: Text('Network diagnostics',
+              style: Theme.of(context).textTheme.titleMedium)),
+          IconButton(
+            tooltip: 'Copy diagnostics',
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(
+                  text: formatXboxNetworkDiagnostics(report)));
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Network diagnostics copied')),
+                );
+              }
+            },
+            icon: const Icon(Icons.copy_outlined),
+          ),
+        ]),
         const SizedBox(height: 6),
         Text('Wi-Fi: ${report.cidr}'),
         if (report.totalAddresses > 0)
@@ -382,17 +398,21 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               '${report.targetDiscovered ? "Xbox protocol reply received" : "No Xbox protocol reply"}'),
           Text(ports.isEmpty ? 'TCP tests unavailable' : ports),
         ],
-        if (report.totalAddresses > 0) ...[
-          const SizedBox(height: 8),
-          Text('TCP-visible hosts: ${report.tcpHosts.length}'),
-          for (final host in report.tcpHosts.take(40))
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text('${host.ip} · TCP ${host.openPorts.join(", ")}'),
-            ),
-          if (report.tcpHosts.length > 40)
-            Text('Plus ${report.tcpHosts.length - 40} additional hosts'),
-        ],
+        if (report.totalAddresses > 0)
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: Text('TCP-visible hosts: ${report.tcpHosts.length}'),
+            subtitle: const Text('Only devices with open tested TCP ports'),
+            children: [
+              for (final host in report.tcpHosts)
+                ListTile(
+                  dense: true,
+                  title: Text(host.ip),
+                  subtitle: Text('TCP ${host.openPorts.join(", ")}'),
+                  onTap: () => setState(() => _ip.text = host.ip),
+                ),
+            ],
+          ),
         if (report.truncated)
           const Text('Large network: only the first four /24 blocks '
               'were scanned (up to 1,024 addresses).'),
