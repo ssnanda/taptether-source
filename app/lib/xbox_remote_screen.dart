@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'discovery.dart';
+import 'lan_scan.dart';
 import 'xbox_smartglass.dart';
+import 'xbox_network_diagnostics.dart';
 
 /// First Xbox remote milestone: LAN discovery, saved consoles and standby wake.
 /// Does NOT claim the console is authenticated or that buttons work yet.
@@ -34,18 +36,26 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
   List<XboxConsole> _found = [];
   XboxConsole? _selected;
   bool _busy = false;
-  String _message = 'Check for legacy Xbox discovery on Wi-Fi.';
+  XboxNetworkReport? _diagnostics;
+  String? _scanProgress;
+  String _message = 'Use the Xbox IP or scan the local Wi-Fi network.';
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialHost != null) {
+      _ip.text = widget.initialHost!;
+    }
     unawaited(_load());
   }
 
   Future<void> _load() async {
     try {
       final devices = await _store.read();
+      if (widget.initialHost == null) {
+        _ip.text = await _store.lastTargetIp() ?? '';
+      }
       if (!mounted) return;
       setState(() {
         _saved = devices;
@@ -64,33 +74,57 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     }
   }
 
-  Future<void> _scan({String? ip}) async {
+  Future<void> _scan({String? ip, bool fullNetwork = false}) async {
     if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
-      _message = 'Searching on local Wi-Fi…';
+      _diagnostics = null;
+      _scanProgress = fullNetwork
+          ? 'Preparing full local network scan…'
+          : 'Checking Xbox IP ${ip ?? ""}…';
+      _message = fullNetwork ? 'Scanning the active Wi-Fi subnet…'
+          : 'Checking the selected Xbox address…';
     });
     try {
-      final results = await (widget.discovery?.call(targetIp: ip) ??
-          discoverXboxConsoles(targetIp: ip));
+      if (ip != null) await _store.saveLastTargetIp(ip);
+      final XboxNetworkReport? report;
+      final List<XboxConsole> results;
+      if (widget.discovery != null && !fullNetwork) {
+        report = null;
+        results = await widget.discovery!(targetIp: ip);
+      } else {
+        report = await runXboxNetworkDiagnostics(
+          targetIp: ip,
+          fullNetwork: fullNetwork,
+          onProgress: (done, total, stage) {
+            if (mounted && (done == total || done % 32 == 0)) {
+              setState(() => _scanProgress =
+                  '$stage · $done / $total addresses');
+            }
+          },
+        );
+        results = report.consoleReplies;
+      }
       if (!mounted) return;
       final stored = await _store.read();
       if (!mounted) return;
       setState(() {
         _saved = stored;
         _found = results;
+        _diagnostics = report;
+        _scanProgress = null;
         if (_selected != null) {
           final matches = results.where((item) =>
               item.uuid == _selected!.uuid &&
               item.certificateSha256 == _selected!.certificateSha256);
           if (matches.isNotEmpty) _selected = matches.first;
         }
-        _message = results.isEmpty
-            ? 'No legacy discovery reply (UDP 5050). '
-              'Current Xbox firmware may not support this protocol; '
-              'a manual IP check cannot bypass that limitation.'
-            : 'Found ${results.length} compatible Xbox console(s).';
+        _message = results.isNotEmpty
+            ? 'Discovered ${results.length} compatible Xbox console(s).'
+            : fullNetwork
+                ? 'Scan completed. No Xbox legacy protocol reply.'
+                : 'No Xbox legacy discovery reply from $ip.';
       });
     } catch (error) {
       if (mounted) {
@@ -98,19 +132,33 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             error.toString().replaceFirst('Bad state: ', ''));
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() {
+        _busy = false;
+        _scanProgress = null;
+      });
     }
   }
 
   Future<void> _byIp() async {
     final ip = _ip.text.trim();
     if (!isPrivateIPv4(ip)) {
-      setState(() => _error = 'Enter a valid private IPv4 address.');
+      setState(() => _error = 'Enter a valid local IPv4 address.');
       return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
     await _scan(ip: ip);
   }
+
+  Future<void> _scanFullNetwork() async {
+    final ip = _ip.text.trim();
+    if (ip.isNotEmpty && !isPrivateIPv4(ip)) {
+      setState(() => _error = 'Correct the Xbox IP or clear it first.');
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _scan(fullNetwork: true, ip: ip.isEmpty ? null : ip);
+  }
+
 
   bool _sameIdentity(XboxConsole a, XboxConsole b) =>
       a.uuid == b.uuid && a.certificateSha256 == b.certificateSha256;
@@ -194,13 +242,46 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (_error != null) Card(child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text(_error!, style: TextStyle(
-                color: Theme.of(context).colorScheme.error)),
-          )),
+          TextField(
+            controller: _ip,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Xbox IP address',
+              hintText: '192.168.68.84',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => _byIp(),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: _busy ? null : _byIp,
+            icon: const Icon(Icons.search),
+            label: const Text('Check Xbox IP'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _scanFullNetwork,
+            icon: const Icon(Icons.radar),
+            label: const Text('Scan entire local network'),
+          ),
+          if (_busy) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(),
+            const SizedBox(height: 6),
+            Text(_scanProgress ?? 'Checking Wi-Fi…'),
+          ],
+          if (_error != null) Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(_error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
+          const SizedBox(height: 12),
           Text(_message, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 16),
+          if (_diagnostics != null) ...[
+            const SizedBox(height: 12),
+            _networkDiagnostics(_diagnostics!),
+          ],
+          const SizedBox(height: 12),
           if (selected != null) Card(child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,40 +331,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             ),
           )),
           const SizedBox(height: 12),
-          Card(child: ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('Xbox compatibility'),
-            subtitle: const Text(
-                'TapTether currently uses the older Xbox One discovery '
-                'protocol. Xbox Series X|S may not respond. '
-                'Current Xbox settings: Settings → Devices & connections '
-                '→ Remote features → Enable remote features. '
-                'That setting does not guarantee legacy protocol support. '
-                'Controller/media control is not available yet.'),
-          )),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _busy ? null : () => _scan(),
-            icon: const Icon(Icons.radar),
-            label: Text(_busy ? 'Checking…' : 'Check Xbox compatibility'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _ip,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Xbox LAN IP address',
-              hintText: '192.168.1.100',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => _byIp(),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _byIp,
-            icon: const Icon(Icons.search),
-            label: const Text('Find by IP'),
-          ),
+          const Text('Xbox remote features can be enabled without '
+              'the older UDP 5050 protocol being supported. '
+              'A TCP response proves only a reachable service, not '
+              'Xbox control compatibility.'),
           if (widget.initialHost == null) ...[
             const SizedBox(height: 12),
             for (final device in _saved) ListTile(
@@ -302,15 +353,55 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             onTap: _busy ? null : () =>
                 setState(() => _selected = candidate),
           ),
-          const SizedBox(height: 14),
-          Text('Legacy SmartGlass compatibility test only. '
-              'No modern Xbox Remote Play or authenticated controller '
-              'session is implemented. Verify discovered consoles '
-              'in person; discovery replies are unauthenticated.',
-              style: Theme.of(context).textTheme.bodySmall),
         ],
       )),
     );
+  }
+
+  Widget _networkDiagnostics(XboxNetworkReport report) {
+    final ports = report.targetPorts.entries.map((item) =>
+        'TCP ${item.key}: ${tcpProbeLabel(item.value)}').join(' · ');
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Network diagnostics',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 6),
+        Text('Wi-Fi: ${report.cidr}'),
+        if (report.totalAddresses > 0)
+          Text('Addresses checked: ${report.checkedAddresses}/'
+              '${report.totalAddresses}'),
+        Text('Xbox UDP 5050: ${report.udpStats.sent} probes sent · '
+            '${report.udpStats.replies} replies · '
+            '${report.udpStats.compatible} compatible'),
+        if (report.udpStats.malformed > 0)
+          Text('Unrecognized UDP replies: ${report.udpStats.malformed}'),
+        if (report.targetIp != null) ...[
+          const SizedBox(height: 6),
+          Text('Target ${report.targetIp}: '
+              '${report.targetDiscovered ? "Xbox protocol reply received" : "No Xbox protocol reply"}'),
+          Text(ports.isEmpty ? 'TCP tests unavailable' : ports),
+        ],
+        if (report.totalAddresses > 0) ...[
+          const SizedBox(height: 8),
+          Text('TCP-visible hosts: ${report.tcpHosts.length}'),
+          for (final host in report.tcpHosts.take(40))
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('${host.ip} · TCP ${host.openPorts.join(", ")}'),
+            ),
+          if (report.tcpHosts.length > 40)
+            Text('Plus ${report.tcpHosts.length - 40} additional hosts'),
+        ],
+        if (report.truncated)
+          const Text('Large network: only the first four /24 blocks '
+              'were scanned (up to 1,024 addresses).'),
+        const SizedBox(height: 8),
+        const Text('No response does not prove a device is offline. '
+            'Xbox Remote Play and authenticated controls are not '
+            'implemented.'),
+      ]),
+    ));
   }
 
   @override
