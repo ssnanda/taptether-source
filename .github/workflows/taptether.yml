@@ -46,6 +46,11 @@ on:
       - 'versions/macos-agent.txt'
       - 'app/lib/xbox_*.dart'
       - 'app/test/xbox_*.dart'
+      - 'app/lib/dashboard_visuals.dart'
+      - 'app/lib/main.dart'
+      - 'app/lib/appearance.dart'
+      - 'app/lib/remote_mode_bar.dart'
+      - 'app/test/dashboard_visuals_test.dart'
       - '.github/workflows/taptether.yml'
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
