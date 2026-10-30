@@ -103,7 +103,7 @@ Future<XboxNetworkReport> runXboxNetworkDiagnostics({
   }
 
   final hosts = <String, LanHost>{};
-  var checked = 0;
+  var checked = targetIp == null ? 0 : 1;
   var total = targetIp == null ? 0 : 1;
   final prefixes = fullNetwork ? xboxDiagnosticPrefixes(range) : <String>[];
   if (fullNetwork) {

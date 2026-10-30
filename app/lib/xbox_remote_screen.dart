@@ -88,7 +88,9 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           : 'Checking the selected Xbox address…';
     });
     try {
-      if (ip != null) await _store.saveLastTargetIp(ip);
+      if (ip != null) {
+        await _store.saveLastTargetIp(ip);
+      }
       final XboxNetworkReport? report;
       final List<XboxConsole> results;
       if (widget.discovery != null && !fullNetwork) {
@@ -398,7 +400,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               '${report.targetDiscovered ? "Xbox protocol reply received" : "No Xbox protocol reply"}'),
           Text(ports.isEmpty ? 'TCP tests unavailable' : ports),
         ],
-        if (report.totalAddresses > 0)
+        if (report.totalAddresses > 1)
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
             title: Text('TCP-visible hosts: ${report.tcpHosts.length}'),
