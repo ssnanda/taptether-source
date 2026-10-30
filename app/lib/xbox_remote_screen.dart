@@ -135,10 +135,12 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             error.toString().replaceFirst('Bad state: ', ''));
       }
     } finally {
-      if (mounted) setState(() {
-        _busy = false;
-        _scanProgress = null;
-      });
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _scanProgress = null;
+        });
+      }
     }
   }
 
