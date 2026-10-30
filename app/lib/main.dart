@@ -778,7 +778,9 @@ class _RemoteScreenState extends State<RemoteScreen>
       unawaited(_refreshNetworkLocation());
       unawaited(_refreshHeartbeats());
       unawaited(_refreshTvStatuses());
-      unawaited(_refreshThinQStatuses());
+      // Recheck on resume despite the usual two-minute status cache.
+      // iOS may have skipped cloud refresh while TapTether was suspended.
+      unawaited(_refreshThinQStatuses(force: true));
     } else {
       _stopScreen();
     }
@@ -2350,8 +2352,17 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
-  Future<void> _toggleFridgeAlerts(LgThinQDevice device) async {
-    final enabled = !_fridgeAlertsEnabled.contains(device.id);
+  final Set<String> _fridgeAlertChanges = {};
+
+  Future<void> _toggleFridgeAlerts(LgThinQDevice device,
+      {bool disable = false}) async {
+    if (_fridgeAlertChanges.contains(device.id)) return;
+    if (_fridgeAlertsEnabled.contains(device.id) && !disable) {
+      await _fridgeAlertMenu(device);
+      return;
+    }
+    final enabled = !disable;
+    _fridgeAlertChanges.add(device.id);
     try {
       await FridgeAlerts.instance.setEnabled(device.id, enabled);
       if (!mounted) return;
@@ -2360,17 +2371,86 @@ class _RemoteScreenState extends State<RemoteScreen>
             ? {..._fridgeAlertsEnabled, device.id}
             : ({..._fridgeAlertsEnabled}..remove(device.id));
       });
-      if (enabled) {
-        unawaited(FridgeAlerts.instance.checkAll());
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(enabled
+            ? 'Alerts enabled. Initial LG temperature saved. '
+              'iOS schedules background checks; changes may be delayed.'
+            : 'Refrigerator alerts disabled.'),
+      ));
+    } catch (_) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Refrigerator alerts enabled. Background checks '
-              'depend on phone scheduling and may be delayed.'),
+          content: Text('Could not enable alerts. Check notification '
+              'permissions, internet and LG ThinQ connection.'),
+        ));
+      }
+    } finally {
+      _fridgeAlertChanges.remove(device.id);
+    }
+  }
+
+  Future<void> _fridgeAlertMenu(LgThinQDevice device) async {
+    final checked = await FridgeAlerts.instance.lastChecked(device.id);
+    if (!mounted) return;
+    final selection = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: Text('${device.name} alerts',
+                style: Theme.of(sheet).textTheme.titleMedium),
+            subtitle: Text(checked == null
+                ? 'No confirmed LG temperature reading yet.'
+                : 'Last LG reading: ${checked.toLocal()}'),
+          ),
+          const ListTile(
+            dense: true,
+            title: Text('iOS decides when background checks run. '
+                'Alerts are not instant.'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.refresh),
+            title: const Text('Check refrigerator now'),
+            onTap: () => Navigator.pop(sheet, 'check'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Send test notification'),
+            onTap: () => Navigator.pop(sheet, 'test'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications_off_outlined),
+            title: const Text('Turn off alerts'),
+            onTap: () => Navigator.pop(sheet, 'disable'),
+          ),
+        ],
+      )),
+    );
+    if (!mounted || selection == null) return;
+    if (selection == 'disable') {
+      await _toggleFridgeAlerts(device, disable: true);
+      return;
+    }
+    try {
+      if (selection == 'test') {
+        await FridgeAlerts.instance.showTestNotification();
+      } else if (selection == 'check') {
+        await FridgeAlerts.instance.checkDevice(device);
+        unawaited(_refreshThinQStatuses(force: true));
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(selection == 'test'
+              ? 'Test notification requested.'
+              : 'LG temperatures checked against saved readings.'),
         ));
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not change refrigerator alert settings.'),
+          content: Text('Alert check failed. Verify LG account connection '
+              'and iPhone notification permissions.'),
         ));
       }
     }
@@ -2403,7 +2483,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             IconButton(
               key: ValueKey('lg-thinq-alert-${device.id}'),
               tooltip: _fridgeAlertsEnabled.contains(device.id)
-                  ? 'Turn off temperature-change notifications'
+                  ? 'Manage refrigerator alerts and tests'
                   : 'Notify when refrigerator temperatures change',
               icon: Icon(_fridgeAlertsEnabled.contains(device.id)
                   ? Icons.notifications_active_outlined
