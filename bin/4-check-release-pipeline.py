@@ -104,7 +104,8 @@ assert "recordBackgroundWake" in fridge_notifications
 assert "recordBackgroundResult" in fridge_notifications
 assert "Background monitor status" in mobile_dashboard
 xbox_ui = (ROOT / "app" / "lib" / "xbox_remote_screen.dart").read_text()
-assert "Check Xbox compatibility" in xbox_ui
+assert "Check Xbox IP" in xbox_ui
+assert "Scan entire local network" in xbox_ui
 assert "Xbox app preferences" not in xbox_ui
 
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
