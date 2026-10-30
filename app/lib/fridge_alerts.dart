@@ -25,10 +25,9 @@ bool fridgeCheckIsDue(DateTime now, DateTime? lastChecked, int minutes) =>
     !now.isBefore(lastChecked.add(Duration(minutes: minutes)));
 
 int fridgeBackgroundMinutes(Iterable<int> configured) {
-  var shortest = fridgeDefaultCheckMinutes;
-  for (final minutes in configured) {
-    if (minutes < shortest) shortest = minutes;
-  }
+  final intervals = configured.toList();
+  if (intervals.isEmpty) return fridgeDefaultCheckMinutes;
+  final shortest = intervals.reduce((a, b) => a < b ? a : b);
   return shortest < 15 ? 15 : shortest;
 }
 
