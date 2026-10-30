@@ -39,6 +39,7 @@ import 'device_manager_screen.dart';
 import 'device_diagnostics_screen.dart';
 import 'device_location_log.dart';
 import 'device_dashboard_header.dart';
+import 'dashboard_visuals.dart';
 import 'uninstall_agent_screen.dart';
 import 'discovery.dart';
 import 'phone_identity.dart';
@@ -2539,46 +2540,43 @@ class _RemoteScreenState extends State<RemoteScreen>
     final status = _thinQStatuses[device.id]?.label ??
         (_checkingThinQStatus ? 'Checking status…' : 'Status unavailable');
     final type = device.type.toUpperCase();
-    return Card(
+    final fridge = type.contains('REFRIGERATOR');
+    final dryer = type.contains('DRYER');
+    final accent = fridge ? TapTetherDashboardVisuals.blue
+        : dryer ? TapTetherDashboardVisuals.orange
+        : TapTetherDashboardVisuals.mint;
+    final end = fridge ? const Color(0xFF50BDF8)
+        : dryer ? const Color(0xFFFFC46C)
+        : const Color(0xFF0FAF9C);
+    return TapTetherDashboardVisuals.applianceCard(context,
       key: ValueKey('lg-thinq-${device.id}'),
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14, vertical: 2),
-        leading: Icon(type.contains('REFRIGERATOR')
-            ? Icons.kitchen_outlined
-            : type.contains('DRYER')
-                ? Icons.dry_cleaning_outlined
-                : Icons.local_laundry_service_outlined,
-            size: 27),
-        title: Text(device.name, maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(status,
-            key: ValueKey('lg-thinq-status-${device.id}'),
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (type.contains('REFRIGERATOR'))
-            IconButton(
-              key: ValueKey('lg-thinq-alert-${device.id}'),
-              tooltip: _fridgeAlertsEnabled.contains(device.id)
-                  ? 'Manage refrigerator alerts and tests'
-                  : 'Notify when refrigerator temperatures change',
-              icon: Icon(_fridgeAlertsEnabled.contains(device.id)
-                  ? Icons.notifications_active_outlined
-                  : Icons.notifications_none_outlined,
-                  size: 21),
-              onPressed: () => _toggleFridgeAlerts(device),
-            ),
-          IconButton(
-            key: ValueKey('lg-thinq-rename-${device.id}'),
-            tooltip: 'Rename ${device.name}',
-            icon: const Icon(Icons.edit_outlined, size: 20),
-            onPressed: () => _renameThinQDevice(device),
+      id: device.id, name: device.name, status: status,
+      icon: fridge ? Icons.kitchen_rounded
+          : dryer ? Icons.dry_cleaning_rounded
+          : Icons.local_laundry_service_rounded,
+      accent: accent, accentEnd: end,
+      onTap: () => _openThinQDevice(device),
+      actions: [
+        if (fridge)
+          IconButton.filledTonal(
+            key: ValueKey('lg-thinq-alert-${device.id}'),
+            tooltip: _fridgeAlertsEnabled.contains(device.id)
+                ? 'Manage refrigerator alerts and tests'
+                : 'Notify when refrigerator temperatures change',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(_fridgeAlertsEnabled.contains(device.id)
+                ? Icons.notifications_active_rounded
+                : Icons.notifications_none_rounded, size: 20),
+            onPressed: () => _toggleFridgeAlerts(device),
           ),
-        ]),
-        onTap: () => _openThinQDevice(device),
-      ),
+        IconButton.filledTonal(
+          key: ValueKey('lg-thinq-rename-${device.id}'),
+          tooltip: 'Rename ${device.name}',
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.edit_rounded, size: 19),
+          onPressed: () => _renameThinQDevice(device),
+        ),
+      ],
     );
   }
 
@@ -2788,33 +2786,24 @@ class _RemoteScreenState extends State<RemoteScreen>
           )),
         ]),
         const SizedBox(height: 16),
-        Text('${savedComputers.length} saved computers · '
-            '${savedLgTvs.length + savedSamsungTvs.length} saved TVs · '
-            '${savedXboxConsoles.length} Xbox',
-            style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 12),
+        TapTetherDashboardVisuals.deviceSummary(context,
+          computers: savedComputers.length,
+          televisions: savedLgTvs.length + savedSamsungTvs.length,
+          xbox: savedXboxConsoles.length),
+
         for (final device in _enabledThinQ) _thinQCard(device),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.devices_outlined),
-          title: const Text('Manage saved devices'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: openDeviceManager,
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.key_outlined),
-          title: const Text('SSH keys'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: openSshKeys,
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.shield_outlined),
-          title: const Text('Settings & backups'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: openSecuritySettings,
-        ),
+        TapTetherDashboardVisuals.actionRow(context,
+          icon: Icons.devices_rounded,
+          accent: const Color(0xFF8761DC),
+          label: 'Manage saved devices', onTap: openDeviceManager),
+        TapTetherDashboardVisuals.actionRow(context,
+          icon: Icons.vpn_key_rounded,
+          accent: const Color(0xFF3180EB),
+          label: 'SSH keys', onTap: openSshKeys),
+        TapTetherDashboardVisuals.actionRow(context,
+          icon: Icons.shield_rounded,
+          accent: const Color(0xFF0CA987),
+          label: 'Settings & backups', onTap: openSecuritySettings),
       ],
     );
   }
@@ -2955,6 +2944,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        TapTetherDashboardVisuals.deviceSummary(context,
+          computers: savedComputers.length,
+          televisions: savedLgTvs.length + savedSamsungTvs.length,
+          xbox: savedXboxConsoles.length),
         DeviceDashboardHeader(
           showFilters: savedComputers.isNotEmpty || savedLgTvs.isNotEmpty ||
               savedSamsungTvs.isNotEmpty || savedXboxConsoles.isNotEmpty,
