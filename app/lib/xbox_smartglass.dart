@@ -301,7 +301,20 @@ class XboxConsoleStore {
   XboxConsoleStore({FlutterSecureStorage? storage})
       : _storage = storage ?? const FlutterSecureStorage();
   static const key = 'taptether.xbox.consoles.v1';
+  static const lastTargetKey = 'taptether.xbox.target-ip.v1';
   final FlutterSecureStorage _storage;
+
+  Future<String?> lastTargetIp() async {
+    final ip = await _storage.read(key: lastTargetKey);
+    return ip != null && isPrivateIPv4(ip) ? ip : null;
+  }
+
+  Future<void> saveLastTargetIp(String ip) async {
+    if (!isPrivateIPv4(ip)) {
+      throw const FormatException('Expected a private Xbox LAN IP.');
+    }
+    await _storage.write(key: lastTargetKey, value: ip);
+  }
 
   Future<List<XboxConsole>> read() async {
     final raw = await _storage.read(key: key);
