@@ -219,13 +219,13 @@ Future<List<XboxConsole>> discoverXboxConsoles({
           (targetIp != null && !fullNetwork && ip != targetIp)) {
         continue;
       }
-      diagnostics?.replies++;
+      if (diagnostics != null) diagnostics.replies++;
       final candidate = parseXboxDiscovery(reply.data, ip);
       if (candidate != null) {
         found[candidate.uuid] = candidate;
-        diagnostics?.compatible++;
+        if (diagnostics != null) diagnostics.compatible++;
       } else {
-        diagnostics?.malformed++;
+        if (diagnostics != null) diagnostics.malformed++;
       }
     }
   });
@@ -238,7 +238,7 @@ Future<List<XboxConsole>> discoverXboxConsoles({
     for (final endpoint in endpoints.toSet()) {
       try {
         if (socket.send(packet, InternetAddress(endpoint), 5050) > 0) {
-          diagnostics?.sent++;
+          if (diagnostics != null) diagnostics.sent++;
         }
       } on SocketException {
         // Some Wi-Fi networks forbid broadcast/multicast; use manual IP.
@@ -250,7 +250,7 @@ Future<List<XboxConsole>> discoverXboxConsoles({
       for (var i = 0; i < targets.length; i++) {
         try {
           if (socket.send(packet, InternetAddress(targets[i]), 5050) > 0) {
-            diagnostics?.sent++;
+            if (diagnostics != null) diagnostics.sent++;
           }
         } on SocketException {
           // A single filtered destination must not abort the sweep.
