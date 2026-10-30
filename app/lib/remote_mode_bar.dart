@@ -28,23 +28,26 @@ class RemoteModeBar extends StatelessWidget {
       String label) {
     final scheme = Theme.of(context).colorScheme;
     final selected = primaryMode == mode;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final selectedForeground = Colors.white;
     return Expanded(flex: 4, child: Semantics(
       selected: selected,
       button: true,
       label: label,
       child: Material(
-        color: selected ? scheme.primaryContainer : scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        color: selected ? const Color(0xFF078F98) :
+            (dark ? scheme.surfaceContainerHigh : scheme.surface),
+        borderRadius: BorderRadius.circular(20),
         child: InkWell(
           key: ValueKey('primary-mode-$mode'),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(20),
           onTap: () => onPrimaryMode(mode),
-          child: SizedBox(height: 44, child: Row(
+          child: SizedBox(height: 49, child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 18,
-                color: selected ? scheme.onPrimaryContainer :
+                color: selected ? selectedForeground :
                     scheme.onSurfaceVariant),
               const SizedBox(width: 5),
               Flexible(child: Text(label,
@@ -52,7 +55,7 @@ class RemoteModeBar extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12, fontWeight: selected ?
                     FontWeight.w700 : FontWeight.w500,
-                  color: selected ? scheme.onPrimaryContainer :
+                  color: selected ? selectedForeground :
                       scheme.onSurfaceVariant))),
             ],
           )),
@@ -68,18 +71,20 @@ class RemoteModeBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final selected = primaryMode == 'remote';
     final foreground = selected
-        ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+        ? Colors.white : scheme.onSurfaceVariant;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Expanded(flex: 7, child: Material(
-      color: selected ? scheme.primaryContainer : scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(12),
+      color: selected ? const Color(0xFF048DA0) :
+          (dark ? scheme.surfaceContainerHigh : scheme.surface),
+      borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
-      child: SizedBox(height: 44, child: Row(children: [
+      child: SizedBox(height: 49, child: Row(children: [
         Expanded(child: Semantics(
           button: true, selected: selected, label: 'Remote',
           child: InkWell(
             key: const ValueKey('primary-mode-remote'),
             onTap: () => onPrimaryMode('remote'),
-            child: SizedBox(height: 44,
+            child: SizedBox(height: 49,
               child: Row(mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.mouse_outlined, size: 18, color: foreground),
@@ -116,7 +121,7 @@ class RemoteModeBar extends StatelessWidget {
               child: const ListTile(dense: true, contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.live_tv_outlined), title: Text('Live'))),
           ],
-          child: SizedBox(width: 34, height: 44,
+          child: SizedBox(width: 36, height: 49,
             child: Row(mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(_visualIcon, size: 17, color: foreground),
@@ -133,9 +138,9 @@ class RemoteModeBar extends StatelessWidget {
     return Row(key: const ValueKey('one-row-remote-navigation'),
       children: [
         _remoteSplitTab(context),
-        const SizedBox(width: 3),
+        const SizedBox(width: 7),
         _tab(context, 'presentation', Icons.slideshow_outlined, 'Slides'),
-        const SizedBox(width: 3),
+        const SizedBox(width: 7),
         _tab(context, 'media', Icons.smart_display_outlined, 'Media'),
       ],
     );

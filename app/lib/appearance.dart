@@ -26,7 +26,7 @@ class AppearanceController extends ValueNotifier<ThemeMode> {
 class TapTetherPalette {
   static const teal = Color(0xFF087F73);
   static const ink = Color(0xFF172B35);
-  static const canvas = Color(0xFFF5F7F9);
+  static const canvas = Color(0xFFF2F8FD);
   static const paleTeal = Color(0xFFDFF3ED);
 
   static ThemeData light() {
@@ -45,15 +45,15 @@ class TapTetherPalette {
       splashFactory: InkRipple.splashFactory,
       dividerTheme: const DividerThemeData(space: 20, thickness: .7),
       listTileTheme: const ListTileThemeData(
-        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(15)))),
+          borderRadius: BorderRadius.all(Radius.circular(22)))),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
           padding: const WidgetStatePropertyAll(
             EdgeInsets.symmetric(horizontal: 10, vertical: 9)),
           shape: WidgetStatePropertyAll(RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14))))),
+            borderRadius: BorderRadius.circular(20))))),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white, foregroundColor: ink,
         surfaceTintColor: Colors.transparent, centerTitle: true,
@@ -62,7 +62,7 @@ class TapTetherPalette {
         color: Colors.white, elevation: 0,
         margin: const EdgeInsets.symmetric(vertical: 5),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(23),
           side: const BorderSide(color: Color(0xFFDCE6E9)),
         ),
       ),
@@ -70,21 +70,21 @@ class TapTetherPalette {
       inputDecorationTheme: InputDecorationTheme(
         filled: true, fillColor: Colors.white,
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(19),
           borderSide: const BorderSide(color: Color(0xFFDCE6E9))),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(19),
           borderSide: const BorderSide(color: teal, width: 1.5)),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(19)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       ),
       filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(19)),
       )),
       outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(19)),
       )),
     );
   }
