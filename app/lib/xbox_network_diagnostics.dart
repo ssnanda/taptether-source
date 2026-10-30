@@ -53,7 +53,7 @@ String formatXboxNetworkDiagnostics(XboxNetworkReport report) {
       '${host.ip} TCP: ${host.openPorts.join(", ")}',
     'Note: TCP or UDP reachability is not authenticated Xbox identity.',
   ];
-  return rows.join('\\n');
+  return rows.join('\n');
 }
 
 List<String> xboxDiagnosticPrefixes(DetectedLanRange range) =>
