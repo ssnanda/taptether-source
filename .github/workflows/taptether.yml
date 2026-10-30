@@ -3,8 +3,8 @@ name: 'TapTether - Build, Release & Maintenance'
 # Full releases require explicit workflow_dispatch task=release after device installation.
 # Build-only: [build ipa] on main produces downloadable IPA/APK/agent CI artifacts.
 # LG TV MAC discovery (0.8.35): release remains manual, after device installation.
-# One-time exception: [publish 200] in a main squash-merge commit triggers version
-# 0.8.39+200 only, after the user explicitly asked us to dispatch this build.
+# One-time exception: [publish 201] in a main squash-merge commit triggers version
+# 0.8.40+201 only, after the user explicitly asked us to dispatch this build.
 # VERSION commits never automatically publish. Agent-only pushes remain supported.
 on:
   workflow_dispatch:
@@ -67,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Release preflight (only before publishing)
-        if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 200]')) }}
+        if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 201]')) }}
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: |
@@ -84,8 +84,8 @@ jobs:
             echo 'Release only from main.' >&2; exit 1;
           }
           version="$(cat VERSION)"
-          if [[ "$GITHUB_EVENT_NAME" == push && "$version" != '0.8.39+200' ]]; then
-            echo '::error::The [publish 200] push trigger is valid for 0.8.39+200 only.'
+          if [[ "$GITHUB_EVENT_NAME" == push && "$version" != '0.8.40+201' ]]; then
+            echo '::error::The [publish 201] push trigger is valid for 0.8.40+201 only.'
             exit 1
           fi
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || {
@@ -187,7 +187,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 200]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 201]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -223,7 +223,7 @@ jobs:
 
   build-windows:
     needs: validate
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 200]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 201]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -281,7 +281,7 @@ jobs:
 
   build-and-publish:
     needs: [build-ubuntu, build-windows]
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 200]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 201]')) }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -402,7 +402,7 @@ jobs:
           retention-days: 7
 
       - name: Publish current IPA, APK and agents to GitHub Releases
-        if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 200]')) }}
+        if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 201]')) }}
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-latest.sh
@@ -656,7 +656,7 @@ jobs:
     needs: build-and-publish
     # Weekly, explicitly requested cleanup, one-shot maintenance merge, or a successful release.
     # A cleanup request never launches Go, Flutter, or native build jobs.
-    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[cleanup actions]')) || ((inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 200]'))) && needs.build-and-publish.result == 'success')) }}
+    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[cleanup actions]')) || ((inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 201]'))) && needs.build-and-publish.result == 'success')) }}
     continue-on-error: true
     permissions:
       contents: read
