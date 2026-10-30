@@ -2463,15 +2463,19 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(selection == 'test'
-              ? 'Test notification requested.'
+              ? 'Notification submitted. Check the banner or Notification '
+                'Center; Focus mode can suppress banners.'
               : 'LG temperatures checked against saved readings.'),
         ));
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Alert check failed. Verify LG account connection '
-              'and iPhone notification permissions.'),
+        final hint = selection == 'test'
+            ? 'Notification failed: $error'
+            : 'LG status check failed: $error';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(hint),
+          duration: const Duration(seconds: 8),
         ));
       }
     }

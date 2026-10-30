@@ -1,6 +1,7 @@
 import UIKit
 import Flutter
 import workmanager_apple
+import UserNotifications
 
 // Flutter 3.41+ creates its implicit engine during UIScene startup.
 // At didFinishLaunching the app delegate's window is often nil, so
@@ -29,6 +30,9 @@ import workmanager_apple
     WorkmanagerPlugin.setPluginRegistrantCallback { registry in
       GeneratedPluginRegistrant.register(with: registry)
     }
+    // Required for flutter_local_notifications foreground banners.
+    // The app delegate retains this weakly referenced notification delegate.
+    UNUserNotificationCenter.current().delegate = self
     return super.application(application,
                              didFinishLaunchingWithOptions: launchOptions)
   }

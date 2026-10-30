@@ -69,6 +69,10 @@ class FridgeAlerts {
           requestAlertPermission: false,
           requestBadgePermission: false,
           requestSoundPermission: false,
+          defaultPresentAlert: true,
+          defaultPresentBanner: true,
+          defaultPresentList: true,
+          defaultPresentSound: true,
         ),
       ));
       _initialized = true;
@@ -85,9 +89,10 @@ class FridgeAlerts {
             AndroidFlutterLocalNotificationsPlugin>()
             ?.requestNotificationsPermission();
       }
-      if (granted == false) {
-        throw StateError('Notifications are blocked. Enable them in '
-            'phone Settings before turning on refrigerator alerts.');
+      if (granted != true) {
+        throw StateError('Notifications are unavailable or blocked. '
+            'In iPhone Settings → Notifications → TapTether, enable '
+            'Allow Notifications, Banners and Sounds.');
       }
     }
   }
@@ -223,7 +228,7 @@ class FridgeAlerts {
   Future<void> showTestNotification() async {
     await initialize(allowPermissions: true);
     await _notifications.show(
-      id: 19735,
+      id: DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
       title: 'TapTether refrigerator alert test',
       body: 'Notifications are configured. iOS background LG checks '
           'are not immediate and may run later.',
@@ -234,7 +239,8 @@ class FridgeAlerts {
           importance: Importance.high, priority: Priority.high,
         ),
         iOS: DarwinNotificationDetails(
-          presentAlert: true, presentSound: true,
+          presentAlert: true, presentBanner: true,
+          presentList: true, presentSound: true,
         ),
       ),
     );
@@ -386,7 +392,8 @@ class FridgeAlerts {
             priority: Priority.high,
           ),
           iOS: DarwinNotificationDetails(
-            presentAlert: true, presentSound: true,
+            presentAlert: true, presentBanner: true,
+            presentList: true, presentSound: true,
           ),
         ),
       );
