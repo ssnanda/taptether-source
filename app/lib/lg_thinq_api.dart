@@ -98,7 +98,11 @@ class LgThinQStorage {
   static const aliasesKey = 'taptether.lg.thinq.local-names.v1';
 
   LgThinQStorage({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+      : _storage = storage ?? const FlutterSecureStorage(
+          iOptions: IOSOptions(
+            accessibility: KeychainAccessibility.first_unlock_this_device,
+          ),
+        );
 
   final FlutterSecureStorage _storage;
 
@@ -112,13 +116,20 @@ class LgThinQStorage {
     if (saved == null || saved.isEmpty) {
       throw StateError('Connect LG ThinQ before enabling alerts.');
     }
-    await _storage.write(
-      key: tokenKey,
-      value: saved,
-      iOptions: const IOSOptions(
-        accessibility: KeychainAccessibility.first_unlock_this_device,
-      ),
-    );
+    // Background isolates need all ThinQ metadata after first unlock;
+    // migrating only the PAT leaves cloud checks blocked on locked phones.
+    for (final key in [
+      tokenKey, countryKey, clientKey, devicesKey, aliasesKey,
+    ]) {
+      final value = await _storage.read(key: key);
+      if (value == null) continue;
+      await _storage.write(
+        key: key, value: value,
+        iOptions: const IOSOptions(
+          accessibility: KeychainAccessibility.first_unlock_this_device,
+        ),
+      );
+    }
   }
   Future<String> country() async =>
       await _storage.read(key: countryKey) ?? 'US';
