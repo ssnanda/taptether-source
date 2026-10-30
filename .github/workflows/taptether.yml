@@ -4,7 +4,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # Build-only: [build ipa] on main produces downloadable IPA/APK/agent CI artifacts.
 # LG TV MAC discovery (0.8.35): release remains manual, after device installation.
 # One-time exception: [publish 202] in a main squash-merge commit triggers version
-# 0.8.41+202 only, after the user explicitly asked us to dispatch this build.
+# 0.8.41+202 only, for the approved colorful dashboard IPA publication.
 # VERSION commits never automatically publish. Agent-only pushes remain supported.
 on:
   workflow_dispatch:
