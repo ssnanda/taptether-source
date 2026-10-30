@@ -12,6 +12,7 @@ import 'lg_thinq_api.dart';
 const fridgeBackgroundJob = 'com.taptether.taptether.fridge-watch';
 const _alertKey = 'taptether.fridge.alerts.enabled.v1';
 const _baselinePrefix = 'taptether.fridge.alerts.baseline.v1.';
+const _lastCheckedPrefix = 'taptether.fridge.alerts.checked.v1.';
 
 @pragma('vm:entry-point')
 void taptetherBackgroundDispatcher() {
@@ -88,20 +89,96 @@ class FridgeAlerts {
   Future<bool> isEnabled(String id) async =>
       (await enabledDevices()).contains(id);
 
+  Future<Object?> _fetchState(String id) async {
+    final store = LgThinQStorage();
+    final token = await store.token();
+    if (token == null || token.isEmpty) {
+      throw StateError('LG ThinQ is disconnected.');
+    }
+    return LgThinQClient(
+      personalToken: token,
+      country: await store.country(),
+      clientId: await store.clientId(),
+    ).state(id);
+  }
+
+  String _baselineJson(List<FridgeTemperatureReading> readings) =>
+      jsonEncode({
+        for (final reading in readings)
+          reading.identity: {'value': reading.value, 'unit': reading.unit},
+      });
+
+  /// Capture a real starting temperature before enabling any alerts.
+  Future<void> _seedBaseline(String id) async {
+    final readings = fridgeReadings(await _fetchState(id));
+    if (readings.isEmpty) {
+      throw StateError('LG did not report refrigerator temperatures.');
+    }
+    await _store.write(
+      key: '$_baselinePrefix$id', value: _baselineJson(readings),
+    );
+    await _store.write(
+      key: '$_lastCheckedPrefix$id',
+      value: DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  Future<DateTime?> lastChecked(String id) async {
+    final raw = await _store.read(key: '$_lastCheckedPrefix$id');
+    return raw == null ? null : DateTime.tryParse(raw)?.toLocal();
+  }
+
+  /// Check on demand using the same comparison as scheduled background work.
+  Future<int> checkDevice(LgThinQDevice device) async {
+    if (!(await isEnabled(device.id))) {
+      throw StateError('Enable refrigerator notifications first.');
+    }
+    final state = await _fetchState(device.id);
+    final readings = fridgeReadings(state);
+    if (readings.isEmpty) {
+      throw StateError('LG did not report refrigerator temperatures.');
+    }
+    await observe(device, state);
+    return readings.length;
+  }
+
+  /// Verify local-notification permission separately from LG's cloud API.
+  Future<void> showTestNotification() async {
+    await initialize(allowPermissions: true);
+    await _notifications.show(
+      id: 19735,
+      title: 'TapTether refrigerator alert test',
+      body: 'Notifications are configured. iOS background LG checks '
+          'are not immediate and may run later.',
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'taptether_refrigerator', 'Refrigerator temperature changes',
+          channelDescription: 'LG refrigerator temperature alerts.',
+          importance: Importance.high, priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true, presentSound: true,
+        ),
+      ),
+    );
+  }
+
   Future<void> setEnabled(String id, bool enabled) async {
     final deviceIds = await enabledDevices();
+    final previous = await _store.read(key: _alertKey);
+    final baselineKey = '$_baselinePrefix$id';
+    final checkedKey = '$_lastCheckedPrefix$id';
+    final oldBaseline = await _store.read(key: baselineKey);
+    final oldChecked = await _store.read(key: checkedKey);
     if (enabled) {
-      // Ask only when the user explicitly requests notifications.
       await initialize(allowPermissions: true);
-      // Explicit consent to perform LG checks after the first unlock on
-      // this device. The PAT remains in the non-syncing iOS Keychain.
       await LgThinQStorage().enableBackgroundTokenAccess();
+      // No silent first-change loss: fail visibly if LG is unreachable.
+      await _seedBaseline(id);
       deviceIds.add(id);
     } else {
       deviceIds.remove(id);
-      await _store.delete(key: '$_baselinePrefix$id');
     }
-    final previous = await _store.read(key: _alertKey);
     await _store.write(key: _alertKey,
         value: jsonEncode(deviceIds.toList()));
     try {
@@ -113,7 +190,21 @@ class FridgeAlerts {
       } else {
         await _store.write(key: _alertKey, value: previous);
       }
+      if (oldBaseline == null) {
+        await _store.delete(key: baselineKey);
+      } else {
+        await _store.write(key: baselineKey, value: oldBaseline);
+      }
+      if (oldChecked == null) {
+        await _store.delete(key: checkedKey);
+      } else {
+        await _store.write(key: checkedKey, value: oldChecked);
+      }
       rethrow;
+    }
+    if (!enabled) {
+      await _store.delete(key: baselineKey);
+      await _store.delete(key: checkedKey);
     }
   }
 
@@ -187,12 +278,12 @@ class FridgeAlerts {
       }
     }
     final changes = compareFridgeReadings(previous, values);
-    final saved = <String, Map<String, Object>>{
-      for (final item in values)
-        item.identity: {'value': item.value, 'unit': item.unit},
-    };
     // Write before notifying: an interruption must not replay old changes.
-    await _store.write(key: key, value: jsonEncode(saved));
+    await _store.write(key: key, value: _baselineJson(values));
+    await _store.write(
+      key: '$_lastCheckedPrefix${device.id}',
+      value: DateTime.now().toUtc().toIso8601String(),
+    );
     if (changes.isEmpty) return;
     await initialize();
     for (final change in changes) {
