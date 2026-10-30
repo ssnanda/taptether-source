@@ -407,6 +407,39 @@ jobs:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: bash bin/6-tt-publish-latest.sh
 
+      - name: Sync published AltStore metadata back to source main
+        if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 201]')) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          test -s altstore.json
+          git fetch --quiet origin main
+          current_version="$(git show origin/main:VERSION | tr -d '\r\n')"
+          if [[ "$current_version" != "$version" ]]; then
+            echo "::warning::New source VERSION $current_version; skip stale AltStore sync for $version"
+            exit 0
+          fi
+          test "$(gh api repos/ssnanda/taptether.com/releases/tags/current --jq '.name')" = "TapTether $version (rolling downloads)"
+          feed_hash="$(git hash-object altstore.json)"
+          public_hash="$(gh api repos/ssnanda/taptether.com/contents/altstore.json --jq '.sha')"
+          test "$feed_hash" = "$public_hash" || {
+            echo "::error::Public AltStore feed does not match generated metadata."
+            exit 1
+          }
+          source_hash="$(gh api repos/ssnanda/taptether-source/contents/altstore.json --jq '.sha')"
+          if [[ "$source_hash" == "$feed_hash" ]]; then
+            echo "AltStore metadata already synchronized."
+            exit 0
+          fi
+          feed_base64="$(base64 < altstore.json | tr -d '\r\n')"
+          gh api -X PUT repos/ssnanda/taptether-source/contents/altstore.json \
+            -f message="chore: sync AltStore metadata $version [skip ci]" \
+            -f content="$feed_base64" -f sha="$source_hash" -f branch=main >/dev/null
+          test "$(gh api repos/ssnanda/taptether-source/contents/altstore.json --jq '.sha')" = "$feed_hash"
+          echo "Synchronized source and public AltStore feeds at $version."
+
   agent-only-validate:
     # A separate lightweight path in the SAME workflow. Does not initialize
     # Flutter, sign iOS code, or build Android; full releases remain untouched.

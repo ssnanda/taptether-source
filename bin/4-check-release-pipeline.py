@@ -130,6 +130,11 @@ assert '--target main' in publisher
 assert 'TAPTETHER_PUBLIC_RELEASE_TOKEN' in workflow
 assert 'gh release delete "$platform-current"' in publisher
 assert 'repos/$REPO/contents/altstore.json' in publisher
+assert "Sync published AltStore metadata back to source main" in workflow
+assert 'current_version="$(git show origin/main:VERSION' in workflow
+assert 'gh api -X PUT repos/ssnanda/taptether-source/contents/altstore.json' in workflow
+assert 'test "$feed_hash" = "$public_hash"' in workflow
+
 assert 'VERSION_TAG=' not in publisher
 assert 'Source commit:' not in publisher
 assert 'Build workflow:' not in publisher
