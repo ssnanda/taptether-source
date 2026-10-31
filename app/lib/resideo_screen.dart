@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -30,6 +31,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
   bool _showSecrets = false;
   bool _bulkMode = false;
   DateTime? _lastChecked;
+  final Map<String, Timer> _targetTimers = {};
+  final Map<String, ResideoDevice> _targetOriginals = {};
+  final Set<String> _sendingTargets = {};
   bool _manualCode = false;
   String? _pendingState;
   String? _error;
@@ -38,11 +42,21 @@ class _ResideoScreenState extends State<ResideoScreen> {
   @override
   void initState() {
     super.initState();
+    final memory = ResideoConnection.memoryDevices;
+    if (memory != null && !widget.settingsOnly) {
+      _devices = memory;
+      _lastChecked = ResideoConnection.memoryTimestamp;
+      _locations = memory.map((d) => d.locationId).toSet();
+      _loading = false;
+    }
     _restore();
   }
 
   @override
   void dispose() {
+    for (final timer in _targetTimers.values) {
+      timer.cancel();
+    }
     for (final controller in [
       _key, _secret, _redirect, _authCode, _search,
     ]) {
@@ -60,12 +74,25 @@ class _ResideoScreenState extends State<ResideoScreen> {
       _key.text = c.apiKey;
       _secret.text = c.apiSecret;
       _redirect.text = c.redirectUri;
+      if (c.usable && !widget.settingsOnly && _devices.isEmpty) {
+        final (cached, checkedAt) = await _api.cachedDevices();
+        if (!mounted) return;
+        if (cached.isNotEmpty) {
+          setState(() {
+            _devices = cached;
+            _lastChecked = checkedAt;
+            _locations = cached.map((d) => d.locationId).toSet();
+            _loading = false;
+          });
+        }
+      }
       setState(() {
         _configured = c.usable;
         _loading = false;
       });
       if (!widget.settingsOnly && c.usable) {
-        await _refresh();
+        // Previously saved values show while the remote API refreshes.
+        _refresh();
       }
     } catch (_) {
       if (mounted) {
@@ -235,6 +262,87 @@ class _ResideoScreenState extends State<ResideoScreen> {
       {bool fan = false, double? heat, double? cool}) async {
     await _api.mode(device, mode, fan: fan, heat: heat, cool: cool);
     await _load();
+  }
+
+  /// Changes are shown immediately and short taps are coalesced into
+  /// one Resideo API command, rather than a five-second full scan per tap.
+  void _adjustTarget(ResideoDevice tapped, bool heating, int direction) {
+    final key = tapped.cacheId;
+    if (_sendingTargets.contains(key)) return;
+    final current = _devices.where((d) => d.cacheId == key)
+        .firstOrNull ?? tapped;
+    try {
+      final newTarget = current.adjustedSetpoint(
+          heating: heating, direction: direction);
+      _targetOriginals.putIfAbsent(key, () => tapped);
+      final updated = current.withTarget(
+        heatTarget: heating ? newTarget : null,
+        coolTarget: heating ? null : newTarget,
+      );
+      setState(() {
+        _error = null;
+        _devices = [
+          for (final d in _devices) if (d.cacheId == key) updated else d,
+        ];
+      });
+      _targetTimers.remove(key)?.cancel();
+      _targetTimers[key] = Timer(const Duration(milliseconds: 550),
+          () => _commitTarget(key));
+    } catch (error) {
+      setState(() => _error = _friendly(error));
+    }
+  }
+
+  Future<void> _commitTarget(String key) async {
+    _targetTimers.remove(key);
+    final current = _devices.where((d) => d.cacheId == key).firstOrNull;
+    if (current == null || _sendingTargets.contains(key)) return;
+    setState(() => _sendingTargets.add(key));
+    try {
+      await _api.mode(current, current.system,
+          heat: current.heat, cool: current.cool);
+      // Preserve the confirmed optimistic value across immediate reopen.
+      await _api.rememberUpdated(current);
+      _targetOriginals.remove(key);
+    } catch (error) {
+      final previous = _targetOriginals.remove(key);
+      if (mounted) {
+        setState(() {
+          _error = _friendly(error);
+          if (previous != null) {
+            _devices = [
+              for (final d in _devices)
+                if (d.cacheId == key) previous else d,
+            ];
+          }
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sendingTargets.remove(key));
+      }
+    }
+  }
+
+  Widget _temperatureControls(ResideoDevice d, bool heating) {
+    final value = heating ? d.heat : d.cool;
+    if (value == null || !d.online) return const SizedBox.shrink();
+    final sending = _sendingTargets.contains(d.cacheId);
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      IconButton.filledTonal(
+        key: ValueKey('resideo-decrease-${d.cacheId}-${heating ? 'heat' : 'cool'}'),
+        tooltip: 'Lower ${d.name} ${heating ? 'heat' : 'cool'} target',
+        icon: const Icon(Icons.remove_rounded),
+        onPressed: sending ? null : () => _adjustTarget(d, heating, -1),
+      ),
+      const SizedBox(width: 2),
+      IconButton.filledTonal(
+        key: ValueKey('resideo-increase-${d.cacheId}-${heating ? 'heat' : 'cool'}'),
+        tooltip: 'Raise ${d.name} ${heating ? 'heat' : 'cool'} target',
+        icon: const Icon(Icons.add_rounded),
+        onPressed: sending ? null : () => _adjustTarget(d, heating, 1),
+      ),
+    ]);
   }
 
   Future<void> _bulk(String mode, {required bool fan}) async {
