@@ -3053,31 +3053,43 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
 
-      // TV types share the saved-device list, location and offline filters.
+      // Show saved TVs everywhere in All Devices, but only local TVs
+      // under On This Network. Never infer reachability from a saved IP.
       for (final tv in savedLgTvs)
         if (_tvVisible('lg:${tv.host}'))
           Card(
             key: ValueKey('lg-tv-${tv.deviceUuid.isNotEmpty
                 ? tv.deviceUuid : tv.host}'),
+            margin: const EdgeInsets.only(bottom: 5),
             child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 5),
-              leading: const Icon(Icons.tv_outlined, size: 29),
+              dense: true,
+              minVerticalPadding: 3,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+              leading: TapTetherDashboardVisuals.iconTile(
+                  Icons.tv_rounded, const Color(0xFF3B8BEF),
+                  const Color(0xFF2CB2DA), size: 36),
               title: Text(tv.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('LG webOS · Paired',
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                style: const TextStyle(fontWeight: FontWeight.w700,
+                    fontSize: 14)),
+              subtitle: Text(savedDeviceOnNetwork(_wifiRange, tv.host)
+                  ? 'LG webOS · This network' : 'LG webOS · Other network',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5)),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 IconButton(
                   key: ValueKey('diagnostics-lg-${tv.host}'),
                   tooltip: 'LG TV diagnostics',
-                  icon: const Icon(Icons.bug_report_outlined),
+                  constraints: const BoxConstraints.tightFor(
+                      width: 34, height: 34),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.bug_report_outlined, size: 19),
                   onPressed: () => openLgDiagnostics(tv),
                 ),
                 _tvStatus('lg', tv.host),
               ]),
-              onTap: () => openLgWebOs(host: tv.host),
+              onTap: savedDeviceOnNetwork(_wifiRange, tv.host)
+                  ? () => openLgWebOs(host: tv.host) : null,
             ),
           ),
       for (final tv in savedSamsungTvs)
@@ -3085,44 +3097,63 @@ class _RemoteScreenState extends State<RemoteScreen>
           Card(
             key: ValueKey('samsung-tv-${tv.deviceId.isNotEmpty
                 ? tv.deviceId : tv.host}'),
+            margin: const EdgeInsets.only(bottom: 5),
             child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 5),
-              leading: const Icon(Icons.tv, size: 29),
+              dense: true,
+              minVerticalPadding: 3,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+              leading: TapTetherDashboardVisuals.iconTile(
+                  Icons.tv_rounded, const Color(0xFF3B8BEF),
+                  const Color(0xFF2CB2DA), size: 36),
               title: Text(tv.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Samsung TV · Paired',
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                style: const TextStyle(fontWeight: FontWeight.w700,
+                    fontSize: 14)),
+              subtitle: Text(savedDeviceOnNetwork(_wifiRange, tv.host)
+                  ? 'Samsung · This network' : 'Samsung · Other network',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5)),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 IconButton(
                   key: ValueKey('diagnostics-samsung-${tv.host}'),
                   tooltip: 'Samsung TV diagnostics',
-                  icon: const Icon(Icons.bug_report_outlined),
+                  constraints: const BoxConstraints.tightFor(
+                      width: 34, height: 34),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.bug_report_outlined, size: 19),
                   onPressed: () => openSamsungDiagnostics(tv),
                 ),
                 _tvStatus('samsung', tv.host),
               ]),
-              onTap: () => openSamsungTv(host: tv.host),
+              onTap: savedDeviceOnNetwork(_wifiRange, tv.host)
+                  ? () => openSamsungTv(host: tv.host) : null,
             ),
           ),
       for (final xbox in savedXboxConsoles)
         if (_showAllDevices ||
             savedDeviceOnNetwork(_wifiRange, xbox.host))
-        Card(
-          key: ValueKey('xbox-${xbox.uuid}'),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 5),
-            leading: const Icon(Icons.videogame_asset_outlined, size: 29),
-            title: Text(xbox.name, maxLines: 1,
+          Card(
+            key: ValueKey('xbox-${xbox.uuid}'),
+            margin: const EdgeInsets.only(bottom: 5),
+            child: ListTile(
+              dense: true,
+              minVerticalPadding: 3,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+              leading: TapTetherDashboardVisuals.iconTile(
+                  Icons.sports_esports_rounded,
+                  const Color(0xFFF2B448), const Color(0xFFF78A46),
+                  size: 36),
+              title: Text(xbox.name, maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('Xbox · Saved · Status not checked'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => openXboxRemote(host: xbox.host),
+                style: const TextStyle(fontWeight: FontWeight.w700,
+                    fontSize: 14)),
+              subtitle: Text(savedDeviceOnNetwork(_wifiRange, xbox.host)
+                  ? 'Xbox · Not checked' : 'Xbox · Other network',
+                  style: const TextStyle(fontSize: 11.5)),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => openXboxRemote(host: xbox.host),
+            ),
           ),
-        ),
       for (final device in _enabledThinQ) _thinQCard(device),
       if (_wifiRange != null) ...[
         const SizedBox(height: 8),
