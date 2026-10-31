@@ -81,6 +81,56 @@ class ResideoDevice {
     );
   }
 
+  String get cacheId => '$locationId:$id';
+
+  Map<String, Object?> toCacheRecord() => {
+    'id': id, 'name': name, 'locationId': locationId,
+    'location': location, 'system': system, 'fan': fan, 'unit': unit,
+    'temperature': temperature, 'heat': heat, 'cool': cool,
+    'minHeat': minHeat, 'maxHeat': maxHeat,
+    'minCool': minCool, 'maxCool': maxCool,
+    'systemModes': systemModes, 'fanModes': fanModes,
+    'values': values, 'online': online,
+  };
+
+  static ResideoDevice? fromCacheRecord(Object? input) {
+    if (input is! Map || input['id'] is! String ||
+        input['locationId'] is! String || input['name'] is! String) {
+      return null;
+    }
+    double? number(String key) {
+      final v = input[key];
+      return v is num ? v.toDouble() : null;
+    }
+    return ResideoDevice(
+      id: input['id'] as String, name: input['name'] as String,
+      locationId: input['locationId'] as String,
+      location: input['location']?.toString() ?? '',
+      system: input['system']?.toString() ?? 'Unknown',
+      fan: input['fan']?.toString() ?? 'Unknown',
+      unit: input['unit']?.toString() ?? 'Fahrenheit',
+      temperature: number('temperature'), heat: number('heat'),
+      cool: number('cool'), minHeat: number('minHeat'),
+      maxHeat: number('maxHeat'), minCool: number('minCool'),
+      maxCool: number('maxCool'),
+      systemModes: _modes(input['systemModes']),
+      fanModes: _modes(input['fanModes']),
+      values: _map(input['values']),
+      online: input['online'] == true,
+    );
+  }
+
+  ResideoDevice withTarget({double? heatTarget, double? coolTarget}) {
+    return ResideoDevice(
+      id: id, name: name, locationId: locationId, location: location,
+      system: system, fan: fan, unit: unit, temperature: temperature,
+      heat: heatTarget ?? heat, cool: coolTarget ?? cool,
+      minHeat: minHeat, maxHeat: maxHeat, minCool: minCool, maxCool: maxCool,
+      systemModes: systemModes, fanModes: fanModes,
+      values: values, online: online,
+    );
+  }
+
   /// These labels describe selected modes, not whether HVAC equipment
   /// is actively heating or cooling. The API's requested mode is not runtime.
   String get modeLabel {
@@ -254,6 +304,41 @@ class ResideoConnection {
   static const defaultRedirect = 'http://localhost:7681/';
   final ResideoLocalVault _vault;
 
+  static List<ResideoDevice>? _recentDevices;
+  static DateTime? _recentAt;
+
+  static List<ResideoDevice>? get memoryDevices =>
+      _recentDevices == null ? null : List.of(_recentDevices!);
+  static DateTime? get memoryTimestamp => _recentAt;
+
+  Future<(List<ResideoDevice>, DateTime?)> cachedDevices() async {
+    if (_recentDevices != null) {
+      return (List.of(_recentDevices!), _recentAt);
+    }
+    final saved = await _vault.readCache();
+    final items = saved?['devices'];
+    if (items is! List) return (<ResideoDevice>[], null);
+    final devices = items.map(ResideoDevice.fromCacheRecord)
+        .whereType<ResideoDevice>().toList();
+    if (devices.isEmpty) return (<ResideoDevice>[], null);
+    _recentDevices = devices;
+    _recentAt = DateTime.tryParse(saved?['checkedAt']?.toString() ?? '');
+    return (List.of(devices), _recentAt);
+  }
+
+  Future<void> _remember(List<ResideoDevice> devices) async {
+    _recentDevices = List.of(devices);
+    _recentAt = DateTime.now();
+    try {
+      await _vault.writeCache({
+        'checkedAt': _recentAt!.toIso8601String(),
+        'devices': devices.map((d) => d.toCacheRecord()).toList(),
+      });
+    } catch (_) {
+      // The network result is usable even if protected storage is full.
+    }
+  }
+
   Future<ResideoCredentials> credentials() async {
     final values = await _vault.read() ?? {};
     final expiry = values['expiresAtUtc']?.toString();
@@ -284,7 +369,11 @@ class ResideoConnection {
     });
   }
 
-  Future<void> disconnect() => _vault.clear();
+  Future<void> disconnect() async {
+    _recentDevices = null;
+    _recentAt = null;
+    await _vault.clear();
+  }
 
   /// Localhost is a secure OAuth loopback redirect when registered verbatim.
   /// Arbitrary plaintext HTTP endpoints, credentials in URLs and fragments
@@ -560,6 +649,7 @@ class ResideoConnection {
     }
     final devices = merged.values.toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    await _remember(devices);
     return devices;
   }
 
