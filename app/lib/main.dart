@@ -503,6 +503,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final remoteLayoutStore = RemoteLayoutStore();
   final networkLocationStore = NetworkLocationStore();
   Timer? _heartbeatTimer;
+  Timer? _tvRecoveryTimer;
   Timer? _wifiCheckTimer;
   DetectedLanRange? _wifiRange;
   bool _checkedWifi = false;
@@ -740,6 +741,15 @@ class _RemoteScreenState extends State<RemoteScreen>
         unawaited(_refreshHeartbeats());
         unawaited(_refreshTvStatuses());
         unawaited(_refreshThinQStatuses());
+      }
+    });
+    // TV addresses change with DHCP. Revisit saved TV status quietly while
+    // the app is open; any missing TV triggers bounded, identity-verified
+    // address recovery (with cooldown) instead of requiring a manual scan.
+    _tvRecoveryTimer = Timer.periodic(const Duration(minutes: 3), (_) {
+      if (_appForeground && _wifiRange != null &&
+          (savedLgTvs.isNotEmpty || savedSamsungTvs.isNotEmpty)) {
+        unawaited(_refreshTvStatuses());
       }
     });
     // Only the foreground timer is configurable below 15 minutes.
@@ -1813,7 +1823,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (mounted) {
         setState(() {});
         // A DHCP lease may change while other TVs stay online. Recover each
-        // missing pairing independently, subject to the ten-minute cooldown.
+        // missing pairing independently, subject to a five-minute cooldown.
         if (!_locatingManually && !_recoveringTvAddresses &&
             _appForeground &&
             (savedLgTvs.any((tv) => _tvOnline['lg:${tv.host}'] == false) ||
@@ -1829,7 +1839,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (!mounted || !_appForeground || _recoveringTvAddresses) return;
     final now = DateTime.now();
     if (!force && _lastTvRecovery != null &&
-        now.difference(_lastTvRecovery!) < const Duration(minutes: 10)) {
+        now.difference(_lastTvRecovery!) < const Duration(minutes: 5)) {
       return;
     }
     final network = await detectLanRange();
@@ -2942,13 +2952,34 @@ class _RemoteScreenState extends State<RemoteScreen>
         localTvs == 0 && localXbox == 0;
     final noSaved = savedComputers.isEmpty && savedLgTvs.isEmpty &&
         savedSamsungTvs.isEmpty && savedXboxConsoles.isEmpty;
+    // Status is verified locally or reported by a successful ThinQ API read.
+    // Xboxes have no reachability probe here, so cannot be marked Online.
+    final onlineComputers = visibleDevices.where((device) =>
+        savedDeviceOnNetwork(_wifiRange, device.host) &&
+        _online[device.id] == true).length;
+    final onlineTvs = savedLgTvs.where((tv) =>
+        _tvVisible('lg:${tv.host}') &&
+        savedDeviceOnNetwork(_wifiRange, tv.host) &&
+        _tvOnline['lg:${tv.host}'] == true).length +
+        savedSamsungTvs.where((tv) =>
+        _tvVisible('samsung:${tv.host}') &&
+        savedDeviceOnNetwork(_wifiRange, tv.host) &&
+        _tvOnline['samsung:${tv.host}'] == true).length;
+    final visibleTvCount = savedLgTvs.where((tv) =>
+        _tvVisible('lg:${tv.host}')).length +
+        savedSamsungTvs.where((tv) =>
+        _tvVisible('samsung:${tv.host}')).length;
+    final visibleXboxCount = savedXboxConsoles.where((xbox) =>
+        _showAllDevices ||
+        savedDeviceOnNetwork(_wifiRange, xbox.host)).length;
+    final onlineAppliances = _enabledThinQ.where((device) =>
+        _thinQStatuses.containsKey(device.id)).length;
+    final onlineTotal = onlineComputers + onlineTvs + onlineAppliances;
+    final offlineTotal = visibleDevices.length + visibleTvCount +
+        visibleXboxCount + _enabledThinQ.length - onlineTotal;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TapTetherDashboardVisuals.deviceSummary(context,
-          computers: savedComputers.length,
-          televisions: savedLgTvs.length + savedSamsungTvs.length,
-          xbox: savedXboxConsoles.length),
         DeviceDashboardHeader(
           allDevices: _showAllDevices,
           onWifi: _wifiRange != null,
@@ -3004,8 +3035,44 @@ class _RemoteScreenState extends State<RemoteScreen>
             ],
           ),
         ))
-      else
+      else ...[
+        for (final onlineGroup in [true, false])
+          Container(
+            key: ValueKey(onlineGroup
+                ? 'devices-online-section' : 'devices-offline-section'),
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: onlineGroup
+                    ? const Color(0xFF0CA987).withValues(alpha: .38)
+                    : Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(onlineGroup ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                      size: 18,
+                      color: onlineGroup
+                          ? const Color(0xFF0CA987)
+                          : Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 7),
+                  Expanded(child: Text(onlineGroup ? 'Online' : 'Offline',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800))),
+                  Text('${onlineGroup ? onlineTotal : offlineTotal}',
+                    style: Theme.of(context).textTheme.labelLarge),
+                ]),
+                const SizedBox(height: 6),
         for (final device in visibleDevices)
+          if ((savedDeviceOnNetwork(_wifiRange, device.host) &&
+              _online[device.id] == true) == onlineGroup)
           Card(
             key: ValueKey('saved-device-${device.id}'),
             margin: const EdgeInsets.only(bottom: 5),
@@ -3073,7 +3140,9 @@ class _RemoteScreenState extends State<RemoteScreen>
       // Show saved TVs everywhere in All Devices, but only local TVs
       // under On This Network. Never infer reachability from a saved IP.
       for (final tv in savedLgTvs)
-        if (_tvVisible('lg:${tv.host}'))
+        if (_tvVisible('lg:${tv.host}') &&
+            ((savedDeviceOnNetwork(_wifiRange, tv.host) &&
+              _tvOnline['lg:${tv.host}'] == true) == onlineGroup))
           Card(
             key: ValueKey('lg-tv-${tv.deviceUuid.isNotEmpty
                 ? tv.deviceUuid : tv.host}'),
@@ -3110,7 +3179,9 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
       for (final tv in savedSamsungTvs)
-        if (_tvVisible('samsung:${tv.host}'))
+        if (_tvVisible('samsung:${tv.host}') &&
+            ((savedDeviceOnNetwork(_wifiRange, tv.host) &&
+              _tvOnline['samsung:${tv.host}'] == true) == onlineGroup))
           Card(
             key: ValueKey('samsung-tv-${tv.deviceId.isNotEmpty
                 ? tv.deviceId : tv.host}'),
@@ -3147,8 +3218,8 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
       for (final xbox in savedXboxConsoles)
-        if (_showAllDevices ||
-            savedDeviceOnNetwork(_wifiRange, xbox.host))
+        if (!onlineGroup && (_showAllDevices ||
+            savedDeviceOnNetwork(_wifiRange, xbox.host)))
           Card(
             key: ValueKey('xbox-${xbox.uuid}'),
             margin: const EdgeInsets.only(bottom: 5),
@@ -3171,7 +3242,31 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () => openXboxRemote(host: xbox.host),
             ),
           ),
-      for (final device in _enabledThinQ) _thinQCard(device),
+      for (final device in _enabledThinQ)
+        if (_thinQStatuses.containsKey(device.id) == onlineGroup)
+          _thinQCard(device),
+      if (onlineGroup) Padding(
+        padding: const EdgeInsets.fromLTRB(3, 9, 3, 3),
+        child: Row(children: [
+          Text('Devices', style: Theme.of(context).textTheme.labelMedium),
+          const Spacer(),
+          Text('$onlineComputers computers · $onlineTvs TVs · '
+              '$onlineAppliances appliances',
+            style: Theme.of(context).textTheme.labelSmall),
+        ]),
+      ),
+      if (onlineGroup && onlineTotal == 0)
+        Padding(padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text('No verified devices online',
+            style: Theme.of(context).textTheme.bodySmall)),
+      if (!onlineGroup && offlineTotal == 0)
+        Padding(padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text('No offline devices',
+            style: Theme.of(context).textTheme.bodySmall)),
+              ],
+            ),
+          ),
+      ],
       if (_wifiRange != null) ...[
         const SizedBox(height: 8),
         Align(alignment: Alignment.centerRight, child: TextButton.icon(
@@ -3581,6 +3676,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     WidgetsBinding.instance.removeObserver(this);
     _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
+    _tvRecoveryTimer?.cancel();
     _wifiCheckTimer?.cancel();
     _fridgeMonitorTimer?.cancel();
     final listener = _announcementSubscription;
