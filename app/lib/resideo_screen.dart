@@ -374,7 +374,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
       const SizedBox(height: 7),
       const Text('Connect directly to api.honeywellhome.com. No AJCore or AJOps account is required.'),
       const SizedBox(height: 16),
-      entry(_key, 'API Key / Client ID'),
+      entry(_key, 'Consumer Key'),
       const SizedBox(height: 12),
       entry(_secret, 'API Secret / Client Secret', secret: true),
       const SizedBox(height: 12),
