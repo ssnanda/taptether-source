@@ -47,6 +47,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
       _devices = memory;
       _lastChecked = ResideoConnection.memoryTimestamp;
       _locations = memory.map((d) => d.locationId).toSet();
+      _configured = true;
       _loading = false;
     }
     _restore();
@@ -233,6 +234,8 @@ class _ResideoScreenState extends State<ResideoScreen> {
       _configured = false;
       _devices = [];
       _selected = {};
+      _bulkMode = false;
+      _lastChecked = null;
       _notice = 'Honeywell connection removed from this device.';
     });
   });
@@ -616,117 +619,219 @@ class _ResideoScreenState extends State<ResideoScreen> {
     final visible = _devices.where((d) =>
         _locations.contains(d.locationId) &&
         (query.isEmpty || d.name.toLowerCase().contains(query) ||
-         d.location.toLowerCase().contains(query))).toList();
+          d.location.toLowerCase().contains(query))).toList();
     final selected = visible.where((d) => _selected.contains(d.id)).toList();
     final locations = <String, String>{
       for (final d in _devices)
         d.locationId: d.location.isEmpty ? d.locationId : d.location,
     };
-    return ListView(padding: const EdgeInsets.all(14), children: [
-      if (!_configured) ...[
-        const ListTile(
-          leading: Icon(Icons.thermostat_outlined),
-          title: Text('Connect Honeywell Home'),
-          subtitle: Text('Set your API key and OAuth token in API Integrations.'),
-        ),
-        FilledButton.icon(
-          icon: const Icon(Icons.settings_outlined),
-          label: const Text('Open Resideo API settings'),
-          onPressed: () async {
-            await Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const ResideoScreen(settingsOnly: true)));
-            if (mounted) {
-              await _restore();
-            }
-          },
-        ),
-      ] else ...[
-        TextField(
-          controller: _search,
-          onChanged: (_) => setState(() {}),
-          decoration: const InputDecoration(
-            hintText: 'Search thermostats',
-            prefixIcon: Icon(Icons.search_rounded),
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-        ),
-        if (locations.length > 1) Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Wrap(spacing: 6, children: [
-            for (final entry in locations.entries)
-              FilterChip(
-                label: Text(entry.value),
-                selected: _locations.contains(entry.key),
-                onSelected: (_) => setState(() {
-                  if (!_locations.add(entry.key)) {
-                    _locations.remove(entry.key);
-                  }
-                }),
-              ),
-          ]),
-        ),
-        if (_devices.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Row(children: [
-            Text('${selected.length} selected',
-                style: theme.textTheme.labelLarge),
-            const Spacer(),
-            TextButton(
-              onPressed: () => setState(
-                () => _selected = _devices.map((d) => d.id).toSet()),
-              child: const Text('All'),
-            ),
-            TextButton(
-              onPressed: () => setState(() => _selected.clear()),
-              child: const Text('None'),
-            ),
-          ]),
-          _modeChoices('System · Selected',
-            const ['Off', 'Cool', 'Heat', 'Auto'],
-            null, (m) => _bulk(m, fan: false)),
-          const SizedBox(height: 9),
-          _modeChoices('Fan · Selected',
-            const ['On', 'Auto', 'Circulate'],
-            null, (m) => _bulk(m, fan: true)),
-          const SizedBox(height: 16),
-        ],
-        for (final d in visible) Card(
-          child: ListTile(
-            dense: true,
-            leading: Checkbox(
-              value: _selected.contains(d.id),
-              onChanged: (_) => setState(() {
-                if (!_selected.add(d.id)) {
-                  _selected.remove(d.id);
-                }
-              }),
-            ),
-            title: Text(d.name, maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            subtitle: Text('${d.location} · ${d.system} · Fan ${d.fan}',
-                maxLines: 2, overflow: TextOverflow.ellipsis),
-            trailing: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
+    final colors = theme.colorScheme;
+
+    Widget deviceCard(ResideoDevice d) {
+      final directControl = d.online && (d.isCoolMode || d.isHeatMode) &&
+          d.primaryTarget != null;
+      return Card(
+        key: ValueKey('resideo-card-${d.cacheId}'),
+        clipBehavior: Clip.antiAlias,
+        margin: const EdgeInsets.only(bottom: 10),
+        color: colors.surface,
+        child: InkWell(
+          onTap: () => _details(d),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 13, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(d.display(d.temperature),
-                    style: theme.textTheme.titleMedium),
-                Text(d.online ? 'Online' : 'Offline',
-                    style: theme.textTheme.labelSmall),
+                Row(children: [
+                  if (_bulkMode) Checkbox(
+                    value: _selected.contains(d.id),
+                    onChanged: (_) => setState(() {
+                      if (!_selected.add(d.id)) _selected.remove(d.id);
+                    }),
+                  ),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d.name, style: theme.textTheme.titleMedium,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(d.location,
+                          style: theme.textTheme.bodySmall,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  )),
+                  Icon(Icons.circle, size: 9,
+                    color: d.online ? Colors.green : colors.outline),
+                  const SizedBox(width: 5),
+                  Text(d.online ? 'Online' : 'Offline',
+                      style: theme.textTheme.labelSmall),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right, size: 19),
+                ]),
+                const SizedBox(height: 11),
+                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  Expanded(flex: 3, child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('ROOM', style: theme.textTheme.labelSmall),
+                      Text(d.display(d.temperature),
+                        key: ValueKey('resideo-room-${d.cacheId}'),
+                        style: theme.textTheme.headlineSmall),
+                    ],
+                  )),
+                  Expanded(flex: 4, child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d.primaryTargetLabel,
+                          style: theme.textTheme.labelSmall),
+                      if (d.primaryTarget != null)
+                        Text(d.display(d.primaryTarget),
+                          key: ValueKey('resideo-target-${d.cacheId}'),
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            color: colors.primary)),
+                      if (d.primaryTarget == null)
+                        Text(d.isAutoMode
+                            ? '${d.display(d.heat)}–${d.display(d.cool)}'
+                            : d.modeLabel,
+                          maxLines: 1,
+                          style: theme.textTheme.titleSmall),
+                    ],
+                  )),
+                  if (directControl)
+                    _temperatureControls(d, d.isHeatMode)
+                  else
+                    const SizedBox(width: 4),
+                ]),
+                const SizedBox(height: 9),
+                Row(children: [
+                  Icon(Icons.thermostat_outlined, size: 16,
+                      color: colors.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text(
+                      'Mode: ${d.modeLabel}  ·  Fan: ${d.fan}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall)),
+                  if (_targetTimers.containsKey(d.cacheId) ||
+                      _sendingTargets.contains(d.cacheId))
+                    Text('Saving…', style: theme.textTheme.labelSmall
+                        ?.copyWith(color: colors.primary)),
+                ]),
               ],
             ),
-            onTap: () => _details(d),
           ),
         ),
-        if (_devices.isEmpty && !_busy)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: Text('No Honeywell Home thermostats found.')),
+      );
+    }
+
+    return ListView(
+      key: const ValueKey('resideo-dashboard'),
+      padding: const EdgeInsets.all(14),
+      children: [
+        if (!_configured) ...[
+          const ListTile(
+            leading: Icon(Icons.thermostat_outlined),
+            title: Text('Connect Resideo'),
+            subtitle: Text('Enter Consumer Key, Consumer Secret and Callback URL in API Integrations.'),
           ),
+          FilledButton.icon(
+            icon: const Icon(Icons.settings_outlined),
+            label: const Text('Resideo API settings'),
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const ResideoScreen(settingsOnly: true)));
+              if (mounted) await _restore();
+            },
+          ),
+        ] else ...[
+          Row(children: [
+            Expanded(child: Text(
+              '${visible.length} thermostat${visible.length == 1 ? '' : 's'}',
+              style: theme.textTheme.titleMedium)),
+            TextButton.icon(
+              key: const ValueKey('resideo-bulk-toggle'),
+              icon: Icon(_bulkMode
+                  ? Icons.close_rounded : Icons.checklist_rounded),
+              onPressed: () => setState(() {
+                _bulkMode = !_bulkMode;
+                _selected.clear();
+              }),
+              label: Text(_bulkMode ? 'Done' : 'Select'),
+            ),
+          ]),
+          if (_lastChecked != null || _busy)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                _busy ? 'Updating thermostats in background…'
+                  : 'Last checked ${TimeOfDay.fromDateTime(_lastChecked!).format(context)}',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          if (locations.length > 1)
+            Padding(padding: const EdgeInsets.only(bottom: 12),
+              child: Wrap(spacing: 7, children: [
+                for (final location in locations.entries)
+                  FilterChip(
+                    label: Text(location.value),
+                    selected: _locations.contains(location.key),
+                    onSelected: (_) => setState(() {
+                      if (!_locations.add(location.key)) {
+                        _locations.remove(location.key);
+                      }
+                    }),
+                  ),
+              ]),
+            ),
+          if (_devices.length > 5)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  hintText: 'Search rooms',
+                  prefixIcon: Icon(Icons.search_rounded),
+                  border: OutlineInputBorder(), isDense: true,
+                ),
+              ),
+            ),
+          if (_bulkMode) Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Padding(padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Text('${selected.length} selected',
+                        style: theme.textTheme.labelLarge),
+                    const Spacer(),
+                    TextButton(onPressed: () => setState(() =>
+                        _selected = visible.map((d) => d.id).toSet()),
+                        child: const Text('All')),
+                    TextButton(
+                        onPressed: () => setState(() => _selected.clear()),
+                        child: const Text('None')),
+                  ]),
+                  _modeChoices('Set system mode', const [
+                    'Off', 'Cool', 'Heat', 'Auto'
+                  ], null, (value) => _bulk(value, fan: false)),
+                  const SizedBox(height: 10),
+                  _modeChoices('Set fan mode', const [
+                    'On', 'Auto', 'Circulate'
+                  ], null, (value) => _bulk(value, fan: true)),
+                ],
+              ),
+            ),
+          ),
+          for (final device in visible) deviceCard(device),
+          if (_devices.isEmpty && !_busy)
+            const Center(child: Padding(padding: EdgeInsets.all(28),
+              child: Text('No thermostats found. Tap refresh to check again.'))),
+          if (_busy && _devices.isEmpty) const Padding(
+            padding: EdgeInsets.symmetric(vertical: 26),
+            child: Center(child: CircularProgressIndicator())),
+        ],
       ],
-      if (_busy) const LinearProgressIndicator(),
-    ]);
+    );
   }
 
   @override
