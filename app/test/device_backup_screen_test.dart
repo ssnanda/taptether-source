@@ -69,7 +69,9 @@ void main() {
 
     await tester.tap(find.byKey(
         const ValueKey('backup-password-protection')));
-    await tester.pumpAndSettle();
+    // The busy indicator remains animated while the consent dialog is open.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('Disable password protection?'), findsOneWidget);
     expect(find.textContaining('NOT encrypted'), findsOneWidget);
     await tester.tap(find.text('Use without encryption'));
