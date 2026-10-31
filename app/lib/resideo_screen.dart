@@ -153,7 +153,7 @@ class ResideoConnection {
     }
     final part = fan ? 'fan' : 'system';
     final route = id == null ? '/ops/upos-temps/$part'
-        : '/ops/upos-temps/devices/' + Uri.encodeComponent(id) + '/$part';
+        : '/ops/upos-temps/devices/${Uri.encodeComponent(id)}/$part';
     await _send(await url(), route, bearer: bearer, body: {
       'mode': mode, if (id == null && selected != null) 'device_ids': selected,
     });
@@ -210,9 +210,11 @@ class _ResideoScreenState extends State<ResideoScreen> {
       setState(() { _loading = false; _connected = session != null; });
       if (session != null) await _refresh();
     } catch (_) {
-      if (mounted) setState(() {
-        _loading = false; _error = 'Cannot open secure account storage.';
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false; _error = 'Cannot open secure account storage.';
+        });
+      }
     }
   }
 
@@ -220,7 +222,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
     if (error is ResideoRequestError) return error.message;
     if (error is FormatException) return error.message;
     if (error is SocketException || error is HandshakeException ||
-        error is HttpException) return 'Cannot reach AJCore securely.';
+        error is HttpException) {
+      return 'Cannot reach AJCore securely.';
+    }
     return 'Request failed. Check connection and try again.';
   }
 
@@ -267,10 +271,12 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   Future<void> _disconnect() => _run(() async {
     await _api.disconnect();
-    if (mounted) setState(() {
-      _connected = false; _devices = []; _selected = {};
-      _locations = {}; _ready = false;
-    });
+    if (mounted) {
+      setState(() {
+        _connected = false; _devices = []; _selected = {};
+        _locations = {}; _ready = false;
+      });
+    }
   });
 
   Future<void> _change(String mode, {String? id, required bool fan}) =>
@@ -444,13 +450,12 @@ class _ResideoScreenState extends State<ResideoScreen> {
                   if (!_selected.add(device.id)) _selected.remove(device.id);
                 })),
               title: Text(device.name),
-              subtitle: Text(device.location + ' · ' + device.system +
-                  ' · Fan ' + device.fan),
+              subtitle: Text('${device.location} · ${device.system} · Fan ${device.fan}'),
               trailing: Column(mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center, children: [
                   Text(_temp(device.temperature),
                       style: theme.textTheme.titleMedium),
-                  Text('Set ' + _temp(device.setpoint),
+                  Text('Set ${_temp(device.setpoint)}',
                       style: theme.textTheme.labelSmall),
                 ]),
               onTap: () => _details(device),
