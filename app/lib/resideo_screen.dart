@@ -237,40 +237,56 @@ class _ResideoScreenState extends State<ResideoScreen> {
     await _load();
   }
 
-  Future<void> _bulk(String mode, {required bool fan}) => _run(() async {
-    final list = _devices.where((d) =>
+  Future<void> _bulk(String mode, {required bool fan}) async {
+    final chosen = _devices.where((d) =>
         _selected.contains(d.id) && _locations.contains(d.locationId) &&
         d.online).toList();
-    if (list.isEmpty) {
-      throw const FormatException('Select at least one online thermostat.');
-    }
-    var changed = 0;
-    final failures = <String>[];
-    for (final device in list) {
-      final supported = fan ? device.supportsFan(mode)
-          : device.systemModes.any((m) => m.toLowerCase() == mode.toLowerCase());
-      if (!supported) {
-        failures.add('${device.name}: unsupported mode');
-        continue;
+    if (chosen.isEmpty || _busy) return;
+    final kind = fan ? 'fan' : 'system';
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Confirm multiple thermostats'),
+        content: Text('Set $kind mode to $mode on ${chosen.length} '
+            'selected thermostat${chosen.length == 1 ? '' : 's'}? '
+            'This changes real equipment.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Apply changes')),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    await _run(() async {
+      var changed = 0;
+      final failures = <String>[];
+      for (final device in chosen) {
+        final supported = fan ? device.supportsFan(mode)
+            : device.systemModes.any(
+                (m) => m.toLowerCase() == mode.toLowerCase());
+        if (!supported) {
+          failures.add('${device.name}: mode unavailable');
+          continue;
+        }
+        try {
+          await _api.mode(device, mode, fan: fan);
+          changed++;
+        } catch (_) {
+          failures.add('${device.name}: not updated');
+        }
       }
-      try {
-        await _api.mode(device, mode, fan: fan);
-        changed++;
-      } catch (_) {
-        failures.add('${device.name}: failed');
-      }
-    }
-    await _load();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _notice = 'Updated $changed of ${list.length} thermostats.';
-      if (failures.isNotEmpty) {
-        _error = failures.join(' · ');
-      }
+      await _load();
+      if (!mounted) return;
+      setState(() {
+        _notice = 'Updated $changed of ${chosen.length} thermostats.';
+        if (failures.isNotEmpty) _error = failures.join(' · ');
+      });
     });
-  });
+  }
 
   Widget _modeChoices(String heading, List<String> modes, String? selected,
       void Function(String) change) => Column(
