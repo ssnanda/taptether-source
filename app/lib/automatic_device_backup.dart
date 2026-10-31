@@ -30,6 +30,7 @@ class AutomaticDeviceBackup extends ChangeNotifier {
   Timer? _scheduled;
   bool _initialized = false;
   bool _busy = false;
+  bool _changesWhileBusy = false;
   bool _enabled = false;
   bool _folderAvailable = false;
   String? _folderName;
@@ -220,12 +221,18 @@ class AutomaticDeviceBackup extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// After a successful saved-device/key write, coalesce rapid changes.
+  /// The periodic digest check remains a fallback for any future store.
+  /// iOS may suspend these timers in the background; backup resumes
+  /// automatically when TapTether next opens.
   void requestSoon() {
-    if (!_initialized || !_enabled || !Platform.isIOS) {
+    if (!_initialized || !_enabled || !Platform.isIOS) return;
+    if (_busy) {
+      _changesWhileBusy = true;
       return;
     }
     _scheduled?.cancel();
-    _scheduled = Timer(const Duration(seconds: 7), () {
+    _scheduled = Timer(const Duration(seconds: 5), () {
       unawaited(backupNow());
     });
   }
@@ -283,6 +290,10 @@ class AutomaticDeviceBackup extends ChangeNotifier {
     } finally {
       _busy = false;
       notifyListeners();
+      if (_changesWhileBusy && _enabled) {
+        _changesWhileBusy = false;
+        requestSoon();
+      }
     }
   }
 }

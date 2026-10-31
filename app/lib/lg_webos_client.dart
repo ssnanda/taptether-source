@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'automatic_device_backup.dart';
+
 import 'discovery.dart';
 import 'lan_scan.dart';
 import 'tv_remote_controller.dart';
@@ -182,6 +184,7 @@ class LgTvStore {
       key: key,
       value: jsonEncode(all.take(20).map((tv) => tv.toJson()).toList()),
     );
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<void> remove(String host) async {
@@ -190,6 +193,7 @@ class LgTvStore {
     await _storage.write(key: key, value: jsonEncode(
       all.map((tv) => tv.toJson()).toList(),
     ));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 }
 

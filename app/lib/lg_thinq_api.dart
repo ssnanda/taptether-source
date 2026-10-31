@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'automatic_device_backup.dart';
+
 /// Optional LG cloud integration, completely separate from local pairing.
 /// Personal token and enabled device selection live only in secure storage.
 /// There are NO API calls without a user action.
@@ -144,6 +146,7 @@ class LgThinQStorage {
     }
     await _storage.write(key: tokenKey, value: personalToken.trim());
     await _storage.write(key: countryKey, value: country);
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<String> clientId() async {
@@ -197,6 +200,7 @@ class LgThinQStorage {
       await _storage.write(key: devicesKey, value:
           jsonEncode(updated.map((device) => device.toJson()).toList()));
     }
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<List<LgThinQDevice>> enabledDevices() async {
@@ -225,12 +229,14 @@ class LgThinQStorage {
     }
     await _storage.write(key: devicesKey,
         value: jsonEncode(saved.map((d) => d.toJson()).toList()));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<void> disconnect() async {
     await _storage.delete(key: tokenKey);
     await _storage.delete(key: devicesKey);
     await _storage.delete(key: aliasesKey);
+    AutomaticDeviceBackup.instance.requestSoon();
     // Keep stable client ID, which is not a user credential.
   }
 }

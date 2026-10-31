@@ -1,6 +1,8 @@
 
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import 'automatic_device_backup.dart';
 import 'lan_scan.dart';
 
 const deviceLocations = <String, String>{
@@ -55,5 +57,6 @@ class NetworkLocationStore {
     if (id == null) return;
     data[id] = location;
     await _storage.write(key: _key, value: jsonEncode(data));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 }

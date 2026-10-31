@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'automatic_device_backup.dart';
+
 /// Trust-on-first-use SSH host keys, scoped to an exact LAN address and port.
 /// Never silently overwrite a host key after the first authenticated connection.
 class SshHostTrustStore {
@@ -40,6 +42,9 @@ class SshHostTrustStore {
     if (previous != null && previous != fingerprint) {
       throw StateError('SSH host identity changed. Connection blocked.');
     }
-    if (previous == null) await _storage.write(key: key, value: fingerprint);
+    if (previous == null) {
+      await _storage.write(key: key, value: fingerprint);
+      AutomaticDeviceBackup.instance.requestSoon();
+    }
   }
 }

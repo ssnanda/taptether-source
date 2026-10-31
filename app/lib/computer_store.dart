@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'automatic_device_backup.dart';
+
 /// Each computer's token and TLS pin remain in iOS Keychain/Android secure
 /// storage. No private credential is copied into ordinary app preferences.
 class SavedComputer {
@@ -124,6 +126,7 @@ class ComputerStore {
     await _storage.write(
       key: _key, value: jsonEncode(devices.map((d) => d.toJson()).toList()),
     );
+    AutomaticDeviceBackup.instance.requestSoon();
     return devices;
   }
 
@@ -133,6 +136,7 @@ class ComputerStore {
     await _storage.write(
       key: _key, value: jsonEncode(devices.map((d) => d.toJson()).toList()),
     );
+    AutomaticDeviceBackup.instance.requestSoon();
     return devices;
   }
 }

@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'automatic_device_backup.dart';
+
 import 'lan_scan.dart';
 import 'discovery.dart';
 import 'tv_lan_utils.dart';
@@ -117,6 +119,7 @@ class SamsungTvStore {
     records.insert(0, merged);
     await _storage.write(key: key, value: jsonEncode(
         records.take(20).map((device) => device.toJson()).toList()));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<void> remove(String host) async {
@@ -124,6 +127,7 @@ class SamsungTvStore {
     records.removeWhere((item) => item.host == host);
     await _storage.write(key: key, value: jsonEncode(
         records.map((device) => device.toJson()).toList()));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 }
 

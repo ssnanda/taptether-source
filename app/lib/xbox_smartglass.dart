@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'automatic_device_backup.dart';
+
 import 'discovery.dart';
 import 'lan_scan.dart';
 
@@ -350,6 +352,7 @@ class XboxConsoleStore {
     consoles.insert(0, candidate.copyWith(name: name, location: location));
     await _storage.write(key: key, value: jsonEncode(
         consoles.take(20).map((device) => device.toJson()).toList()));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<void> remove(String uuid) async {
@@ -357,5 +360,6 @@ class XboxConsoleStore {
     consoles.removeWhere((item) => item.uuid == uuid);
     await _storage.write(key: key,
         value: jsonEncode(consoles.map((e) => e.toJson()).toList()));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 }

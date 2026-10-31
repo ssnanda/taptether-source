@@ -735,11 +735,20 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
               SwitchListTile(
                 key: const ValueKey('automatic-backup'),
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Automatic backup'),
+                title: const Text('Back up automatically on changes'),
+                subtitle: const Text('Encrypted backup after saved devices '
+                    'or keys change, while TapTether is open. '
+                    'Requires a selected Files folder.'),
                 value: _auto.enabled,
                 onChanged: _busy || _auto.busy
                     ? null : _toggleAutomatic,
               ),
+              if (_auto.enabled && _auto.lastBackup != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Last backup: ${_auto.lastBackup!.toLocal()}',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ),
               if (_auto.lastError != null && _auto.enabled)
                 Text(_auto.lastError!,
                     style: TextStyle(

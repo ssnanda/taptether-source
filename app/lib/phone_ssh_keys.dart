@@ -6,6 +6,8 @@ import 'package:cryptography/cryptography.dart' as crypto;
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'automatic_device_backup.dart';
+
 class SavedSshKey {
   const SavedSshKey({
     required this.id, required this.name, required this.createdAt,
@@ -60,8 +62,10 @@ class PhoneSshKeyStore {
     return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  Future<void> _writeIndex(List<Map<String, dynamic>> items) =>
-      _storage.write(key: _indexKey, value: jsonEncode(items));
+  Future<void> _writeIndex(List<Map<String, dynamic>> items) async {
+    await _storage.write(key: _indexKey, value: jsonEncode(items));
+    AutomaticDeviceBackup.instance.requestSoon();
+  }
 
   Future<void> _migrate() async {
     final original = await _storage.read(key: _legacyKey);
@@ -117,6 +121,7 @@ class PhoneSshKeyStore {
       throw StateError('SSH key not found.');
     }
     await _storage.write(key: _defaultKey, value: id);
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<bool> get exists async => (await selectedId()) != null;
