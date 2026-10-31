@@ -2612,7 +2612,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         const Divider(),
         ListTile(
           leading: const Icon(Icons.devices_outlined),
-          title: const Text('My Devices'),
+          title: const Text('Devices'),
           onTap: () {
             Navigator.pop(context);
             if (agent.configured) {
@@ -2803,8 +2803,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     final onNetwork = savedDeviceOnNetwork(_wifiRange, ip);
     final state = onNetwork ? _online[id] : false;
     final connecting = _connectingDeviceId == id;
-    final locating = state != true && _recoveringDiscovery;
-    final checking = state != true && _checkingHeartbeat;
+    final locating = onNetwork && state != true && _recoveringDiscovery;
+    final checking = onNetwork && state != true && _checkingHeartbeat;
     final status = !onNetwork ? 'Other network'
         : connecting ? 'Connecting' : state == true ? 'Online'
         : locating ? 'Locating' : checking ? 'Checking'
@@ -2840,8 +2840,7 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   Widget _tvStatus(String vendor, String host) {
     final key = '$vendor:$host';
-    final otherNetwork = _wifiRange != null &&
-        !lanRangeContains(_wifiRange!, host);
+    final otherNetwork = !savedDeviceOnNetwork(_wifiRange, host);
     final online = _tvOnline[key] == true;
     final locating = !online && _recoveringTvAddresses;
     final checking = !online && _checkingTvStatus;
