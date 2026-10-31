@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'resideo_local_vault.dart';
 
 /// Honeywell Home / Resideo v2 thermostat payload. Device IDs and location
 /// IDs are strings because Resideo Connect supports UUID / large numeric IDs.
@@ -187,8 +188,10 @@ class ResideoCredentials {
     this.apiSecret = '',
     this.refreshToken = '',
     this.redirectUri = '',
+    this.expiresAtUtc,
   });
   final String apiKey, apiSecret, accessToken, refreshToken, redirectUri;
+  final DateTime? expiresAtUtc;
   bool get usable => apiKey.isNotEmpty &&
       (accessToken.isNotEmpty ||
           (apiSecret.isNotEmpty && refreshToken.isNotEmpty));
@@ -196,58 +199,43 @@ class ResideoCredentials {
 
 class ResideoConnection {
   ResideoConnection({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage(
-          iOptions: IOSOptions(
-            accessibility: KeychainAccessibility.first_unlock_this_device,
-          ),
-        );
+      : _vault = ResideoLocalVault(storage: storage);
 
   static const apiHost = 'api.honeywellhome.com';
-  static const _prefix = 'taptether.honeywellhome.v1.';
-  final FlutterSecureStorage _storage;
+  static const defaultRedirect = 'http://localhost:7681/';
+  final ResideoLocalVault _vault;
 
   Future<ResideoCredentials> credentials() async {
-    final values = await Future.wait([
-      _storage.read(key: '${_prefix}apiKey'),
-      _storage.read(key: '${_prefix}apiSecret'),
-      _storage.read(key: '${_prefix}accessToken'),
-      _storage.read(key: '${_prefix}refreshToken'),
-      _storage.read(key: '${_prefix}redirectUri'),
-    ]);
+    final values = await _vault.read() ?? {};
+    final expiry = values['expiresAtUtc']?.toString();
     return ResideoCredentials(
-      apiKey: values[0] ?? '',
-      apiSecret: values[1] ?? '',
-      accessToken: values[2] ?? '',
-      refreshToken: values[3] ?? '',
-      redirectUri: values[4] ?? '',
+      apiKey: values['apiKey']?.toString() ?? '',
+      apiSecret: values['apiSecret']?.toString() ?? '',
+      accessToken: values['accessToken']?.toString() ?? '',
+      refreshToken: values['refreshToken']?.toString() ?? '',
+      redirectUri: values['redirectUri']?.toString() ?? defaultRedirect,
+      expiresAtUtc: expiry == null ? null : DateTime.tryParse(expiry)?.toUtc(),
     );
   }
 
+  /// Connection details can be saved before receiving an OAuth token.
   Future<void> save(ResideoCredentials c) async {
-    if (c.apiKey.trim().isEmpty) {
-      throw const FormatException('Honeywell API key is required.');
+    if (c.apiKey.trim().isEmpty || c.apiSecret.trim().isEmpty) {
+      throw const FormatException('Consumer Key and Consumer Secret are required.');
     }
-    if (c.apiSecret.isNotEmpty != c.refreshToken.isNotEmpty &&
-        c.accessToken.isEmpty) {
-      throw const FormatException('Enter an access token or both a secret and refresh token.');
-    }
-    await _storage.write(key: '${_prefix}apiKey', value: c.apiKey.trim());
-    await _storage.write(key: '${_prefix}apiSecret', value: c.apiSecret.trim());
-    await _storage.write(
-        key: '${_prefix}accessToken', value: c.accessToken.trim());
-    await _storage.write(
-        key: '${_prefix}refreshToken', value: c.refreshToken.trim());
-    await _storage.write(
-        key: '${_prefix}redirectUri', value: c.redirectUri.trim());
+    validateRedirect(c.redirectUri);
+    await _vault.write({
+      'apiKey': c.apiKey.trim(),
+      'apiSecret': c.apiSecret.trim(),
+      'accessToken': c.accessToken.trim(),
+      'refreshToken': c.refreshToken.trim(),
+      'redirectUri': c.redirectUri.trim(),
+      if (c.expiresAtUtc != null)
+        'expiresAtUtc': c.expiresAtUtc!.toUtc().toIso8601String(),
+    });
   }
 
-  Future<void> disconnect() async {
-    for (final name in [
-      'apiKey', 'apiSecret', 'accessToken', 'refreshToken', 'redirectUri',
-    ]) {
-      await _storage.delete(key: '$_prefix$name');
-    }
-  }
+  Future<void> disconnect() => _vault.clear();
 
   static Uri authorizationUrl(String key, String redirect) {
     final target = Uri.tryParse(redirect.trim());
