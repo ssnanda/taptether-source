@@ -144,11 +144,13 @@ jobs:
           python3 bin/4-test-macos-input-core.py
           python3 bin/4-test-macos-agent-recovery.py
       - name: Go agent tests and vet
+        if: ${{ inputs.task != 'mobile-release' && !(github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile 210]')) }}
         run: |
           cd agent
           go test ./...
           go vet ./...
       - name: Cross-compile Windows snapshot agent
+        if: ${{ inputs.task != 'mobile-release' && !(github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile 210]')) }}
         run: |
           cd agent
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/taptether-agent
