@@ -4,6 +4,8 @@ name: 'TapTether - Build, Release & Maintenance'
 # Build-only: [build ipa] on main produces downloadable IPA/APK/agent CI artifacts.
 # LG TV MAC discovery (0.8.35): release remains manual, after device installation.
 # Resideo 209: direct Honeywell Home developer API with OAuth tokens (lint fixed).
+# Resideo 210: user-entered Consumer Key/Secret, callback, and in-app OAuth.
+# App-only release: preserve already published computer agents.
 # One-time exception: [publish 209] in a main squash-merge commit triggers version
 # 0.8.48+209 only: connect direct Honeywell Home API credentials and tokens.
 # VERSION commits never automatically publish (explicit one-time 207 exception). Agent-only pushes remain supported.
