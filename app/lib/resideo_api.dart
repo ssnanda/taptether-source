@@ -157,26 +157,44 @@ class ResideoDevice {
   bool get isAutoMode => system.toLowerCase() == 'auto';
   bool get isOffMode => system.toLowerCase() == 'off';
   double? get primaryTarget {
-    if (isCoolMode) return cool;
-    if (isHeatMode) return heat;
+    if (isCoolMode) {
+      return cool;
+    }
+    if (isHeatMode) {
+      return heat;
+    }
     return null; // Auto has two thresholds. Off has no active target.
   }
 
   String get primaryTargetLabel {
-    if (isCoolMode) return 'COOL SET TO';
-    if (isHeatMode) return 'HEAT SET TO';
-    if (isAutoMode) return 'AUTO RANGE';
-    if (isOffMode) return 'SYSTEM OFF';
+    if (isCoolMode) {
+      return 'COOL SET TO';
+    }
+    if (isHeatMode) {
+      return 'HEAT SET TO';
+    }
+    if (isAutoMode) {
+      return 'AUTO RANGE';
+    }
+    if (isOffMode) {
+      return 'SYSTEM OFF';
+    }
     return 'SETPOINT';
   }
 
   String get targetSummary {
-    if (isCoolMode) return 'Cool set to ${display(cool)}';
-    if (isHeatMode) return 'Heat set to ${display(heat)}';
+    if (isCoolMode) {
+      return 'Cool set to ${display(cool)}';
+    }
+    if (isHeatMode) {
+      return 'Heat set to ${display(heat)}';
+    }
     if (isAutoMode) {
       return 'Heat ${display(heat)} · Cool ${display(cool)}';
     }
-    if (isOffMode) return 'No active temperature target';
+    if (isOffMode) {
+      return 'No active temperature target';
+    }
     return 'Setpoint unavailable';
   }
 
@@ -317,17 +335,23 @@ class ResideoConnection {
     }
     final saved = await _vault.readCache();
     final items = saved?['devices'];
-    if (items is! List) return (<ResideoDevice>[], null);
+    if (items is! List) {
+      return (<ResideoDevice>[], null);
+    }
     final devices = items.map(ResideoDevice.fromCacheRecord)
         .whereType<ResideoDevice>().toList();
-    if (devices.isEmpty) return (<ResideoDevice>[], null);
+    if (devices.isEmpty) {
+      return (<ResideoDevice>[], null);
+    }
     _recentDevices = devices;
     _recentAt = DateTime.tryParse(saved?['checkedAt']?.toString() ?? '');
     return (List.of(devices), _recentAt);
   }
 
   Future<void> rememberUpdated(ResideoDevice updated) async {
-    if (_recentDevices == null) return;
+    if (_recentDevices == null) {
+      return;
+    }
     final devices = [
       for (final d in _recentDevices!)
         if (d.cacheId == updated.cacheId) updated else d,
