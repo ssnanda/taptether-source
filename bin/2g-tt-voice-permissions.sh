@@ -54,6 +54,12 @@ if android.is_file():
         intent = ET.SubElement(queries, 'intent')
         action = ET.SubElement(intent, 'action')
         action.set(name_attr, speech_action)
+    # Honeywell credentials must not be copied by Android cloud backup.
+    # The local OS encryption key is device-bound and cannot be restored.
+    application = manifest.find('application')
+    if application is not None:
+        application.set('{' + android_ns + '}allowBackup', 'false')
+        application.set('{' + android_ns + '}fullBackupContent', 'false')
     tree.write(android, encoding='utf-8', xml_declaration=True)
-    print('Configured Android RECORD_AUDIO and speech-service discovery')
+    print('Configured Android speech and disabled app cloud backup')
 PY
