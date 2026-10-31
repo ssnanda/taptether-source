@@ -3,94 +3,64 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/device_dashboard_header.dart';
 
 void main() {
-  testWidgets('one actionable Locate button and compact device controls',
+  testWidgets('all devices is the default compact inventory scope',
       (tester) async {
-    var locateCount = 0;
-    var manageCount = 0;
-    var offline = true;
-    String? chosenLocation;
-
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: SingleChildScrollView(
-        child: DeviceDashboardHeader(
-          showFilters: true,
-          locationFilter: 'all',
-          detectedLocation: 'home',
-          showOffline: true,
-          onlineComputerCount: 1,
-          onlineTvCount: 2,
-          locating: false,
-          onManage: () => manageCount++,
-          onLocationChanged: (location) => chosenLocation = location,
-          onShowOfflineChanged: (value) => offline = value,
-          onLocate: () => locateCount++,
-        ),
-      )),
-    ));
-
-    expect(find.text('My Devices'), findsOneWidget);
-    expect(find.text('1 computer · 2 TVs'), findsOneWidget);
-    expect(find.byTooltip('Check device status'), findsNothing);
-    expect(find.byKey(const ValueKey('locate-saved-devices')),
-        findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('locate-saved-devices')));
-    expect(locateCount, 1);
-    await tester.tap(find.byKey(const ValueKey('manage-saved-devices')));
-    expect(manageCount, 1);
-    await tester.tap(find.byKey(const ValueKey('show-offline-devices')));
-    expect(offline, isFalse);
-    await tester.tap(find.byKey(const ValueKey('device-location-filter')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Home').last);
-    await tester.pumpAndSettle();
-    expect(chosenLocation, 'home');
-  });
-
-  testWidgets('Locate shows progress only for active manual request',
-      (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: DeviceDashboardHeader(
-        showFilters: true,
-        locationFilter: 'all',
-        detectedLocation: null,
-        showOffline: false,
-        onlineComputerCount: 0,
-        onlineTvCount: 0,
-        locating: true,
-        onManage: () {},
-        onLocationChanged: (_) {},
-        onShowOfflineChanged: (_) {},
-        onLocate: () => fail('Cannot start duplicate Locate'),
-      )),
-    ));
-    expect(find.byTooltip('Locating saved devices'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    final button = tester.widget<IconButton>(
-        find.byKey(const ValueKey('locate-saved-devices')));
-    expect(button.onPressed, isNull);
-  });
-
-  testWidgets('empty dashboard keeps Manage and hides network filters',
-      (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: DeviceDashboardHeader(
-        showFilters: false,
-        locationFilter: 'all',
-        detectedLocation: null,
-        showOffline: true,
-        onlineComputerCount: 0,
-        onlineTvCount: 0,
-        locating: false,
-        onManage: () {},
-        onLocationChanged: (_) {},
-        onShowOfflineChanged: (_) {},
-        onLocate: () {},
-      )),
-    ));
-    expect(find.text('My Devices'), findsOneWidget);
-    expect(find.byKey(const ValueKey('manage-saved-devices')), findsOneWidget);
-    expect(find.byKey(const ValueKey('locate-saved-devices')), findsNothing);
+    final selected = <bool>[];
+    var refreshes = 0;
+    var manages = 0;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: DeviceDashboardHeader(
+        allDevices: true, onWifi: true, locating: false,
+        onScopeChanged: selected.add,
+        onManage: () => manages++,
+        onLocate: () => refreshes++,
+      ),
+    )));
+    expect(find.text('All Devices'), findsOneWidget);
+    expect(find.text('On This Network'), findsOneWidget);
+    expect(find.text('My Devices'), findsNothing);
+    expect(find.text('Other'), findsNothing);
     expect(find.text('Show offline'), findsNothing);
+    expect(find.textContaining('0 computers'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('device-scope-network')));
+    expect(selected, [false]);
+    await tester.tap(find.byKey(const ValueKey('locate-saved-devices')));
+    expect(refreshes, 1);
+    await tester.tap(find.byKey(const ValueKey('manage-saved-devices')));
+    expect(manages, 1);
+  });
+
+  testWidgets('offline scope still supports All Devices without a scan',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: DeviceDashboardHeader(
+        allDevices: true, onWifi: false, locating: false,
+        onScopeChanged: (_) {},
+        onManage: () {},
+        onLocate: () => fail('No Wi-Fi scanning while offline'),
+      ),
+    )));
+    expect(find.text('All Devices'), findsOneWidget);
+    expect(find.text('On This Network'), findsOneWidget);
+    expect(find.byKey(const ValueKey('manage-saved-devices')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('locate-saved-devices')), findsNothing);
+  });
+
+  testWidgets('busy network scan cannot be triggered again',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: DeviceDashboardHeader(
+        allDevices: false, onWifi: true, locating: true,
+        onScopeChanged: (_) {},
+        onManage: () {},
+        onLocate: () => fail('Cannot duplicate a Locate request'),
+      ),
+    )));
+    expect(find.byTooltip('Locating saved devices'), findsOneWidget);
+    final button = tester.widget<IconButton>(
+      find.byKey(const ValueKey('locate-saved-devices')),
+    );
+    expect(button.onPressed, isNull);
   });
 }
