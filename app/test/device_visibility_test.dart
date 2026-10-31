@@ -124,6 +124,48 @@ void main() {
     expect(visible.map((d) => d.id), ['old-home']);
   });
 
+  test('All Devices inventory includes every pairing across networks', () {
+    final network = rangeFromWifi(
+        '192.168.86.10', '255.255.255.0')!;
+    final saved = [
+      host('old-mac', '192.168.1.85', 'home'),
+      host('ubuntu', '192.168.68.90', 'other'),
+      host('here', '192.168.86.20', 'other'),
+      host('shared', '192.168.86.20', 'office'),
+      host('office', '10.0.118.25', 'office'),
+    ];
+    final inventory = allSavedComputers(saved,
+      online: {'old-mac': true, 'here': true},
+      currentNetwork: network,
+    );
+    expect(inventory.length, 5);
+    expect(inventory.map((d) => d.id).toSet(),
+        saved.map((d) => d.id).toSet());
+    expect(inventory.first.id, 'here');
+    expect(savedDeviceOnNetwork(network, '192.168.86.20'), isTrue);
+    expect(savedDeviceOnNetwork(network, '192.168.1.85'), isFalse);
+    // Local view is based on the actual subnet, not an "Other" label.
+    final nearby = visibleSavedDevices(saved,
+      online: {'here': true, 'shared': false},
+      locationFilter: 'all', currentLocation: 'other',
+      currentNetwork: network, showOffline: true,
+    );
+    expect(nearby.map((d) => d.id), ['here']);
+    // Same-host stale aliases are never deleted from All Devices.
+    expect(inventory.map((d) => d.id), contains('shared'));
+  });
+
+  test('All Devices inventory also works without Wi-Fi', () {
+    final saved = [
+      host('home', '192.168.86.30', 'home'),
+      host('office', '10.0.118.21', 'office'),
+    ];
+    expect(allSavedComputers(saved,
+      online: {'home': true}, currentNetwork: null),
+      hasLength(2));
+    expect(savedDeviceOnNetwork(null, '192.168.86.30'), isFalse);
+  });
+
   test('offline and unverified devices never start connection attempts', () {
     expect(canConnectSavedDevice(false, connecting: false), isFalse);
     expect(canConnectSavedDevice(null, connecting: false), isFalse);
