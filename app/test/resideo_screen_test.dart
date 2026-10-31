@@ -1,6 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/resideo_api.dart';
+import 'package:taptether/device_backup.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -68,37 +69,94 @@ void main() {
     expect(() => device.systemPayload('EmergencyHeat'), throwsFormatException);
   });
 
-  test('Honeywell OAuth URL and code extraction use provider endpoint', () {
-    final url = ResideoConnection.authorizationUrl(
-      'KEY', 'https://example.com/resideo-callback');
-    expect(url.host, 'api.honeywellhome.com');
-    expect(url.path, '/oauth2/authorize');
-    expect(url.queryParameters['client_id'], 'KEY');
+  test('Resideo authorize URL uses Consumer Key and localhost callback', () {
+    const redirect = 'http://localhost:7681/';
+    final uri = ResideoConnection.authorizationUrl(
+      'CONSUMER_KEY', redirect, state: 'random-state');
+    expect(uri.scheme, 'https');
+    expect(uri.host, 'api.honeywellhome.com');
+    expect(uri.path, '/oauth2/authorize');
+    expect(uri.queryParameters['client_id'], 'CONSUMER_KEY');
+    expect(uri.queryParameters['response_type'], 'code');
+    expect(uri.queryParameters['scope'], 'devices');
+    expect(uri.queryParameters['redirect_uri'], redirect);
+    expect(uri.queryParameters['state'], 'random-state');
     expect(ResideoConnection.authorizationCode(
-      'https://example.com/resideo-callback?code=XYZ123&state=abc'), 'XYZ123');
-    expect(() => ResideoConnection.authorizationUrl('KEY', 'http://insecure/'),
-      throwsFormatException);
+      'http://localhost:7681/?code=SHORTCODE&state=random-state',
+      redirect: redirect, state: 'random-state'), 'SHORTCODE');
+    expect(() => ResideoConnection.authorizationCode(
+      'http://localhost:7681/?code=SHORTCODE&state=bad-state',
+      redirect: redirect, state: 'random-state'), throwsFormatException);
+    expect(() => ResideoConnection.authorizationCode(
+      'http://evil.test/?code=SHORTCODE&state=random-state',
+      redirect: redirect, state: 'random-state'), throwsFormatException);
+    expect(() => ResideoConnection.authorizationUrl(
+      'KEY', 'http://public-host.test/callback'), throwsFormatException);
   });
 
-  test('Developer token values persist exclusively in secure storage', () async {
-    final connection = ResideoConnection();
-    expect((await connection.credentials()).usable, isFalse);
+  test('Consumer Key, Consumer Secret, Callback URL save without tokens',
+      () async {
+    const storage = FlutterSecureStorage();
+    final connection = ResideoConnection(storage: storage);
+    final before = await connection.credentials();
+    expect(before.usable, isFalse);
+    expect(before.redirectUri, ResideoConnection.defaultRedirect);
     await connection.save(const ResideoCredentials(
-      apiKey: 'KEY', apiSecret: 'SECRET', accessToken: 'ACCESS',
-      refreshToken: 'REFRESH', redirectUri: 'https://example.com/callback',
+      apiKey: 'NEW_CONSUMER_KEY', apiSecret: 'NEW_CONSUMER_SECRET',
+      accessToken: '', redirectUri: 'http://localhost:7681/',
     ));
     final c = await connection.credentials();
-    expect(c.usable, isTrue);
-    expect(c.apiKey, 'KEY');
-    expect(c.refreshToken, 'REFRESH');
+    expect(c.apiKey, 'NEW_CONSUMER_KEY');
+    expect(c.apiSecret, 'NEW_CONSUMER_SECRET');
+    expect(c.usable, isFalse);
+    // Encrypted ciphertext, never searchable plaintext secrets.
+    final values = await storage.readAll();
+    final raw = values.toString();
+    expect(raw, isNot(contains('NEW_CONSUMER_SECRET')));
+    expect(raw, contains('taptether.resideo.device-vault.v2.data'));
+    expect(await storage.read(
+      key: 'taptether.honeywellhome.v1.apiSecret'), isNull);
     await connection.disconnect();
     expect((await connection.credentials()).usable, isFalse);
   });
 
-  test('Reject AJCore-shaped payloads and missing API keys', () async {
+  test('Previously saved on-device credentials are migrated and wiped',
+      () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'taptether.honeywellhome.v1.apiKey': 'OLD_KEY',
+      'taptether.honeywellhome.v1.apiSecret': 'OLD_SECRET',
+      'taptether.honeywellhome.v1.accessToken': 'OLD_ACCESS',
+      'taptether.honeywellhome.v1.refreshToken': 'OLD_REFRESH',
+      'taptether.honeywellhome.v1.redirectUri': 'http://localhost:7681/',
+    });
+    const storage = FlutterSecureStorage();
+    final connection = ResideoConnection(storage: storage);
+    final credentials = await connection.credentials();
+    expect(credentials.apiSecret, 'OLD_SECRET');
+    expect(credentials.usable, isTrue);
+    expect(await storage.read(
+        key: 'taptether.honeywellhome.v1.apiSecret'), isNull);
+    expect((await storage.readAll()).toString(), isNot(contains('OLD_SECRET')));
+  });
+
+  test('Resideo credentials never enter even unencrypted device backups', () {
+    expect(DeviceBackupCodec.supportedKey(
+      'taptether.resideo.device-vault.v2.key'), isFalse);
+    expect(DeviceBackupCodec.supportedKey(
+      'taptether.resideo.device-vault.v2.data'), isFalse);
+    expect(DeviceBackupCodec.supportedKey(
+      'taptether.honeywellhome.v1.apiSecret'), isFalse);
+  });
+
+  test('Reject malformed inventory and missing consumer credentials',
+      () async {
     expect(() => parseResideoLocations({'devices': []}), throwsFormatException);
     final c = ResideoConnection();
-    expect(() => c.save(const ResideoCredentials(
-        apiKey: '', accessToken: 'ACCESS')), throwsFormatException);
+    await expectLater(
+      c.save(const ResideoCredentials(
+        apiKey: '', apiSecret: 'SECRET', accessToken: '',
+        redirectUri: 'http://localhost:7681/')),
+      throwsFormatException,
+    );
   });
 }
