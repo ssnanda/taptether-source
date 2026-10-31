@@ -6,6 +6,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # Resideo 209: direct Honeywell Home developer API with OAuth tokens (lint fixed).
 # Resideo 210: user-entered Consumer Key/Secret, callback, and in-app OAuth.
 # App-only release: preserve already published computer agents.
+# 0.8.50+211: instant encrypted thermostat inventory, direct setpoint actions.
 # One-time exception: [publish 209] in a main squash-merge commit triggers version
 # 0.8.48+209 only: connect direct Honeywell Home API credentials and tokens.
 # VERSION commits never automatically publish (explicit one-time 207 exception). Agent-only pushes remain supported.
@@ -146,13 +147,13 @@ jobs:
           python3 bin/4-test-macos-input-core.py
           python3 bin/4-test-macos-agent-recovery.py
       - name: Go agent tests and vet
-        if: ${{ inputs.task != 'mobile-release' && !(github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile 210]')) }}
+        if: ${{ inputs.task != 'mobile-release' && !(github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile 211]')) }}
         run: |
           cd agent
           go test ./...
           go vet ./...
       - name: Cross-compile Windows snapshot agent
-        if: ${{ inputs.task != 'mobile-release' && !(github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile 210]')) }}
+        if: ${{ inputs.task != 'mobile-release' && !(github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile 211]')) }}
         run: |
           cd agent
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/taptether-agent
@@ -463,7 +464,7 @@ jobs:
     # Build iOS/Android only. Reuse publicly verified desktop packages;
     # NEVER rebuild, republish, or rename desktop agent releases.
     needs: validate
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.task == 'mobile-release') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish mobile 210]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.task == 'mobile-release') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish mobile 211]')) }}
     permissions:
       contents: write
     runs-on: macos-latest
