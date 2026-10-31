@@ -373,43 +373,65 @@ class ResideoConnection {
     if (result is! Map || result['access_token'] is! String) {
       throw const ResideoApiError('No access token returned by Honeywell.');
     }
+    final seconds = int.tryParse(result['expires_in']?.toString() ?? '');
     return ResideoCredentials(
       apiKey: c.apiKey,
       apiSecret: c.apiSecret,
       accessToken: result['access_token'] as String,
       refreshToken: (result['refresh_token'] ?? c.refreshToken).toString(),
       redirectUri: c.redirectUri,
+      expiresAtUtc: seconds == null ? null
+          : DateTime.now().toUtc().add(Duration(seconds: seconds)),
     );
   }
 
-  Future<void> exchangeCode(ResideoCredentials provided, String input) async {
-    if (provided.redirectUri.trim().isEmpty) {
-      throw const FormatException('Enter the registered OAuth redirect URL.');
-    }
+  Future<void> exchangeCode(ResideoCredentials provided, String input,
+      {String? state}) async {
+    final redirect = validateRedirect(provided.redirectUri);
     final result = await _exchange(provided, {
       'grant_type': 'authorization_code',
-      'code': authorizationCode(input),
-      'redirect_uri': provided.redirectUri.trim(),
+      'code': authorizationCode(input,
+          redirect: redirect.toString(), state: state),
+      'redirect_uri': redirect.toString(),
     });
     await save(result);
   }
 
   Future<ResideoCredentials> _token(ResideoCredentials c) async {
-    if (c.accessToken.isNotEmpty) {
-      return c;
-    }
+    final expiry = c.expiresAtUtc;
+    final stillValid = c.accessToken.isNotEmpty &&
+        (expiry == null || expiry.isAfter(
+            DateTime.now().toUtc().add(const Duration(minutes: 2))));
+    if (stillValid) return c;
     if (c.refreshToken.isEmpty || c.apiSecret.isEmpty) {
-      throw const ResideoApiError('Enter a Honeywell OAuth access token in settings.');
+      if (c.accessToken.isNotEmpty && expiry == null) return c;
+      throw const ResideoApiError(
+          'Resideo authorization expired. Sign in to Resideo again.');
     }
     return _refresh(c);
   }
 
+  /// Refresh opportunistically whenever the user opens or resumes controls.
+  /// iOS can suspend inactive apps, so this does not promise background renewal.
+  Future<void> renewIfNeeded() async {
+    final c = await credentials();
+    if (c.usable) await _token(c);
+  }
+
   Future<ResideoCredentials> _refresh(ResideoCredentials c) async {
-    final fresh = await _exchange(c, {
-      'grant_type': 'refresh_token', 'refresh_token': c.refreshToken,
-    });
-    await save(fresh);
-    return fresh;
+    try {
+      final fresh = await _exchange(c, {
+        'grant_type': 'refresh_token', 'refresh_token': c.refreshToken,
+      });
+      await save(fresh);
+      return fresh;
+    } on ResideoApiError catch (error) {
+      if (error.code == 400 || error.code == 401) {
+        throw const ResideoApiError(
+            'Resideo refresh token expired. Sign in again to reconnect.');
+      }
+      rethrow;
+    }
   }
 
   Future<Object?> _call(Uri uri, {Map<String, Object?>? body}) async {
