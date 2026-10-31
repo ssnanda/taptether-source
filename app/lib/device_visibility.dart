@@ -1,6 +1,30 @@
 import 'computer_store.dart';
 import 'lan_scan.dart';
 
+/// Every saved pairing is shown in All Devices, regardless of the current
+/// Wi-Fi or last-known IP. This is inventory, NOT reachability or permission
+/// to connect. Preserve same-address pairings with different identities.
+List<SavedComputer> allSavedComputers(
+  List<SavedComputer> saved, {
+  required Map<String, bool> online,
+  required DetectedLanRange? currentNetwork,
+}) {
+  final result = saved.toList();
+  bool verifiedHere(SavedComputer device) => currentNetwork != null &&
+      lanRangeContains(currentNetwork, device.host) &&
+      online[device.id] == true;
+  result.sort((a, b) {
+    final first = verifiedHere(a) ? 0 : 1;
+    final second = verifiedHere(b) ? 0 : 1;
+    return first.compareTo(second);
+  });
+  return result;
+}
+
+/// An address on another Wi-Fi remains saved but must not appear connected.
+bool savedDeviceOnNetwork(DetectedLanRange? network, String host) =>
+    network != null && lanRangeContains(network, host);
+
 /// Filters the local dashboard only. A device is "online" exclusively after
 /// an authenticated TLS-pinned heartbeat, never based on its IP or port alone.
 List<SavedComputer> visibleSavedDevices(
