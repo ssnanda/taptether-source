@@ -116,63 +116,76 @@ class _ResideoScreenState extends State<ResideoScreen> {
     }
   }
 
-  Future<void> _save() => _run(() async {
-    final c = _entered();
-    if (c.accessToken.isEmpty && (c.apiSecret.isEmpty ||
-        c.refreshToken.isEmpty)) {
+  ResideoCredentials _submittedWithExisting(ResideoCredentials saved) {
+    final input = _entered();
+    ResideoConnection.validateRedirect(input.redirectUri);
+    if (input.apiKey.isEmpty || input.apiSecret.isEmpty) {
       throw const FormatException(
-        'Supply an access token, or a client secret and refresh token.');
+          'Enter Consumer Key, Consumer Secret and Callback URL.');
     }
-    await _api.save(c);
-    if (mounted) {
-      setState(() {
-        _configured = true;
-        _notice = 'Honeywell credentials saved securely.';
-      });
-    }
-    // Verify against the real Honeywell locations endpoint.
-    final devices = await _api.discover();
-    if (!mounted) {
-      return;
-    }
-    setState(() => _notice =
-        'Honeywell connected. Found ${devices.length} thermostat(s).');
-    // A refresh may rotate the token. Reflect the newest secured credentials.
-    await _reloadTokenFields();
-  });
+    final unchanged = input.apiKey == saved.apiKey &&
+        input.apiSecret == saved.apiSecret &&
+        input.redirectUri == saved.redirectUri;
+    return ResideoCredentials(
+      apiKey: input.apiKey,
+      apiSecret: input.apiSecret,
+      redirectUri: input.redirectUri,
+      accessToken: unchanged ? saved.accessToken : '',
+      refreshToken: unchanged ? saved.refreshToken : '',
+      expiresAtUtc: unchanged ? saved.expiresAtUtc : null,
+    );
+  }
 
-  Future<void> _reloadTokenFields() async {
+  String _newState() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(24, (_) => random.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  Future<void> _finishAuthorization(String code) async {
     final current = await _api.credentials();
-    if (!mounted) {
-      return;
-    }
-    _access.text = current.accessToken;
-    _refreshToken.text = current.refreshToken;
-    setState(() => _configured = current.usable);
+    await _api.exchangeCode(current, code, state: _pendingState);
+    _authCode.clear();
+    final devices = await _api.discover();
+    if (!mounted) return;
+    setState(() {
+      _configured = true;
+      _manualCode = false;
+      _pendingState = null;
+      _notice = 'Resideo connected · ${devices.length} thermostats found';
+    });
   }
 
   Future<void> _authorize() => _run(() async {
-    final url = ResideoConnection.authorizationUrl(
-      _key.text, _redirect.text);
-    final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
-    if (!opened) {
-      throw const ResideoApiError('Unable to open Honeywell authorization.');
+    final current = await _api.credentials();
+    final submitted = _submittedWithExisting(current);
+    await _api.save(submitted);
+    _pendingState = _newState();
+    final authorization = ResideoConnection.authorizationUrl(
+      submitted.apiKey, submitted.redirectUri, state: _pendingState);
+    if (!mounted) return;
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(builder: (_) => ResideoOAuthScreen(
+        authorizationUrl: authorization,
+        callbackUrl: submitted.redirectUri,
+        state: _pendingState!,
+      )));
+    if (!mounted) return;
+    if (code == null) {
+      setState(() {
+        _manualCode = true;
+        _notice = 'If you used Safari, paste the redirect URL or code below.';
+      });
+      return;
     }
-    if (mounted) {
-      setState(() => _notice =
-          'Authorize in your browser, then paste the returned code or redirect URL below.');
-    }
+    await _finishAuthorization(code);
   });
 
   Future<void> _exchange() => _run(() async {
-    await _api.exchangeCode(_entered(), _authCode.text);
-    _authCode.clear();
-    await _reloadTokenFields();
-    final devices = await _api.discover();
-    if (mounted) {
-      setState(() => _notice =
-          'Authorized directly with Honeywell. Found ${devices.length} thermostat(s).');
+    if (_authCode.text.trim().isEmpty) {
+      throw const FormatException('Paste the returned authorization code.');
     }
+    await _finishAuthorization(_authCode.text.trim());
   });
 
   Future<void> _disconnect() => _run(() async {
@@ -181,8 +194,6 @@ class _ResideoScreenState extends State<ResideoScreen> {
       return;
     }
     _secret.clear();
-    _access.clear();
-    _refreshToken.clear();
     _authCode.clear();
     setState(() {
       _configured = false;
