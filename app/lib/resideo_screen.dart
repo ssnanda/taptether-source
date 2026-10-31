@@ -65,10 +65,12 @@ class _ResideoScreenState extends State<ResideoScreen> {
         await _refresh();
       }
     } catch (_) {
-      if (mounted) setState(() {
-        _error = 'Cannot load Honeywell credentials from secure storage.';
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Cannot load Honeywell credentials from secure storage.';
+          _loading = false;
+        });
+      }
     }
   }
 
