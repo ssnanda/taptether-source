@@ -8,6 +8,7 @@ import 'lg_webos_client.dart';
 import 'lg_webos_screen.dart';
 import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
+import 'resideo_screen.dart';
 import 'lg_thinq_device_screen.dart';
 import 'lg_thinq_dashboard_status.dart';
 import 'fridge_alerts.dart';
@@ -2767,6 +2768,17 @@ class _RemoteScreenState extends State<RemoteScreen>
                   onTap: () {
                     Navigator.pop(context);
                     _openThinQ();
+                  },
+                ),
+                ListTile(
+                  key: const ValueKey('drawer-resideo-thermostats'),
+                  leading: const Icon(Icons.thermostat_outlined),
+                  title: const Text('Resideo Thermostats'),
+                  subtitle: const Text('Optional cloud HVAC control via AJOps'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => const ResideoScreen()));
                   },
                 ),
               ],
