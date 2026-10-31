@@ -1,183 +1,12 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-/// The same authenticated AJCore Resideo service used by AJOpsios.
-/// Optional cloud functionality; independent of local computer/TV pairing.
-class ResideoDevice {
-  const ResideoDevice(this.id, this.name, this.location, this.locationId,
-      this.temperature, this.setpoint, this.heat, this.cool,
-      this.system, this.fan, this.systemModes, this.fanModes);
-  final String id, name, location, locationId;
-  final double? temperature, setpoint, heat, cool;
-  final String system, fan;
-  final List<String> systemModes, fanModes;
+import 'resideo_api.dart';
 
-  static ResideoDevice? parse(Object? item) {
-    if (item is! Map) return null;
-    final id = item['id']?.toString() ?? '';
-    if (id.isEmpty || id.length > 160) return null;
-    String read(String key) => item[key]?.toString() ?? '';
-    double? number(String key) =>
-        item[key] is num ? (item[key] as num).toDouble() : null;
-    List<String> modes(String key) => item[key] is List
-        ? (item[key] as List).whereType<String>().toList() : [];
-    return ResideoDevice(
-      id, read('name').isEmpty ? 'Thermostat' : read('name'),
-      read('location_name'), read('location_id'),
-      number('indoor_temp'), number('set_temp'),
-      number('heat_setpoint'), number('cool_setpoint'),
-      read('mode'), read('fan_mode'),
-      modes('available_system_modes'), modes('available_fan_modes'));
-  }
-}
-
-List<ResideoDevice> parseResideoDevices(Object? payload) {
-  if (payload is! Map || payload['devices'] is! List) {
-    throw const FormatException('Unexpected Resideo device response.');
-  }
-  final result = (payload['devices'] as List)
-      .map(ResideoDevice.parse).whereType<ResideoDevice>().toList();
-  result.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-  return result;
-}
-
-class ResideoRequestError implements Exception {
-  const ResideoRequestError(this.message, [this.status = 0]);
-  final String message;
-  final int status;
-  @override
-  String toString() => message;
-}
-
-/// Passwords are used for sign-in only. AJOps session token is kept in iOS
-/// Keychain / Android encrypted storage; no Resideo client secret is bundled.
-class ResideoConnection {
-  ResideoConnection({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage(
-          iOptions: IOSOptions(
-            accessibility: KeychainAccessibility.first_unlock_this_device));
-  static const defaultUrl = 'https://ncllcagents.com/wp-json/ajcore/v1';
-  static const _urlKey = 'taptether.resideo.ajcore.url.v1';
-  static const _tokenKey = 'taptether.resideo.ajcore.session.v1';
-  final FlutterSecureStorage _storage;
-
-  Future<String> url() async => await _storage.read(key: _urlKey) ?? defaultUrl;
-  Future<String?> session() => _storage.read(key: _tokenKey);
-
-  static String validateUrl(String text) {
-    final uri = Uri.tryParse(text.trim());
-    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty ||
-        uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment ||
-        !uri.path.replaceFirst(RegExp(r'/+$'), '')
-            .endsWith('/wp-json/ajcore/v1')) {
-      throw const FormatException('Use an HTTPS URL ending in /wp-json/ajcore/v1.');
-    }
-    return uri.replace(path: uri.path.replaceFirst(RegExp(r'/+$'), '')).toString();
-  }
-
-  Future<Object?> _send(String base, String route,
-      {String? bearer, Map<String, Object?>? body}) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
-    try {
-      final uri = Uri.parse(base + route);
-      final request = body == null
-          ? await client.getUrl(uri) : await client.postUrl(uri);
-      request.followRedirects = false;
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      request.headers.set('X-AJCore-Client', 'mobile/1.0');
-      if (bearer != null) {
-        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
-      }
-      if (body != null) {
-        request.headers.contentType = ContentType.json;
-        request.write(jsonEncode(body));
-      }
-      final response = await request.close().timeout(const Duration(seconds: 30));
-      final text = await utf8.decoder.bind(response).join()
-          .timeout(const Duration(seconds: 30));
-      Object? data;
-      try {
-        data = jsonDecode(text);
-      } catch (_) {
-        throw ResideoRequestError('Unexpected AJCore response.', response.statusCode);
-      }
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final detail = data is Map
-            ? (data['message'] ?? data['error'])?.toString() : null;
-        throw ResideoRequestError(
-          response.statusCode == 401 ? 'Session expired. Connect again.'
-            : (detail?.isNotEmpty == true ? detail! : 'AJCore request failed.'),
-          response.statusCode);
-      }
-      return data;
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  Future<void> connect(String address, String username, String password) async {
-    final base = validateUrl(address);
-    if (username.trim().isEmpty || password.isEmpty) {
-      throw const FormatException('Enter AJOps username and password.');
-    }
-    final result = await _send(base, '/ops/auth/login',
-        body: {'username': username.trim(), 'password': password});
-    final token = result is Map ? result['token']?.toString() : null;
-    if (token == null || token.isEmpty) {
-      throw const ResideoRequestError('AJCore did not return a session.');
-    }
-    // A successful staff sign-in alone does not guarantee thermostat access.
-    await _send(base, '/ops/upos-temps', bearer: token);
-    await _storage.write(key: _urlKey, value: base);
-    await _storage.write(key: _tokenKey, value: token);
-  }
-
-  Future<(List<ResideoDevice>, bool)> load() async {
-    final bearer = await session();
-    if (bearer == null) {
-      throw const ResideoRequestError('Connect your AJOps account first.');
-    }
-    final payload = await _send(await url(), '/ops/upos-temps', bearer: bearer);
-    final settings = payload is Map ? payload['settings'] : null;
-    return (parseResideoDevices(payload),
-        settings is Map && settings['ready'] == true);
-  }
-
-  Future<void> setMode(String mode, {String? id, List<String>? selected,
-      required bool fan}) async {
-    final bearer = await session();
-    if (bearer == null) {
-      throw const ResideoRequestError('Connect your AJOps account first.');
-    }
-    final part = fan ? 'fan' : 'system';
-    final route = id == null ? '/ops/upos-temps/$part'
-        : '/ops/upos-temps/devices/${Uri.encodeComponent(id)}/$part';
-    await _send(await url(), route, bearer: bearer, body: {
-      'mode': mode, if (id == null && selected != null) 'device_ids': selected,
-    });
-  }
-
-  Future<void> disconnect() async {
-    final bearer = await session();
-    if (bearer != null) {
-      try {
-        await _send(await url(), '/ops/auth/logout', bearer: bearer, body: {});
-      } catch (_) {
-        // Removing local access must succeed even if the network is offline.
-      }
-    }
-    await _storage.delete(key: _tokenKey);
-  }
-
-  Future<void> expire() => _storage.delete(key: _tokenKey);
-}
-
+/// Dashboard shortcut and Settings → API Integrations share one connection,
+/// but the dashboard never displays developer credentials.
 class ResideoScreen extends StatefulWidget {
   const ResideoScreen({super.key, this.settingsOnly = false});
-
-  /// Only the API Integrations settings entry may display account fields.
   final bool settingsOnly;
 
   @override
@@ -186,82 +15,164 @@ class ResideoScreen extends StatefulWidget {
 
 class _ResideoScreenState extends State<ResideoScreen> {
   final _api = ResideoConnection();
-  final _url = TextEditingController();
-  final _username = TextEditingController();
-  final _password = TextEditingController();
+  final _key = TextEditingController();
+  final _secret = TextEditingController();
+  final _access = TextEditingController();
+  final _refreshToken = TextEditingController();
+  final _redirect = TextEditingController();
+  final _authCode = TextEditingController();
   final _search = TextEditingController();
   List<ResideoDevice> _devices = [];
   Set<String> _selected = {};
   Set<String> _locations = {};
-  bool _loading = true, _busy = false, _connected = false, _ready = false;
+  bool _loading = true, _busy = false, _configured = false;
+  bool _showSecrets = false;
   String? _error;
+  String? _notice;
 
   @override
-  void initState() { super.initState(); _restore(); }
+  void initState() {
+    super.initState();
+    _restore();
+  }
 
   @override
   void dispose() {
-    _url.dispose(); _username.dispose(); _password.dispose(); _search.dispose();
+    for (final controller in [
+      _key, _secret, _access, _refreshToken, _redirect, _authCode, _search,
+    ]) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _restore() async {
     try {
-      final url = await _api.url();
-      final session = await _api.session();
+      final c = await _api.credentials();
       if (!mounted) return;
-      _url.text = url;
-      setState(() { _loading = false; _connected = session != null; });
-      if (session != null) await _refresh();
+      _key.text = c.apiKey;
+      _secret.text = c.apiSecret;
+      _access.text = c.accessToken;
+      _refreshToken.text = c.refreshToken;
+      _redirect.text = c.redirectUri;
+      setState(() {
+        _configured = c.usable;
+        _loading = false;
+      });
+      if (!widget.settingsOnly && c.usable) await _refresh();
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _loading = false; _error = 'Cannot open secure account storage.';
-        });
-      }
+      if (mounted) setState(() {
+        _error = 'Cannot load Honeywell credentials from secure storage.';
+        _loading = false;
+      });
     }
   }
+
+  ResideoCredentials _entered() => ResideoCredentials(
+    apiKey: _key.text.trim(),
+    apiSecret: _secret.text.trim(),
+    accessToken: _access.text.trim(),
+    refreshToken: _refreshToken.text.trim(),
+    redirectUri: _redirect.text.trim(),
+  );
 
   String _friendly(Object error) {
-    if (error is ResideoRequestError) return error.message;
+    if (error is ResideoApiError) return error.message;
     if (error is FormatException) return error.message;
-    if (error is SocketException || error is HandshakeException ||
-        error is HttpException) {
-      return 'Cannot reach AJCore securely.';
-    }
-    return 'Request failed. Check connection and try again.';
+    return 'Honeywell request failed. Check your internet connection and credentials.';
   }
 
-  Future<void> _run(Future<void> Function() work) async {
+  Future<void> _run(Future<void> Function() action) async {
     if (_busy) return;
-    setState(() { _busy = true; _error = null; });
+    setState(() {
+      _busy = true;
+      _error = null;
+      _notice = null;
+    });
     try {
-      await work();
+      await action();
     } catch (error) {
-      if (error is ResideoRequestError && error.status == 401) {
-        await _api.expire();
-        if (mounted) setState(() { _connected = false; _devices = []; });
-      }
       if (mounted) setState(() => _error = _friendly(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _connect() => _run(() async {
-    await _api.connect(_url.text, _username.text, _password.text);
-    _password.clear();
+  Future<void> _save() => _run(() async {
+    final c = _entered();
+    if (c.accessToken.isEmpty && (c.apiSecret.isEmpty ||
+        c.refreshToken.isEmpty)) {
+      throw const FormatException(
+        'Supply an access token, or a client secret and refresh token.');
+    }
+    await _api.save(c);
+    if (mounted) {
+      setState(() {
+        _configured = true;
+        _notice = 'Honeywell credentials saved securely.';
+      });
+    }
+    // Verify against the real Honeywell locations endpoint.
+    final devices = await _api.discover();
     if (!mounted) return;
-    setState(() => _connected = true);
-    await _load();
+    setState(() => _notice =
+        'Honeywell connected. Found ${devices.length} thermostat(s).');
+    // A refresh may rotate the token. Reflect the newest secured credentials.
+    await _reloadTokenFields();
+  });
+
+  Future<void> _reloadTokenFields() async {
+    final current = await _api.credentials();
+    if (!mounted) return;
+    _access.text = current.accessToken;
+    _refreshToken.text = current.refreshToken;
+    setState(() => _configured = current.usable);
+  }
+
+  Future<void> _authorize() => _run(() async {
+    final url = ResideoConnection.authorizationUrl(
+      _key.text, _redirect.text);
+    final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!opened) {
+      throw const ResideoApiError('Unable to open Honeywell authorization.');
+    }
+    if (mounted) {
+      setState(() => _notice =
+          'Authorize in your browser, then paste the returned code or redirect URL below.');
+    }
+  });
+
+  Future<void> _exchange() => _run(() async {
+    await _api.exchangeCode(_entered(), _authCode.text);
+    _authCode.clear();
+    await _reloadTokenFields();
+    final devices = await _api.discover();
+    if (mounted) {
+      setState(() => _notice =
+          'Authorized directly with Honeywell. Found ${devices.length} thermostat(s).');
+    }
+  });
+
+  Future<void> _disconnect() => _run(() async {
+    await _api.disconnect();
+    if (!mounted) return;
+    _secret.clear();
+    _access.clear();
+    _refreshToken.clear();
+    _authCode.clear();
+    setState(() {
+      _configured = false;
+      _devices = [];
+      _selected = {};
+      _notice = 'Honeywell connection removed from this device.';
+    });
   });
 
   Future<void> _load() async {
-    final (devices, ready) = await _api.load();
+    final devices = await _api.discover();
     if (!mounted) return;
     setState(() {
       _devices = devices;
-      _ready = ready;
       final ids = devices.map((d) => d.id).toSet();
       if (_selected.isEmpty) _selected = ids;
       _selected = _selected.intersection(ids);
@@ -273,233 +184,368 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   Future<void> _refresh() => _run(_load);
 
-  Future<void> _disconnect() => _run(() async {
-    await _api.disconnect();
-    if (mounted) {
-      setState(() {
-        _connected = false; _devices = []; _selected = {};
-        _locations = {}; _ready = false;
-      });
+  Future<void> _change(ResideoDevice device, String mode,
+      {bool fan = false, double? heat, double? cool}) async {
+    await _api.mode(device, mode, fan: fan, heat: heat, cool: cool);
+    await _load();
+  }
+
+  Future<void> _bulk(String mode, {required bool fan}) => _run(() async {
+    final list = _devices.where((d) =>
+        _selected.contains(d.id) && _locations.contains(d.locationId)).toList();
+    if (list.isEmpty) return;
+    var changed = 0;
+    final failures = <String>[];
+    for (final device in list) {
+      final supported = fan ? device.supportsFan(mode)
+          : device.systemModes.any((m) => m.toLowerCase() == mode.toLowerCase());
+      if (!supported) {
+        failures.add('${device.name}: unsupported mode');
+        continue;
+      }
+      try {
+        await _api.mode(device, mode, fan: fan);
+        changed++;
+      } catch (_) {
+        failures.add('${device.name}: failed');
+      }
     }
+    await _load();
+    if (!mounted) return;
+    setState(() {
+      _notice = 'Updated $changed of ${list.length} thermostats.';
+      if (failures.isNotEmpty) _error = failures.join(' · ');
+    });
   });
 
-  Future<void> _change(String mode, {String? id, required bool fan}) =>
-      _run(() async {
-        final ids = id == null ? _devices.where((d) =>
-            _locations.contains(d.locationId) && _selected.contains(d.id))
-            .map((d) => d.id).toList() : null;
-        if (id == null && ids!.isEmpty) return;
-        await _api.setMode(mode, id: id, selected: ids, fan: fan);
-        await _load();
-      });
-
-  String _temp(double? x) => x == null ? '—' : '${x.round()}°F';
-
-  Widget _modes(String title, List<String> values, String? current,
-      void Function(String) select) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: Theme.of(context).textTheme.labelLarge),
+  Widget _modeChoices(String heading, List<String> modes, String? selected,
+      void Function(String) change) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(heading, style: Theme.of(context).textTheme.labelLarge),
       const SizedBox(height: 7),
-      Wrap(spacing: 6, runSpacing: 4, children: [
-        for (final value in values) ChoiceChip(
-          label: Text(value),
-          selected: value.toLowerCase() == current?.toLowerCase(),
-          onSelected: _busy ? null : (_) => select(value),
-        ),
+      Wrap(spacing: 7, runSpacing: 4, children: [
+        for (final mode in modes)
+          ChoiceChip(
+            label: Text(mode),
+            selected: mode.toLowerCase() == selected?.toLowerCase(),
+            onSelected: _busy ? null : (_) => change(mode),
+          ),
       ]),
     ],
   );
 
-  void _details(ResideoDevice device) {
-    showModalBottomSheet<void>(context: context, isScrollControlled: true,
-      showDragHandle: true, builder: (sheet) => StatefulBuilder(
+  void _details(ResideoDevice original) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
         builder: (ctx, redraw) {
-          final current = _devices.where((d) => d.id == device.id).firstOrNull ?? device;
-          return SafeArea(child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-            child: Column(mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(current.name, style: Theme.of(ctx).textTheme.titleLarge),
-                Text(current.location, style: Theme.of(ctx).textTheme.bodySmall),
-                const SizedBox(height: 14),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  _stat('Indoor', _temp(current.temperature)),
-                  _stat('Set', _temp(current.setpoint)),
-                  _stat('Heat', _temp(current.heat)),
-                  _stat('Cool', _temp(current.cool)),
-                ]),
-                const SizedBox(height: 18),
-                _modes('System', current.systemModes, current.system,
-                    (v) async {
-                      await _change(v, id: current.id, fan: false);
-                      if (ctx.mounted) redraw(() {});
-                    }),
-                const SizedBox(height: 14),
-                _modes('Fan', current.fanModes, current.fan, (v) async {
-                  await _change(v, id: current.id, fan: true);
-                  if (ctx.mounted) redraw(() {});
-                }),
+          final device = _devices.where((d) => d.id == original.id)
+              .firstOrNull ?? original;
+          Future<void> update(Future<void> Function() action) async {
+            if (_busy) return;
+            await _run(action);
+            if (ctx.mounted) redraw(() {});
+          }
+          Widget setpoint(String label, double? value, bool heating) {
+            return Row(children: [
+              Expanded(child: Text('$label: ${device.display(value)}')),
+              IconButton(
+                tooltip: 'Decrease $label',
+                onPressed: _busy || !device.online || value == null ? null
+                    : () => update(() async {
+                        final next = device.adjustedSetpoint(
+                            heating: heating, direction: -1);
+                        await _change(device, device.system,
+                            heat: heating ? next : null,
+                            cool: heating ? null : next);
+                      }),
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              IconButton(
+                tooltip: 'Increase $label',
+                onPressed: _busy || !device.online || value == null ? null
+                    : () => update(() async {
+                        final next = device.adjustedSetpoint(
+                            heating: heating, direction: 1);
+                        await _change(device, device.system,
+                            heat: heating ? next : null,
+                            cool: heating ? null : next);
+                      }),
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+            ]);
+          }
+
+          return SafeArea(child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20, 6, 20, MediaQuery.viewInsetsOf(ctx).bottom + 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(device.name, style: Theme.of(ctx).textTheme.titleLarge),
+                Text('${device.location} · ${device.online ? 'Online' : 'Offline'}',
+                    style: Theme.of(ctx).textTheme.bodySmall),
+                const SizedBox(height: 12),
+                Text('Indoor ${device.display(device.temperature)}',
+                    style: Theme.of(ctx).textTheme.headlineSmall),
+                const SizedBox(height: 12),
+                if (!device.online)
+                  const Text('This thermostat is offline. Controls are disabled.'),
+                setpoint('Heat', device.heat, true),
+                setpoint('Cool', device.cool, false),
+                const SizedBox(height: 16),
+                _modeChoices('System', device.systemModes, device.system,
+                    (mode) => update(
+                        () => _change(device, mode))),
+                const SizedBox(height: 12),
+                _modeChoices('Fan', device.fanModes, device.fan,
+                    (mode) => update(
+                        () => _change(device, mode, fan: true))),
                 if (_busy) const LinearProgressIndicator(),
-            ]),
+                if (_error != null) Text(_error!,
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+              ],
+            ),
           ));
-        }));
+        },
+      ),
+    );
   }
 
-  Widget _stat(String name, String value) => Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(12)),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(name, style: Theme.of(context).textTheme.labelSmall),
-      Text(value, style: Theme.of(context).textTheme.titleMedium),
-    ]),
-  );
+  Widget _settings() {
+    InputDecoration field(String label) => InputDecoration(
+      labelText: label,
+      isDense: true,
+      border: const OutlineInputBorder(),
+    );
+    Widget entry(TextEditingController controller, String label,
+        {bool secret = false}) => TextField(
+      controller: controller,
+      obscureText: secret && !_showSecrets,
+      autocorrect: false,
+      enableSuggestions: !secret,
+      decoration: field(label),
+    );
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Text('Honeywell Home Developer API',
+          style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 7),
+      const Text('Connect directly to api.honeywellhome.com. No AJCore or AJOps account is required.'),
+      const SizedBox(height: 16),
+      entry(_key, 'API Key / Client ID'),
+      const SizedBox(height: 12),
+      entry(_secret, 'API Secret / Client Secret', secret: true),
+      const SizedBox(height: 12),
+      entry(_access, 'OAuth Access Token', secret: true),
+      const SizedBox(height: 12),
+      entry(_refreshToken, 'OAuth Refresh Token (optional)', secret: true),
+      const SizedBox(height: 6),
+      Align(alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          key: const ValueKey('resideo-reveal-secrets'),
+          onPressed: () => setState(() => _showSecrets = !_showSecrets),
+          icon: Icon(_showSecrets ? Icons.visibility_off : Icons.visibility),
+          label: Text(_showSecrets ? 'Hide credentials' : 'Show credentials'),
+        )),
+      FilledButton.icon(
+        key: const ValueKey('resideo-save-api-credentials'),
+        onPressed: _busy ? null : _save,
+        icon: const Icon(Icons.lock_outline),
+        label: const Text('Save & Connect'),
+      ),
+      const SizedBox(height: 6),
+      const Text('Saved in device secure storage. Tokens renew automatically when you provide a refresh token and API secret.'),
+      const SizedBox(height: 18),
+      const Divider(),
+      ExpansionTile(
+        title: const Text('Get a new OAuth token'),
+        subtitle: const Text('Authorize your Honeywell Home account in a browser'),
+        children: [
+          const SizedBox(height: 6),
+          entry(_redirect, 'Registered OAuth redirect URL'),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _authorize,
+            icon: const Icon(Icons.open_in_browser),
+            label: const Text('Open Honeywell authorization'),
+          ),
+          const SizedBox(height: 8),
+          entry(_authCode, 'Authorization code or returned redirect URL'),
+          const SizedBox(height: 10),
+          FilledButton.tonalIcon(
+            key: const ValueKey('resideo-exchange-code'),
+            onPressed: _busy ? null : _exchange,
+            icon: const Icon(Icons.vpn_key_outlined),
+            label: const Text('Exchange code for token'),
+          ),
+          const SizedBox(height: 12),
+          const Text('Use the same redirect URL you registered at developer.honeywellhome.com. Copy the code from the browser redirect and paste it here.'),
+        ],
+      ),
+      if (_configured) ...[
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          key: const ValueKey('resideo-api-disconnect'),
+          onPressed: _busy ? null : _disconnect,
+          icon: const Icon(Icons.link_off),
+          label: const Text('Disconnect Honeywell Home'),
+        ),
+      ],
+      if (_busy) const LinearProgressIndicator(),
+    ]);
+  }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _dashboard() {
     final theme = Theme.of(context);
     final query = _search.text.trim().toLowerCase();
     final visible = _devices.where((d) =>
         _locations.contains(d.locationId) &&
         (query.isEmpty || d.name.toLowerCase().contains(query) ||
          d.location.toLowerCase().contains(query))).toList();
-    final chosen = visible.where((d) => _selected.contains(d.id)).toList();
+    final selected = visible.where((d) => _selected.contains(d.id)).toList();
     final locations = <String, String>{
-      for (final d in _devices) d.locationId:
-          d.location.isEmpty ? d.locationId : d.location,
+      for (final d in _devices)
+        d.locationId: d.location.isEmpty ? d.locationId : d.location,
     };
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.settingsOnly
-          ? 'Resideo API' : 'Thermostats'), actions: [
-        if (_connected && !widget.settingsOnly) IconButton(tooltip: 'Refresh',
-          icon: const Icon(Icons.refresh), onPressed: _busy ? null : _refresh),
-        if (_connected && widget.settingsOnly) IconButton(tooltip: 'Disconnect',
-          icon: const Icon(Icons.logout_outlined),
-          onPressed: _busy ? null : _disconnect),
-      ]),
-      body: _loading ? const Center(child: CircularProgressIndicator())
-          : ListView(padding: const EdgeInsets.all(16), children: [
-        Card(color: theme.colorScheme.primaryContainer, child: Padding(
-          padding: const EdgeInsets.all(14), child: Row(children: [
-            const Icon(Icons.thermostat),
-            const SizedBox(width: 12),
-            Expanded(child: Text(widget.settingsOnly
-              ? 'Optional Resideo connection. Credentials are configured here, not on the thermostat dashboard.'
-              : 'Control your Resideo thermostats, even away from your local network.')),
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      if (!_configured) ...[
+        const ListTile(
+          leading: Icon(Icons.thermostat_outlined),
+          title: Text('Connect Honeywell Home'),
+          subtitle: Text('Set your API key and OAuth token in API Integrations.'),
+        ),
+        FilledButton.icon(
+          icon: const Icon(Icons.settings_outlined),
+          label: const Text('Open Resideo API settings'),
+          onPressed: () async {
+            await Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const ResideoScreen(settingsOnly: true)));
+            if (mounted) await _restore();
+          },
+        ),
+      ] else ...[
+        TextField(
+          controller: _search,
+          onChanged: (_) => setState(() {}),
+          decoration: const InputDecoration(
+            hintText: 'Search thermostats',
+            prefixIcon: Icon(Icons.search_rounded),
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        if (locations.length > 1) Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Wrap(spacing: 6, children: [
+            for (final entry in locations.entries)
+              FilterChip(
+                label: Text(entry.value),
+                selected: _locations.contains(entry.key),
+                onSelected: (_) => setState(() {
+                  if (!_locations.add(entry.key)) _locations.remove(entry.key);
+                }),
+              ),
           ]),
-        )),
-        if (_error != null) Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text(_error!, style: TextStyle(color: theme.colorScheme.error))),
-        if (!_connected && !widget.settingsOnly) ...[
-          const SizedBox(height: 16),
-          const Text('Resideo is not connected. Configure it under Settings & More → API Integrations.'),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            key: const ValueKey('resideo-open-api-settings'),
-            icon: const Icon(Icons.settings_outlined),
-            label: const Text('Open Resideo API settings'),
-            onPressed: () async {
-              await Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const ResideoScreen(settingsOnly: true)));
-              if (mounted) await _restore();
-            },
-          ),
-        ] else if (!_connected && widget.settingsOnly) ...[
-          const SizedBox(height: 12),
-          TextField(controller: _url, keyboardType: TextInputType.url,
-            autocorrect: false, decoration: const InputDecoration(
-              labelText: 'AJCore API URL', border: OutlineInputBorder())),
-          const SizedBox(height: 12),
-          TextField(controller: _username, autocorrect: false,
-            decoration: const InputDecoration(
-              labelText: 'AJOps username', border: OutlineInputBorder())),
-          const SizedBox(height: 12),
-          TextField(controller: _password, obscureText: true,
-            onSubmitted: (_) { if (!_busy) _connect(); },
-            decoration: const InputDecoration(
-              labelText: 'Password', border: OutlineInputBorder())),
-          const SizedBox(height: 12),
-          FilledButton.icon(onPressed: _busy ? null : _connect,
-            icon: const Icon(Icons.link), label: const Text('Connect')),
-          const Text('Password is never saved; the session stays in secure storage.'),
-        ] else if (widget.settingsOnly) ...[
-          const SizedBox(height: 14),
-          const ListTile(
-            leading: Icon(Icons.check_circle_outline_rounded, color: Colors.green),
-            title: Text('AJOps account connected'),
-            subtitle: Text('Your access token is stored securely on this device.'),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            key: const ValueKey('resideo-api-disconnect'),
-            onPressed: _busy ? null : _disconnect,
-            icon: const Icon(Icons.logout_outlined),
-            label: const Text('Disconnect Resideo'),
-          ),
-        ] else ...[
-          if (!_ready) const Padding(padding: EdgeInsets.all(12),
-            child: Text('Resideo is not configured on AJCore.')),
-          if (_devices.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            TextField(controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                hintText: 'Search thermostats',
-                prefixIcon: Icon(Icons.search), border: OutlineInputBorder())),
-            if (locations.length > 1) Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Wrap(spacing: 6, children: [
-                for (final entry in locations.entries) FilterChip(
-                  label: Text(entry.value),
-                  selected: _locations.contains(entry.key),
-                  onSelected: (_) => setState(() {
-                    if (!_locations.add(entry.key)) _locations.remove(entry.key);
-                  }),
-                ),
-              ]),
+        ),
+        if (_devices.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            Text('${selected.length} selected',
+                style: theme.textTheme.labelLarge),
+            const Spacer(),
+            TextButton(
+              onPressed: () => setState(
+                () => _selected = _devices.map((d) => d.id).toSet()),
+              child: const Text('All'),
             ),
-            Row(children: [
-              Text('${chosen.length} selected',
-                  style: theme.textTheme.labelLarge),
-              const Spacer(),
-              TextButton(onPressed: () => setState(() =>
-                  _selected = _devices.map((d) => d.id).toSet()),
-                  child: const Text('All')),
-              TextButton(onPressed: () => setState(() => _selected = {}),
-                  child: const Text('None')),
-            ]),
-            _modes('System · Selected', const ['Off', 'Cool', 'Heat', 'Auto'],
-                null, (v) => _change(v, fan: false)),
-            const SizedBox(height: 10),
-            _modes('Fan · Selected', const ['On', 'Auto', 'Circulate'],
-                null, (v) => _change(v, fan: true)),
-            const SizedBox(height: 16),
-          ],
-          for (final device in visible) Card(
-            clipBehavior: Clip.antiAlias, child: ListTile(
-              leading: Checkbox(value: _selected.contains(device.id),
-                onChanged: (_) => setState(() {
-                  if (!_selected.add(device.id)) _selected.remove(device.id);
-                })),
-              title: Text(device.name),
-              subtitle: Text('${device.location} · ${device.system} · Fan ${device.fan}'),
-              trailing: Column(mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text(_temp(device.temperature),
-                      style: theme.textTheme.titleMedium),
-                  Text('Set ${_temp(device.setpoint)}',
-                      style: theme.textTheme.labelSmall),
-                ]),
-              onTap: () => _details(device),
-            )),
-          if (_ready && _devices.isEmpty)
-            const Padding(padding: EdgeInsets.all(30),
-                child: Center(child: Text('No thermostats found.'))),
-          if (_busy) const LinearProgressIndicator(),
+            TextButton(
+              onPressed: () => setState(() => _selected.clear()),
+              child: const Text('None'),
+            ),
+          ]),
+          _modeChoices('System · Selected',
+            const ['Off', 'Cool', 'Heat', 'Auto'],
+            null, (m) => _bulk(m, fan: false)),
+          const SizedBox(height: 9),
+          _modeChoices('Fan · Selected',
+            const ['On', 'Auto', 'Circulate'],
+            null, (m) => _bulk(m, fan: true)),
+          const SizedBox(height: 16),
         ],
-      ]),
+        for (final d in visible) Card(
+          child: ListTile(
+            dense: true,
+            leading: Checkbox(
+              value: _selected.contains(d.id),
+              onChanged: (_) => setState(() {
+                if (!_selected.add(d.id)) _selected.remove(d.id);
+              }),
+            ),
+            title: Text(d.name, maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            subtitle: Text('${d.location} · ${d.system} · Fan ${d.fan}',
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+            trailing: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(d.display(d.temperature),
+                    style: theme.textTheme.titleMedium),
+                Text(d.online ? 'Online' : 'Offline',
+                    style: theme.textTheme.labelSmall),
+              ],
+            ),
+            onTap: () => _details(d),
+          ),
+        ),
+        if (_devices.isEmpty && !_busy)
+          const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: Text('No Honeywell Home thermostats found.')),
+          ),
+      ],
+      if (_busy) const LinearProgressIndicator(),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.settingsOnly ? 'Resideo API' : 'Thermostats'),
+        actions: [
+          if (!widget.settingsOnly && _configured)
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Refresh thermostats',
+              onPressed: _busy ? null : _refresh,
+            ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(children: [
+              if (_error != null) Material(
+                color: Theme.of(context).colorScheme.errorContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(children: [
+                    const Icon(Icons.error_outline),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text(_error!)),
+                  ]),
+                ),
+              ),
+              if (_notice != null) Padding(
+                padding: const EdgeInsets.all(10),
+                child: Text(_notice!),
+              ),
+              Expanded(child: widget.settingsOnly ? _settings() : _dashboard()),
+            ]),
     );
   }
 }
