@@ -237,28 +237,60 @@ class ResideoConnection {
 
   Future<void> disconnect() => _vault.clear();
 
-  static Uri authorizationUrl(String key, String redirect) {
-    final target = Uri.tryParse(redirect.trim());
-    if (key.trim().isEmpty || target == null ||
-        target.scheme != 'https' || target.host.isEmpty ||
-        target.userInfo.isNotEmpty) {
-      throw const FormatException('Provide an API key and registered HTTPS redirect URL.');
+  /// Localhost is a secure OAuth loopback redirect when registered verbatim.
+  /// Arbitrary plaintext HTTP endpoints, credentials in URLs and fragments
+  /// are intentionally rejected.
+  static Uri validateRedirect(String redirect) {
+    final uri = Uri.tryParse(redirect.trim());
+    final loopback = uri?.scheme == 'http' &&
+        (uri?.host == 'localhost' || uri?.host == '127.0.0.1' ||
+         uri?.host == '::1');
+    if (uri == null || uri.host.isEmpty || uri.userInfo.isNotEmpty ||
+        uri.hasQuery || uri.hasFragment || (!loopback && uri.scheme != 'https')) {
+      throw const FormatException(
+        'Use the exact registered Callback URL (HTTPS or localhost loopback).');
+    }
+    return uri;
+  }
+
+  static Uri authorizationUrl(String key, String redirect, {String? state}) {
+    validateRedirect(redirect);
+    if (key.trim().isEmpty) {
+      throw const FormatException('Consumer Key is required.');
     }
     return Uri.https(apiHost, '/oauth2/authorize', {
       'response_type': 'code',
       'client_id': key.trim(),
+      'scope': 'devices',
       'redirect_uri': redirect.trim(),
-      'appSelect': '1',
+      if (state != null) 'state': state,
     });
   }
 
-  static String authorizationCode(String input) {
+  static String authorizationCode(String input,
+      {String? redirect, String? state}) {
     final trimmed = input.trim();
-    final url = Uri.tryParse(trimmed);
-    if (url != null && url.hasScheme) {
-      final code = url.queryParameters['code'];
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.hasScheme) {
+      if (redirect != null) {
+        final expected = validateRedirect(redirect);
+        if (uri.scheme != expected.scheme ||
+            uri.host != expected.host ||
+            uri.port != expected.port ||
+            uri.path != expected.path) {
+          throw const FormatException('OAuth redirect URL does not match the Callback URL.');
+        }
+      }
+      if (state != null && uri.queryParameters['state'] != state) {
+        throw const FormatException('OAuth state mismatch. Restart sign-in.');
+      }
+      final error = uri.queryParameters['error'];
+      if (error != null) {
+        throw const FormatException('Resideo authorization was not approved.');
+      }
+      final code = uri.queryParameters['code'];
       if (code == null || code.isEmpty) {
-        throw const FormatException('Redirect URL does not contain an authorization code.');
+        throw const FormatException('No authorization code found in callback.');
       }
       return code;
     }
