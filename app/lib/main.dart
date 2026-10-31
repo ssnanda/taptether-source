@@ -506,9 +506,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   DetectedLanRange? _wifiRange;
   bool _checkedWifi = false;
   String? _detectedLocation;
-  // Saved devices appear immediately; the user can filter by location or hide offline.
-  String _locationFilter = 'all';
-  bool _showOffline = true;
+  // Inventory is default; "On This Network" is an explicit Wi-Fi view.
+  bool _showAllDevices = true;
   bool _showQuickActions = false;
   bool _checkingHeartbeat = false;
   bool _recoveringDiscovery = false;
@@ -2769,37 +2768,23 @@ class _RemoteScreenState extends State<RemoteScreen>
       return const Text('Checking Wi-Fi…',
           key: ValueKey('wifi-status-checking'));
     }
+    // Saved devices remain accessible without Wi-Fi. An offline phone
+    // cannot authenticate any of them as reachable or control them.
     return Column(
       key: const ValueKey('taptether-offline-home'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(Icons.wifi_off, color: Theme.of(context).colorScheme.error),
-          const SizedBox(width: 10),
-          Expanded(child: Text(
-            'Join Wi-Fi to control your devices.',
-            key: const ValueKey('join-wifi-warning'),
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.error,
-              fontWeight: FontWeight.w700,
-            ),
+        Row(children: [
+          Icon(Icons.wifi_off_rounded, size: 18,
+              color: Theme.of(context).colorScheme.error),
+          const SizedBox(width: 8),
+          const Expanded(child: Text(
+            'Connect to Wi-Fi to use local remote controls.',
+            key: ValueKey('join-wifi-warning'),
           )),
         ]),
-        const SizedBox(height: 16),
-        TapTetherDashboardVisuals.deviceSummary(context,
-          computers: savedComputers.length,
-          televisions: savedLgTvs.length + savedSamsungTvs.length,
-          xbox: savedXboxConsoles.length),
-
-        for (final device in _enabledThinQ) _thinQCard(device),
-        TapTetherDashboardVisuals.actionRow(context,
-          icon: Icons.devices_rounded,
-          accent: const Color(0xFF8761DC),
-          label: 'Manage saved devices', onTap: openDeviceManager),
-        TapTetherDashboardVisuals.actionRow(context,
-          icon: Icons.vpn_key_rounded,
-          accent: const Color(0xFF3180EB),
-          label: 'SSH keys', onTap: openSshKeys),
+        const SizedBox(height: 10),
+        deviceDashboard(),
         TapTetherDashboardVisuals.actionRow(context,
           icon: Icons.shield_rounded,
           accent: const Color(0xFF0CA987),
@@ -2808,19 +2793,22 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  Widget _deviceStatus(String id) {
-    final state = _online[id];
+  Widget _deviceStatus(String id, String ip) {
+    final onNetwork = savedDeviceOnNetwork(_wifiRange, ip);
+    final state = onNetwork ? _online[id] : false;
     final connecting = _connectingDeviceId == id;
     final locating = state != true && _recoveringDiscovery;
     final checking = state != true && _checkingHeartbeat;
-    final status = connecting ? 'Connecting' : state == true ? 'Online'
+    final status = !onNetwork ? 'Other network'
+        : connecting ? 'Connecting' : state == true ? 'Online'
         : locating ? 'Locating' : checking ? 'Checking'
         : state == false ? 'Offline' : 'Not yet checked';
     final color = state == true
         ? Colors.green.shade700 : (locating || connecting)
         ? Theme.of(context).colorScheme.primary
         : Theme.of(context).colorScheme.outline;
-    final icon = connecting ? Icons.link
+    final icon = !onNetwork ? Icons.wifi_off_rounded
+        : connecting ? Icons.link
         : state == true ? Icons.check_circle
         : locating ? (_probingOfflineAgents
             ? Icons.search : Icons.travel_explore)
@@ -2839,19 +2827,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   bool _tvVisible(String location, String key) {
-    // A saved TV on a different subnet stays in Manage Devices until
-    // rediscovery verifies the same pairing at a current-network address.
+    // Local scope uses the actual Wi-Fi CIDR, never a stale Home/Other tag.
     final host = key.substring(key.indexOf(':') + 1);
-    if (_wifiRange == null || !lanRangeContains(_wifiRange!, host)) {
-      return false;
-    }
-    final selected = _locationFilter == 'automatic'
-        ? _detectedLocation : _locationFilter;
-    final matchingLocation = selected == 'all' ||
-        (selected == null && _locationFilter == 'automatic') ||
-        location == selected ||
-        (_locationFilter == 'automatic' && _tvOnline[key] == true);
-    return matchingLocation && (_showOffline || _tvOnline[key] == true);
+    return _showAllDevices || savedDeviceOnNetwork(_wifiRange, host);
   }
 
   Widget _tvStatus(String vendor, String host) {
@@ -2861,13 +2839,15 @@ class _RemoteScreenState extends State<RemoteScreen>
     final online = _tvOnline[key] == true;
     final locating = !online && _recoveringTvAddresses;
     final checking = !online && _checkingTvStatus;
-    final status = online ? 'Online' : otherNetwork ? 'Other network'
-        : locating ? 'Locating' : checking ? 'Checking' : 'Offline';
-    final color = online ? Colors.green.shade700
-        : locating ? Theme.of(context).colorScheme.primary
+    final status = otherNetwork ? 'Other network'
+        : online ? 'Online' : locating ? 'Locating'
+        : checking ? 'Checking' : 'Offline';
+    final color = !otherNetwork && online ? Colors.green.shade700
+        : locating && !otherNetwork
+            ? Theme.of(context).colorScheme.primary
         : Theme.of(context).colorScheme.outline;
-    final icon = online ? Icons.check_circle
-        : otherNetwork ? Icons.wifi_off
+    final icon = otherNetwork ? Icons.wifi_off
+        : online ? Icons.check_circle
         : locating ? Icons.travel_explore
         : checking ? Icons.sync : Icons.radio_button_unchecked;
     return Tooltip(
@@ -2922,25 +2902,23 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Widget deviceDashboard() {
-    final visibleDevices = visibleSavedDevices(
-      savedComputers,
-      online: _online,
-      locationFilter: _locationFilter,
-      currentLocation: _detectedLocation,
-      currentNetwork: _wifiRange,
-      showOffline: _showOffline,
-    );
-    final onlineComputerCount =
-        savedComputers.where((tv) => _online[tv.id] == true).length;
-    final onlineTvCount =
-        savedLgTvs.where((tv) => _tvOnline['lg:${tv.host}'] == true).length +
+    final visibleDevices = _showAllDevices
+        ? allSavedComputers(savedComputers,
+            online: _online, currentNetwork: _wifiRange)
+        : visibleSavedDevices(savedComputers,
+            online: _online, locationFilter: 'automatic',
+            currentLocation: _detectedLocation,
+            currentNetwork: _wifiRange, showOffline: true);
+    final localTvs = savedLgTvs.where((tv) =>
+        savedDeviceOnNetwork(_wifiRange, tv.host)).length +
         savedSamsungTvs.where((tv) =>
-            _tvOnline['samsung:${tv.host}'] == true).length;
-    final availabilityHint = savedDeviceAvailabilityHint(
-      savedCount: savedComputers.length,
-      onlineCount: savedComputers.where((d) => _online[d.id] == true).length,
-      checking: _checkingHeartbeat || _recoveringDiscovery,
-    );
+        savedDeviceOnNetwork(_wifiRange, tv.host)).length;
+    final localXbox = savedXboxConsoles.where((xbox) =>
+        savedDeviceOnNetwork(_wifiRange, xbox.host)).length;
+    final localEmpty = visibleDevices.isEmpty &&
+        localTvs == 0 && localXbox == 0;
+    final noSaved = savedComputers.isEmpty && savedLgTvs.isEmpty &&
+        savedSamsungTvs.isEmpty && savedXboxConsoles.isEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2949,22 +2927,15 @@ class _RemoteScreenState extends State<RemoteScreen>
           televisions: savedLgTvs.length + savedSamsungTvs.length,
           xbox: savedXboxConsoles.length),
         DeviceDashboardHeader(
-          showFilters: savedComputers.isNotEmpty || savedLgTvs.isNotEmpty ||
-              savedSamsungTvs.isNotEmpty || savedXboxConsoles.isNotEmpty,
-          locationFilter: _locationFilter,
-          detectedLocation: _detectedLocation,
-          showOffline: _showOffline,
-          onlineComputerCount: onlineComputerCount,
-          onlineTvCount: onlineTvCount,
+          allDevices: _showAllDevices,
+          onWifi: _wifiRange != null,
           locating: _locatingManually,
           onManage: openDeviceManager,
-          onLocationChanged: (value) =>
-              setState(() => _locationFilter = value),
-          onShowOfflineChanged: (value) =>
-              setState(() => _showOffline = value),
+          onScopeChanged: (all) =>
+              setState(() => _showAllDevices = all),
           onLocate: _refreshDevicesManually,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         if (_dashboardNotice != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -2974,24 +2945,14 @@ class _RemoteScreenState extends State<RemoteScreen>
                 color: Theme.of(context).colorScheme.error),
             ),
           ),
-        if (availabilityHint != null)
+        if (!_showAllDevices && localEmpty && !noSaved)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(availabilityHint,
-              key: const ValueKey('devices-offline-hint'),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('No saved computers, TVs or Xbox on this Wi-Fi.',
+              key: const ValueKey('devices-network-empty'),
               style: Theme.of(context).textTheme.bodySmall),
           ),
-        const SizedBox(height: 8),
-        if (visibleDevices.isEmpty && savedComputers.isNotEmpty &&
-            savedLgTvs.isEmpty && savedSamsungTvs.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: const Text(
-                'No saved devices match this filter.'),
-          ),
-      if (savedComputers.isEmpty && savedLgTvs.isEmpty &&
-          savedSamsungTvs.isEmpty && savedXboxConsoles.isEmpty &&
-          _enabledThinQ.isEmpty)
+      if (noSaved && _enabledThinQ.isEmpty)
         Card(child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -3041,7 +3002,8 @@ class _RemoteScreenState extends State<RemoteScreen>
                     : '${device.platform == 'darwin' ? 'Mac' : device.platform == 'windows' ? 'Windows' : 'Linux'} · ${deviceLocations[device.location] ?? 'Other'}',
                 maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                if (_online[device.id] == true &&
+                if (savedDeviceOnNetwork(_wifiRange, device.host) &&
+                    _online[device.id] == true &&
                     (device.platform == 'linux' ||
                      device.platform == 'darwin' ||
                      device.platform == 'windows') &&
@@ -3065,9 +3027,10 @@ class _RemoteScreenState extends State<RemoteScreen>
                   icon: const Icon(Icons.bug_report_outlined),
                 ),
                 const SizedBox(width: 4),
-                _deviceStatus(device.id),
+                _deviceStatus(device.id, device.host),
               ]),
-              onTap: canConnectSavedDevice(_online[device.id],
+              onTap: savedDeviceOnNetwork(_wifiRange, device.host) &&
+                  canConnectSavedDevice(_online[device.id],
                       connecting: _connectingDeviceId != null)
                   ? () => connectSaved(device) : null,
             ),
@@ -3127,6 +3090,8 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
       for (final xbox in savedXboxConsoles)
+        if (_showAllDevices ||
+            savedDeviceOnNetwork(_wifiRange, xbox.host))
         Card(
           key: ValueKey('xbox-${xbox.uuid}'),
           child: ListTile(
@@ -3142,28 +3107,18 @@ class _RemoteScreenState extends State<RemoteScreen>
           ),
         ),
       for (final device in _enabledThinQ) _thinQCard(device),
-      const SizedBox(height: 24),
-      Align(
-        alignment: Alignment.centerRight,
-        child: FloatingActionButton(
+      if (_wifiRange != null) ...[
+        const SizedBox(height: 8),
+        Align(alignment: Alignment.centerRight, child: TextButton.icon(
           key: const ValueKey('quick-actions-toggle'),
-          heroTag: 'dashboard-add-device',
-          tooltip: _showQuickActions
-              ? 'Close add device options' : 'Add device',
-          elevation: 0,
-          onPressed: () => setState(
-              () => _showQuickActions = !_showQuickActions),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            child: Icon(
-              _showQuickActions ? Icons.close_rounded : Icons.add_rounded,
-              key: ValueKey(_showQuickActions),
-              size: 28,
-            ),
-          ),
-        ),
-      ),
-      if (_showQuickActions) ...[
+          onPressed: () =>
+              setState(() => _showQuickActions = !_showQuickActions),
+          icon: Icon(_showQuickActions
+              ? Icons.close_rounded : Icons.add_rounded, size: 18),
+          label: Text(_showQuickActions ? 'Close' : 'Add device'),
+        )),
+      ],
+      if (_wifiRange != null && _showQuickActions) ...[
         const SizedBox(height: 4),
         if (_wifiRange != null)
           Row(children: [
