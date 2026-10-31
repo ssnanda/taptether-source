@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'resideo_api.dart';
 import 'resideo_oauth_screen.dart';
@@ -381,69 +380,74 @@ class _ResideoScreenState extends State<ResideoScreen> {
       enableSuggestions: !secret,
       decoration: field(label),
     );
+
     return ListView(padding: const EdgeInsets.all(16), children: [
-      Text('Honeywell Home Developer API',
+      Text('Resideo / Honeywell Home',
           style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 7),
-      const Text('Connect directly to api.honeywellhome.com. No AJCore or AJOps account is required.'),
-      const SizedBox(height: 16),
+      const SizedBox(height: 6),
+      const Text('Enter the three values from your approved app at '
+          'developer.honeywellhome.com. TapTether handles the OAuth tokens.'),
+      const SizedBox(height: 18),
       entry(_key, 'Consumer Key'),
       const SizedBox(height: 12),
-      entry(_secret, 'API Secret / Client Secret', secret: true),
+      entry(_secret, 'Consumer Secret', secret: true),
       const SizedBox(height: 12),
-      entry(_access, 'OAuth Access Token', secret: true),
-      const SizedBox(height: 12),
-      entry(_refreshToken, 'OAuth Refresh Token (optional)', secret: true),
+      entry(_redirect, 'Callback URL'),
       const SizedBox(height: 6),
       Align(alignment: Alignment.centerRight,
         child: TextButton.icon(
           key: const ValueKey('resideo-reveal-secrets'),
           onPressed: () => setState(() => _showSecrets = !_showSecrets),
           icon: Icon(_showSecrets ? Icons.visibility_off : Icons.visibility),
-          label: Text(_showSecrets ? 'Hide credentials' : 'Show credentials'),
-        )),
+          label: Text(_showSecrets ? 'Hide Consumer Secret' : 'Show Consumer Secret'),
+        ),
+      ),
+      const SizedBox(height: 8),
       FilledButton.icon(
-        key: const ValueKey('resideo-save-api-credentials'),
-        onPressed: _busy ? null : _save,
-        icon: const Icon(Icons.lock_outline),
-        label: const Text('Save & Connect'),
+        key: const ValueKey('resideo-authorize'),
+        onPressed: _busy ? null : _authorize,
+        icon: const Icon(Icons.login_rounded),
+        label: Text(_configured ? 'Reconnect with Resideo' : 'Sign in to Resideo'),
       ),
-      const SizedBox(height: 6),
-      const Text('Saved in device secure storage. Tokens renew automatically when you provide a refresh token and API secret.'),
-      const SizedBox(height: 18),
-      const Divider(),
-      ExpansionTile(
-        title: const Text('Get a new OAuth token'),
-        subtitle: const Text('Authorize your Honeywell Home account in a browser'),
-        children: [
-          const SizedBox(height: 6),
-          entry(_redirect, 'Registered OAuth redirect URL'),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _authorize,
-            icon: const Icon(Icons.open_in_browser),
-            label: const Text('Open Honeywell authorization'),
-          ),
-          const SizedBox(height: 8),
-          entry(_authCode, 'Authorization code or returned redirect URL'),
-          const SizedBox(height: 10),
-          FilledButton.tonalIcon(
-            key: const ValueKey('resideo-exchange-code'),
-            onPressed: _busy ? null : _exchange,
-            icon: const Icon(Icons.vpn_key_outlined),
-            label: const Text('Exchange code for token'),
-          ),
-          const SizedBox(height: 12),
-          const Text('Use the same redirect URL you registered at developer.honeywellhome.com. Copy the code from the browser redirect and paste it here.'),
-        ],
-      ),
+      const SizedBox(height: 10),
+      const Text('1. Sign in on the Resideo website and approve TapTether. '
+          '2. TapTether captures the authorization code and exchanges it '
+          'for access and refresh tokens automatically.'),
+      if (_manualCode) ...[
+        const SizedBox(height: 20),
+        const Divider(),
+        Text('Finish Safari sign-in',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 6),
+        const Text('If Safari reports that localhost cannot be reached, '
+            'copy the redirect address from the browser. '
+            'Paste the full address or its code below.'),
+        const SizedBox(height: 10),
+        entry(_authCode, 'Redirect URL or authorization code'),
+        const SizedBox(height: 12),
+        FilledButton.tonalIcon(
+          key: const ValueKey('resideo-exchange-code'),
+          onPressed: _busy ? null : _exchange,
+          icon: const Icon(Icons.check_circle_outline),
+          label: const Text('Complete connection'),
+        ),
+      ],
+      const SizedBox(height: 14),
+      const Text('Consumer credentials and tokens stay encrypted on this '
+          'device, not in cloud backups. Tokens renew while TapTether is in use.'),
       if (_configured) ...[
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
+        ListTile(
+          leading: const Icon(Icons.check_circle_outline, color: Colors.green),
+          title: const Text('Resideo connected'),
+          subtitle: const Text('Tokens are managed automatically on this phone.'),
+          contentPadding: EdgeInsets.zero,
+        ),
         OutlinedButton.icon(
           key: const ValueKey('resideo-api-disconnect'),
           onPressed: _busy ? null : _disconnect,
           icon: const Icon(Icons.link_off),
-          label: const Text('Disconnect Honeywell Home'),
+          label: const Text('Disconnect Resideo'),
         ),
       ],
       if (_busy) const LinearProgressIndicator(),
