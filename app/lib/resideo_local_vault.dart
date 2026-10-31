@@ -164,6 +164,8 @@ class ResideoLocalVault {
     }
   }
 
+  Future<void> clearCache() => _storage.delete(key: cacheName);
+
   Future<void> clear() async {
     await _storage.delete(key: cacheName);
     await _storage.delete(key: dataName);
