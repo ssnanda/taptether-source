@@ -117,6 +117,25 @@ assert workflow.count("if: ${{ inputs.task == 'release' || (github.event_name ==
 assert "TapTether-complete-build-" in workflow
 assert "retention-days: 7" in workflow
 
+# Resideo mobile-only releases must reuse public agent packages, never compile
+# or overwrite unrelated macOS/Ubuntu/Windows executables.
+assert "          - mobile-release" in workflow
+assert "  mobile-build-and-publish:" in workflow
+assert "bash bin/6-tt-fetch-existing-agents.sh" in workflow
+assert "bash bin/6-tt-publish-mobile-only.sh" in workflow
+assert "TAPTETHER_USE_EXISTING_AGENT_RELEASE: '1'" in workflow
+assert "[publish mobile 210]" in workflow
+reuse = (ROOT / "bin" / "6-tt-fetch-existing-agents.sh").read_text()
+mobile_publisher = (ROOT / "bin" / "6-tt-publish-mobile-only.sh").read_text()
+assert "gh release download current" in reuse
+assert "TAPTETHER_AGENT_PACKAGE_VERSION" in stage
+assert "gh release upload" in mobile_publisher
+assert 'TapTetherAgent-' in mobile_publisher
+assert 'after_agents' in mobile_publisher
+assert 'gh release delete' not in mobile_publisher
+assert 'bash bin/2b-tt-ubuntu.sh' not in workflow.split("  mobile-build-and-publish:",1)[1].split("  agent-only-validate:",1)[0]
+assert 'bash bin/2b-tt-macos.sh' not in workflow.split("  mobile-build-and-publish:",1)[1].split("  agent-only-validate:",1)[0]
+
 assert "name: TapTether-Ubuntu-installers" in workflow
 assert "actions/download-artifact@" in workflow
 assert "TAPTETHER_USE_PREBUILT_AGENTS: '1'" in workflow
