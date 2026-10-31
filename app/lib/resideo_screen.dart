@@ -61,7 +61,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
         _configured = c.usable;
         _loading = false;
       });
-      if (!widget.settingsOnly && c.usable) await _refresh();
+      if (!widget.settingsOnly && c.usable) {
+        await _refresh();
+      }
     } catch (_) {
       if (mounted) setState(() {
         _error = 'Cannot load Honeywell credentials from secure storage.';
@@ -279,7 +281,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
               return;
             }
             await _run(action);
-            if (ctx.mounted) redraw(() {});
+            if (ctx.mounted) {
+              redraw(() {});
+            }
           }
           Widget setpoint(String label, double? value, bool heating) {
             return Row(children: [
@@ -456,7 +460,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
           onPressed: () async {
             await Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => const ResideoScreen(settingsOnly: true)));
-            if (mounted) await _restore();
+            if (mounted) {
+              await _restore();
+            }
           },
         ),
       ] else ...[
