@@ -119,7 +119,9 @@ class ResideoDevice {
 
   double adjustedSetpoint({required bool heating, required int direction}) {
     final value = heating ? heat : cool;
-    if (value == null) throw const FormatException('No setpoint available.');
+    if (value == null) {
+      throw const FormatException('No setpoint available.');
+    }
     final next = value + increment * direction;
     final minimum = heating ? minHeat : minCool;
     final maximum = heating ? maxHeat : maxCool;
@@ -272,7 +274,9 @@ class ResideoConnection {
       }
       return code;
     }
-    if (trimmed.isEmpty) throw const FormatException('Authorization code required.');
+    if (trimmed.isEmpty) {
+      throw const FormatException('Authorization code required.');
+    }
     return trimmed;
   }
 
