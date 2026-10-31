@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'resideo_api.dart';
+import 'resideo_oauth_screen.dart';
 
 /// Dashboard shortcut and Settings → API Integrations share one connection,
 /// but the dashboard never displays developer credentials.
@@ -17,8 +21,6 @@ class _ResideoScreenState extends State<ResideoScreen> {
   final _api = ResideoConnection();
   final _key = TextEditingController();
   final _secret = TextEditingController();
-  final _access = TextEditingController();
-  final _refreshToken = TextEditingController();
   final _redirect = TextEditingController();
   final _authCode = TextEditingController();
   final _search = TextEditingController();
@@ -27,6 +29,8 @@ class _ResideoScreenState extends State<ResideoScreen> {
   Set<String> _locations = {};
   bool _loading = true, _busy = false, _configured = false;
   bool _showSecrets = false;
+  bool _manualCode = false;
+  String? _pendingState;
   String? _error;
   String? _notice;
 
@@ -39,7 +43,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
   @override
   void dispose() {
     for (final controller in [
-      _key, _secret, _access, _refreshToken, _redirect, _authCode, _search,
+      _key, _secret, _redirect, _authCode, _search,
     ]) {
       controller.dispose();
     }
@@ -54,8 +58,6 @@ class _ResideoScreenState extends State<ResideoScreen> {
       }
       _key.text = c.apiKey;
       _secret.text = c.apiSecret;
-      _access.text = c.accessToken;
-      _refreshToken.text = c.refreshToken;
       _redirect.text = c.redirectUri;
       setState(() {
         _configured = c.usable;
@@ -77,8 +79,8 @@ class _ResideoScreenState extends State<ResideoScreen> {
   ResideoCredentials _entered() => ResideoCredentials(
     apiKey: _key.text.trim(),
     apiSecret: _secret.text.trim(),
-    accessToken: _access.text.trim(),
-    refreshToken: _refreshToken.text.trim(),
+    accessToken: '',
+    refreshToken: '',
     redirectUri: _redirect.text.trim(),
   );
 
