@@ -20,13 +20,14 @@ assert "unawaited(_recoverSavedDevices())" in body
 assert "_probeSavedDevice(device, phone)" in body
 assert "savedComputers.toList()" in body
 assert "Future.wait(savedSnapshot.map(" in body
-assert "bool _showOffline = true;" in main
-assert "String _locationFilter = 'all';" in main
+assert "bool _showAllDevices = true;" in main
+assert "allSavedComputers(savedComputers" in main
+assert "savedDeviceOnNetwork(_wifiRange, device.host)" in main
 assert "bool _showQuickActions = false;" in main
 assert "Icons.arrow_back" in main
 assert "'Back to My Devices'" in main
 assert "tooltip: 'Switch computer'" not in main
-assert "if (_showQuickActions) ...[" in main
+assert "if (_wifiRange != null && _showQuickActions) ...[" in main
 assert "if (searching || !_discoveryReport.isEmpty)" in main
 assert "final phone = await _phoneIdentity();" in main
 assert "currentAgent = await agent.agentVersion();" in main
@@ -41,7 +42,9 @@ assert 'Duration(minutes: 10)' in recovery
 assert 'savedComputers.every((d) => _online[d.id] == true)' in recovery
 assert '_reconcileScannedAgent(address, passive: true)' in recovery
 assert 'if (_probingOfflineAgents)' not in recovery
-assert 'checking: _checkingHeartbeat || _recoveringDiscovery' in main
+assert "locationFilter: 'all'" in main
+assert "'On This Network'" in (root / 'app/lib/device_dashboard_header.dart').read_text()
+assert "'All Devices'" in (root / 'app/lib/device_dashboard_header.dart').read_text()
 # Dashboard statuses use compact semantic icons, not flashing prose.
 assert "Checking TapTether agent addresses on this Wi-Fi" not in main
 assert "Tooltip(" in main
