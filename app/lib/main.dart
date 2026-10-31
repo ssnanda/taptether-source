@@ -33,6 +33,7 @@ import 'clipboard_chunks.dart';
 import 'appearance.dart';
 import 'app_security.dart';
 import 'automatic_device_backup.dart';
+import 'device_backup_screen.dart';
 import 'security_settings_screen.dart';
 import 'about_taptether_screen.dart';
 import 'device_manager_screen.dart';
@@ -506,8 +507,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   DetectedLanRange? _wifiRange;
   bool _checkedWifi = false;
   String? _detectedLocation;
-  // Inventory is default; "On This Network" is an explicit Wi-Fi view.
-  bool _showAllDevices = true;
+  // On This Network is the default, All Devices keeps the full inventory.
+  bool _showAllDevices = false;
   bool _showQuickActions = false;
   bool _checkingHeartbeat = false;
   bool _recoveringDiscovery = false;
@@ -2172,25 +2173,32 @@ class _RemoteScreenState extends State<RemoteScreen>
     AutomaticDeviceBackup.instance.requestSoon();
   }
 
+  Future<void> _reloadAfterDeviceRestore() async {
+    // Restore changes pairing secrets and phone identity; discard caches.
+    _cachedPhoneIdentity = null;
+    if (agent.configured) agent.disconnect();
+    _online.clear();
+    _tvOnline.clear();
+    await loadComputers();
+    await loadLgTvs();
+    await loadSamsungTvs();
+    AutomaticDeviceBackup.instance.requestSoon();
+    if (mounted) {
+      unawaited(_refreshHeartbeats());
+      unawaited(_refreshTvStatuses());
+    }
+  }
+
   Future<void> openSecuritySettings() async {
     await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => SecuritySettingsScreen(
-        onDevicesRestored: () async {
-          // Recreate Ed25519 identity after restoring the private seed,
-          // otherwise the old in-memory identity could fail authentication.
-          _cachedPhoneIdentity = null;
-          if (agent.configured) agent.disconnect();
-          _online.clear();
-          _tvOnline.clear();
-          await loadComputers();
-          await loadLgTvs();
-          await loadSamsungTvs();
-          AutomaticDeviceBackup.instance.requestSoon();
-          if (mounted) {
-            unawaited(_refreshHeartbeats());
-            unawaited(_refreshTvStatuses());
-          }
-        },
+      builder: (_) => const SecuritySettingsScreen(),
+    ));
+  }
+
+  Future<void> openDeviceBackups() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => DeviceBackupScreen(
+        onRestored: _reloadAfterDeviceRestore,
       ),
     ));
   }
@@ -2693,6 +2701,16 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ],
         ),
+        ListTile(
+          key: const ValueKey('drawer-device-backups'),
+          leading: const Icon(Icons.backup_outlined),
+          title: const Text('Device Backup'),
+          subtitle: const Text('Automatic backup & restore'),
+          onTap: () {
+            Navigator.pop(context);
+            openDeviceBackups();
+          },
+        ),
         const Divider(),
         ExpansionTile(
           key: const ValueKey('drawer-settings-more'),
@@ -2794,7 +2812,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         TapTetherDashboardVisuals.actionRow(context,
           icon: Icons.shield_rounded,
           accent: const Color(0xFF0CA987),
-          label: 'Settings & backups', onTap: openSecuritySettings),
+          label: 'Device Backup', onTap: openDeviceBackups),
       ],
     );
   }
@@ -2973,7 +2991,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   'computers and TVs.'),
               const SizedBox(height: 14),
               OutlinedButton.icon(
-                onPressed: openSecuritySettings,
+                onPressed: openDeviceBackups,
                 icon: const Icon(Icons.restore),
                 label: const Text('Restore saved devices'),
               ),
