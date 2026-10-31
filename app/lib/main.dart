@@ -2558,6 +2558,9 @@ class _RemoteScreenState extends State<RemoteScreen>
       actions: [
         if (fridge)
           IconButton.filledTonal(
+            constraints: const BoxConstraints.tightFor(
+                width: 36, height: 36),
+            padding: EdgeInsets.zero,
             key: ValueKey('lg-thinq-alert-${device.id}'),
             tooltip: _fridgeAlertsEnabled.contains(device.id)
                 ? 'Manage refrigerator alerts and tests'
@@ -2569,6 +2572,9 @@ class _RemoteScreenState extends State<RemoteScreen>
             onPressed: () => _toggleFridgeAlerts(device),
           ),
         IconButton.filledTonal(
+          constraints: const BoxConstraints.tightFor(
+              width: 36, height: 36),
+          padding: EdgeInsets.zero,
           key: ValueKey('lg-thinq-rename-${device.id}'),
           tooltip: 'Rename ${device.name}',
           visualDensity: VisualDensity.compact,
@@ -2826,7 +2832,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  bool _tvVisible(String location, String key) {
+  bool _tvVisible(String key) {
     // Local scope uses the actual Wi-Fi CIDR, never a stale Home/Other tag.
     final host = key.substring(key.indexOf(':') + 1);
     return _showAllDevices || savedDeviceOnNetwork(_wifiRange, host);
@@ -2906,7 +2912,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         ? allSavedComputers(savedComputers,
             online: _online, currentNetwork: _wifiRange)
         : visibleSavedDevices(savedComputers,
-            online: _online, locationFilter: 'automatic',
+            online: _online, locationFilter: 'all',
             currentLocation: _detectedLocation,
             currentNetwork: _wifiRange, showOffline: true);
     final localTvs = savedLgTvs.where((tv) =>
@@ -2985,22 +2991,30 @@ class _RemoteScreenState extends State<RemoteScreen>
         for (final device in visibleDevices)
           Card(
             key: ValueKey('saved-device-${device.id}'),
+            margin: const EdgeInsets.only(bottom: 5),
             child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 5),
-              leading: Icon(device.platform == 'darwin'
-                  ? Icons.laptop_mac : Icons.computer,
-                  size: 29),
+              dense: true,
+              minVerticalPadding: 3,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+              leading: TapTetherDashboardVisuals.iconTile(
+                  device.platform == 'darwin'
+                      ? Icons.laptop_mac_rounded : Icons.computer_rounded,
+                  const Color(0xFF4992ED), const Color(0xFF13B2C3),
+                  size: 36),
               title: Text(device.name,
                   maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700)),
               subtitle: Text(
-                savedComputers.where((other) =>
-                    other.host == device.host && other.id != device.id)
-                    .isNotEmpty && _online[device.id] != true
-                    ? 'Shared address · Verify device identity'
-                    : '${device.platform == 'darwin' ? 'Mac' : device.platform == 'windows' ? 'Windows' : 'Linux'} · ${deviceLocations[device.location] ?? 'Other'}',
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+                !savedDeviceOnNetwork(_wifiRange, device.host)
+                    ? 'Other network'
+                    : savedComputers.where((other) =>
+                        other.host == device.host && other.id != device.id)
+                        .isNotEmpty && _online[device.id] != true
+                        ? 'Shared IP · Verify identity'
+                        : '${device.platform == 'darwin' ? 'Mac' : device.platform == 'windows' ? 'Windows' : 'Linux'} · This network',
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11.5)),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (savedDeviceOnNetwork(_wifiRange, device.host) &&
                     _online[device.id] == true &&
@@ -3018,15 +3032,18 @@ class _RemoteScreenState extends State<RemoteScreen>
                     onPressed: () => updateSavedAgent(device),
                     icon: const Icon(Icons.system_update_alt),
                     visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                        width: 34, height: 34),
                   ),
                 IconButton(
                   key: ValueKey('diagnostics-computer-${device.id}'),
                   tooltip: 'Diagnose ${device.name}',
                   visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                      width: 34, height: 34),
                   onPressed: () => openComputerDiagnostics(device),
                   icon: const Icon(Icons.bug_report_outlined),
                 ),
-                const SizedBox(width: 4),
                 _deviceStatus(device.id, device.host),
               ]),
               onTap: savedDeviceOnNetwork(_wifiRange, device.host) &&
@@ -3038,7 +3055,7 @@ class _RemoteScreenState extends State<RemoteScreen>
 
       // TV types share the saved-device list, location and offline filters.
       for (final tv in savedLgTvs)
-        if (_tvVisible(tv.location, 'lg:${tv.host}'))
+        if (_tvVisible('lg:${tv.host}'))
           Card(
             key: ValueKey('lg-tv-${tv.deviceUuid.isNotEmpty
                 ? tv.deviceUuid : tv.host}'),
@@ -3064,7 +3081,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
       for (final tv in savedSamsungTvs)
-        if (_tvVisible(tv.location, 'samsung:${tv.host}'))
+        if (_tvVisible('samsung:${tv.host}'))
           Card(
             key: ValueKey('samsung-tv-${tv.deviceId.isNotEmpty
                 ? tv.deviceId : tv.host}'),
