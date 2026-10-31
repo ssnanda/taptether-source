@@ -80,4 +80,11 @@ for filename in (
     assert 'AutomaticDeviceBackup.instance.requestSoon();' in contents, filename
 backup_screen = (root / 'app/lib/device_backup_screen.dart').read_text()
 assert 'Back up automatically on changes' in backup_screen
+assert "Encrypt backups (optional)" in backup_screen
+assert "backup-password-input" in backup_screen
+assert "save-backup-password" in backup_screen
+assert "Future<void> _savePassword()" in backup_screen
+assert "_password(confirm: true)" not in backup_screen
+assert "final entered = await _password(" not in backup_screen
+assert "Future<String?> _requestImportPassword()" in backup_screen
 print('PASS saved-only heartbeat, local default, and automatic backup hooks')

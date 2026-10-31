@@ -57,6 +57,8 @@ on:
       - 'app/lib/appearance.dart'
       - 'app/lib/remote_mode_bar.dart'
       - 'app/test/dashboard_visuals_test.dart'
+      - 'app/lib/device_backup_screen.dart'
+      - 'app/test/device_backup_screen_test.dart'
       - '.github/workflows/taptether.yml'
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
