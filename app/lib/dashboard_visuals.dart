@@ -24,7 +24,7 @@ class TapTetherDashboardVisuals {
   }
 
   static Widget iconTile(IconData icon, Color start, Color end,
-      {double size = 52}) {
+      {double size = 40}) {
     return Container(
       width: size, height: size,
       decoration: BoxDecoration(
@@ -59,8 +59,8 @@ class TapTetherDashboardVisuals {
     return Container(
       key: const ValueKey('dashboard-device-counts'),
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         color: dark(context) ? const Color(0xFF203B43) : Colors.white,
         borderRadius: BorderRadius.circular(24),
@@ -100,13 +100,13 @@ class TapTetherDashboardVisuals {
     final textColor = isDark ? Colors.white : navy;
     return Card(
       key: key,
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 6),
       color: Colors.transparent,
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(25),
-        side: BorderSide(color: accent.withValues(alpha: .19)),
+        borderRadius: BorderRadius.circular(19),
+        side: BorderSide(color: accent.withValues(alpha: .17)),
       ),
       child: DecoratedBox(
         decoration: BoxDecoration(gradient: LinearGradient(
@@ -117,24 +117,26 @@ class TapTetherDashboardVisuals {
                   Color.lerp(Colors.white, endTint, .9)!],
         )),
         child: Stack(children: [
-          Positioned(right: 22, bottom: -21, child: IgnorePointer(
-            child: Icon(icon, size: 105,
-                color: accent.withValues(alpha: isDark ? .07 : .08)),
+          Positioned(right: 18, bottom: -18, child: IgnorePointer(
+            child: Icon(icon, size: 72,
+                color: accent.withValues(alpha: isDark ? .04 : .055)),
           )),
           ListTile(
-            minVerticalPadding: 14,
-            contentPadding: const EdgeInsets.fromLTRB(14, 4, 10, 4),
+            dense: true,
+            minLeadingWidth: 40,
+            minVerticalPadding: 4,
+            contentPadding: const EdgeInsets.fromLTRB(12, 1, 8, 1),
             leading: iconTile(icon, accent, accentEnd),
             title: Text(name, maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: textColor, fontWeight: FontWeight.w800,
-                  fontSize: 17, letterSpacing: -.3)),
+                  fontSize: 15, letterSpacing: -.2)),
             subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: 1),
               child: Text(status,
                 key: ValueKey('lg-thinq-status-$id'),
                 maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13.5,
+                style: TextStyle(fontSize: 12,
                   color: textColor.withValues(alpha: .70))),
             ),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: actions),
