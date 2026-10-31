@@ -49,7 +49,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
   Future<void> _restore() async {
     try {
       final c = await _api.credentials();
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       _key.text = c.apiKey;
       _secret.text = c.apiSecret;
       _access.text = c.accessToken;
@@ -77,13 +79,19 @@ class _ResideoScreenState extends State<ResideoScreen> {
   );
 
   String _friendly(Object error) {
-    if (error is ResideoApiError) return error.message;
-    if (error is FormatException) return error.message;
+    if (error is ResideoApiError) {
+      return error.message;
+    }
+    if (error is FormatException) {
+      return error.message;
+    }
     return 'Honeywell request failed. Check your internet connection and credentials.';
   }
 
   Future<void> _run(Future<void> Function() action) async {
-    if (_busy) return;
+    if (_busy) {
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -92,9 +100,13 @@ class _ResideoScreenState extends State<ResideoScreen> {
     try {
       await action();
     } catch (error) {
-      if (mounted) setState(() => _error = _friendly(error));
+      if (mounted) {
+        setState(() => _error = _friendly(error));
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
@@ -114,7 +126,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
     }
     // Verify against the real Honeywell locations endpoint.
     final devices = await _api.discover();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() => _notice =
         'Honeywell connected. Found ${devices.length} thermostat(s).');
     // A refresh may rotate the token. Reflect the newest secured credentials.
@@ -123,7 +137,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   Future<void> _reloadTokenFields() async {
     final current = await _api.credentials();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     _access.text = current.accessToken;
     _refreshToken.text = current.refreshToken;
     setState(() => _configured = current.usable);
@@ -155,7 +171,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   Future<void> _disconnect() => _run(() async {
     await _api.disconnect();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     _secret.clear();
     _access.clear();
     _refreshToken.clear();
@@ -170,14 +188,20 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   Future<void> _load() async {
     final devices = await _api.discover();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _devices = devices;
       final ids = devices.map((d) => d.id).toSet();
-      if (_selected.isEmpty) _selected = ids;
+      if (_selected.isEmpty) {
+        _selected = ids;
+      }
       _selected = _selected.intersection(ids);
       final locations = devices.map((d) => d.locationId).toSet();
-      if (_locations.isEmpty) _locations = locations;
+      if (_locations.isEmpty) {
+        _locations = locations;
+      }
       _locations = _locations.intersection(locations);
     });
   }
@@ -193,7 +217,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
   Future<void> _bulk(String mode, {required bool fan}) => _run(() async {
     final list = _devices.where((d) =>
         _selected.contains(d.id) && _locations.contains(d.locationId)).toList();
-    if (list.isEmpty) return;
+    if (list.isEmpty) {
+      return;
+    }
     var changed = 0;
     final failures = <String>[];
     for (final device in list) {
@@ -211,10 +237,14 @@ class _ResideoScreenState extends State<ResideoScreen> {
       }
     }
     await _load();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _notice = 'Updated $changed of ${list.length} thermostats.';
-      if (failures.isNotEmpty) _error = failures.join(' · ');
+      if (failures.isNotEmpty) {
+        _error = failures.join(' · ');
+      }
     });
   });
 
@@ -245,7 +275,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
           final device = _devices.where((d) => d.id == original.id)
               .firstOrNull ?? original;
           Future<void> update(Future<void> Function() action) async {
-            if (_busy) return;
+            if (_busy) {
+              return;
+            }
             await _run(action);
             if (ctx.mounted) redraw(() {});
           }
@@ -446,7 +478,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
                 label: Text(entry.value),
                 selected: _locations.contains(entry.key),
                 onSelected: (_) => setState(() {
-                  if (!_locations.add(entry.key)) _locations.remove(entry.key);
+                  if (!_locations.add(entry.key)) {
+                    _locations.remove(entry.key);
+                  }
                 }),
               ),
           ]),
@@ -482,7 +516,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
             leading: Checkbox(
               value: _selected.contains(d.id),
               onChanged: (_) => setState(() {
-                if (!_selected.add(d.id)) _selected.remove(d.id);
+                if (!_selected.add(d.id)) {
+                  _selected.remove(d.id);
+                }
               }),
             ),
             title: Text(d.name, maxLines: 1,
