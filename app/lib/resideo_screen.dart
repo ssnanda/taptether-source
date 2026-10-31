@@ -146,7 +146,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
     await _api.exchangeCode(current, code, state: _pendingState);
     _authCode.clear();
     final devices = await _api.discover();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _configured = true;
       _manualCode = false;
@@ -162,14 +164,18 @@ class _ResideoScreenState extends State<ResideoScreen> {
     _pendingState = _newState();
     final authorization = ResideoConnection.authorizationUrl(
       submitted.apiKey, submitted.redirectUri, state: _pendingState);
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final code = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(builder: (_) => ResideoOAuthScreen(
         authorizationUrl: authorization,
         callbackUrl: submitted.redirectUri,
         state: _pendingState!,
       )));
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     if (code == null) {
       setState(() {
         _manualCode = true;
