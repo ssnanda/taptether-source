@@ -2774,7 +2774,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   key: const ValueKey('drawer-resideo-api-settings'),
                   leading: const Icon(Icons.thermostat_outlined),
                   title: const Text('Resideo API'),
-                  subtitle: const Text('Manage your optional AJOps connection'),
+                  subtitle: const Text('Honeywell Home developer API credentials'),
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(MaterialPageRoute<void>(
