@@ -20,7 +20,7 @@ assert "unawaited(_recoverSavedDevices())" in body
 assert "_probeSavedDevice(device, phone)" in body
 assert "savedComputers.toList()" in body
 assert "Future.wait(savedSnapshot.map(" in body
-assert "bool _showAllDevices = true;" in main
+assert "bool _showAllDevices = false;" in main  # Local scope is the default
 assert "allSavedComputers(savedComputers" in main
 assert "savedDeviceOnNetwork(_wifiRange, device.host)" in main
 assert "bool _showQuickActions = false;" in main
@@ -57,4 +57,27 @@ assert "key: const ValueKey('refresh-device-status')" not in main
 assert "_refreshDevicesManually" in main
 assert "DeviceLocationLog.instance.record" in main
 assert '_lastPassiveDiscovery = null;' in main
-print('PASS saved-only heartbeat, passive UDP plus throttled TCP recovery')
+# Backups are accessible from the main drawer, not nested under Appearance.
+security = (root / 'app/lib/security_settings_screen.dart').read_text()
+drawer = main.split('  Widget appDrawer()', 1)[1].split(
+    '  Widget _offlineHome()', 1)[0]
+assert "key: const ValueKey('drawer-device-backups')" in drawer
+assert "openDeviceBackups();" in drawer
+assert "Text('Device backup')" not in security
+assert "DeviceBackupScreen(" in main
+
+# All mutable saved-device stores request encrypted backup only after writes.
+backup = (root / 'app/lib/automatic_device_backup.dart').read_text()
+assert 'void requestSoon()' in backup
+assert '_changesWhileBusy' in backup
+assert 'DeviceBackupCodec.encrypt(' in backup
+for filename in (
+    'computer_store.dart', 'lg_webos_client.dart', 'samsung_tv_client.dart',
+    'xbox_smartglass.dart', 'phone_ssh_keys.dart', 'lg_thinq_api.dart',
+    'network_location.dart', 'ssh_host_trust.dart',
+):
+    contents = (root / 'app/lib' / filename).read_text()
+    assert 'AutomaticDeviceBackup.instance.requestSoon();' in contents, filename
+backup_screen = (root / 'app/lib/device_backup_screen.dart').read_text()
+assert 'Back up automatically on changes' in backup_screen
+print('PASS saved-only heartbeat, local default, and automatic backup hooks')
