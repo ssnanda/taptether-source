@@ -27,6 +27,9 @@ void main() {
     )));
     expect(find.text('Refrigerator'), findsOneWidget);
     expect(find.text('Fridge 33°F · Freezer -7°F'), findsOneWidget);
+    // Compact appliance tiles should not dominate a phone dashboard.
+    expect(tester.getSize(find.byKey(const ValueKey('lg-thinq-fridge')))
+        .height, lessThan(90));
     await tester.tap(find.byKey(const ValueKey('lg-thinq-alert-fridge')));
     expect(alerted, isTrue);
     await tester.tap(find.text('Refrigerator'));
