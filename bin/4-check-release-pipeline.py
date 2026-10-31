@@ -25,12 +25,12 @@ assert "github.ref == 'refs/heads/main'" in workflow
 assert "    paths:\n      - VERSION" not in workflow, (
     "VERSION pushes must not publish automatically before iPhone installation"
 )
-assert "if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 205]')) }}" in workflow
+assert "if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 206]')) }}" in workflow
 assert "- 'app/lib/xbox_*.dart'" in workflow
 assert "- '.github/workflows/taptether.yml'" in workflow
 assert "[build xbox]" in workflow
 assert "[build ipa]" in workflow
-assert "if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 205]')) }}" in workflow
+assert "if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 206]')) }}" in workflow
 
 assert "  validate:" in workflow
 assert "  build-ubuntu:" in workflow
@@ -111,11 +111,11 @@ assert "Xbox app preferences" not in xbox_ui
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
 assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
 assert "run: bash bin/6-tt-publish-latest.sh" in workflow
-assert "if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 205]')) }}" in workflow
+assert "if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 206]')) }}" in workflow
 assert "if: ${{ inputs.task == 'build' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) }}" in workflow
-assert workflow.count("if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 205]')) }}") >= 2
+assert workflow.count("if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 206]')) }}") >= 2
 assert "TapTether-complete-build-" in workflow
-assert "retention-days: 1" in workflow
+assert "retention-days: 7" in workflow
 
 assert "name: TapTether-Ubuntu-installers" in workflow
 assert "actions/download-artifact@" in workflow
@@ -153,7 +153,7 @@ assert "  agent-only-validate:" in workflow
 assert "  agent-only-ubuntu:" in workflow
 assert "  agent-only-macos:" in workflow
 assert "  agent-only-windows:" in workflow
-assert "The [publish 205] push trigger is valid for 0.8.44+205 only." in workflow
+assert "The [publish 206] push trigger is valid for 0.8.45+206 only." in workflow
 assert "  cleanup-history:" in workflow
 assert "    needs: build-and-publish" in workflow
 assert "    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup'" in workflow
