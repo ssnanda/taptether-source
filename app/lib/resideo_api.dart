@@ -399,6 +399,13 @@ class ResideoConnection {
       throw const FormatException('Consumer Key and Consumer Secret are required.');
     }
     validateRedirect(c.redirectUri);
+    final existing = await _vault.read();
+    if (existing != null &&
+        existing['apiKey']?.toString() != c.apiKey.trim()) {
+      _recentDevices = null;
+      _recentAt = null;
+      await _vault.clearCache();
+    }
     await _vault.write({
       'apiKey': c.apiKey.trim(),
       'apiSecret': c.apiSecret.trim(),
