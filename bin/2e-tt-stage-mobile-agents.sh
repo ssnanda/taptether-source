@@ -2,9 +2,11 @@
 # Build native agents first, then stage checksummed installation archives as Flutter assets.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [[ "${TAPTETHER_USE_PREBUILT_AGENTS:-0}" == 1 ]]; then
-  # Reuse packages from the *same release workflow run*. Package audits
-  # compare the embedded setup/updater against this checked-out source.
+if [[ "${TAPTETHER_USE_EXISTING_AGENT_RELEASE:-0}" == 1 ]]; then
+  # App-only release: use previously published packages without building or
+  # rewriting their version. Verified by bin/6-tt-fetch-existing-agents.sh.
+  test -n "${TAPTETHER_AGENT_PACKAGE_VERSION:-}" || exit 1
+elif [[ "${TAPTETHER_USE_PREBUILT_AGENTS:-0}" == 1 ]]; then
   python3 "$ROOT/bin/4-validate-desktop-installers.py" --platform all
 else
   "$ROOT/bin/2b-tt-ubuntu.sh"
@@ -24,6 +26,7 @@ import tarfile
 
 root = Path(sys.argv[1])
 version = (root / "VERSION").read_text().strip()
+agent_version = __import__("os").environ.get("TAPTETHER_AGENT_PACKAGE_VERSION", version)
 outdir = root / "app" / "assets" / "agents"
 outdir.mkdir(parents=True, exist_ok=True)
 for old in outdir.iterdir():
@@ -37,9 +40,9 @@ for platform, suffix, folder, prefix in (
 ):
     for arch in ("amd64", "arm64"):
         if platform == "ubuntu":
-            name = f"taptether-agent_{version}_{arch}.deb"
+            name = f"taptether-agent_{agent_version}_{arch}.deb"
         else:
-            name = f"TapTetherAgent-macos-{arch}-{version}.tar.gz"
+            name = f"TapTetherAgent-macos-{arch}-{agent_version}.tar.gz"
         source = root / "dist" / folder / name
         if not source.is_file():
             if platform == "ubuntu":
@@ -89,7 +92,7 @@ for name, source in (
         raise SystemExit(f"Required phone SSH provisioning asset missing: {source}")
     shutil.copyfile(source, outdir / name)
 
-manifest = {"version": version, "installers": installers}
+manifest = {"version": agent_version, "appVersion": version, "installers": installers}
 (outdir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("Staged Flutter agent assets:")
 for row in installers:
