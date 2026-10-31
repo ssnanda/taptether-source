@@ -15,13 +15,14 @@ void main() {
     // The platform Wi-Fi check may still be pending in a widget test.
     // Neither the checking state nor confirmed offline mode may offer
     // LAN-only actions or report fake connectivity.
-    final joined = find.text('Join Wi-Fi to control your devices.');
+    final joined = find.text('Connect to Wi-Fi to use local remote controls.');
     final checking = find.text('Checking Wi-Fi…');
     expect(joined.evaluate().isNotEmpty || checking.evaluate().isNotEmpty,
         isTrue);
     if (joined.evaluate().isNotEmpty) {
-      expect(find.text('Manage saved devices'), findsOneWidget);
-      expect(find.text('SSH keys'), findsOneWidget);
+      expect(find.byKey(const ValueKey('manage-saved-devices')),
+          findsOneWidget);
+      expect(find.text('All Devices'), findsOneWidget);
       expect(find.text('Settings & backups'), findsOneWidget);
     }
     expect(find.text('Pair with a computer agent'), findsNothing);
@@ -35,7 +36,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Open navigation'));
     await tester.pumpAndSettle();
-    expect(find.text('My Devices'), findsOneWidget);
+    expect(find.text('Devices'), findsOneWidget);
     expect(find.text('Settings & More'), findsOneWidget);
     await tester.tap(find.text('Settings & More'));
     await tester.pumpAndSettle();
