@@ -417,82 +417,106 @@ class _ResideoScreenState extends State<ResideoScreen> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
-      builder: (sheetContext) => StatefulBuilder(
+      builder: (sheet) => StatefulBuilder(
         builder: (ctx, redraw) {
-          final device = _devices.where((d) => d.id == original.id)
+          final d = _devices.where((item) => item.cacheId == original.cacheId)
               .firstOrNull ?? original;
-          Future<void> update(Future<void> Function() action) async {
-            if (_busy) {
-              return;
-            }
-            await _run(action);
-            if (ctx.mounted) {
-              redraw(() {});
-            }
-          }
-          Widget setpoint(String label, double? value, bool heating) {
-            return Row(children: [
-              Expanded(child: Text('$label: ${device.display(value)}')),
-              IconButton(
-                tooltip: 'Decrease $label',
-                onPressed: _busy || !device.online || value == null ? null
-                    : () => update(() async {
-                        final next = device.adjustedSetpoint(
-                            heating: heating, direction: -1);
-                        await _change(device, device.system,
-                            heat: heating ? next : null,
-                            cool: heating ? null : next);
-                      }),
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-              IconButton(
-                tooltip: 'Increase $label',
-                onPressed: _busy || !device.online || value == null ? null
-                    : () => update(() async {
-                        final next = device.adjustedSetpoint(
-                            heating: heating, direction: 1);
-                        await _change(device, device.system,
-                            heat: heating ? next : null,
-                            cool: heating ? null : next);
-                      }),
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-            ]);
+          final scheme = Theme.of(ctx).colorScheme;
+
+          Future<void> apply(Future<void> Function() operation) async {
+            if (_busy) return;
+            await _run(operation);
+            if (ctx.mounted) redraw(() {});
           }
 
-          return SafeArea(child: SingleChildScrollView(
+          Widget adjustment(bool heating) {
+            final value = heating ? d.heat : d.cool;
+            final label = heating ? 'Heat to' : 'Cool to';
+            return Card(
+              color: scheme.surfaceContainerLow,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 8),
+                child: Row(children: [
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label, style: Theme.of(ctx).textTheme.labelMedium),
+                      Text(d.display(value),
+                          style: Theme.of(ctx).textTheme.headlineSmall),
+                    ],
+                  )),
+                  _temperatureControls(d, heating),
+                ]),
+              ),
+            );
+          }
+
+          return SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
-              20, 6, 20, MediaQuery.viewInsetsOf(ctx).bottom + 24),
+                18, 8, 18, MediaQuery.viewInsetsOf(ctx).bottom + 28),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(device.name, style: Theme.of(ctx).textTheme.titleLarge),
-                Text('${device.location} · ${device.online ? 'Online' : 'Offline'}',
-                    style: Theme.of(ctx).textTheme.bodySmall),
-                const SizedBox(height: 12),
-                Text('Indoor ${device.display(device.temperature)}',
-                    style: Theme.of(ctx).textTheme.headlineSmall),
-                const SizedBox(height: 12),
-                if (!device.online)
-                  const Text('This thermostat is offline. Controls are disabled.'),
-                setpoint('Heat', device.heat, true),
-                setpoint('Cool', device.cool, false),
+                Row(children: [
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d.name, style: Theme.of(ctx).textTheme.headlineSmall),
+                      Text(d.location, style: Theme.of(ctx).textTheme.bodySmall),
+                    ],
+                  )),
+                  Chip(label: Text(d.online ? 'Online' : 'Offline')),
+                ]),
+                const SizedBox(height: 14),
+                Center(child: Column(children: [
+                  Text('ROOM TEMPERATURE',
+                    style: Theme.of(ctx).textTheme.labelMedium),
+                  Text(d.display(d.temperature),
+                    style: Theme.of(ctx).textTheme.displayMedium),
+                  const SizedBox(height: 4),
+                  Text('System mode: ${d.modeLabel}',
+                    style: Theme.of(ctx).textTheme.bodyMedium),
+                ])),
+                const SizedBox(height: 20),
+                if (d.isCoolMode) adjustment(false),
+                if (d.isHeatMode) adjustment(true),
+                if (d.isAutoMode) ...[
+                  const Text('Auto mode uses two targets',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  adjustment(true),
+                  adjustment(false),
+                ],
+                if (d.isOffMode)
+                  const ListTile(
+                    leading: Icon(Icons.power_settings_new),
+                    title: Text('System is off'),
+                    subtitle: Text('No active temperature target'),
+                  ),
+                if (!d.online)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('Offline: changes are unavailable.'),
+                  ),
                 const SizedBox(height: 16),
-                _modeChoices('System', device.systemModes, device.system,
-                    (mode) => update(
-                        () => _change(device, mode))),
-                const SizedBox(height: 12),
-                _modeChoices('Fan', device.fanModes, device.fan,
-                    (mode) => update(
-                        () => _change(device, mode, fan: true))),
-                if (_busy) const LinearProgressIndicator(),
-                if (_error != null) Text(_error!,
-                    style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+                _modeChoices('System mode', d.systemModes, d.system,
+                  (mode) => apply(() => _change(d, mode))),
+                const SizedBox(height: 18),
+                _modeChoices('Fan mode', d.fanModes, d.fan,
+                  (mode) => apply(() => _change(d, mode, fan: true))),
+                if (_busy) const Padding(
+                  padding: EdgeInsets.only(top: 14),
+                  child: LinearProgressIndicator()),
+                if (_error != null) Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Text(_error!,
+                    style: TextStyle(color: scheme.error))),
               ],
             ),
-          ));
+          );
         },
       ),
     );
