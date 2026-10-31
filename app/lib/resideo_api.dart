@@ -81,6 +81,55 @@ class ResideoDevice {
     );
   }
 
+  /// These labels describe selected modes, not whether HVAC equipment
+  /// is actively heating or cooling. The API's requested mode is not runtime.
+  String get modeLabel {
+    switch (system.toLowerCase()) {
+      case 'cool':
+        return 'Cool';
+      case 'heat':
+        return 'Heat';
+      case 'auto':
+        return 'Auto';
+      case 'off':
+        return 'Off';
+      case 'emergencyheat':
+        return 'Emergency Heat';
+      default:
+        return system.isEmpty ? 'Unknown' : system;
+    }
+  }
+
+  bool get isCoolMode => system.toLowerCase() == 'cool';
+  bool get isHeatMode =>
+      system.toLowerCase() == 'heat' ||
+      system.toLowerCase() == 'emergencyheat';
+  bool get isAutoMode => system.toLowerCase() == 'auto';
+  bool get isOffMode => system.toLowerCase() == 'off';
+  double? get primaryTarget {
+    if (isCoolMode) return cool;
+    if (isHeatMode) return heat;
+    return null; // Auto has two thresholds. Off has no active target.
+  }
+
+  String get primaryTargetLabel {
+    if (isCoolMode) return 'COOL SET TO';
+    if (isHeatMode) return 'HEAT SET TO';
+    if (isAutoMode) return 'AUTO RANGE';
+    if (isOffMode) return 'SYSTEM OFF';
+    return 'SETPOINT';
+  }
+
+  String get targetSummary {
+    if (isCoolMode) return 'Cool set to ${display(cool)}';
+    if (isHeatMode) return 'Heat set to ${display(heat)}';
+    if (isAutoMode) {
+      return 'Heat ${display(heat)} · Cool ${display(cool)}';
+    }
+    if (isOffMode) return 'No active temperature target';
+    return 'Setpoint unavailable';
+  }
+
   String get temperatureUnit => unit.toLowerCase().contains('celsius')
       ? '°C' : '°F';
   double get increment => temperatureUnit == '°C' ? .5 : 1;
