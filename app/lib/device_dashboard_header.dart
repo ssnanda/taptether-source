@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// One compact scope switch instead of a second oversized "My Devices"
-/// panel, location dropdown, duplicate online totals and filter chip.
-/// All Devices is inventory; This Network is reachability on current Wi-Fi.
+/// Three compact shortcuts: saved inventory, current Wi-Fi, and thermostats.
+/// Tooltip and semantics names keep icon-only navigation accessible.
 class DeviceDashboardHeader extends StatelessWidget {
   const DeviceDashboardHeader({
     super.key,
@@ -10,6 +9,7 @@ class DeviceDashboardHeader extends StatelessWidget {
     required this.onWifi,
     required this.locating,
     required this.onScopeChanged,
+    required this.onThermostats,
     required this.onManage,
     required this.onLocate,
   });
@@ -18,53 +18,79 @@ class DeviceDashboardHeader extends StatelessWidget {
   final bool onWifi;
   final bool locating;
   final ValueChanged<bool> onScopeChanged;
+  final VoidCallback onThermostats;
   final VoidCallback onManage;
   final VoidCallback onLocate;
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme;
-    Widget scope(String text, bool all, IconData icon, String id) {
-      final selected = allDevices == all;
-      return Expanded(child: Material(
-        borderRadius: BorderRadius.circular(16),
-        color: selected ? color.primary : color.surfaceContainerLow,
-        child: InkWell(
-          key: ValueKey(id),
-          onTap: () => onScopeChanged(all),
-          borderRadius: BorderRadius.circular(16),
-          child: SizedBox(height: 42, child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 17, color: selected
-                  ? color.onPrimary : color.onSurfaceVariant),
-              const SizedBox(width: 5),
-              Flexible(child: Text(text, maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: selected ? color.onPrimary : color.onSurfaceVariant,
-                  fontSize: 12.5,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                ))),
-            ],
-          )),
+    final colors = Theme.of(context).colorScheme;
+
+    Widget shortcut({
+      required String id,
+      required String label,
+      required IconData icon,
+      required bool selected,
+      required VoidCallback onTap,
+    }) {
+      return Expanded(
+        child: Tooltip(
+          message: label,
+          child: Semantics(
+            label: label,
+            button: true,
+            selected: selected,
+            child: Material(
+              borderRadius: BorderRadius.circular(14),
+              color: selected ? colors.primary : colors.surfaceContainerLow,
+              child: InkWell(
+                key: ValueKey(id),
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox(
+                  height: 42,
+                  child: Center(
+                    child: Icon(icon, size: 22,
+                      color: selected ? colors.onPrimary : colors.onSurfaceVariant),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
-      ));
+      );
     }
+
     return Row(
       key: const ValueKey('device-scope-header'),
       children: [
-        scope('All Devices', true, Icons.devices_rounded,
-            'device-scope-all'),
+        shortcut(
+          id: 'device-scope-all', label: 'All devices',
+          icon: Icons.devices_rounded,
+          selected: allDevices,
+          onTap: () => onScopeChanged(true),
+        ),
         const SizedBox(width: 7),
-        scope('On This Network', false, Icons.wifi_rounded,
-            'device-scope-network'),
+        shortcut(
+          id: 'device-scope-network', label: 'On this network',
+          icon: Icons.wifi_rounded,
+          selected: !allDevices,
+          onTap: () => onScopeChanged(false),
+        ),
+        const SizedBox(width: 7),
+        shortcut(
+          id: 'device-scope-thermostats', label: 'Thermostats',
+          icon: Icons.thermostat_rounded,
+          selected: false,
+          onTap: onThermostats,
+        ),
         const SizedBox(width: 5),
         if (onWifi)
           IconButton(
             key: const ValueKey('locate-saved-devices'),
-            tooltip: locating ? 'Locating saved devices' :
-                'Refresh devices on this network',
+            tooltip: locating
+                ? 'Locating saved devices'
+                : 'Refresh devices on this network',
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints(minWidth: 37, minHeight: 42),
             padding: EdgeInsets.zero,
