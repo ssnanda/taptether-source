@@ -93,12 +93,10 @@ class ResideoDevice {
       throw const FormatException('System mode is not supported by the device.');
     }
     final payload = <String, Object?>{'mode': target};
-    if (heatTarget ?? heat case final double value) {
-      payload['heatSetpoint'] = value;
-    }
-    if (coolTarget ?? cool case final double value) {
-      payload['coolSetpoint'] = value;
-    }
+    final requestedHeat = heatTarget ?? heat;
+    final requestedCool = coolTarget ?? cool;
+    if (requestedHeat != null) payload['heatSetpoint'] = requestedHeat;
+    if (requestedCool != null) payload['coolSetpoint'] = requestedCool;
     if (values['autoChangeoverActive'] is bool) {
       payload['autoChangeoverActive'] = values['autoChangeoverActive'];
     }
