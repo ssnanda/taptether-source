@@ -112,7 +112,60 @@ class ResideoLocalVault {
     }
   }
 
+  static const cacheName = 'taptether.resideo.device-vault.v2.inventory';
+  static const _cachePurpose = 'taptether-resideo-local-inventory-v2';
+
+  /// Cached thermostat status is encrypted under the same device-bound key,
+  /// but stored independently from the OAuth token record.
+  Future<Map<String, dynamic>?> readCache() async {
+    final contents = await _storage.read(key: cacheName);
+    final keyText = await _storage.read(key: keyName);
+    if (contents == null || keyText == null) return null;
+    try {
+      final raw = jsonDecode(contents);
+      if (raw is! Map || raw['version'] != 2) return null;
+      final secret = SecretKey(base64Decode(keyText));
+      try {
+        final clear = await AesGcm.with256bits().decrypt(
+          SecretBox(base64Decode(raw['ciphertext'] as String),
+            nonce: base64Decode(raw['nonce'] as String),
+            mac: Mac(base64Decode(raw['mac'] as String))),
+          secretKey: secret, aad: utf8.encode(_cachePurpose),
+        );
+        final payload = jsonDecode(utf8.decode(clear));
+        if (payload is! Map) return null;
+        return payload.map((k, v) => MapEntry(k.toString(), v));
+      } finally {
+        secret.destroy();
+      }
+    } catch (_) {
+      // A stale or tampered cache is never allowed to block live controls.
+      return null;
+    }
+  }
+
+  Future<void> writeCache(Map<String, dynamic> payload) async {
+    final keyText = await _storage.read(key: keyName);
+    if (keyText == null) return; // No account; do not create a cache.
+    final key = SecretKey(base64Decode(keyText));
+    try {
+      final box = await AesGcm.with256bits().encrypt(
+        utf8.encode(jsonEncode(payload)),
+        secretKey: key, aad: utf8.encode(_cachePurpose),
+      );
+      await _storage.write(key: cacheName, value: jsonEncode({
+        'version': 2,
+        'nonce': base64Encode(box.nonce),
+        'ciphertext': base64Encode(box.cipherText),
+        'mac': base64Encode(box.mac.bytes),
+      }));
+    } finally {
+      key.destroy();
+    }
+  }
+
   Future<void> clear() async {
+    await _storage.delete(key: cacheName);
     await _storage.delete(key: dataName);
     await _storage.delete(key: keyName);
     for (final name in [
