@@ -77,7 +77,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
       _redirect.text = c.redirectUri;
       if (c.usable && !widget.settingsOnly && _devices.isEmpty) {
         final (cached, checkedAt) = await _api.cachedDevices();
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
         if (cached.isNotEmpty) {
           setState(() {
             _devices = cached;
@@ -271,7 +273,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
   /// one Resideo API command, rather than a five-second full scan per tap.
   void _adjustTarget(ResideoDevice tapped, bool heating, int direction) {
     final key = tapped.cacheId;
-    if (_sendingTargets.contains(key)) return;
+    if (_sendingTargets.contains(key)) {
+      return;
+    }
     final current = _devices.where((d) => d.cacheId == key)
         .firstOrNull ?? tapped;
     try {
@@ -299,7 +303,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
   Future<void> _commitTarget(String key) async {
     _targetTimers.remove(key);
     final current = _devices.where((d) => d.cacheId == key).firstOrNull;
-    if (current == null || _sendingTargets.contains(key)) return;
+    if (current == null || _sendingTargets.contains(key)) {
+      return;
+    }
     setState(() => _sendingTargets.add(key));
     try {
       await _api.mode(current, current.system,
@@ -329,7 +335,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   Widget _temperatureControls(ResideoDevice d, bool heating) {
     final value = heating ? d.heat : d.cool;
-    if (value == null || !d.online) return const SizedBox.shrink();
+    if (value == null || !d.online) {
+      return const SizedBox.shrink();
+    }
     final sending = _sendingTargets.contains(d.cacheId);
     return Row(mainAxisSize: MainAxisSize.min, children: [
       IconButton.filledTonal(
@@ -352,7 +360,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
     final chosen = _devices.where((d) =>
         _selected.contains(d.id) && _locations.contains(d.locationId) &&
         d.online).toList();
-    if (chosen.isEmpty || _busy) return;
+    if (chosen.isEmpty || _busy) {
+      return;
+    }
     final kind = fan ? 'fan' : 'system';
     final approved = await showDialog<bool>(
       context: context,
@@ -371,7 +381,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
         ],
       ),
     );
-    if (approved != true || !mounted) return;
+    if (approved != true || !mounted) {
+      return;
+    }
     await _run(() async {
       var changed = 0;
       final failures = <String>[];
@@ -391,7 +403,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
         }
       }
       await _load();
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _notice = 'Updated $changed of ${chosen.length} thermostats.';
         if (failures.isNotEmpty) _error = failures.join(' · ');
@@ -429,7 +443,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
           final scheme = Theme.of(ctx).colorScheme;
 
           Future<void> apply(Future<void> Function() operation) async {
-            if (_busy) return;
+            if (_busy) {
+              return;
+            }
             await _run(operation);
             if (ctx.mounted) redraw(() {});
           }
@@ -738,7 +754,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const ResideoScreen(settingsOnly: true)));
-              if (mounted) await _restore();
+              if (mounted) {
+                await _restore();
+              }
             },
           ),
         ] else ...[
