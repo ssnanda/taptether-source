@@ -28,6 +28,8 @@ class _ResideoScreenState extends State<ResideoScreen> {
   Set<String> _locations = {};
   bool _loading = true, _busy = false, _configured = false;
   bool _showSecrets = false;
+  bool _bulkMode = false;
+  DateTime? _lastChecked;
   bool _manualCode = false;
   String? _pendingState;
   String? _error;
@@ -216,10 +218,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
     setState(() {
       _devices = devices;
       final ids = devices.map((d) => d.id).toSet();
-      if (_selected.isEmpty) {
-        _selected = ids;
-      }
+      // Bulk selection must always be a deliberate user action.
       _selected = _selected.intersection(ids);
+      _lastChecked = DateTime.now();
       final locations = devices.map((d) => d.locationId).toSet();
       if (_locations.isEmpty) {
         _locations = locations;
@@ -238,9 +239,10 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   Future<void> _bulk(String mode, {required bool fan}) => _run(() async {
     final list = _devices.where((d) =>
-        _selected.contains(d.id) && _locations.contains(d.locationId)).toList();
+        _selected.contains(d.id) && _locations.contains(d.locationId) &&
+        d.online).toList();
     if (list.isEmpty) {
-      return;
+      throw const FormatException('Select at least one online thermostat.');
     }
     var changed = 0;
     final failures = <String>[];
