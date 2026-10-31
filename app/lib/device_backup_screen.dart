@@ -32,6 +32,11 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   Map<String, String> _records = {};
   String? _rememberedPassword;
   String? _lastManualLocation;
+  // Never prefill a password field with a secret from Keychain.
+  final _newPassword = TextEditingController();
+  final _confirmPassword = TextEditingController();
+  bool _editingPassword = false;
+  bool _showNewPassword = false;
   bool _usePassword = true;
   List<Map<String, dynamic>> _backups = const [];
 
@@ -76,12 +81,20 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   Future<void> _loadBackupOptions() async {
     try {
       final password = await _secure.read(key: _passwordKey);
+      // Existing automatic backups may already have a saved password.
+      final automaticPassword =
+          await _secure.read(key: _automaticPasswordKey);
+      final savedPassword = password != null && password.length >= 12
+          ? password
+          : automaticPassword != null && automaticPassword.length >= 12
+              ? automaticPassword : null;
       final noPassword = await _secure.read(key: _noPasswordKey);
       final lastLocation = await _secure.read(key: _lastManualKey);
       if (mounted) {
         setState(() {
-          _rememberedPassword = password;
+          _rememberedPassword = savedPassword;
           _usePassword = noPassword != 'true';
+          _editingPassword = _usePassword && savedPassword == null;
           _lastManualLocation = lastLocation;
         });
       }
@@ -154,41 +167,37 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     );
   }
 
-  Future<String?> _password({required bool confirm}) async {
-    final first = TextEditingController();
-    final again = TextEditingController();
+  // A password prompt is appropriate only when importing an older backup
+  // whose password was not saved on this phone. New backup protection is
+  // configured once using the fields on this screen.
+  Future<String?> _requestImportPassword() async {
+    final field = TextEditingController();
     var visible = false;
     final result = await showDialog<String>(
       context: context,
       builder: (dialog) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
-          title: Text(confirm ? 'Encrypt device backup' : 'Unlock backup'),
+          title: const Text('Unlock backup'),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text(confirm
-                ? 'Choose and remember a password of at least 12 characters.'
-                : 'TapTether checked passwords saved on this iPhone, but none unlocked this encrypted backup. Enter the original backup password. Without it, the backup cannot be decrypted.'),
+            const Text('This backup uses a different password. '
+                'Enter the original password to restore it.'),
             const SizedBox(height: 12),
             TextField(
-              controller: first, autofocus: true,
-              obscureText: !visible, enableSuggestions: false,
+              controller: field,
+              autofocus: true,
+              obscureText: !visible,
+              enableSuggestions: false,
               autocorrect: false,
               decoration: const InputDecoration(
-                labelText: 'Backup password', border: OutlineInputBorder()),
-            ),
-            if (confirm) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: again, obscureText: !visible,
-                enableSuggestions: false, autocorrect: false,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm password', border: OutlineInputBorder()),
+                labelText: 'Original backup password',
+                border: OutlineInputBorder(),
               ),
-            ],
+            ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Show password'),
               value: visible,
-              onChanged: (v) => update(() => visible = v ?? false),
+              onChanged: (value) => update(() => visible = value ?? false),
             ),
           ]),
           actions: [
@@ -196,22 +205,17 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
                 child: const Text('Cancel')),
             FilledButton(
               onPressed: () {
-                if (first.text.length < 12) {
-                  return;
+                if (field.text.isNotEmpty) {
+                  Navigator.pop(dialog, field.text);
                 }
-                if (confirm && first.text != again.text) {
-                  return;
-                }
-                Navigator.pop(dialog, first.text);
               },
-              child: Text(confirm ? 'Encrypt' : 'Unlock'),
+              child: const Text('Unlock'),
             ),
           ],
         ),
       ),
     );
-    first.dispose();
-    again.dispose();
+    field.dispose();
     return result;
   }
 
@@ -257,16 +261,40 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
 
   Future<String?> _getExportPassword() async {
     if (!_usePassword) return null;
-    if (_rememberedPassword != null &&
-        _rememberedPassword!.length >= 12) {
-      return _rememberedPassword;
+    final saved = _rememberedPassword;
+    if (saved == null || saved.length < 12) {
+      throw StateError('Set and save a backup password above before backing '
+          'up, or switch off password protection.');
     }
-    final entered = await _password(confirm: true);
-    if (entered == null) return null;
-    await _secure.write(key: _passwordKey, value: entered);
-    _rememberedPassword = entered;
-    return entered;
+    return saved;
   }
+
+  Future<void> _savePassword() => _run(() async {
+    final proposed = _newPassword.text;
+    if (proposed.length < 12) {
+      throw StateError('Use a backup password of at least 12 characters.');
+    }
+    if (proposed != _confirmPassword.text) {
+      throw StateError('Backup passwords do not match.');
+    }
+    // Persist once in Keychain. Both manual exports and automatic snapshots
+    // reuse it without showing the setup dialog on each backup.
+    await _secure.write(key: _passwordKey, value: proposed);
+    await _secure.delete(key: _noPasswordKey);
+    _rememberedPassword = proposed;
+    _usePassword = true;
+    _editingPassword = false;
+    _newPassword.clear();
+    _confirmPassword.clear();
+    if (_auto.enabled) {
+      await _auto.setProtection(proposed);
+      if (!await _auto.backupNow(force: true) &&
+          _auto.lastError != null) {
+        throw StateError(_auto.lastError!);
+      }
+    }
+    if (mounted) setState(() {});
+  });
 
   Future<void> _toggleProtection(bool enabled) => _run(() async {
     if (enabled == _usePassword) return;
@@ -275,39 +303,51 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         context: context,
         builder: (dialog) => AlertDialog(
           title: const Text('Disable password protection?'),
-          content: const Text('Without a password, the backup file is not '
-              'encrypted. Anyone with it could access your device '
-              'credentials and SSH keys.'),
+          content: const Text('Backups without a password are NOT encrypted. '
+              'Anyone who can access a backup file can read pairing '
+              'credentials, private keys, and device tokens.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialog, false),
                 child: const Text('Cancel')),
             FilledButton(onPressed: () => Navigator.pop(dialog, true),
-                child: const Text('Continue')),
+                child: const Text('Use without encryption')),
           ],
         ),
       );
       if (approved != true || !mounted) return;
       await _secure.write(key: _noPasswordKey, value: 'true');
+      _usePassword = false;
+      _editingPassword = false;
+      _newPassword.clear();
+      _confirmPassword.clear();
     } else {
-      final newPassword = await _getExportPasswordForChange();
-      if (newPassword == null || !mounted) return;
+      // No modal: show the inline password form until the password is saved.
+      if (_rememberedPassword == null ||
+          _rememberedPassword!.length < 12) {
+        if (mounted) setState(() => _editingPassword = true);
+        return;
+      }
       await _secure.delete(key: _noPasswordKey);
+      _usePassword = true;
     }
-    _usePassword = enabled;
     if (_auto.enabled) {
       await _auto.setProtection(_usePassword ? _rememberedPassword : null);
-      await _auto.backupNow(force: true);
+      if (!await _auto.backupNow(force: true) &&
+          _auto.lastError != null) {
+        throw StateError(_auto.lastError!);
+      }
     }
     if (mounted) setState(() {});
   });
 
   Future<String?> _getExportPasswordForChange() async {
-    if (_rememberedPassword != null) return _rememberedPassword;
-    final entered = await _password(confirm: true);
-    if (entered == null) return null;
-    await _secure.write(key: _passwordKey, value: entered);
-    _rememberedPassword = entered;
-    return entered;
+    final saved = _rememberedPassword;
+    if (saved == null || saved.length < 12) {
+      throw StateError('To safely restore over your current devices, first '
+          'save a backup password in the password section above. '
+          'The required Pre-Restore safety copy must be encrypted.');
+    }
+    return saved;
   }
 
   Future<void> _export() => _run(() async {
@@ -512,7 +552,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
         verified = restored;
       } else {
         if (!mounted) return;
-        final password = await _password(confirm: false);
+        final password = await _requestImportPassword();
         if (password == null) return;
         verified = await DeviceBackupCodec.restoreFile(bytes,
             password: password);
@@ -608,6 +648,8 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
   @override
   void dispose() {
     _auto.removeListener(_automaticChanged);
+    _newPassword.dispose();
+    _confirmPassword.dispose();
     super.dispose();
   }
 
@@ -643,13 +685,82 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
           ),
           const Divider(height: 22),
           SwitchListTile(
+            key: const ValueKey('backup-password-protection'),
             contentPadding: EdgeInsets.zero,
-            title: const Text('Password protection'),
-            subtitle: _usePassword
-                ? null : const Text('Backup file is not encrypted'),
+            title: const Text('Encrypt backups (optional)'),
+            subtitle: Text(_usePassword
+                ? 'One saved password protects every new backup'
+                : 'Unencrypted backups expose saved device credentials'),
             value: _usePassword,
-            onChanged: _busy ? null : _toggleProtection,
+            onChanged: _busy || _auto.busy ? null : _toggleProtection,
           ),
+          if (_usePassword && _rememberedPassword != null &&
+              !_editingPassword)
+            Row(children: [
+              const Icon(Icons.lock_rounded, size: 18),
+              const SizedBox(width: 7),
+              const Expanded(child: Text('Password saved securely')),
+              TextButton(
+                key: const ValueKey('change-backup-password'),
+                onPressed: _busy ? null : () =>
+                    setState(() => _editingPassword = true),
+                child: const Text('Change'),
+              ),
+            ]),
+          if (_editingPassword ||
+              (_usePassword && _rememberedPassword == null)) ...[
+            const SizedBox(height: 8),
+            const Text('Set once here. TapTether reuses this password for '
+                'manual and automatic backups. Old encrypted backups keep '
+                'their original password.'),
+            const SizedBox(height: 10),
+            TextField(
+              key: const ValueKey('backup-password-input'),
+              controller: _newPassword,
+              obscureText: !_showNewPassword,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Backup password (12+ characters)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 9),
+            TextField(
+              key: const ValueKey('backup-password-confirm'),
+              controller: _confirmPassword,
+              obscureText: !_showNewPassword,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Confirm backup password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            Row(children: [
+              Checkbox(
+                value: _showNewPassword,
+                onChanged: (value) => setState(
+                    () => _showNewPassword = value ?? false),
+              ),
+              const Text('Show password'),
+              const Spacer(),
+              if (_rememberedPassword != null)
+                TextButton(
+                  onPressed: _busy ? null : () => setState(() {
+                    _editingPassword = false;
+                    _newPassword.clear();
+                    _confirmPassword.clear();
+                  }),
+                  child: const Text('Cancel'),
+                ),
+              FilledButton(
+                key: const ValueKey('save-backup-password'),
+                onPressed: _busy || _auto.busy ? null : _savePassword,
+                child: const Text('Save password'),
+              ),
+            ]),
+          ],
           const SizedBox(height: 14),
           if (_busy || _auto.busy) const LinearProgressIndicator(),
           if (_error != null) Padding(
@@ -736,9 +847,9 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
                 key: const ValueKey('automatic-backup'),
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Back up automatically on changes'),
-                subtitle: const Text('Encrypted backup after saved devices '
-                    'or keys change, while TapTether is open. '
-                    'Requires a selected Files folder.'),
+                subtitle: const Text('After saved devices or keys change '
+                    'while TapTether is open. Uses the protection setting '
+                    'above and your selected Files folder.'),
                 value: _auto.enabled,
                 onChanged: _busy || _auto.busy
                     ? null : _toggleAutomatic,
