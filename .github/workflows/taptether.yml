@@ -51,6 +51,7 @@ on:
       - 'app/lib/device_visibility.dart'
       - 'app/test/device_dashboard_header_test.dart'
       - 'app/test/device_visibility_test.dart'
+      - 'app/test/widget_test.dart'
       - 'bin/4-test-saved-devices-dashboard.py'
       - 'app/lib/main.dart'
       - 'app/lib/appearance.dart'
