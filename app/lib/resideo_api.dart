@@ -44,7 +44,9 @@ class ResideoDevice {
       Object? item, String locationId, String location) {
     final raw = _map(item);
     final id = raw['deviceID']?.toString() ?? '';
-    if (id.isEmpty || id.length > 180) return null;
+    if (id.isEmpty || id.length > 180) {
+      return null;
+    }
     final kind = (raw['deviceClass'] ?? raw['deviceType'])
         ?.toString().toLowerCase();
     if (kind != null && kind.isNotEmpty && !kind.contains('thermostat')) {
@@ -95,8 +97,12 @@ class ResideoDevice {
     final payload = <String, Object?>{'mode': target};
     final requestedHeat = heatTarget ?? heat;
     final requestedCool = coolTarget ?? cool;
-    if (requestedHeat != null) payload['heatSetpoint'] = requestedHeat;
-    if (requestedCool != null) payload['coolSetpoint'] = requestedCool;
+    if (requestedHeat != null) {
+      payload['heatSetpoint'] = requestedHeat;
+    }
+    if (requestedCool != null) {
+      payload['coolSetpoint'] = requestedCool;
+    }
     if (values['autoChangeoverActive'] is bool) {
       payload['autoChangeoverActive'] = values['autoChangeoverActive'];
     }
@@ -140,15 +146,23 @@ List<ResideoDevice> parseResideoLocations(Object? payload) {
   }
   final result = <String, ResideoDevice>{};
   for (final location in payload) {
-    if (location is! Map) continue;
+    if (location is! Map) {
+      continue;
+    }
     final locationId = location['locationID']?.toString() ?? '';
     final locationName = location['name']?.toString() ?? 'Location';
-    if (locationId.isEmpty) continue;
+    if (locationId.isEmpty) {
+      continue;
+    }
     final devices = location['devices'];
-    if (devices is! List) continue;
+    if (devices is! List) {
+      continue;
+    }
     for (final item in devices) {
       final device = ResideoDevice.fromApi(item, locationId, locationName);
-      if (device != null) result['$locationId:${device.id}'] = device;
+      if (device != null) {
+        result['$locationId:${device.id}'] = device;
+      }
     }
   }
   final devices = result.values.toList();
@@ -357,7 +371,9 @@ class ResideoConnection {
   }
 
   Future<ResideoCredentials> _token(ResideoCredentials c) async {
-    if (c.accessToken.isNotEmpty) return c;
+    if (c.accessToken.isNotEmpty) {
+      return c;
+    }
     if (c.refreshToken.isEmpty || c.apiSecret.isEmpty) {
       throw const ResideoApiError('Enter a Honeywell OAuth access token in settings.');
     }
@@ -378,7 +394,9 @@ class ResideoConnection {
       return await _request(uri, bearer: current.accessToken, json: body);
     } on ResideoApiError catch (error) {
       if (error.code != 401 || current.refreshToken.isEmpty ||
-          current.apiSecret.isEmpty) rethrow;
+          current.apiSecret.isEmpty) {
+        rethrow;
+      }
       current = await _refresh(current);
       return _request(uri, bearer: current.accessToken, json: body);
     }
@@ -402,14 +420,18 @@ class ResideoConnection {
     }
     final raw = await _call(locationUrl(c.apiKey));
     final listed = parseResideoLocations(raw);
-    if (raw is! List) return listed;
+    if (raw is! List) {
+      return listed;
+    }
     // Fetch complete, current thermostat settings per location when available.
     // No background polling or LAN scan is involved.
     final merged = <String, ResideoDevice>{
       for (final d in listed) '${d.locationId}:${d.id}': d,
     };
     for (final item in raw) {
-      if (item is! Map || item['locationID'] == null) continue;
+      if (item is! Map || item['locationID'] == null) {
+        continue;
+      }
       final locationId = item['locationID'].toString();
       final locationName = item['name']?.toString() ?? 'Location';
       try {
@@ -417,14 +439,22 @@ class ResideoConnection {
           apiHost, '/v2/devices/thermostats',
           {'apikey': c.apiKey, 'locationId': locationId},
         ));
-        if (result is! List) continue;
+        if (result is! List) {
+          continue;
+        }
         for (final device in result) {
           final parsed = ResideoDevice.fromApi(device, locationId, locationName);
-          if (parsed != null) merged['$locationId:${parsed.id}'] = parsed;
+          if (parsed != null) {
+            merged['$locationId:${parsed.id}'] = parsed;
+          }
         }
       } on ResideoApiError catch (error) {
-        if (merged.isEmpty) rethrow;
-        if (error.code == 401) rethrow;
+        if (merged.isEmpty) {
+          rethrow;
+        }
+        if (error.code == 401) {
+          rethrow;
+        }
       }
     }
     final devices = merged.values.toList()
