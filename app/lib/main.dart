@@ -2771,14 +2771,14 @@ class _RemoteScreenState extends State<RemoteScreen>
                   },
                 ),
                 ListTile(
-                  key: const ValueKey('drawer-resideo-thermostats'),
+                  key: const ValueKey('drawer-resideo-api-settings'),
                   leading: const Icon(Icons.thermostat_outlined),
-                  title: const Text('Resideo Thermostats'),
-                  subtitle: const Text('Optional cloud HVAC control via AJOps'),
+                  title: const Text('Resideo API'),
+                  subtitle: const Text('Manage your optional AJOps connection'),
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => const ResideoScreen()));
+                      builder: (_) => const ResideoScreen(settingsOnly: true)));
                   },
                 ),
               ],
@@ -2999,6 +2999,8 @@ class _RemoteScreenState extends State<RemoteScreen>
           onManage: openDeviceManager,
           onScopeChanged: (all) =>
               setState(() => _showAllDevices = all),
+          onThermostats: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const ResideoScreen())),
           onLocate: _refreshDevicesManually,
         ),
         const SizedBox(height: 8),
