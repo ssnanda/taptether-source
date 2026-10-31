@@ -124,7 +124,7 @@ assert "  mobile-build-and-publish:" in workflow
 assert "bash bin/6-tt-fetch-existing-agents.sh" in workflow
 assert "bash bin/6-tt-publish-mobile-only.sh" in workflow
 assert "TAPTETHER_USE_EXISTING_AGENT_RELEASE: '1'" in workflow
-assert "[publish mobile 210]" in workflow
+assert "[publish mobile 211]" in workflow
 reuse = (ROOT / "bin" / "6-tt-fetch-existing-agents.sh").read_text()
 mobile_publisher = (ROOT / "bin" / "6-tt-publish-mobile-only.sh").read_text()
 assert "gh release download current" in reuse
