@@ -43,8 +43,11 @@ assert 'savedComputers.every((d) => _online[d.id] == true)' in recovery
 assert '_reconcileScannedAgent(address, passive: true)' in recovery
 assert 'if (_probingOfflineAgents)' not in recovery
 assert "locationFilter: 'all'" in main
-assert "'On This Network'" in (root / 'app/lib/device_dashboard_header.dart').read_text()
-assert "'All Devices'" in (root / 'app/lib/device_dashboard_header.dart').read_text()
+header = (root / 'app/lib/device_dashboard_header.dart').read_text()
+assert "label: 'On this network'" in header
+assert "label: 'All devices'" in header
+assert "label: 'Thermostats'" in header
+assert "id: 'device-scope-thermostats'" in header
 # Dashboard statuses use compact semantic icons, not flashing prose.
 assert "Checking TapTether agent addresses on this Wi-Fi" not in main
 assert "Tooltip(" in main
