@@ -326,6 +326,23 @@ class ResideoConnection {
     return (List.of(devices), _recentAt);
   }
 
+  Future<void> rememberUpdated(ResideoDevice updated) async {
+    if (_recentDevices == null) return;
+    final devices = [
+      for (final d in _recentDevices!)
+        if (d.cacheId == updated.cacheId) updated else d,
+    ];
+    _recentDevices = devices;
+    try {
+      await _vault.writeCache({
+        'checkedAt': (_recentAt ?? DateTime.now()).toIso8601String(),
+        'devices': devices.map((d) => d.toCacheRecord()).toList(),
+      });
+    } catch (_) {
+      // Successful device control must not depend on cache storage.
+    }
+  }
+
   Future<void> _remember(List<ResideoDevice> devices) async {
     _recentDevices = List.of(devices);
     _recentAt = DateTime.now();
