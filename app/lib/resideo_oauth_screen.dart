@@ -36,7 +36,9 @@ class _ResideoOAuthScreenState extends State<ResideoOAuthScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (progress) {
-          if (mounted) setState(() => _progress = progress);
+          if (mounted) {
+            setState(() => _progress = progress);
+          }
         },
         onNavigationRequest: (request) {
           final uri = Uri.tryParse(request.url);
@@ -46,22 +48,32 @@ class _ResideoOAuthScreenState extends State<ResideoOAuthScreen> {
               uri.host == redirect.host &&
               uri.port == redirect.port &&
               uri.path == redirect.path;
-          if (!matches) return NavigationDecision.navigate;
-          if (_completed) return NavigationDecision.prevent;
+          if (!matches) {
+            return NavigationDecision.navigate;
+          }
+          if (_completed) {
+            return NavigationDecision.prevent;
+          }
           try {
             final code = ResideoConnection.authorizationCode(
               request.url, redirect: widget.callbackUrl, state: widget.state);
             _completed = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) Navigator.of(context).pop(code);
+              if (mounted) {
+                Navigator.of(context).pop(code);
+              }
             });
           } on FormatException catch (error) {
-            if (mounted) setState(() => _error = error.message);
+            if (mounted) {
+              setState(() => _error = error.message);
+            }
           }
           return NavigationDecision.prevent;
         },
         onWebResourceError: (error) {
-          if (error.isForMainFrame != true || !mounted) return;
+          if (error.isForMainFrame != true || !mounted) {
+            return;
+          }
           setState(() => _error =
               'Resideo sign-in could not load. Try the Safari option below.');
         },
@@ -76,7 +88,9 @@ class _ResideoOAuthScreenState extends State<ResideoOAuthScreen> {
       setState(() => _error = 'Could not open Resideo in Safari.');
     }
     // Settings retains a paste-the-redirect fallback for external browsers.
-    if (opened && mounted) Navigator.of(context).pop();
+    if (opened && mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   @override
