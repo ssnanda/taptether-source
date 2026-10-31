@@ -33,9 +33,13 @@ class ResideoLocalVault {
         'apiKey', 'apiSecret', 'accessToken', 'refreshToken', 'redirectUri',
       ]) {
         final value = await _legacy.read(key: '$legacyPrefix$name');
-        if (value != null) old[name] = value;
+        if (value != null) {
+          old[name] = value;
+        }
       }
-      if (old.isEmpty) return null;
+      if (old.isEmpty) {
+        return null;
+      }
       await write(old);
       for (final name in [
         'apiKey', 'apiSecret', 'accessToken', 'refreshToken', 'redirectUri',
