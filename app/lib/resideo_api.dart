@@ -402,9 +402,13 @@ class ResideoConnection {
     final stillValid = c.accessToken.isNotEmpty &&
         (expiry == null || expiry.isAfter(
             DateTime.now().toUtc().add(const Duration(minutes: 2))));
-    if (stillValid) return c;
+    if (stillValid) {
+      return c;
+    }
     if (c.refreshToken.isEmpty || c.apiSecret.isEmpty) {
-      if (c.accessToken.isNotEmpty && expiry == null) return c;
+      if (c.accessToken.isNotEmpty && expiry == null) {
+        return c;
+      }
       throw const ResideoApiError(
           'Resideo authorization expired. Sign in to Resideo again.');
     }
@@ -415,7 +419,9 @@ class ResideoConnection {
   /// iOS can suspend inactive apps, so this does not promise background renewal.
   Future<void> renewIfNeeded() async {
     final c = await credentials();
-    if (c.usable) await _token(c);
+    if (c.usable) {
+      await _token(c);
+    }
   }
 
   Future<ResideoCredentials> _refresh(ResideoCredentials c) async {
