@@ -1,6 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/resideo_api.dart';
+import 'package:taptether/resideo_local_vault.dart';
 import 'package:taptether/device_backup.dart';
 
 void main() {
@@ -159,4 +160,63 @@ void main() {
       throwsFormatException,
     );
   });
+  test('Room temperature differs from the selected cool/heat setpoint', () {
+    final cool = ResideoDevice.fromApi({
+      ...thermostat, 'changeableValues': {
+        ...thermostat['changeableValues'] as Map<String, dynamic>,
+        'mode': 'Cool',
+        'heatSetpoint': 66, 'coolSetpoint': 80,
+      },
+      'indoorTemperature': 70,
+    }, '9318', '9318')!;
+    expect(cool.display(cool.temperature), '70°F');
+    expect(cool.primaryTargetLabel, 'COOL SET TO');
+    expect(cool.display(cool.primaryTarget), '80°F');
+    expect(cool.modeLabel, 'Cool');
+    final heat = cool.withTarget(heatTarget: 69);
+    expect(heat.heat, 69);
+    expect(heat.cool, 80);
+    expect(heat.temperature, 70);
+    expect(heat.adjustedSetpoint(heating: false, direction: -1), 79);
+  });
+
+  test('Off mode displays no active target; Auto displays both', () {
+    final off = ResideoDevice.fromApi(thermostat, 'home', 'Home')!;
+    expect(off.modeLabel, 'Off');
+    expect(off.primaryTarget, isNull);
+    expect(off.targetSummary, 'No active temperature target');
+    final auto = ResideoDevice.fromApi({
+      ...thermostat, 'changeableValues': {
+        ...thermostat['changeableValues'] as Map<String, dynamic>,
+        'mode': 'Auto',
+      }
+    }, 'home', 'Home')!;
+    expect(auto.primaryTarget, isNull);
+    expect(auto.targetSummary, contains('Heat'));
+    expect(auto.targetSummary, contains('Cool'));
+  });
+
+  test('Encrypted local inventory restores without network and clears on sign-out',
+      () async {
+    const storage = FlutterSecureStorage();
+    final vault = ResideoLocalVault(storage: storage);
+    await vault.write({'apiKey': 'SAMPLE', 'apiSecret': 'ONLY_LOCAL'});
+    final d = ResideoDevice.fromApi(thermostat, 'location1', 'Home')!;
+    await vault.writeCache({
+      'checkedAt': '2026-10-31T20:00:00Z',
+      'devices': [d.toCacheRecord()],
+    });
+    final cache = await vault.readCache();
+    expect(cache?['devices'], isA<List>());
+    final restored = ResideoDevice.fromCacheRecord(
+        (cache!['devices'] as List).first)!;
+    expect(restored.cacheId, d.cacheId);
+    expect(restored.temperature, 73);
+    expect(restored.fan, 'Circulate');
+    expect((await storage.readAll()).toString(),
+        isNot(contains('Meeting Room')));
+    await vault.clear();
+    expect(await vault.readCache(), isNull);
+  });
+
 }
