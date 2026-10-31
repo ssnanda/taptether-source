@@ -19,6 +19,21 @@ void main() {
     expect(preview.groups.toString(), isNot(contains('SECRET_')));
   });
 
+  test('preview lists Xbox and ThinQ names without exposing cloud secrets', () {
+    final preview = BackupPreview.fromRecords({
+      'taptether.xbox.consoles.v1':
+          '[{"name":"Xbox Series X","certificateSha256":"SECRET_CERT"}]',
+      'taptether.lg.thinq.enabled.v1':
+          '[{"name":"Refrigerator","id":"SECRET_DEVICE_ID"}]',
+      'taptether.lg.thinq.pat.v1': 'SECRET_LG_TOKEN',
+    });
+    expect(preview.deviceCount, 2);
+    expect(preview.groups['Xbox consoles'], ['Xbox Series X']);
+    expect(preview.groups['LG appliances'], ['Refrigerator']);
+    expect(preview.otherRecordCount, 1);
+    expect(preview.groups.toString(), isNot(contains('SECRET_')));
+  });
+
   test('invalid JSON cannot expose private backup records', () {
     final preview = BackupPreview.fromRecords({
       'taptether.trusted.computers.v1': 'SECRET_RAW_DATA',
