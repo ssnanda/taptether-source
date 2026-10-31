@@ -120,6 +120,14 @@ class DeviceBackupCodec {
       key == 'taptether.trusted.computers.v1' ||
       key == 'taptether.lg.webos.pairings.v1' ||
       key == 'taptether.samsung.tv.pairings.v1' ||
+      key == 'taptether.xbox.consoles.v1' ||
+      // ThinQ credentials are sensitive: protected automatic backups
+      // encrypt them along with the rest of the saved pairing records.
+      key == 'taptether.lg.thinq.pat.v1' ||
+      key == 'taptether.lg.thinq.country.v1' ||
+      key == 'taptether.lg.thinq.client-id.v1' ||
+      key == 'taptether.lg.thinq.enabled.v1' ||
+      key == 'taptether.lg.thinq.local-names.v1' ||
       key == 'taptether.device.ed25519.v1' ||
       key == 'taptether.network.locations.v1' ||
       key == 'taptether.appearance.theme.v1' ||

@@ -17,6 +17,8 @@ class BackupPreview {
       'taptether.trusted.computers.v1': 'Computers',
       'taptether.lg.webos.pairings.v1': 'LG TVs',
       'taptether.samsung.tv.pairings.v1': 'Samsung TVs',
+      'taptether.xbox.consoles.v1': 'Xbox consoles',
+      'taptether.lg.thinq.enabled.v1': 'LG appliances',
     };
     final groups = <String, List<String>>{};
     var deviceRecords = 0;

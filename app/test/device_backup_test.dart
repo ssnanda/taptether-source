@@ -105,9 +105,16 @@ void main() {
           'trusted-server-identity',
       'taptether.auto-backup.password.v1': 'DO-NOT-EXPORT',
       'taptether.auto-backup.last-digest.v1': 'DO-NOT-EXPORT',
+      'taptether.xbox.consoles.v1': '[{"name":"Living Room Xbox"}]',
+      'taptether.lg.thinq.pat.v1': 'secret-lg-token',
+      'taptether.lg.thinq.country.v1': 'US',
+      'taptether.lg.thinq.enabled.v1': '[{"name":"Refrigerator"}]',
     };
     final records = DeviceBackupCodec.selectKeys(values);
-    expect(records.length, 5);
+    expect(records.length, 9);
+    expect(records['taptether.xbox.consoles.v1'], contains('Xbox'));
+    expect(records['taptether.lg.thinq.enabled.v1'], contains('Refrigerator'));
+    expect(records['taptether.lg.thinq.pat.v1'], 'secret-lg-token');
     expect(records['taptether.ssh.keys.pem.v2.k1'], contains('PRIVATE KEY'));
     expect(records.containsKey('taptether.auto-backup.password.v1'), isFalse);
   });
