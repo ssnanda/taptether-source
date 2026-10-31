@@ -175,7 +175,11 @@ class ResideoConnection {
 }
 
 class ResideoScreen extends StatefulWidget {
-  const ResideoScreen({super.key});
+  const ResideoScreen({super.key, this.settingsOnly = false});
+
+  /// Only the API Integrations settings entry may display account fields.
+  final bool settingsOnly;
+
   @override
   State<ResideoScreen> createState() => _ResideoScreenState();
 }
@@ -366,10 +370,11 @@ class _ResideoScreenState extends State<ResideoScreen> {
           d.location.isEmpty ? d.locationId : d.location,
     };
     return Scaffold(
-      appBar: AppBar(title: const Text('Resideo Thermostats'), actions: [
-        if (_connected) IconButton(tooltip: 'Refresh',
+      appBar: AppBar(title: Text(widget.settingsOnly
+          ? 'Resideo API' : 'Thermostats'), actions: [
+        if (_connected && !widget.settingsOnly) IconButton(tooltip: 'Refresh',
           icon: const Icon(Icons.refresh), onPressed: _busy ? null : _refresh),
-        if (_connected) IconButton(tooltip: 'Disconnect',
+        if (_connected && widget.settingsOnly) IconButton(tooltip: 'Disconnect',
           icon: const Icon(Icons.logout_outlined),
           onPressed: _busy ? null : _disconnect),
       ]),
@@ -379,14 +384,29 @@ class _ResideoScreenState extends State<ResideoScreen> {
           padding: const EdgeInsets.all(14), child: Row(children: [
             const Icon(Icons.thermostat),
             const SizedBox(width: 12),
-            const Expanded(child: Text(
-              'Optional cloud control using your existing AJOps Resideo connection.')),
+            Expanded(child: Text(widget.settingsOnly
+              ? 'Optional Resideo connection. Credentials are configured here, not on the thermostat dashboard.'
+              : 'Control your Resideo thermostats, even away from your local network.')),
           ]),
         )),
         if (_error != null) Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Text(_error!, style: TextStyle(color: theme.colorScheme.error))),
-        if (!_connected) ...[
+        if (!_connected && !widget.settingsOnly) ...[
+          const SizedBox(height: 16),
+          const Text('Resideo is not connected. Configure it under Settings & More → API Integrations.'),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const ValueKey('resideo-open-api-settings'),
+            icon: const Icon(Icons.settings_outlined),
+            label: const Text('Open Resideo API settings'),
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const ResideoScreen(settingsOnly: true)));
+              if (mounted) await _restore();
+            },
+          ),
+        ] else if (!_connected && widget.settingsOnly) ...[
           const SizedBox(height: 12),
           TextField(controller: _url, keyboardType: TextInputType.url,
             autocorrect: false, decoration: const InputDecoration(
@@ -404,6 +424,20 @@ class _ResideoScreenState extends State<ResideoScreen> {
           FilledButton.icon(onPressed: _busy ? null : _connect,
             icon: const Icon(Icons.link), label: const Text('Connect')),
           const Text('Password is never saved; the session stays in secure storage.'),
+        ] else if (widget.settingsOnly) ...[
+          const SizedBox(height: 14),
+          const ListTile(
+            leading: Icon(Icons.check_circle_outline_rounded, color: Colors.green),
+            title: Text('AJOps account connected'),
+            subtitle: Text('Your access token is stored securely on this device.'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            key: const ValueKey('resideo-api-disconnect'),
+            onPressed: _busy ? null : _disconnect,
+            icon: const Icon(Icons.logout_outlined),
+            label: const Text('Disconnect Resideo'),
+          ),
         ] else ...[
           if (!_ready) const Padding(padding: EdgeInsets.all(12),
             child: Text('Resideo is not configured on AJCore.')),
