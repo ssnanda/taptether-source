@@ -46,7 +46,11 @@ void main() {
     expect(find.text('SSH Keys'), findsOneWidget);
     expect(find.text('Security & Appearance'), findsOneWidget);
     expect(find.text('API Integrations'), findsOneWidget);
+    await tester.ensureVisible(find.text('API Integrations'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('API Integrations'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('LG ThinQ'));
     await tester.pumpAndSettle();
     expect(find.text('LG ThinQ'), findsOneWidget);
     expect(find.text('About TapTether'), findsOneWidget);
