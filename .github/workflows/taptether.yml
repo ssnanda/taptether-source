@@ -3,6 +3,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # Full releases require explicit workflow_dispatch task=release after device installation.
 # Build-only: [build ipa] on main produces downloadable IPA/APK/agent CI artifacts.
 # LG TV MAC discovery (0.8.35): release remains manual, after device installation.
+# Resideo 207: retry publication after correcting the Flutter analyzer warnings.
 # One-time exception: [publish 207] in a main squash-merge commit triggers version
 # 0.8.46+207 only: configure optional backup password once on Device Backups.
 # VERSION commits never automatically publish (explicit one-time 207 exception). Agent-only pushes remain supported.
