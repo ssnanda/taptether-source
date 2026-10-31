@@ -23,7 +23,7 @@ void main() {
       expect(find.byKey(const ValueKey('manage-saved-devices')),
           findsOneWidget);
       expect(find.text('All Devices'), findsOneWidget);
-      expect(find.text('Settings & backups'), findsOneWidget);
+      expect(find.text('Device Backup'), findsOneWidget);
     }
     expect(find.text('Pair with a computer agent'), findsNothing);
     expect(find.text('Scan IPs'), findsNothing);
@@ -37,6 +37,7 @@ void main() {
     await tester.tap(find.byTooltip('Open navigation'));
     await tester.pumpAndSettle();
     expect(find.text('Devices'), findsOneWidget);
+    expect(find.text('Device Backup'), findsOneWidget);
     expect(find.text('Settings & More'), findsOneWidget);
     await tester.tap(find.text('Settings & More'));
     await tester.pumpAndSettle();
@@ -54,6 +55,19 @@ void main() {
     expect(find.text('Add & Discover'), findsNothing);
     expect(find.text('Discover computers'), findsNothing);
     expect(find.text('Install Agent'), findsNothing);
+  });
+
+  testWidgets('Device Backup opens from drawer, not Security & Appearance',
+      (tester) async {
+    await tester.pumpWidget(const TapTetherApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Open navigation'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('drawer-device-backups')));
+    await tester.pumpAndSettle();
+    expect(find.text('Device backups'), findsOneWidget);
+    expect(find.text('Back up now'), findsOneWidget);
+    expect(find.text('Restore from Files'), findsOneWidget);
   });
 
   testWidgets('Light appearance is used by default', (tester) async {
