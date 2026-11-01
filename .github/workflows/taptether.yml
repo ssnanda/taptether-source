@@ -7,6 +7,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # Resideo 210: user-entered Consumer Key/Secret, callback, and in-app OAuth.
 # IPA-only release: preserve existing APK and desktop agent artifacts.
 # 0.8.58+219: polished thermostat heading; iPhone-only build, reuse published Android asset.
+# Follow-up: check corrected IPA-only release assertions before packaging.
 # 0.8.51+212: saved thermostat layout, grouped comfort data and app-only release.
 # 0.8.52+213: validate screenshot-style thermostat UI before app-only release.
 # Revalidate after lint fixes, then publish app without rebuilding agents.
