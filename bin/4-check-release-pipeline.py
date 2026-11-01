@@ -127,7 +127,8 @@ mobile_section = workflow.split("  mobile-build-and-publish:",1)[1].split("  age
 assert "bin/2a-tt-apk.sh" not in mobile_section
 assert "Configure Java for Android" not in mobile_section
 assert "TAPTETHER_IPA_ONLY: '1'" in mobile_section
-assert '"$STAGE/TapTether.apk"' not in mobile_publisher
+assert '"$STAGE/TapTether.apk"' not in (
+    ROOT / "bin" / "6-tt-publish-mobile-only.sh").read_text()
 assert "TAPTETHER_USE_EXISTING_AGENT_RELEASE: '1'" in workflow
 assert "[publish mobile]" in workflow
 reuse = (ROOT / "bin" / "6-tt-fetch-existing-agents.sh").read_text()
@@ -136,7 +137,8 @@ assert "gh release download current" in reuse
 assert "TAPTETHER_AGENT_PACKAGE_VERSION" in stage
 assert "gh release upload" in mobile_publisher
 assert 'TapTetherAgent-' in mobile_publisher
-assert 'after_agents' in mobile_publisher
+assert 'remaining_assets' in mobile_publisher
+assert 'previous_assets' in mobile_publisher
 assert 'gh release delete' not in mobile_publisher
 assert 'bash bin/2b-tt-ubuntu.sh' not in workflow.split("  mobile-build-and-publish:",1)[1].split("  agent-only-validate:",1)[0]
 assert 'bash bin/2b-tt-macos.sh' not in workflow.split("  mobile-build-and-publish:",1)[1].split("  agent-only-validate:",1)[0]
