@@ -857,32 +857,62 @@ class _ResideoScreenState extends State<ResideoScreen> {
     );
   }
 
+
   Widget _dashboard() {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final query = _search.text.trim().toLowerCase();
-    final visible = _devices.where((d) =>
-        _locations.contains(d.locationId) &&
-        (query.isEmpty || d.name.toLowerCase().contains(query) ||
-          d.location.toLowerCase().contains(query))).toList();
-    final selected = visible.where((d) => _selected.contains(d.id)).toList();
     final locations = <String, String>{
       for (final d in _devices)
         d.locationId: d.location.isEmpty ? d.locationId : d.location,
     };
-    final colors = theme.colorScheme;
+    final orderedLocations = _orderedLocations(locations.keys)
+        .where(_locations.contains).toList();
+    final visible = _orderedDevices(_devices.where((d) =>
+        _locations.contains(d.locationId) &&
+        (query.isEmpty || d.name.toLowerCase().contains(query) ||
+          d.location.toLowerCase().contains(query))));
+    final selected = visible.where((d) => _selected.contains(d.id)).toList();
 
     Widget deviceCard(ResideoDevice d) {
-      final directControl = d.online && (d.isCoolMode || d.isHeatMode) &&
+      final cooling = d.isCoolMode;
+      final heating = d.isHeatMode;
+      final tint = cooling ? const Color(0xFFE8F4FF)
+          : heating ? const Color(0xFFFFEEE5) : scheme.surface;
+      final accent = cooling ? const Color(0xFF1669BC)
+          : heating ? const Color(0xFFBC542B) : scheme.primary;
+      final directControl = d.online && (cooling || heating) &&
           d.primaryTarget != null;
+
+      Widget metric(String heading, String reading, {Color? color, int flex = 1}) =>
+          Expanded(flex: flex, child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(heading, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant, letterSpacing: .4)),
+              const SizedBox(height: 2),
+              Text(reading, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                      color: color ?? scheme.onSurface,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ));
+
       return Card(
         key: ValueKey('resideo-card-${d.cacheId}'),
         clipBehavior: Clip.antiAlias,
-        margin: const EdgeInsets.only(bottom: 10),
-        color: colors.surface,
+        margin: const EdgeInsets.only(bottom: 8),
+        elevation: 0,
+        color: tint,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: accent.withValues(alpha: .18)),
+        ),
         child: InkWell(
           onTap: () => _details(d),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 13, 12, 12),
+            padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -893,72 +923,50 @@ class _ResideoScreenState extends State<ResideoScreen> {
                       if (!_selected.add(d.id)) _selected.remove(d.id);
                     }),
                   ),
-                  Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(d.name, style: theme.textTheme.titleMedium,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text(d.location,
-                          style: theme.textTheme.bodySmall,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                  )),
-                  Icon(Icons.circle, size: 9,
-                    color: d.online ? Colors.green : colors.outline),
+                  Expanded(child: Text(d.name,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600),
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  Icon(Icons.circle, size: 8,
+                      color: d.online ? Colors.green : scheme.outline),
                   const SizedBox(width: 5),
                   Text(d.online ? 'Online' : 'Offline',
                       style: theme.textTheme.labelSmall),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right, size: 19),
+                  const Icon(Icons.chevron_right_rounded, size: 20),
                 ]),
-                const SizedBox(height: 11),
-                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                  Expanded(flex: 3, child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('ROOM', style: theme.textTheme.labelSmall),
-                      Text(d.display(d.temperature),
-                        key: ValueKey('resideo-room-${d.cacheId}'),
-                        style: theme.textTheme.headlineSmall),
-                    ],
-                  )),
-                  Expanded(flex: 4, child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(d.primaryTargetLabel,
-                          style: theme.textTheme.labelSmall),
-                      if (d.primaryTarget != null)
-                        Text(d.display(d.primaryTarget),
-                          key: ValueKey('resideo-target-${d.cacheId}'),
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            color: colors.primary)),
-                      if (d.primaryTarget == null)
-                        Text(d.isAutoMode
-                            ? '${d.display(d.heat)}–${d.display(d.cool)}'
-                            : d.modeLabel,
-                          maxLines: 1,
-                          style: theme.textTheme.titleSmall),
-                    ],
-                  )),
-                  if (directControl)
-                    _temperatureControls(d, d.isHeatMode)
-                  else
-                    const SizedBox(width: 4),
+                const SizedBox(height: 7),
+                Row(children: [
+                  metric('ROOM', d.display(d.temperature), flex: 3),
+                  metric(d.isAutoMode ? 'AUTO RANGE' : 'SET TO',
+                    d.primaryTarget == null
+                      ? d.isAutoMode
+                          ? '${d.display(d.heat)}–${d.display(d.cool)}'
+                          : '—'
+                      : d.display(d.primaryTarget), color: accent, flex: 4),
+                  if (directControl) _temperatureControls(d, heating)
+                  else const SizedBox(width: 4),
                 ]),
                 const SizedBox(height: 9),
                 Row(children: [
-                  Icon(Icons.thermostat_outlined, size: 16,
-                      color: colors.onSurfaceVariant),
-                  const SizedBox(width: 4),
-                  Expanded(child: Text(
-                      'Mode: ${d.modeLabel}  ·  Fan: ${d.fan}',
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall)),
-                  if (_targetTimers.containsKey(d.cacheId) ||
-                      _sendingTargets.contains(d.cacheId))
-                    Text('Saving…', style: theme.textTheme.labelSmall
-                        ?.copyWith(color: colors.primary)),
+                  metric('MODE', d.modeLabel, color: accent, flex: 3),
+                  metric('FAN', d.fan, flex: 4),
+                  if (d.humidity != null)
+                    metric('HUMIDITY', '${d.humidity!.toStringAsFixed(0)}%', flex: 3),
+                  if (d.outdoorTemperature != null)
+                    metric('OUTSIDE', d.display(d.outdoorTemperature), flex: 3),
                 ]),
+                if (d.outdoorHumidity != null || _sendingTargets.contains(d.cacheId) ||
+                    _targetTimers.containsKey(d.cacheId))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Text([
+                      if (d.outdoorHumidity != null)
+                        'Outdoor humidity ${d.outdoorHumidity!.toStringAsFixed(0)}%',
+                      if (_sendingTargets.contains(d.cacheId) ||
+                          _targetTimers.containsKey(d.cacheId))
+                        'Saving…',
+                    ].join('  ·  '), style: theme.textTheme.labelSmall),
+                  ),
               ],
             ),
           ),
@@ -968,7 +976,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
     return ListView(
       key: const ValueKey('resideo-dashboard'),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       children: [
         if (!_configured) ...[
           const ListTile(
@@ -982,9 +990,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const ResideoScreen(settingsOnly: true)));
-              if (mounted) {
-                await _restore();
-              }
+              if (mounted) await _restore();
             },
           ),
         ] else ...[
@@ -992,6 +998,12 @@ class _ResideoScreenState extends State<ResideoScreen> {
             Expanded(child: Text(
               '${visible.length} thermostat${visible.length == 1 ? '' : 's'}',
               style: theme.textTheme.titleMedium)),
+            TextButton.icon(
+              key: const ValueKey('resideo-customize'),
+              icon: const Icon(Icons.tune_rounded),
+              label: const Text('Arrange'),
+              onPressed: _devices.isEmpty ? null : _customizeDashboard,
+            ),
             TextButton.icon(
               key: const ValueKey('resideo-bulk-toggle'),
               icon: Icon(_bulkMode
@@ -1013,17 +1025,25 @@ class _ResideoScreenState extends State<ResideoScreen> {
               ),
             ),
           if (locations.length > 1)
-            Padding(padding: const EdgeInsets.only(bottom: 12),
-              child: Wrap(spacing: 7, children: [
-                for (final location in locations.entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Wrap(spacing: 7, runSpacing: 4, children: [
+                for (final locationId in _orderedLocations(locations.keys))
                   FilterChip(
-                    label: Text(location.value),
-                    selected: _locations.contains(location.key),
-                    onSelected: (_) => setState(() {
-                      if (!_locations.add(location.key)) {
-                        _locations.remove(location.key);
-                      }
-                    }),
+                    key: ValueKey('resideo-filter-$locationId'),
+                    label: Text(locations[locationId] ?? locationId),
+                    selected: _locations.contains(locationId),
+                    onSelected: (_) {
+                      if (_locations.length == 1 &&
+                          _locations.contains(locationId)) return;
+                      setState(() {
+                        if (!_locations.add(locationId)) {
+                          _locations.remove(locationId);
+                        }
+                        _layoutSaved = true;
+                      });
+                      _saveDashboardLayout();
+                    },
                   ),
               ]),
             ),
@@ -1068,13 +1088,45 @@ class _ResideoScreenState extends State<ResideoScreen> {
               ),
             ),
           ),
-          for (final device in visible) deviceCard(device),
-          if (_devices.isEmpty && !_busy)
+          for (final locationId in orderedLocations)
+            if (visible.any((d) => d.locationId == locationId))
+              Container(
+                key: ValueKey('resideo-location-$locationId'),
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 2),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(3, 0, 3, 9),
+                      child: Row(children: [
+                        const Icon(Icons.location_on_outlined, size: 17),
+                        const SizedBox(width: 7),
+                        Expanded(child: Text(locations[locationId] ?? locationId,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700))),
+                        Text('${visible.where((d) => d.locationId == locationId).length}',
+                            style: theme.textTheme.labelMedium),
+                      ]),
+                    ),
+                    for (final device in visible.where(
+                        (d) => d.locationId == locationId))
+                      deviceCard(device),
+                  ],
+                ),
+              ),
+          if (visible.isEmpty && !_busy)
             const Center(child: Padding(padding: EdgeInsets.all(28),
-              child: Text('No thermostats found. Tap refresh to check again.'))),
-          if (_busy && _devices.isEmpty) const Padding(
-            padding: EdgeInsets.symmetric(vertical: 26),
-            child: Center(child: CircularProgressIndicator())),
+              child: Text('No thermostats for this selection. Tap Arrange to choose locations.'))),
+          if (_busy && _devices.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 26),
+              child: Center(child: CircularProgressIndicator())),
         ],
       ],
     );
