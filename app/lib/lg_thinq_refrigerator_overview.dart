@@ -13,6 +13,8 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
     required this.onRefresh,
     required this.onCommand,
     required this.onEdit,
+    required this.setpointPreview,
+    required this.onStep,
   });
 
   final List<ThinQFeature> features;
@@ -21,6 +23,8 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
   final VoidCallback onRefresh;
   final Future<void> Function(ThinQFeature, Object) onCommand;
   final Future<void> Function(ThinQFeature) onEdit;
+  final Map<String, num> setpointPreview;
+  final void Function(ThinQFeature, int direction) onStep;
 
   ThinQFeature? _field(String property, {String? resource, String? location}) {
     for (final feature in features) {
@@ -40,8 +44,10 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
           resource: 'temperatureInUnits', location: compartment);
 
   String _value(ThinQFeature? feature) {
-    if (feature?.current == null) return '—';
-    return '${feature!.currentText}°${feature.property.endsWith("F") ? "F" : "C"}';
+    if (feature == null) return '—';
+    final value = setpointPreview[feature.identity];
+    if (value == null && feature.current == null) return '—';
+    return '${value ?? feature.currentText}°${feature.property.endsWith("F") ? "F" : "C"}';
   }
 
   String _door(Object? raw) {
@@ -79,7 +85,8 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
     final sabbath = _field('sabbathMode', resource: 'sabbath');
 
     Widget temperatureCard(String label, IconData icon, ThinQFeature? feature) {
-      final current = feature?.current;
+      final current = feature == null ? null :
+          (setpointPreview[feature.identity] ?? feature.current);
       final step = feature?.step ?? 1;
       final number = current is num ? current : null;
       final canEdit = feature != null && feature.actionable && number != null;
@@ -97,7 +104,7 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
             children: [
               InkWell(
                 key: ValueKey('thinq-setpoint-${label.toLowerCase()}'),
-                onTap: canEdit && !refreshing ? () => onEdit(feature) : null,
+                onTap: canEdit ? () => onEdit(feature) : null,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(13, 13, 10, 5),
                   child: Column(
@@ -134,8 +141,8 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
                       key: ValueKey('thinq-${label.toLowerCase()}-minus'),
                       tooltip: 'Decrease $label target',
                       visualDensity: VisualDensity.compact,
-                      onPressed: !refreshing && feature.permits(down!)
-                          ? () => onCommand(feature, down) : null,
+                      onPressed: feature.permits(down!)
+                          ? () => onStep(feature, -1) : null,
                       icon: const Icon(Icons.remove, size: 19),
                     ),
                     Text('Adjust', style: theme.textTheme.labelSmall),
@@ -143,8 +150,8 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
                       key: ValueKey('thinq-${label.toLowerCase()}-plus'),
                       tooltip: 'Increase $label target',
                       visualDensity: VisualDensity.compact,
-                      onPressed: !refreshing && feature.permits(up!)
-                          ? () => onCommand(feature, up) : null,
+                      onPressed: feature.permits(up!)
+                          ? () => onStep(feature, 1) : null,
                       icon: const Icon(Icons.add, size: 19),
                     ),
                   ],
