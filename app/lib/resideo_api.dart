@@ -163,6 +163,20 @@ class ResideoDevice {
     );
   }
 
+  /// Update only the locally displayed modes after Resideo accepts a change.
+  /// Temperature and capability metadata remain as received from the API.
+  ResideoDevice withMode({String? systemMode, String? fanMode}) {
+    return ResideoDevice(
+      id: id, locationId: locationId, location: location, name: name,
+      system: systemMode ?? system, fan: fanMode ?? fan,
+      systemModes: systemModes, fanModes: fanModes, values: values,
+      unit: unit, temperature: temperature, humidity: humidity,
+      outdoorTemperature: outdoorTemperature, outdoorHumidity: outdoorHumidity,
+      heat: heat, cool: cool, minHeat: minHeat, maxHeat: maxHeat,
+      minCool: minCool, maxCool: maxCool, online: online,
+    );
+  }
+
   /// These labels describe selected modes, not whether HVAC equipment
   /// is actively heating or cooling. The API's requested mode is not runtime.
   String get modeLabel {
