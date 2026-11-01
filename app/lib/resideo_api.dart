@@ -46,7 +46,9 @@ class ResideoDevice {
       v is List ? v.whereType<String>().toList() : [];
   static double? _humidity(Map<String, dynamic> raw, String name) {
     final status = raw['${name}Status']?.toString().toLowerCase();
-    if (status == 'notavailable' || status == 'unknown') return null;
+    if (status == 'notavailable' || status == 'unknown') {
+      return null;
+    }
     final number = _number(raw[name]);
     // Resideo uses 128 as an unavailable humidity sentinel.
     return number != null && number >= 0 && number <= 100 ? number : null;
