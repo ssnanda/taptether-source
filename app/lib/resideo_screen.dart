@@ -928,108 +928,140 @@ class _ResideoScreenState extends State<ResideoScreen> {
           d.location.toLowerCase().contains(query))));
     final selected = visible.where((d) => _selected.contains(d.id)).toList();
 
+    Widget footerItem(IconData icon, String label, Color color) {
+      return Expanded(child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 3),
+          Flexible(child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(label, maxLines: 1,
+              style: TextStyle(color: color,
+                fontSize: 12, fontWeight: FontWeight.w600)),
+          )),
+        ],
+      ));
+    }
+
     Widget deviceCard(ResideoDevice d) {
       final cooling = d.isCoolMode;
       final heating = d.isHeatMode;
-      final tint = cooling ? const Color(0xFFE8F4FF)
-          : heating ? const Color(0xFFFFEEE5) : scheme.surface;
-      final accent = cooling ? const Color(0xFF1669BC)
-          : heating ? const Color(0xFFBC542B) : scheme.primary;
-      final foreground = cooling || heating
-          ? const Color(0xFF1F2933) : scheme.onSurface;
-      final secondary = cooling || heating
-          ? const Color(0xFF4B5865) : scheme.onSurfaceVariant;
+      final accent = cooling ? const Color(0xFF0875CB)
+          : heating ? const Color(0xFFC65A25)
+          : const Color(0xFF38698D);
+      final tint = cooling
+          ? const [Color(0xFFF0F9FF), Color(0xFFE3F2FF)]
+          : heating ? const [Color(0xFFFFF7EF), Color(0xFFFFEAD9)]
+          : const [Color(0xFFF7FAFE), Color(0xFFEDF2F8)];
       final directControl = d.online && (cooling || heating) &&
           d.primaryTarget != null;
-
-      Widget metric(String heading, String reading, {Color? color, int flex = 1}) =>
-          Expanded(flex: flex, child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(heading, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                      color: secondary, letterSpacing: .4)),
-              const SizedBox(height: 2),
-              Text(reading, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                      color: color ?? foreground,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ));
-
-      return Card(
+      return Container(
         key: ValueKey('resideo-card-${d.cacheId}'),
-        clipBehavior: Clip.antiAlias,
-        margin: const EdgeInsets.only(bottom: 8),
-        elevation: 0,
-        color: tint,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: accent.withValues(alpha: .18)),
+        margin: const EdgeInsets.only(bottom: 9),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+            colors: tint),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: accent.withValues(alpha: .19)),
         ),
-        child: InkWell(
-          onTap: () => _details(d),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+        child: Material(color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(17),
+            onTap: () => _details(d),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              child: Column(children: [
                 Row(children: [
-                  if (_bulkMode) Checkbox(
-                    value: _selected.contains(d.id),
-                    onChanged: (_) => setState(() {
-                      if (!_selected.add(d.id)) _selected.remove(d.id);
-                    }),
-                  ),
+                  if (_bulkMode)
+                    Checkbox(value: _selected.contains(d.id),
+                      onChanged: (_) => setState(() {
+                        if (!_selected.add(d.id)) {
+                          _selected.remove(d.id);
+                        }
+                      })),
+                  Icon(Icons.thermostat_outlined, color: accent, size: 23),
+                  const SizedBox(width: 7),
                   Expanded(child: Text(d.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
-                        color: foreground, fontWeight: FontWeight.w600),
-                    maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  Icon(Icons.circle, size: 8,
-                      color: d.online ? Colors.green : scheme.outline),
-                  const SizedBox(width: 5),
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF15253C)))),
+                  Icon(Icons.circle, size: 9, color: d.online
+                      ? const Color(0xFF16B438)
+                      : const Color(0xFF97A0AB)),
+                  const SizedBox(width: 4),
                   Text(d.online ? 'Online' : 'Offline',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                          color: foreground)),
-                  Icon(Icons.chevron_right_rounded, size: 20,
-                      color: foreground),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: const Color(0xFF24374B),
+                      fontWeight: FontWeight.w600)),
+                  const Icon(Icons.chevron_right_rounded, size: 20),
                 ]),
-                const SizedBox(height: 7),
-                Row(children: [
-                  metric('ROOM', d.display(d.temperature), flex: 3),
-                  metric(d.isAutoMode ? 'AUTO RANGE' : 'SET TO',
-                    d.primaryTarget == null
-                      ? d.isAutoMode
-                          ? '${d.display(d.heat)}–${d.display(d.cool)}'
-                          : '—'
-                      : d.display(d.primaryTarget), color: accent, flex: 4),
-                  if (directControl) _temperatureControls(d, heating)
-                  else const SizedBox(width: 4),
+                const SizedBox(height: 13),
+                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  Expanded(flex: 3, child: Text(d.display(d.temperature),
+                    key: ValueKey('resideo-room-${d.cacheId}'),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 30,
+                      fontWeight: FontWeight.w800, letterSpacing: -.8,
+                      color: Color(0xFF122740)))),
+                  Container(width: 1, height: 44,
+                    color: accent.withValues(alpha: .21)),
+                  const SizedBox(width: 12),
+                  Expanded(flex: 3, child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d.isAutoMode ? 'Auto range' : 'Set To',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF304157))),
+                      Text(d.primaryTarget == null
+                        ? (d.isAutoMode
+                            ? '${d.display(d.heat)}–${d.display(d.cool)}'
+                            : d.isOffMode ? 'Off' : '—')
+                        : d.display(d.primaryTarget),
+                        key: ValueKey('resideo-target-${d.cacheId}'),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: d.isAutoMode ? 17 : 27,
+                          fontWeight: FontWeight.w800, color: accent)),
+                    ])),
+                  if (directControl) _temperatureControls(d, heating),
                 ]),
+                const SizedBox(height: 10),
+                Divider(height: 1, color: accent.withValues(alpha: .19)),
                 const SizedBox(height: 9),
                 Row(children: [
-                  metric('MODE', cooling ? 'Cooling'
-                      : heating ? 'Heating' : d.modeLabel,
-                      color: accent, flex: 3),
-                  metric('FAN', d.fan, flex: 4),
-                  if (d.humidity != null)
-                    metric('HUMIDITY', '${d.humidity!.toStringAsFixed(0)}%', flex: 3),
-                  if (d.outdoorTemperature != null)
-                    metric('OUTSIDE', d.display(d.outdoorTemperature), flex: 3),
+                  footerItem(cooling ? Icons.ac_unit_rounded
+                      : heating ? Icons.wb_sunny_outlined
+                      : Icons.thermostat_outlined,
+                      cooling ? 'Cooling' : heating ? 'Heating' : d.modeLabel,
+                      accent),
+                  Container(width: 1, height: 20,
+                    color: accent.withValues(alpha: .17)),
+                  footerItem(Icons.air_rounded, d.fan,
+                    const Color(0xFF23394E)),
+                  if (d.humidity != null) ...[
+                    Container(width: 1, height: 20,
+                      color: accent.withValues(alpha: .17)),
+                    footerItem(Icons.water_drop_outlined,
+                      '${d.humidity!.toStringAsFixed(0)}%',
+                      const Color(0xFF23394E)),
+                  ],
+                  if (d.outdoorTemperature != null) ...[
+                    Container(width: 1, height: 20,
+                      color: accent.withValues(alpha: .17)),
+                    footerItem(Icons.cloud_outlined,
+                      d.display(d.outdoorTemperature),
+                      const Color(0xFF23394E)),
+                  ],
                 ]),
-                if (d.outdoorHumidity != null || _sendingTargets.contains(d.cacheId) ||
-                    _targetTimers.containsKey(d.cacheId))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 5),
-                    child: Text([
-                      if (d.outdoorHumidity != null)
-                        'Outdoor humidity ${d.outdoorHumidity!.toStringAsFixed(0)}%',
-                      if (_sendingTargets.contains(d.cacheId) ||
-                          _targetTimers.containsKey(d.cacheId))
-                        'Saving…',
-                    ].join('  ·  '), style: theme.textTheme.labelSmall),
-                  ),
-              ],
+                if (_targetTimers.containsKey(d.cacheId) ||
+                    _sendingTargets.contains(d.cacheId))
+                  Align(alignment: Alignment.centerRight,
+                    child: Text('Saving…',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: accent))),
+              ]),
             ),
           ),
         ),
