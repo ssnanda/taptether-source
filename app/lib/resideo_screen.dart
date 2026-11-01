@@ -720,7 +720,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
       final index = local.indexOf(key);
       final neighborIndex = index + direction;
       if (index < 0 || neighborIndex < 0 ||
-          neighborIndex >= local.length) return;
+          neighborIndex >= local.length) {
+        return;
+      }
       final other = local[neighborIndex];
       final a = deviceOrder.indexOf(key);
       final b = deviceOrder.indexOf(other);
@@ -1047,7 +1049,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
                     selected: _locations.contains(locationId),
                     onSelected: (_) {
                       if (_locations.length == 1 &&
-                          _locations.contains(locationId)) return;
+                          _locations.contains(locationId)) {
+                        return;
+                      }
                       setState(() {
                         if (!_locations.add(locationId)) {
                           _locations.remove(locationId);
