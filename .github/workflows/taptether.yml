@@ -8,6 +8,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # App-only release: preserve already published computer agents.
 # 0.8.51+212: saved thermostat layout, grouped comfort data and app-only release.
 # 0.8.52+213: validate screenshot-style thermostat UI before app-only release.
+# Revalidate after lint fixes, then publish app without rebuilding agents.
 # Retry mobile-only publication after Flutter analyzer corrections.
 # Final analyzer cleanup: wrap multiline conditions before mobile build.
 # Post-release maintenance: purge obsolete completed Actions runs, retain current IPA.
