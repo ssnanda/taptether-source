@@ -13,6 +13,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # 0.8.52+213: publish screenshot-matched thermostat dashboard; reuse existing agents.
 # 0.8.53+214: intermediate-density compact thermostat cards, no duplicated status/location.
 # 0.8.54+215: remove weather and add quick single-device system/fan mode pickers.
+# Post-release housekeeping: preserve working 0.8.54+215 and all desktop agents.
 # Release retry: fixed Flutter summary interpolation lint; no agent rebuild.
 # Post-release housekeeping: retain successful 0.8.53+214 release artifacts.
 # Housekeeping after the validated 0.8.52+213 release: preserve current success run.
