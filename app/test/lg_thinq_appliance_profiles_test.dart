@@ -292,7 +292,7 @@ void main() {
       device: fridge,
       fetchProfile: (_) async => refrigeratorProfile,
       fetchState: (_) async => reportedState(),
-      sendControl: (_, _) async => target = 34,
+      sendControl: (id, payload) async { target = 34; },
       observeFridgeState: (_, state) async => observed.add(state),
     )));
     await tester.pumpAndSettle();
