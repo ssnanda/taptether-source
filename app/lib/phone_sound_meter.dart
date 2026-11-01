@@ -62,11 +62,15 @@ class _PhoneSoundMeterSheetState extends State<PhoneSoundMeterSheet>
         }
       });
     } on PlatformException catch (_) {
-      if (mounted) setState(() =>
-          _error = 'Unable to start the phone microphone. Try again.');
+      if (mounted) {
+        setState(() =>
+            _error = 'Unable to start the phone microphone. Try again.');
+      }
     } on MissingPluginException {
-      if (mounted) setState(() =>
-          _error = 'The sound meter requires the iPhone version of TapTether.');
+      if (mounted) {
+        setState(() =>
+            _error = 'The sound meter requires the iPhone version of TapTether.');
+      }
     } finally {
       if (mounted) setState(() => _starting = false);
     }
