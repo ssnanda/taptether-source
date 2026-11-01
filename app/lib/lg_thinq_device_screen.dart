@@ -316,7 +316,8 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
     if (_temperatureSending) return;
     _temperatureSending = true;
     try {
-      while (mounted && _temperatureQueue.isNotEmpty) {
+      // Complete already-queued LG writes even if the screen is dismissed.
+      while (_temperatureQueue.isNotEmpty) {
         final key = _temperatureQueue.keys.first;
         final request = _temperatureQueue.remove(key)!;
         try {
