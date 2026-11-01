@@ -1199,7 +1199,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
                         : const Color(0xFF8294A8)),
                     const SizedBox(width: 4),
                     Text(allOnline ? 'All online'
-                        : '${onlineCount}/${visible.length} online',
+                        : '$onlineCount/${visible.length} online',
                       style: theme.textTheme.labelSmall),
                   ]),
                 ],
