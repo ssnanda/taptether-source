@@ -19,6 +19,9 @@ class ResideoDevice {
     required this.values,
     required this.unit,
     this.temperature,
+    this.humidity,
+    this.outdoorTemperature,
+    this.outdoorHumidity,
     this.heat,
     this.cool,
     this.minHeat,
@@ -31,7 +34,8 @@ class ResideoDevice {
   final String id, locationId, location, name, system, fan, unit;
   final List<String> systemModes, fanModes;
   final Map<String, dynamic> values;
-  final double? temperature, heat, cool, minHeat, maxHeat, minCool, maxCool;
+  final double? temperature, humidity, outdoorTemperature, outdoorHumidity;
+  final double? heat, cool, minHeat, maxHeat, minCool, maxCool;
   final bool online;
 
   static Map<String, dynamic> _map(Object? v) =>
@@ -40,6 +44,19 @@ class ResideoDevice {
       v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
   static List<String> _modes(Object? v) =>
       v is List ? v.whereType<String>().toList() : [];
+  static double? _humidity(Map<String, dynamic> raw, String name) {
+    final status = raw['${name}Status']?.toString().toLowerCase();
+    if (status == 'notavailable' || status == 'unknown') return null;
+    final number = _number(raw[name]);
+    // Resideo uses 128 as an unavailable humidity sentinel.
+    return number != null && number >= 0 && number <= 100 ? number : null;
+  }
+  static double? _outdoorTemperature(Map<String, dynamic> raw) {
+    final status = raw['outdoorTemperatureStatus']?.toString().toLowerCase();
+    if (status == 'notavailable' || status == 'unknown' ||
+        raw['outdoorTemperatureAvailable'] == false) return null;
+    return _number(raw['outdoorTemperature']);
+  }
 
   static ResideoDevice? fromApi(
       Object? item, String locationId, String location) {
@@ -71,6 +88,9 @@ class ResideoDevice {
       values: changeable,
       unit: (raw['units'] ?? 'Fahrenheit').toString(),
       temperature: _number(raw['indoorTemperature']),
+      humidity: _humidity(raw, 'indoorHumidity'),
+      outdoorTemperature: _outdoorTemperature(raw),
+      outdoorHumidity: _humidity(raw, 'outdoorHumidity'),
       heat: _number(changeable['heatSetpoint']),
       cool: _number(changeable['coolSetpoint']),
       minHeat: _number(raw['minHeatSetpoint']),
@@ -86,7 +106,10 @@ class ResideoDevice {
   Map<String, Object?> toCacheRecord() => {
     'id': id, 'name': name, 'locationId': locationId,
     'location': location, 'system': system, 'fan': fan, 'unit': unit,
-    'temperature': temperature, 'heat': heat, 'cool': cool,
+    'temperature': temperature, 'humidity': humidity,
+    'outdoorTemperature': outdoorTemperature,
+    'outdoorHumidity': outdoorHumidity,
+    'heat': heat, 'cool': cool,
     'minHeat': minHeat, 'maxHeat': maxHeat,
     'minCool': minCool, 'maxCool': maxCool,
     'systemModes': systemModes, 'fanModes': fanModes,
@@ -109,7 +132,10 @@ class ResideoDevice {
       system: input['system']?.toString() ?? 'Unknown',
       fan: input['fan']?.toString() ?? 'Unknown',
       unit: input['unit']?.toString() ?? 'Fahrenheit',
-      temperature: number('temperature'), heat: number('heat'),
+      temperature: number('temperature'), humidity: number('humidity'),
+      outdoorTemperature: number('outdoorTemperature'),
+      outdoorHumidity: number('outdoorHumidity'),
+      heat: number('heat'),
       cool: number('cool'), minHeat: number('minHeat'),
       maxHeat: number('maxHeat'), minCool: number('minCool'),
       maxCool: number('maxCool'),
@@ -124,6 +150,8 @@ class ResideoDevice {
     return ResideoDevice(
       id: id, name: name, locationId: locationId, location: location,
       system: system, fan: fan, unit: unit, temperature: temperature,
+      humidity: humidity, outdoorTemperature: outdoorTemperature,
+      outdoorHumidity: outdoorHumidity,
       heat: heatTarget ?? heat, cool: coolTarget ?? cool,
       minHeat: minHeat, maxHeat: maxHeat, minCool: minCool, maxCool: maxCool,
       systemModes: systemModes, fanModes: fanModes,
@@ -329,6 +357,11 @@ class ResideoConnection {
       _recentDevices == null ? null : List.of(_recentDevices!);
   static DateTime? get memoryTimestamp => _recentAt;
 
+  Future<Map<String, dynamic>?> dashboardLayout() => _vault.readLayout();
+
+  Future<void> saveDashboardLayout(Map<String, dynamic> layout) =>
+      _vault.writeLayout(layout);
+
   Future<(List<ResideoDevice>, DateTime?)> cachedDevices() async {
     if (_recentDevices != null) {
       return (List.of(_recentDevices!), _recentAt);
@@ -405,6 +438,7 @@ class ResideoConnection {
       _recentDevices = null;
       _recentAt = null;
       await _vault.clearCache();
+      await _vault.clearLayout();
     }
     await _vault.write({
       'apiKey': c.apiKey.trim(),
