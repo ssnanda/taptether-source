@@ -1264,27 +1264,36 @@ class _ResideoScreenState extends State<ResideoScreen> {
               ),
             ),
             child: Row(children: [
+              const Icon(Icons.home_outlined, size: 24,
+                  color: Color(0xFF183755)),
+              const SizedBox(width: 9),
               Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${visible.length} Thermostats',
+                  Text('${visible.length} Thermostat${visible.length == 1 ? '' : 's'}',
                     key: const ValueKey('resideo-summary-count'),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF142A46))),
                   const SizedBox(height: 3),
-                  Text(lastCheck, maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Text('${orderedLocations.isEmpty ? 'No location' : orderedLocations.map((id) => locations[id] ?? id).join(' · ')} · $lastCheck',
+                    key: const ValueKey('resideo-summary-location'),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: const Color(0xFF36475D))),
                 ],
               )),
               const SizedBox(width: 8),
+              Container(width: 1, height: 37,
+                  color: const Color(0xFFC6D9E9)),
+              const SizedBox(width: 8),
               Icon(allCooling ? Icons.ac_unit_rounded
                   : allHeating ? Icons.wb_sunny_outlined
                   : Icons.thermostat_outlined,
-                  size: 21, color: const Color(0xFF0875CB)),
+                  size: 21, color: allHeating
+                      ? const Color(0xFFB75B2C)
+                      : const Color(0xFF0875CB)),
               const SizedBox(width: 5),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1307,64 +1316,77 @@ class _ResideoScreenState extends State<ResideoScreen> {
             ]),
           ),
           const SizedBox(height: 9),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(children: [
-              for (final locationId in _orderedLocations(locations.keys)) ...[
-                FilterChip(
-                  key: ValueKey('resideo-filter-$locationId'),
-                  label: Text(locations[locationId] ?? locationId),
-                  selected: _locations.contains(locationId),
-                  showCheckmark: true,
-                  selectedColor: const Color(0xFFD0EEE6),
-                  onSelected: (_) {
-                    if (_locations.length == 1 &&
-                        _locations.contains(locationId)) {
-                      return;
-                    }
-                    setState(() {
-                      if (!_locations.add(locationId)) {
-                        _locations.remove(locationId);
-                      }
-                      _layoutSaved = true;
-                    });
-                    _saveDashboardLayout();
-                  },
-                ),
-                const SizedBox(width: 6),
+          // Filters scroll independently so Arrange and Select never
+          // disappear beyond the edge of a narrow iPhone screen.
+          if (locations.isNotEmpty)
+            SizedBox(height: 44, child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final locationId in _orderedLocations(locations.keys))
+                  Padding(
+                    padding: const EdgeInsets.only(right: 7),
+                    child: FilterChip(
+                      key: ValueKey('resideo-filter-$locationId'),
+                      label: Text(locations[locationId] ?? locationId),
+                      selected: _locations.contains(locationId),
+                      showCheckmark: true,
+                      selectedColor: const Color(0xFFD0EEE6),
+                      onSelected: (_) {
+                        if (_locations.length == 1 &&
+                            _locations.contains(locationId)) {
+                          return;
+                        }
+                        setState(() {
+                          if (!_locations.add(locationId)) {
+                            _locations.remove(locationId);
+                          }
+                          _layoutSaved = true;
+                        });
+                        _saveDashboardLayout();
+                      },
+                    ),
+                  ),
               ],
-              Container(width: 1, height: 25,
-                margin: const EdgeInsets.symmetric(horizontal: 6),
-                color: scheme.outlineVariant),
-              OutlinedButton.icon(
-                key: const ValueKey('resideo-customize'),
-                icon: const Icon(Icons.swap_vert_rounded, size: 19),
-                label: const Text('Arrange'),
-                onPressed: _devices.isEmpty ? null : _customizeDashboard),
-              const SizedBox(width: 7),
-              OutlinedButton.icon(
-                key: const ValueKey('resideo-bulk-toggle'),
-                icon: Icon(_bulkMode ? Icons.close_rounded
-                    : Icons.check_box_outlined, size: 19),
-                label: Text(_bulkMode ? 'Done' : 'Select'),
-                onPressed: () => setState(() {
-                  _bulkMode = !_bulkMode;
-                  _selected.clear();
-                })),
-              const SizedBox(width: 6),
-              IconButton.outlined(
-                key: const ValueKey('resideo-settings'),
-                icon: const Icon(Icons.settings_outlined),
-                tooltip: 'Resideo API settings',
-                onPressed: () async {
-                  await Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const ResideoScreen(settingsOnly: true)));
-                  if (mounted) {
-                    await _restore();
-                  }
-                }),
-            ]),
-          ),
+            )),
+          const SizedBox(height: 5),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              key: const ValueKey('resideo-customize'),
+              icon: const Icon(Icons.swap_vert_rounded, size: 18),
+              label: const Text('Arrange'),
+              onPressed: _devices.isEmpty ? null : _customizeDashboard,
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 5)),
+            )),
+            const SizedBox(width: 8),
+            Expanded(child: OutlinedButton.icon(
+              key: const ValueKey('resideo-bulk-toggle'),
+              icon: Icon(_bulkMode ? Icons.close_rounded
+                  : Icons.check_box_outlined, size: 18),
+              label: Text(_bulkMode ? 'Done' : 'Select'),
+              onPressed: () => setState(() {
+                _bulkMode = !_bulkMode;
+                _selected.clear();
+              }),
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 5)),
+            )),
+            const SizedBox(width: 8),
+            IconButton.outlined(
+              key: const ValueKey('resideo-settings'),
+              icon: const Icon(Icons.settings_outlined, size: 20),
+              tooltip: 'Resideo API settings',
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const ResideoScreen(settingsOnly: true)));
+                if (mounted) {
+                  await _restore();
+                }
+              },
+            ),
+          ]),
           const SizedBox(height: 9),
           TextField(
             controller: _search,

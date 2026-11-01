@@ -5,7 +5,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # LG TV MAC discovery (0.8.35): release remains manual, after device installation.
 # Resideo 209: direct Honeywell Home developer API with OAuth tokens (lint fixed).
 # Resideo 210: user-entered Consumer Key/Secret, callback, and in-app OAuth.
-# App-only release: preserve already published computer agents.
+# IPA-only release: preserve existing APK and desktop agent artifacts.
 # 0.8.51+212: saved thermostat layout, grouped comfort data and app-only release.
 # 0.8.52+213: validate screenshot-style thermostat UI before app-only release.
 # Revalidate after lint fixes, then publish app without rebuilding agents.
@@ -482,7 +482,7 @@ jobs:
           echo "Synchronized source and public AltStore feeds at $version."
 
   mobile-build-and-publish:
-    # Build iOS/Android only. Reuse publicly verified desktop packages;
+    # Build iOS only. Reuse publicly verified desktop packages;
     # NEVER rebuild, republish, or rename desktop agent releases.
     needs: validate
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.task == 'mobile-release') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish mobile]')) }}
@@ -498,11 +498,6 @@ jobs:
         with:
           persist-credentials: true
           fetch-depth: 0
-      - name: Configure Java for Android
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
       - name: Configure Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -513,11 +508,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Generate Flutter iOS and Android runner
+      - name: Generate Flutter iOS runner
         run: |
           python3 -m pip install --disable-pip-version-check Pillow
           cd app
-          flutter create --platforms=ios,android --org com.taptether --project-name taptether .
+          flutter create --platforms=ios --org com.taptether --project-name taptether .
           bash ../bin/2g-tt-voice-permissions.sh
           bash ../bin/2h-tt-fridge-background.sh
           flutter pub get
@@ -534,11 +529,10 @@ jobs:
           bash bin/6-tt-fetch-existing-agents.sh
       - name: Build iPhone IPA without rebuilding agents
         run: bash bin/2a-tt-ipa.sh --no-publish
-      - name: Build Android APK without rebuilding agents
-        run: bash bin/2a-tt-apk.sh --no-publish
-      - name: Publish mobile artifacts and keep existing agents
+      - name: Publish iPhone IPA, retain APK and agents
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
+          TAPTETHER_IPA_ONLY: '1'
         run: bash bin/6-tt-publish-mobile-only.sh
       - name: Sync published AltStore metadata to private source
         env:

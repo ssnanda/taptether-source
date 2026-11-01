@@ -123,6 +123,11 @@ assert "          - mobile-release" in workflow
 assert "  mobile-build-and-publish:" in workflow
 assert "bash bin/6-tt-fetch-existing-agents.sh" in workflow
 assert "bash bin/6-tt-publish-mobile-only.sh" in workflow
+mobile_section = workflow.split("  mobile-build-and-publish:",1)[1].split("  agent-only-validate:",1)[0]
+assert "bin/2a-tt-apk.sh" not in mobile_section
+assert "Configure Java for Android" not in mobile_section
+assert "TAPTETHER_IPA_ONLY: '1'" in mobile_section
+assert '"$STAGE/TapTether.apk"' not in mobile_publisher
 assert "TAPTETHER_USE_EXISTING_AGENT_RELEASE: '1'" in workflow
 assert "[publish mobile]" in workflow
 reuse = (ROOT / "bin" / "6-tt-fetch-existing-agents.sh").read_text()

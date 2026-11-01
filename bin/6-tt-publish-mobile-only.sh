@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish only IPA/APK/icon; preserve working macOS, Ubuntu, Windows agents.
+# Publish only iPhone IPA; preserve existing APK, macOS, Ubuntu and Windows agents.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -12,11 +12,10 @@ command -v gh >/dev/null
 STAGE="$ROOT/dist/release"
 mkdir -p "$STAGE"
 IPA="$ROOT/dist/ios/TapTether-$VERSION-unsigned.ipa"
-[[ -s "$IPA" ]] && [[ -s "$ROOT/dist/android/TapTether-$VERSION.apk" ]] || {
-  echo 'Validated current-version mobile artifacts missing.' >&2; exit 1;
+[[ -s "$IPA" ]] || {
+  echo 'Validated current-version IPA missing.' >&2; exit 1;
 }
 cp "$IPA" "$STAGE/TapTether.ipa"
-cp "$ROOT/dist/android/TapTether-$VERSION.apk" "$STAGE/TapTether.apk"
 python3 bin/6-tt-generate-altstore.py \
   --ipa "$STAGE/TapTether.ipa" --version-file VERSION \
   --output altstore.json --icon-output "$STAGE/TapTether-icon.png"
@@ -34,18 +33,22 @@ agent_names=[name for name in assets if name.startswith(('TapTetherAgent-', 'Tap
 if len(agent_names)!=12: raise SystemExit('Expected 12 unchanged desktop agent/core assets')
 if any(assets[name]['size']<1000 for name in agent_names):
     raise SystemExit('Existing desktop agent asset is empty')
-print('Retaining',len(agent_names),'verified previously published desktop packages')
+if assets.get('TapTether.apk', {}).get('size',0)<1000000:
+    raise SystemExit('Existing Android APK is missing or empty')
+print('Retaining',len(agent_names),'desktop packages and the existing Android APK')
 PY
-before_agents="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-")) | "\(.name):\(.id):\(.size):\(.digest)"' | sort)"
+# Only the IPA and icon are replaced. Verify APK plus every agent asset
+# remains byte-for-byte identical by checking GitHub asset IDs and digests.
+previous_assets="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name == "TapTether.apk" or (.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-"))) | "\\(.name):\\(.id):\\(.size):\\(.digest)"' | sort)"
 gh release upload "$TAG" -R "$REPO" --clobber \
-  "$STAGE/TapTether.ipa" "$STAGE/TapTether.apk" "$STAGE/TapTether-icon.png"
-after_agents="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-")) | "\(.name):\(.id):\(.size):\(.digest)"' | sort)"
-[[ "$before_agents" == "$after_agents" ]] || {
-  echo 'Agent artifacts unexpectedly changed; check release before proceeding.' >&2; exit 1;
+  "$STAGE/TapTether.ipa" "$STAGE/TapTether-icon.png"
+remaining_assets="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name == "TapTether.apk" or (.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-"))) | "\\(.name):\\(.id):\\(.size):\\(.digest)"' | sort)"
+[[ "$previous_assets" == "$remaining_assets" ]] || {
+  echo 'The existing APK or agent files unexpectedly changed.' >&2; exit 1;
 }
 gh release edit "$TAG" -R "$REPO" \
   --title "TapTether $VERSION (rolling downloads)" \
-  --notes "TapTether $VERSION mobile update (unsigned IPA and Android APK). Existing macOS, Ubuntu, Windows agents are unchanged. iOS IPA requires signing." \
+  --notes "TapTether $VERSION iPhone-only update (unsigned IPA). The existing Android APK and desktop agents are unchanged. iOS IPA requires signing." \
   --latest
 # Update only public AltStore metadata, not private code or desktop releases.
 feed_sha="$(gh api "repos/$REPO/contents/altstore.json" --jq '.sha')"
@@ -56,4 +59,4 @@ gh api -X PUT "repos/$REPO/contents/altstore.json" \
 test "$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.name')" = "TapTether $VERSION (rolling downloads)"
 test "$(gh api "repos/$REPO/contents/altstore.json" --jq '.sha')" = "$(git hash-object altstore.json)"
 gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name=="TapTether.ipa") | select(.size>1000000) | .name' | grep -qx 'TapTether.ipa'
-echo "Verified mobile-only public release $VERSION and unchanged agents"
+echo "Verified iPhone-only release $VERSION with unchanged APK and agents"
