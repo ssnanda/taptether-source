@@ -86,6 +86,40 @@ void main() {
     expect(thermostat.height, lessThan(150));
     expect(thermostat.height, greaterThan(85));
 
+    // Weather is intentionally hidden. Indoor humidity remains available.
+    expect(find.text('57°F'), findsNothing);
+    expect(find.text('54%'), findsWidgets);
+
+    final systemMode = find.byKey(
+        const ValueKey('resideo-mode-system-9318:DEVICE-Upstairs'));
+    await tester.ensureVisible(systemMode);
+    await tester.tap(systemMode);
+    await tester.pumpAndSettle();
+    expect(find.text('Change system mode'), findsOneWidget);
+    expect(find.byKey(
+        const ValueKey('resideo-option-system-9318:DEVICE-Upstairs-Heat')),
+        findsOneWidget);
+    // Choosing the already-selected mode should not contact Resideo.
+    await tester.tap(find.byKey(
+        const ValueKey('resideo-option-system-9318:DEVICE-Upstairs-Cool')));
+    await tester.pumpAndSettle();
+    expect(find.text('Change system mode'), findsNothing);
+
+    final fanMode = find.byKey(
+        const ValueKey('resideo-mode-fan-9318:DEVICE-Upstairs'));
+    await tester.ensureVisible(fanMode);
+    await tester.tap(fanMode);
+    await tester.pumpAndSettle();
+    expect(find.text('Change fan mode'), findsOneWidget);
+    expect(find.byKey(
+        const ValueKey('resideo-option-fan-9318:DEVICE-Upstairs-Circulate')),
+        findsOneWidget);
+    await tester.tap(find.byKey(
+        const ValueKey('resideo-option-fan-9318:DEVICE-Upstairs-Auto')));
+    await tester.pumpAndSettle();
+    expect(find.text('Change fan mode'), findsNothing);
+    expect(tester.takeException(), isNull);
+
     await tester.tap(find.byKey(const ValueKey('resideo-group-toggle-9318')));
     await tester.pump();
     expect(find.byKey(const ValueKey('resideo-card-9318:DEVICE-Upstairs')),
