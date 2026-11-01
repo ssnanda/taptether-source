@@ -14,6 +14,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # 0.8.53+214: intermediate-density compact thermostat cards, no duplicated status/location.
 # 0.8.54+215: remove weather and add quick single-device system/fan mode pickers.
 # 0.8.55+216: observe LG-confirmed refrigerator changes on detail view.
+# 0.8.56+217: optimistic LG setpoints, auto-send and silent verification.
 # Post-release housekeeping: preserve working 0.8.54+215 and all desktop agents.
 # Release retry: fixed Flutter summary interpolation lint; no agent rebuild.
 # Post-release housekeeping: retain successful 0.8.53+214 release artifacts.
