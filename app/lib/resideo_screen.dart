@@ -1284,32 +1284,50 @@ class _ResideoScreenState extends State<ResideoScreen> {
               Container(
                 key: ValueKey('resideo-location-$locationId'),
                 margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.fromLTRB(10, 10, 10, 2),
+                padding: const EdgeInsets.fromLTRB(9, 3, 9, 1),
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: scheme.outlineVariant),
+                  color: const Color(0xFFF7FAFE),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFD5DFEA)),
+                  boxShadow: const [BoxShadow(
+                    color: Color(0x0B132B46), blurRadius: 10,
+                    offset: Offset(0, 3))],
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(3, 0, 3, 9),
+                child: Column(children: [
+                  InkWell(
+                    key: ValueKey('resideo-group-toggle-$locationId'),
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => setState(() {
+                      if (!_collapsedLocations.add(locationId)) {
+                        _collapsedLocations.remove(locationId);
+                      }
+                    }),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(7, 12, 7, 12),
                       child: Row(children: [
-                        const Icon(Icons.location_on_outlined, size: 17),
-                        const SizedBox(width: 7),
+                        const Icon(Icons.location_on_outlined, size: 23,
+                            color: Color(0xFF173B65)),
+                        const SizedBox(width: 8),
                         Expanded(child: Text(locations[locationId] ?? locationId,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700))),
-                        Text('${visible.where((d) => d.locationId == locationId).length}',
-                            style: theme.textTheme.labelMedium),
+                            color: const Color(0xFF1A2942),
+                            fontWeight: FontWeight.w800))),
+                        Text('${visible.where((d) => d.locationId == locationId).length} Thermostats',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF2B3B51))),
+                        const SizedBox(width: 5),
+                        Icon(_collapsedLocations.contains(locationId)
+                            ? Icons.keyboard_arrow_down_rounded
+                            : Icons.keyboard_arrow_up_rounded),
                       ]),
                     ),
+                  ),
+                  if (!_collapsedLocations.contains(locationId))
                     for (final device in visible.where(
                         (d) => d.locationId == locationId))
                       deviceCard(device),
-                  ],
-                ),
+                ]),
               ),
           if (visible.isEmpty && !_busy)
             const Center(child: Padding(padding: EdgeInsets.all(28),
@@ -1327,7 +1345,15 @@ class _ResideoScreenState extends State<ResideoScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.settingsOnly ? 'Resideo API' : 'Thermostats'),
+        centerTitle: true,
+        title: widget.settingsOnly
+            ? const Text('Resideo API')
+            : const Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.thermostat_outlined, color: Color(0xFF0A65B9)),
+                SizedBox(width: 8),
+                Text('Thermostats',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              ]),
         actions: [
           if (!widget.settingsOnly && _configured)
             IconButton(
