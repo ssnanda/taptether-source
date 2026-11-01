@@ -15,6 +15,7 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
     required this.onEdit,
     required this.setpointPreview,
     required this.onStep,
+    this.temperatureMessage,
   });
 
   final List<ThinQFeature> features;
@@ -25,6 +26,7 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
   final Future<void> Function(ThinQFeature) onEdit;
   final Map<String, num> setpointPreview;
   final void Function(ThinQFeature, int direction) onStep;
+  final String? temperatureMessage;
 
   ThinQFeature? _field(String property, {String? resource, String? location}) {
     for (final feature in features) {
@@ -217,6 +219,11 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
           const SizedBox(width: 8),
           temperatureCard('Freezer', Icons.severe_cold_outlined, freezer),
         ]),
+        if (temperatureMessage != null) Padding(
+          padding: const EdgeInsets.only(top: 7),
+          child: Text(temperatureMessage!,
+            style: theme.textTheme.bodySmall?.copyWith(color: colors.error)),
+        ),
         const SizedBox(height: 5),
         Text('Set temperatures · not internal sensor readings',
             style: theme.textTheme.bodySmall),
