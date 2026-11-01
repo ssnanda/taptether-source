@@ -923,10 +923,12 @@ class _ResideoScreenState extends State<ResideoScreen> {
         },
       );
     } catch (_) {
-      if (mounted) setState(() {
-        _listeningSearch = false;
-        _error = 'Voice search unavailable. Use the search field.';
-      });
+      if (mounted) {
+        setState(() {
+          _listeningSearch = false;
+          _error = 'Voice search unavailable. Use the search field.';
+        });
+      }
     }
   }
 
