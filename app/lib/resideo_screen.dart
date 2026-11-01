@@ -927,6 +927,22 @@ class _ResideoScreenState extends State<ResideoScreen> {
         (query.isEmpty || d.name.toLowerCase().contains(query) ||
           d.location.toLowerCase().contains(query))));
     final selected = visible.where((d) => _selected.contains(d.id)).toList();
+    final onlineCount = visible.where((d) => d.online).length;
+    final allOnline = visible.isNotEmpty && onlineCount == visible.length;
+    final summaryLocation = orderedLocations.length == 1
+        ? (locations[orderedLocations.first] ?? '')
+        : '${orderedLocations.length} Locations';
+    final lastCheck = _lastChecked == null ? 'Checking…'
+        : 'Checked ${TimeOfDay.fromDateTime(_lastChecked!).format(context)}';
+    final allCooling = visible.isNotEmpty &&
+        visible.every((d) => d.isCoolMode);
+    final allHeating = visible.isNotEmpty &&
+        visible.every((d) => d.isHeatMode);
+    final summaryMode = allCooling ? 'Cooling'
+        : allHeating ? 'Heating'
+        : visible.isNotEmpty && visible.every((d) => d.isAutoMode) ? 'Auto'
+        : visible.isNotEmpty && visible.every((d) => d.isOffMode) ? 'Off'
+        : visible.isEmpty ? 'No devices' : 'Mixed Modes';
 
     Widget footerItem(IconData icon, String label, Color color) {
       return Expanded(child: Row(
