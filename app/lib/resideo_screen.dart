@@ -1167,74 +1167,90 @@ class _ResideoScreenState extends State<ResideoScreen> {
             ]),
           ),
           const SizedBox(height: 14),
-          Row(children: [
-            Expanded(child: Text(
-              '${visible.length} thermostat${visible.length == 1 ? '' : 's'}',
-              style: theme.textTheme.titleMedium)),
-            TextButton.icon(
-              key: const ValueKey('resideo-customize'),
-              icon: const Icon(Icons.tune_rounded),
-              label: const Text('Arrange'),
-              onPressed: _devices.isEmpty ? null : _customizeDashboard,
-            ),
-            TextButton.icon(
-              key: const ValueKey('resideo-bulk-toggle'),
-              icon: Icon(_bulkMode
-                  ? Icons.close_rounded : Icons.checklist_rounded),
-              onPressed: () => setState(() {
-                _bulkMode = !_bulkMode;
-                _selected.clear();
-              }),
-              label: Text(_bulkMode ? 'Done' : 'Select'),
-            ),
-          ]),
-          if (_lastChecked != null || _busy)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Text(
-                _busy ? 'Updating thermostats in background…'
-                  : 'Last checked ${TimeOfDay.fromDateTime(_lastChecked!).format(context)}',
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-          if (locations.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Wrap(spacing: 7, runSpacing: 4, children: [
-                for (final locationId in _orderedLocations(locations.keys))
-                  FilterChip(
-                    key: ValueKey('resideo-filter-$locationId'),
-                    label: Text(locations[locationId] ?? locationId),
-                    selected: _locations.contains(locationId),
-                    onSelected: (_) {
-                      if (_locations.length == 1 &&
-                          _locations.contains(locationId)) {
-                        return;
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              for (final locationId in _orderedLocations(locations.keys)) ...[
+                FilterChip(
+                  key: ValueKey('resideo-filter-$locationId'),
+                  label: Text(locations[locationId] ?? locationId),
+                  selected: _locations.contains(locationId),
+                  showCheckmark: true,
+                  selectedColor: const Color(0xFFD0EEE6),
+                  onSelected: (_) {
+                    if (_locations.length == 1 &&
+                        _locations.contains(locationId)) {
+                      return;
+                    }
+                    setState(() {
+                      if (!_locations.add(locationId)) {
+                        _locations.remove(locationId);
                       }
-                      setState(() {
-                        if (!_locations.add(locationId)) {
-                          _locations.remove(locationId);
-                        }
-                        _layoutSaved = true;
-                      });
-                      _saveDashboardLayout();
-                    },
-                  ),
-              ]),
-            ),
-          if (_devices.length > 5)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: TextField(
-                controller: _search,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  hintText: 'Search rooms',
-                  prefixIcon: Icon(Icons.search_rounded),
-                  border: OutlineInputBorder(), isDense: true,
+                      _layoutSaved = true;
+                    });
+                    _saveDashboardLayout();
+                  },
                 ),
+                const SizedBox(width: 6),
+              ],
+              Container(width: 1, height: 25,
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                color: scheme.outlineVariant),
+              OutlinedButton.icon(
+                key: const ValueKey('resideo-customize'),
+                icon: const Icon(Icons.swap_vert_rounded, size: 19),
+                label: const Text('Arrange'),
+                onPressed: _devices.isEmpty ? null : _customizeDashboard),
+              const SizedBox(width: 7),
+              OutlinedButton.icon(
+                key: const ValueKey('resideo-bulk-toggle'),
+                icon: Icon(_bulkMode ? Icons.close_rounded
+                    : Icons.check_box_outlined, size: 19),
+                label: Text(_bulkMode ? 'Done' : 'Select'),
+                onPressed: () => setState(() {
+                  _bulkMode = !_bulkMode;
+                  _selected.clear();
+                })),
+              const SizedBox(width: 6),
+              IconButton.outlined(
+                key: const ValueKey('resideo-settings'),
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Resideo API settings',
+                onPressed: () async {
+                  await Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const ResideoScreen(settingsOnly: true)));
+                  if (mounted) {
+                    await _restore();
+                  }
+                }),
+            ]),
+          ),
+          const SizedBox(height: 13),
+          TextField(
+            controller: _search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search thermostats…',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: IconButton(
+                key: const ValueKey('resideo-voice-search'),
+                tooltip: _listeningSearch ? 'Stop listening' : 'Voice search',
+                icon: Icon(_listeningSearch
+                    ? Icons.mic_rounded : Icons.mic_none_rounded),
+                onPressed: _voiceSearch,
               ),
+              filled: true,
+              fillColor: scheme.surface,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(27),
+                borderSide: BorderSide(color: scheme.outlineVariant)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(27),
+                borderSide: BorderSide(color: scheme.outlineVariant)),
             ),
+          ),
+          const SizedBox(height: 16),
           if (_bulkMode) Card(
             margin: const EdgeInsets.only(bottom: 12),
             child: Padding(padding: const EdgeInsets.all(12),
