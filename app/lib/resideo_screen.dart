@@ -660,7 +660,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
     final remainder = ids.toSet();
     final result = <String>[];
     for (final id in _locationOrder) {
-      if (remainder.remove(id)) result.add(id);
+      if (remainder.remove(id)) {
+        result.add(id);
+      }
     }
     result.addAll(remainder.toList()..sort());
     return result;
@@ -998,7 +1000,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const ResideoScreen(settingsOnly: true)));
-              if (mounted) await _restore();
+              if (mounted) {
+                await _restore();
+              }
             },
           ),
         ] else ...[
