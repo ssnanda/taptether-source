@@ -56,7 +56,9 @@ class ResideoDevice {
   static double? _outdoorTemperature(Map<String, dynamic> raw) {
     final status = raw['outdoorTemperatureStatus']?.toString().toLowerCase();
     if (status == 'notavailable' || status == 'unknown' ||
-        raw['outdoorTemperatureAvailable'] == false) return null;
+        raw['outdoorTemperatureAvailable'] == false) {
+      return null;
+    }
     return _number(raw['outdoorTemperature']);
   }
 
