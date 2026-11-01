@@ -881,6 +881,10 @@ class _ResideoScreenState extends State<ResideoScreen> {
           : heating ? const Color(0xFFFFEEE5) : scheme.surface;
       final accent = cooling ? const Color(0xFF1669BC)
           : heating ? const Color(0xFFBC542B) : scheme.primary;
+      final foreground = cooling || heating
+          ? const Color(0xFF1F2933) : scheme.onSurface;
+      final secondary = cooling || heating
+          ? const Color(0xFF4B5865) : scheme.onSurfaceVariant;
       final directControl = d.online && (cooling || heating) &&
           d.primaryTarget != null;
 
@@ -890,11 +894,11 @@ class _ResideoScreenState extends State<ResideoScreen> {
             children: [
               Text(heading, maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant, letterSpacing: .4)),
+                      color: secondary, letterSpacing: .4)),
               const SizedBox(height: 2),
               Text(reading, maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(
-                      color: color ?? scheme.onSurface,
+                      color: color ?? foreground,
                       fontWeight: FontWeight.w600)),
             ],
           ));
@@ -925,14 +929,16 @@ class _ResideoScreenState extends State<ResideoScreen> {
                   ),
                   Expanded(child: Text(d.name,
                     style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600),
+                        color: foreground, fontWeight: FontWeight.w600),
                     maxLines: 1, overflow: TextOverflow.ellipsis)),
                   Icon(Icons.circle, size: 8,
                       color: d.online ? Colors.green : scheme.outline),
                   const SizedBox(width: 5),
                   Text(d.online ? 'Online' : 'Offline',
-                      style: theme.textTheme.labelSmall),
-                  const Icon(Icons.chevron_right_rounded, size: 20),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: foreground)),
+                  Icon(Icons.chevron_right_rounded, size: 20,
+                      color: foreground),
                 ]),
                 const SizedBox(height: 7),
                 Row(children: [
@@ -948,7 +954,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
                 ]),
                 const SizedBox(height: 9),
                 Row(children: [
-                  metric('MODE', d.modeLabel, color: accent, flex: 3),
+                  metric('MODE', cooling ? 'Cooling'
+                      : heating ? 'Heating' : d.modeLabel,
+                      color: accent, flex: 3),
                   metric('FAN', d.fan, flex: 4),
                   if (d.humidity != null)
                     metric('HUMIDITY', '${d.humidity!.toStringAsFixed(0)}%', flex: 3),
