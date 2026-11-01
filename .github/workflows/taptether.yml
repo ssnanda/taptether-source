@@ -12,6 +12,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # Dashboard regression: summary count appears in both banner and location header.
 # 0.8.52+213: publish screenshot-matched thermostat dashboard; reuse existing agents.
 # 0.8.53+214: intermediate-density compact thermostat cards, no duplicated status/location.
+# Release retry: fixed Flutter summary interpolation lint; no agent rebuild.
 # Housekeeping after the validated 0.8.52+213 release: preserve current success run.
 # Retry mobile-only publication after Flutter analyzer corrections.
 # Final analyzer cleanup: wrap multiline conditions before mobile build.
