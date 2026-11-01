@@ -137,7 +137,9 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
           // Notification failure must not hide a valid refrigerator status.
         }
       }
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       final items = thinQFeatures(profile, state);
       final now = DateTime.now();
       // Only successful fresh state readings may create history.
