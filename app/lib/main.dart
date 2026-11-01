@@ -35,6 +35,7 @@ import 'appearance.dart';
 import 'app_security.dart';
 import 'automatic_device_backup.dart';
 import 'device_backup_screen.dart';
+import 'hpl_screen.dart';
 import 'security_settings_screen.dart';
 import 'about_taptether_screen.dart';
 import 'device_manager_screen.dart';
@@ -2753,6 +2754,18 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () {
                 Navigator.pop(context);
                 openSecuritySettings();
+              },
+            ),
+            ListTile(
+              key: const ValueKey('drawer-hpl'),
+              leading: const Icon(Icons.audio_file_outlined),
+              title: const Text('HPL (temporary)'),
+              subtitle: const Text('Inspect accessible Hoopla files'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const HplScreen(),
+                ));
               },
             ),
             ExpansionTile(

@@ -16,6 +16,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # 0.8.55+216: observe LG-confirmed refrigerator changes on detail view.
 # 0.8.56+217: optimistic LG setpoints, auto-send and silent verification.
 # 0.8.56+217 retry: corrected optimistic UI assertions and async test cleanup.
+# 0.8.57+218: temporary HPL Files inspection in Settings; mobile-only.
 # Post-release housekeeping: preserve working 0.8.54+215 and all desktop agents.
 # Release retry: fixed Flutter summary interpolation lint; no agent rebuild.
 # Post-release housekeeping: retain successful 0.8.53+214 release artifacts.
@@ -75,6 +76,8 @@ on:
       - 'app/test/widget_test.dart'
       - 'bin/4-test-saved-devices-dashboard.py'
       - 'app/lib/main.dart'
+      - 'app/lib/hpl_*.dart'
+      - 'app/test/hpl_*.dart'
       - 'app/lib/lg_thinq_device_screen.dart'
       - 'app/test/lg_thinq_appliance_profiles_test.dart'
       - 'app/lib/appearance.dart'
