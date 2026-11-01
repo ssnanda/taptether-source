@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -214,7 +216,7 @@ void main() {
         .current, false);
   });
 
-  testWidgets('refrigerator one-sheet selection sends one validated command',
+  testWidgets('refrigerator sheet sends each change without an Apply step',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(950, 2300));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -240,13 +242,16 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(find.text('36°F'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('thinq-apply-setpoint')));
+    expect(find.byKey(const ValueKey('thinq-apply-setpoint')), findsNothing);
+    expect(find.byKey(const ValueKey('thinq-close-setpoint')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('thinq-close-setpoint')));
     await tester.pumpAndSettle();
-    expect(commands, [{
+    expect(commands, isNotEmpty);
+    expect(commands.last, {
       'temperatureInUnits': {
         'locationName': 'FRIDGE', 'targetTemperatureF': 36,
       },
-    }]);
+    });
 
     await tester.tap(find.text('Features'));
     await tester.pumpAndSettle();
@@ -326,6 +331,55 @@ void main() {
         'locationName': 'FRIDGE', 'targetTemperatureF': 34,
       }},
     ]);
+    expect(find.byKey(const ValueKey('thinq-confirm-control')), findsNothing);
+  });
+
+  testWidgets('temperature preview stays interactive during slow LG command',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(950, 2300));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final firstWrite = Completer<void>();
+    final sent = <int>[];
+    var confirmed = 33;
+    Map<String, Object?> cloudState() => {
+      ...refrigeratorState,
+      'temperatureInUnits': [
+        {'locationName': 'FREEZER',
+          'targetTemperatureC': -23, 'targetTemperatureF': -7},
+        {'locationName': 'FRIDGE',
+          'targetTemperatureC': 1, 'targetTemperatureF': confirmed},
+      ],
+      'temperature': [
+        {'locationName': 'FREEZER', 'targetTemperature': -7},
+        {'locationName': 'FRIDGE', 'targetTemperature': confirmed},
+      ],
+    };
+    await tester.pumpWidget(MaterialApp(home: LgThinQDeviceScreen(
+      device: fridge,
+      fetchProfile: (_) async => refrigeratorProfile,
+      fetchState: (_) async => cloudState(),
+      observeFridgeState: (_, state) async {},
+      sendControl: (_, payload) async {
+        final data = payload['temperatureInUnits']! as Map;
+        final target = data['targetTemperatureF'] as int;
+        sent.add(target);
+        if (sent.length == 1) await firstWrite.future;
+        confirmed = target;
+      },
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('thinq-fridge-plus')));
+    await tester.pump();
+    expect(find.text('34°F'), findsOneWidget);
+    // Second tap must work without waiting for the first cloud response.
+    await tester.tap(find.byKey(const ValueKey('thinq-fridge-plus')));
+    await tester.pump();
+    expect(find.text('35°F'), findsOneWidget);
+    firstWrite.complete();
+    await tester.pumpAndSettle();
+    expect(sent, isNotEmpty);
+    expect(sent.last, 35);
+    expect(find.text('35°F'), findsOneWidget);
     expect(find.byKey(const ValueKey('thinq-confirm-control')), findsNothing);
   });
 
