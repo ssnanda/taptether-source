@@ -16,6 +16,9 @@ void main() {
     'isAlive': true,
     'units': 'Fahrenheit',
     'indoorTemperature': 73,
+    'indoorHumidity': 46,
+    'outdoorTemperature': 69,
+    'outdoorHumidity': 52,
     'allowedModes': ['Off', 'Heat', 'Cool', 'Auto'],
     'minHeatSetpoint': 50,
     'maxHeatSetpoint': 90,
@@ -48,6 +51,9 @@ void main() {
     ]);
     expect(list.length, 2);
     expect(list.first.temperature, 73);
+    expect(list.first.humidity, 46);
+    expect(list.first.outdoorTemperature, 69);
+    expect(list.first.outdoorHumidity, 52);
     expect(list.first.system, 'Off'); // NOT heatCoolMode
     expect(list.first.fan, 'Circulate');
     expect(list.first.fanModes, contains('Circulate'));
@@ -196,6 +202,39 @@ void main() {
     expect(auto.targetSummary, contains('Cool'));
   });
 
+  test('Unavailable humidity hidden; target edits retain sensor data', () {
+    final d = ResideoDevice.fromApi({
+      ...thermostat,
+      'indoorHumidity': 128,
+      'indoorHumidityStatus': 'NotAvailable',
+      'outdoorTemperatureStatus': 'NotAvailable',
+    }, 'one', 'Home')!;
+    expect(d.humidity, isNull);
+    expect(d.outdoorTemperature, isNull);
+    final changed = d.withTarget(coolTarget: 78);
+    expect(changed.humidity, isNull);
+    expect(changed.outdoorHumidity, 52);
+    expect(changed.cool, 78);
+  });
+
+  test('Saved location selection and order stay on this phone', () async {
+    const storage = FlutterSecureStorage();
+    final connection = ResideoConnection(storage: storage);
+    await connection.save(const ResideoCredentials(
+      apiKey: 'KEY', apiSecret: 'SECRET', accessToken: '',
+      redirectUri: ResideoConnection.defaultRedirect,
+    ));
+    await connection.saveDashboardLayout({
+      'locations': ['office'], 'locationOrder': ['office', 'home'],
+      'deviceOrder': ['office:two', 'office:one', 'home:three'],
+    });
+    final saved = await connection.dashboardLayout();
+    expect(saved?['locations'], ['office']);
+    expect(saved?['deviceOrder'], ['office:two', 'office:one', 'home:three']);
+    await connection.disconnect();
+    expect(await connection.dashboardLayout(), isNull);
+  });
+
   test('Encrypted local inventory restores without network and clears on sign-out',
       () async {
     const storage = FlutterSecureStorage();
@@ -212,6 +251,8 @@ void main() {
         (cache!['devices'] as List).first)!;
     expect(restored.cacheId, d.cacheId);
     expect(restored.temperature, 73);
+    expect(restored.humidity, 46);
+    expect(restored.outdoorTemperature, 69);
     expect(restored.fan, 'Circulate');
     expect((await storage.readAll()).toString(),
         isNot(contains('Meeting Room')));
