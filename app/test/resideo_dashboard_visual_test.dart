@@ -62,7 +62,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.byKey(const ValueKey('resideo-summary-banner')), findsOneWidget);
-    expect(find.text('3 Thermostats'), findsOneWidget);
+    expect(find.byKey(const ValueKey('resideo-summary-count')), findsOneWidget);
+    expect(find.text('3 Thermostats'), findsNWidgets(2));
     expect(find.byKey(const ValueKey('resideo-filter-9318')), findsOneWidget);
     expect(find.byKey(const ValueKey('resideo-group-toggle-9318')), findsOneWidget);
     expect(find.byKey(const ValueKey('resideo-customize')), findsOneWidget);
