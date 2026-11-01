@@ -11,8 +11,10 @@ import 'resideo_oauth_screen.dart';
 /// Dashboard shortcut and Settings → API Integrations share one connection,
 /// but the dashboard never displays developer credentials.
 class ResideoScreen extends StatefulWidget {
-  const ResideoScreen({super.key, this.settingsOnly = false});
+  const ResideoScreen({super.key, this.settingsOnly = false,
+      this.refreshOnOpen = true});
   final bool settingsOnly;
+  final bool refreshOnOpen;
 
   @override
   State<ResideoScreen> createState() => _ResideoScreenState();
@@ -114,7 +116,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
         _configured = c.usable;
         _loading = false;
       });
-      if (!widget.settingsOnly && c.usable) {
+      if (!widget.settingsOnly && c.usable && widget.refreshOnOpen) {
         // Previously saved values show while the remote API refreshes.
         _refresh();
       }
