@@ -828,26 +828,14 @@ jobs:
           runs_file="$(mktemp)"
           trap 'rm -f "$artifacts_file" "$runs_file"' EXIT
 
-          # Keep the latest published successful release run for traceability.
-          # Older completed runs and their temporary Actions artifacts may go.
-          release_name="$(gh api 'repos/ssnanda/taptether.com/releases/tags/current' --jq '.name')"
-          current_version="${release_name#TapTether }"
-          current_version="${current_version%% *}"
-          [[ "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]] || {
-            echo 'Unable to identify published version; not deleting history.' >&2
-            exit 1
-          }
-          retained="$(gh api "/repos/$repo/actions/runs?per_page=100" \
-            --jq "[.workflow_runs[] | select(.status == \"completed\" and .conclusion == \"success\" and ((.head_commit.message // \"\") | contains(\"$current_version\")))][0].id // empty")"
-          [[ "$retained" =~ ^[0-9]+$ ]] || {
-            echo 'Cannot identify the published release workflow; refusing cleanup.' >&2
-            exit 1
-          }
+          # Keep only this latest cleanup run. It remains active until the
+          # cleanup step finishes and is then the sole completed run.
+          echo "Retaining latest workflow run $current"
           # Take a stable snapshot before deleting; otherwise pagination shifts.
           gh api --paginate "/repos/$repo/actions/artifacts?per_page=100" \
-            --jq ".artifacts[] | select((.workflow_run.id // 0) != $current and (.workflow_run.id // 0) != $retained) | .id" > "$artifacts_file"
+            --jq ".artifacts[] | select((.workflow_run.id // 0) != $current) | .id" > "$artifacts_file"
           gh api --paginate "/repos/$repo/actions/runs?per_page=100" \
-            --jq ".workflow_runs[] | select(.status == \"completed\" and .id != $retained) | .id" > "$runs_file"
+            --jq ".workflow_runs[] | select(.status == \"completed\" and .id != $current) | .id" > "$runs_file"
 
           artifacts_deleted=0
           artifacts_failed=0
@@ -882,12 +870,12 @@ jobs:
             echo "- Artifacts that could not be deleted: $artifacts_failed"
             echo "- Runs that could not be deleted: $runs_failed"
             echo ''
-            echo "Published release workflow retained: $retained ($current_version)."
+            echo "Latest cleanup workflow run retained: $current."
             echo 'Current/ongoing workflow runs were not touched.'
             echo 'GitHub Releases, IPA, APK, macOS and Ubuntu installers were not touched.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "Deleted $artifacts_deleted old Actions artifacts and $runs_deleted completed runs; retained published run $retained."
+          echo "Deleted $artifacts_deleted old Actions artifacts and $runs_deleted completed runs; retained latest run $current."
           echo 'This deletes only private Actions artifacts/history, not GitHub Releases or published IPA downloads.'
           if (( artifacts_failed > 0 || runs_failed > 0 )); then
             echo "::warning::Some deletions failed. See job logs and permissions."
