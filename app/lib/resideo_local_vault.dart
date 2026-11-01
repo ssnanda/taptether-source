@@ -166,7 +166,29 @@ class ResideoLocalVault {
 
   Future<void> clearCache() => _storage.delete(key: cacheName);
 
+  // Display preferences contain no credentials and use encrypted device-only
+  // Keychain/Android secure storage; never cloud-synced.
+  static const layoutName = 'taptether.resideo.local-layout.v1';
+
+  Future<Map<String, dynamic>?> readLayout() async {
+    try {
+      final raw = await _storage.read(key: layoutName);
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return decoded.map((key, value) => MapEntry(key.toString(), value));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> writeLayout(Map<String, dynamic> layout) =>
+      _storage.write(key: layoutName, value: jsonEncode(layout));
+
+  Future<void> clearLayout() => _storage.delete(key: layoutName);
+
   Future<void> clear() async {
+    await clearLayout();
     await _storage.delete(key: cacheName);
     await _storage.delete(key: dataName);
     await _storage.delete(key: keyName);
