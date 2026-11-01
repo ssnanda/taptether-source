@@ -334,8 +334,9 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (sheet) => SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 22),
           child: Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -365,7 +366,7 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
                   child: const Text('Close')),
             ],
           ),
-        ),
+        )),
       ),
     );
   }
