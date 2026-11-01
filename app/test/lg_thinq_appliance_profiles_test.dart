@@ -241,7 +241,8 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('thinq-sheet-plus')));
       await tester.pumpAndSettle();
     }
-    expect(find.text('36°F'), findsOneWidget);
+    // Both the expanded sheet and the compact card show the same new target.
+    expect(find.text('36°F'), findsWidgets);
     expect(find.byKey(const ValueKey('thinq-apply-setpoint')), findsNothing);
     expect(find.byKey(const ValueKey('thinq-close-setpoint')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('thinq-close-setpoint')));
@@ -256,6 +257,9 @@ void main() {
     await tester.tap(find.text('Features'));
     await tester.pumpAndSettle();
     expect(find.text('Device features (14)'), findsOneWidget);
+    // Clear the pending background verification before ending the test.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 3));
   });
 
   test('ThinQ TV detection cannot treat a television as an appliance', () {
@@ -332,6 +336,8 @@ void main() {
       }},
     ]);
     expect(find.byKey(const ValueKey('thinq-confirm-control')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('temperature preview stays interactive during slow LG command',
