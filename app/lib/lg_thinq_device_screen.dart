@@ -45,6 +45,10 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
   Object? _profile;
   Object? _state;
   List<ThinQFeature> _features = const [];
+  final Map<String, num> _temperaturePreview = {};
+  final Map<String, ({ThinQFeature feature, num target})> _temperatureQueue = {};
+  bool _temperatureSending = false;
+  String? _temperatureMessage;
   final _historyStore = ThinQCycleHistoryStore();
   List<ThinQCycleEntry> _history = const [];
   Timer? _poll;
@@ -285,8 +289,124 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                 .contains(feature.property));
   }
 
-  /// One sheet, one Apply. The control is still checked against the newest
-  /// LG model profile just before transmission.
+  // Immediate local preview; independent of slow LG network operations.
+  void _setRefrigeratorTarget(ThinQFeature feature, num target) {
+    if (!mounted || !_quickRefrigeratorControl(feature) ||
+        feature.resource != 'temperatureInUnits' ||
+        !feature.permits(target)) {
+      return;
+    }
+    setState(() {
+      _temperaturePreview[feature.identity] = target;
+      _temperatureQueue[feature.identity] = (feature: feature, target: target);
+      _temperatureMessage = null;
+    });
+    // Rapid taps coalesce to the last unsent target for each compartment.
+    unawaited(_sendTemperatureQueue());
+  }
+
+  void _adjustRefrigeratorTarget(ThinQFeature feature, int direction) {
+    final current = _temperaturePreview[feature.identity] ?? feature.current;
+    if (current is! num) return;
+    _setRefrigeratorTarget(
+        feature, current + direction * (feature.step ?? 1));
+  }
+
+  Future<void> _sendTemperatureQueue() async {
+    if (_temperatureSending) return;
+    _temperatureSending = true;
+    try {
+      while (mounted && _temperatureQueue.isNotEmpty) {
+        final key = _temperatureQueue.keys.first;
+        final request = _temperatureQueue.remove(key)!;
+        try {
+          // Keep the model's permitted range check before every physical write.
+          final api = widget.fetchProfile != null &&
+                  widget.sendControl != null ? null : await _client();
+          final profile = await (widget.fetchProfile != null
+              ? widget.fetchProfile!(widget.device.id)
+              : api!.profile(widget.device.id));
+          final valid = thinQFeatures(profile, _state)
+              .where((f) => f.identity == request.feature.identity &&
+                  f.permits(request.target))
+              .toList();
+          if (valid.length != 1) {
+            throw StateError('LG no longer allows that temperature.');
+          }
+          final command = valid.single.command(request.target);
+          if (widget.sendControl != null) {
+            await widget.sendControl!(widget.device.id, command);
+          } else {
+            await api!.control(widget.device.id, command);
+          }
+        } catch (_) {
+          if (mounted &&
+              !_temperatureQueue.containsKey(key) &&
+              _temperaturePreview[key] == request.target) {
+            setState(() {
+              _temperaturePreview.remove(key);
+              _temperatureMessage = 'LG could not apply the temperature change.';
+            });
+          }
+        }
+      }
+      // Verify LG's cloud-reported value without progress overlays or blocking
+      // controls. Do not overwrite newer user input with stale LG responses.
+      for (var attempt = 0;
+          mounted && _temperaturePreview.isNotEmpty &&
+              _temperatureQueue.isEmpty && attempt < 3;
+          attempt++) {
+        await Future<void>.delayed(
+            Duration(milliseconds: attempt == 0 ? 350 : 900));
+        if (!mounted || _temperatureQueue.isNotEmpty) break;
+        try {
+          final state = await (widget.fetchState != null
+              ? widget.fetchState!(widget.device.id)
+              : (await _client()).state(widget.device.id));
+          if (!mounted || _temperatureQueue.isNotEmpty) break;
+          final features = thinQFeatures(_profile, state);
+          final confirmed = <String>[];
+          for (final entry in _temperaturePreview.entries) {
+            if (features.any((f) =>
+                f.identity == entry.key && f.current == entry.value)) {
+              confirmed.add(entry.key);
+            }
+          }
+          try {
+            await (widget.observeFridgeState ?? FridgeAlerts.instance.observe)(
+                widget.device, state);
+          } catch (_) {}
+          if (!mounted || _temperatureQueue.isNotEmpty) break;
+          setState(() {
+            _state = state;
+            _features = features;
+            _checked = DateTime.now();
+            for (final key in confirmed) {
+              _temperaturePreview.remove(key);
+            }
+            if (_temperaturePreview.isEmpty) _temperatureMessage = null;
+          });
+        } catch (_) {
+          // Keep UI interactive during transient cloud failures.
+        }
+      }
+      if (mounted && _temperatureQueue.isEmpty &&
+          _temperaturePreview.isNotEmpty) {
+        setState(() {
+          _temperaturePreview.clear();
+          _temperatureMessage =
+              'Could not verify the temperature with LG. Refresh to check.';
+        });
+      }
+    } finally {
+      _temperatureSending = false;
+      if (mounted && _temperatureQueue.isNotEmpty) {
+        unawaited(_sendTemperatureQueue());
+      }
+    }
+  }
+
+  /// Expanded temperature control uses the same immediate command path.
   Future<void> _editRefrigeratorSetpoint(ThinQFeature feature) async {
     if (_busy || _sending || !feature.actionable ||
         feature.current is! num ||
@@ -589,6 +709,8 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                 onCommand: (feature, choice) => _submitControl(
                     feature, choice, skipConfirmation: true),
                 onEdit: _editRefrigeratorSetpoint,
+                setpointPreview: _temperaturePreview,
+                onStep: _adjustRefrigeratorTarget,
               )
             else if (_tab == 0)
               LgThinQOverview(
