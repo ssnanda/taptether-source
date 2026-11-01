@@ -1106,6 +1106,67 @@ class _ResideoScreenState extends State<ResideoScreen> {
             },
           ),
         ] else ...[
+          Container(
+            key: const ValueKey('resideo-summary-banner'),
+            padding: const EdgeInsets.fromLTRB(15, 17, 12, 17),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                colors: [Color(0xFFF1F0FF), Color(0xFFE0F2FF),
+                  Color(0xFFE2EDFF)],
+              ),
+            ),
+            child: Row(children: [
+              const Icon(Icons.home_outlined, size: 32,
+                  color: Color(0xFF183D6B)),
+              const SizedBox(width: 10),
+              Expanded(flex: 3, child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${visible.length} Thermostats',
+                    key: const ValueKey('resideo-summary-count'),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF142A46))),
+                  const SizedBox(height: 4),
+                  Text('${summaryLocation} · ${lastCheck}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF36475D))),
+                ],
+              )),
+              Container(height: 46, width: 1,
+                color: const Color(0xFFB7D1E6)),
+              const SizedBox(width: 10),
+              Expanded(flex: 2, child: Column(children: [
+                Icon(allCooling ? Icons.ac_unit_rounded
+                    : allHeating ? Icons.wb_sunny_outlined
+                    : Icons.thermostat_outlined,
+                    size: 24, color: const Color(0xFF0875CB)),
+                const SizedBox(height: 4),
+                Text(summaryMode, maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF172C46))),
+                const SizedBox(height: 3),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.circle, size: 8,
+                    color: allOnline ? const Color(0xFF16B23B)
+                      : const Color(0xFF8294A8)),
+                  const SizedBox(width: 4),
+                  Flexible(child: Text(allOnline ? 'All Online'
+                      : '${onlineCount}/${visible.length} Online',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600))),
+                ]),
+              ])),
+            ]),
+          ),
+          const SizedBox(height: 14),
           Row(children: [
             Expanded(child: Text(
               '${visible.length} thermostat${visible.length == 1 ? '' : 's'}',
