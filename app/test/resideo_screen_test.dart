@@ -215,6 +215,13 @@ void main() {
     expect(changed.humidity, isNull);
     expect(changed.outdoorHumidity, 52);
     expect(changed.cool, 78);
+    final modeChanged = changed.withMode(systemMode: 'Heat', fanMode: 'Auto');
+    expect(modeChanged.system, 'Heat');
+    expect(modeChanged.fan, 'Auto');
+    expect(modeChanged.cool, 78);
+    expect(modeChanged.humidity, isNull);
+    expect(modeChanged.systemModes, changed.systemModes);
+    expect(changed.system, d.system);
   });
 
   test('Saved location selection and order stay on this phone', () async {
