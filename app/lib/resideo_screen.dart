@@ -456,6 +456,81 @@ class _ResideoScreenState extends State<ResideoScreen> {
     });
   }
 
+  /// Card-level selectors show exactly the modes supported by this device.
+  /// They never change another room or require opening the detail sheet.
+  Future<void> _showQuickModePicker(ResideoDevice device,
+      {required bool fan}) async {
+    final current = _devices.where((d) => d.cacheId == device.cacheId)
+        .firstOrNull ?? device;
+    if (!current.online || _busy ||
+        _sendingTargets.contains(current.cacheId) ||
+        _targetTimers.containsKey(current.cacheId)) {
+      return;
+    }
+    final options = fan ? current.fanModes : current.systemModes;
+    final selected = fan ? current.fan : current.system;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(fan ? 'Change fan mode' : 'Change system mode',
+            style: Theme.of(sheetContext).textTheme.titleLarge),
+          const SizedBox(height: 5),
+          Text(current.name, maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(sheetContext).textTheme.bodyMedium),
+          const SizedBox(height: 12),
+          if (options.isEmpty)
+            const ListTile(
+              title: Text('No supported modes reported'),
+              subtitle: Text('Refresh thermostats to check available modes.'),
+            ),
+          for (final mode in options)
+            ListTile(
+              key: ValueKey('resideo-option-${fan ? 'fan' : 'system'}-'
+                  '${current.cacheId}-$mode'),
+              title: Text(mode == 'EmergencyHeat'
+                  ? 'Emergency Heat' : mode),
+              leading: Icon(fan ? Icons.air_rounded
+                  : Icons.thermostat_outlined),
+              trailing: mode.toLowerCase() == selected.toLowerCase()
+                  ? const Icon(Icons.check_rounded) : null,
+              onTap: () => Navigator.of(sheetContext).pop(mode),
+            ),
+        ]),
+      ),
+    );
+    if (!mounted || choice == null ||
+        choice.toLowerCase() == selected.toLowerCase()) {
+      return;
+    }
+    await _run(() async {
+      // Validate the specific device again; never apply stale location data.
+      final latest = _devices.where((d) => d.cacheId == current.cacheId)
+          .firstOrNull ?? current;
+      if (!latest.online) {
+        throw const FormatException('This thermostat is offline.');
+      }
+      await _api.mode(latest, choice, fan: fan);
+      final updated = fan
+          ? latest.withMode(fanMode: choice)
+          : latest.withMode(systemMode: choice);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _devices = [
+          for (final d in _devices)
+            if (d.cacheId == updated.cacheId) updated else d,
+        ];
+      });
+      await _api.rememberUpdated(updated);
+    });
+  }
+
   Widget _modeChoices(String heading, List<String> modes, String? selected,
       void Function(String) change) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -544,10 +619,6 @@ class _ResideoScreenState extends State<ResideoScreen> {
                     style: Theme.of(ctx).textTheme.bodyMedium),
                   if (d.humidity != null)
                     Text('Indoor humidity: ${d.humidity!.toStringAsFixed(0)}%'),
-                  if (d.outdoorTemperature != null)
-                    Text('Outside: ${d.display(d.outdoorTemperature)}'),
-                  if (d.outdoorHumidity != null)
-                    Text('Outdoor humidity: ${d.outdoorHumidity!.toStringAsFixed(0)}%'),
                 ])),
                 const SizedBox(height: 20),
                 if (d.isCoolMode) adjustment(false),
@@ -982,6 +1053,41 @@ class _ResideoScreenState extends State<ResideoScreen> {
       ));
     }
 
+    Widget quickModeFooter(ResideoDevice d, {
+      required bool fan, required IconData icon, required String label,
+      required Color color,
+    }) {
+      return Expanded(
+        child: Semantics(
+          button: true,
+          label: 'Change ${fan ? 'fan' : 'system'} mode for ${d.name}',
+          child: InkWell(
+            key: ValueKey('resideo-mode-${fan ? 'fan' : 'system'}-'
+                '${d.cacheId}'),
+            borderRadius: BorderRadius.circular(9),
+            onTap: _busy || !d.online ? null
+                : () => _showQuickModePicker(d, fan: fan),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: color, size: 16),
+                  const SizedBox(width: 3),
+                  Flexible(child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(label, maxLines: 1,
+                      style: TextStyle(color: color, fontSize: 12,
+                        fontWeight: FontWeight.w700)),
+                  )),
+                  const Icon(Icons.arrow_drop_down_rounded, size: 14),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     Widget deviceCard(ResideoDevice d) {
       final cooling = d.isCoolMode;
       final heating = d.isHeatMode;
@@ -1090,28 +1196,22 @@ class _ResideoScreenState extends State<ResideoScreen> {
                   Divider(height: 1, color: accent.withValues(alpha: .13)),
                   const SizedBox(height: 6),
                   Row(children: [
-                    footerItem(
-                      cooling ? Icons.ac_unit_rounded
+                    quickModeFooter(d,
+                      fan: false,
+                      icon: cooling ? Icons.ac_unit_rounded
                           : heating ? Icons.wb_sunny_outlined
                           : Icons.thermostat_outlined,
-                      cooling ? 'Cool' : heating ? 'Heat' : d.modeLabel,
-                      accent),
+                      label: d.modeLabel, color: accent),
                     Container(width: 1, height: 16,
                       color: accent.withValues(alpha: .13)),
-                    footerItem(Icons.air_rounded, d.fan,
-                      const Color(0xFF293C50)),
+                    quickModeFooter(d,
+                      fan: true, icon: Icons.air_rounded,
+                      label: d.fan, color: const Color(0xFF293C50)),
                     if (d.humidity != null) ...[
                       Container(width: 1, height: 16,
                         color: accent.withValues(alpha: .13)),
                       footerItem(Icons.water_drop_outlined,
                         '${d.humidity!.toStringAsFixed(0)}%',
-                        const Color(0xFF293C50)),
-                    ],
-                    if (d.outdoorTemperature != null) ...[
-                      Container(width: 1, height: 16,
-                        color: accent.withValues(alpha: .13)),
-                      footerItem(Icons.cloud_outlined,
-                        d.display(d.outdoorTemperature),
                         const Color(0xFF293C50)),
                     ],
                   ]),
