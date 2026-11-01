@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'lg_thinq_api.dart';
+import 'fridge_alerts.dart';
 import 'lg_thinq_cycle_history.dart';
 import 'lg_thinq_history_panel.dart';
 import 'lg_thinq_energy_panel.dart';
@@ -16,7 +17,8 @@ import 'lg_thinq_refrigerator_overview.dart';
 /// including read-only capabilities, missing reports and writable options.
 class LgThinQDeviceScreen extends StatefulWidget {
   const LgThinQDeviceScreen({super.key, required this.device,
-      this.fetchProfile, this.fetchState, this.sendControl});
+      this.fetchProfile, this.fetchState, this.sendControl,
+      this.observeFridgeState});
   final LgThinQDevice device;
 
   // Injected for deterministic widget testing; production uses user's PAT.
@@ -24,6 +26,8 @@ class LgThinQDeviceScreen extends StatefulWidget {
   final Future<Object?> Function(String id)? fetchState;
   final Future<void> Function(String id, Map<String, Object?> payload)?
       sendControl;
+  // Optional observer for tests; production uses the active alert settings.
+  final Future<void> Function(LgThinQDevice, Object?)? observeFridgeState;
 
   @override
   State<LgThinQDeviceScreen> createState() =>
@@ -122,6 +126,18 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
       if (!mounted) {
         return;
       }
+      // Detail-screen polling must monitor the same confirmed cloud state as
+      // the dashboard. Never notify merely because LG accepted a write.
+      if (freshStatus &&
+          widget.device.type.toUpperCase().contains('REFRIGERATOR')) {
+        try {
+          await (widget.observeFridgeState ?? FridgeAlerts.instance.observe)(
+              widget.device, state);
+        } catch (_) {
+          // Notification failure must not hide a valid refrigerator status.
+        }
+      }
+      if (!mounted) return;
       final items = thinQFeatures(profile, state);
       final now = DateTime.now();
       // Only successful fresh state readings may create history.
