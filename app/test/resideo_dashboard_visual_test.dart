@@ -56,7 +56,8 @@ void main() {
       await tester.binding.setSurfaceSize(null);
       await tester.pumpWidget(const SizedBox.shrink());
     });
-    await tester.pumpWidget(const MaterialApp(home: ResideoScreen()));
+    await tester.pumpWidget(const MaterialApp(
+      home: ResideoScreen(refreshOnOpen: false)));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
