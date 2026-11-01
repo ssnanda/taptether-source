@@ -9,6 +9,7 @@ class FakeLgRemote extends LgWebOsClient {
 
   int clicks = 0;
   final List<String> mediaCommands = [];
+  final List<String> remoteButtons = [];
   @override
   bool get connected => true;
   @override
@@ -26,6 +27,7 @@ class FakeLgRemote extends LgWebOsClient {
   Future<void> pointerMove(int dx, int dy) async {}
   @override
   Future<void> button(String name) async {
+    remoteButtons.add(name);
     if (name == 'PLAY' || name == 'PAUSE') mediaCommands.add(name);
   }
   @override
@@ -60,6 +62,39 @@ void main() {
     expect(fake.mediaCommands, ['PAUSE', 'PLAY']);
     expect(find.byKey(const ValueKey('lg-media-play-pause')),
         findsOneWidget);
+  });
+
+  testWidgets('TV captions open settings without claiming streaming toggles',
+      (tester) async {
+    final fake = FakeLgRemote();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SizedBox(width: 390, height: 640,
+        child: LgCompactRemote(
+          client: fake, device: fake.device, onError: (_) {})))));
+    await tester.pump();
+    expect(find.text('Snapshot'), findsNothing);
+    expect(find.byKey(const ValueKey('lg-closed-captions')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('lg-closed-captions')));
+    await tester.pumpAndSettle();
+    expect(find.text('Closed captions (CC)'), findsOneWidget);
+    expect(find.textContaining('streaming'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('lg-open-caption-settings')));
+    await tester.pumpAndSettle();
+    expect(fake.remoteButtons, contains('SETTINGS'));
+  });
+
+  testWidgets('phone meter entry point does not start microphone automatically',
+      (tester) async {
+    final fake = FakeLgRemote();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SizedBox(width: 390, height: 640,
+        child: LgCompactRemote(
+          client: fake, device: fake.device, onError: (_) {})))));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('lg-phone-sound-meter')));
+    await tester.pumpAndSettle();
+    expect(find.text('Sound level · Phone mic'), findsOneWidget);
+    expect(find.text('Start measuring'), findsOneWidget);
   });
 
   testWidgets('compact remote fits viewport without scrolling or number pad',

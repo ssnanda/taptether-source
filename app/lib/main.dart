@@ -3169,6 +3169,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   Icons.tv_rounded, const Color(0xFF3B8BEF),
                   const Color(0xFF2CB2DA), size: 36),
               title: Text(tv.name, maxLines: 1,
+                semanticsLabel: '${tv.name}, LG TV remote with sound meter and captions',
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w700,
                     fontSize: 14)),

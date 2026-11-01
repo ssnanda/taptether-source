@@ -1,19 +1,16 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'tv_remote_controller.dart';
-import 'lg_snapshot_pad.dart';
+import 'phone_sound_meter.dart';
 import 'lg_voice_search.dart';
 
 /// Single-screen TV remote. Optional actions open overlays, never add rows.
 class LgCompactRemote extends StatefulWidget {
   const LgCompactRemote({super.key, required this.client,
-    required this.device, required this.onError, this.captureSnapshot});
+    required this.device, required this.onError});
   final TvRemoteController client;
   final Object device;
   final ValueChanged<String> onError;
-  /// Only LG remotes with the experimental screenshot API supply this.
-  final Future<Uint8List> Function()? captureSnapshot;
   @override
   State<LgCompactRemote> createState() => _LgCompactRemoteState();
 }
@@ -324,6 +321,55 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
     unawaited(_run(() => widget.client.pointerMove(dx, dy)));
   }
 
+  Future<void> _showSoundMeter() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => const PhoneSoundMeterSheet(),
+    );
+  }
+
+  Future<void> _showCaptions() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 22),
+          child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Closed captions (CC)',
+                style: Theme.of(sheet).textTheme.titleLarge),
+              const SizedBox(height: 10),
+              const Text('Live TV: All Settings → General → Accessibility '
+                '→ Closed Caption. On older LG TVs, Accessibility may '
+                'appear directly under All Settings.'),
+              const SizedBox(height: 8),
+              const Text('Netflix, Apple TV, YouTube and other streaming '
+                'apps control their own subtitles during playback. '
+                'This remote cannot override those app settings.'),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                key: const ValueKey('lg-open-caption-settings'),
+                onPressed: () {
+                  Navigator.pop(sheet);
+                  unawaited(_run(() => widget.client.button('SETTINGS')));
+                },
+                icon: const Icon(Icons.settings_outlined),
+                label: const Text('Open TV settings'),
+              ),
+              const SizedBox(height: 5),
+              TextButton(onPressed: () => Navigator.pop(sheet),
+                  child: const Text('Close')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _actionIcon(String name, IconData icon, VoidCallback action) =>
       IconButton.outlined(
         tooltip: name, icon: Icon(icon), onPressed: action,
@@ -347,6 +393,13 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
             Text('Vol $_volume',
                 style: Theme.of(context).textTheme.labelSmall),
           IconButton(
+            key: const ValueKey('lg-phone-sound-meter'),
+            tooltip: 'Sound level measured by phone',
+            onPressed: _showSoundMeter,
+            icon: const Icon(Icons.multitrack_audio_outlined),
+            iconSize: 20,
+          ),
+          IconButton(
             iconSize: 19, tooltip: 'Refresh now playing',
             onPressed: _refresh, icon: const Icon(Icons.refresh)),
         ]),
@@ -363,15 +416,7 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
               _apps.isEmpty ? null : _openApps),
         ]),
         SizedBox(height: tight ? 4 : 8),
-        if (widget.captureSnapshot != null)
-          Expanded(child: LgSnapshotPad(
-            capture: widget.captureSnapshot!,
-            movePointer: widget.client.pointerMove,
-            clickPointer: widget.client.pointerClick,
-            onError: widget.onError,
-          ))
-        else
-          Expanded(child: Semantics(
+        Expanded(child: Semantics(
           label: widget.client.pointerIsRelative
               ? 'TV touchpad. Swipe to move pointer and tap to click.'
               : 'TV touchpad. Swipe for arrow navigation and tap for OK.',
@@ -428,6 +473,13 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
               }))),
           _actionIcon('Volume up', Icons.volume_up_outlined, () =>
             unawaited(_run(widget.client.volumeUp))),
+          IconButton.outlined(
+            key: const ValueKey('lg-closed-captions'),
+            tooltip: 'Closed captions (CC)',
+            onPressed: _showCaptions,
+            icon: const Text('CC',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
           IconButton.outlined(
             key: const ValueKey('lg-media-play-pause'),
             tooltip: _mediaPlaying ? 'Pause / Play' : 'Play / Pause',
