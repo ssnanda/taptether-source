@@ -27,6 +27,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
   List<ResideoDevice> _devices = [];
   Set<String> _selected = {};
   Set<String> _locations = {};
+  List<String> _locationOrder = [];
+  List<String> _deviceOrder = [];
+  bool _layoutSaved = false;
   bool _loading = true, _busy = false, _configured = false;
   bool _showSecrets = false;
   bool _bulkMode = false;
@@ -75,6 +78,17 @@ class _ResideoScreenState extends State<ResideoScreen> {
       _key.text = c.apiKey;
       _secret.text = c.apiSecret;
       _redirect.text = c.redirectUri;
+      final savedLayout = await _api.dashboardLayout();
+      if (!mounted) return;
+      if (savedLayout != null) {
+        _layoutSaved = true;
+        _locations = (savedLayout['locations'] as List? ?? const [])
+            .whereType<String>().toSet();
+        _locationOrder = (savedLayout['locationOrder'] as List? ?? const [])
+            .whereType<String>().toList();
+        _deviceOrder = (savedLayout['deviceOrder'] as List? ?? const [])
+            .whereType<String>().toList();
+      }
       if (c.usable && !widget.settingsOnly && _devices.isEmpty) {
         final (cached, checkedAt) = await _api.cachedDevices();
         if (!mounted) {
@@ -84,7 +98,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
           setState(() {
             _devices = cached;
             _lastChecked = checkedAt;
-            _locations = cached.map((d) => d.locationId).toSet();
+            if (!_layoutSaved) {
+              _locations = cached.map((d) => d.locationId).toSet();
+            }
             _loading = false;
           });
         }
@@ -236,6 +252,10 @@ class _ResideoScreenState extends State<ResideoScreen> {
       _configured = false;
       _devices = [];
       _selected = {};
+      _locations = {};
+      _locationOrder = [];
+      _deviceOrder = [];
+      _layoutSaved = false;
       _bulkMode = false;
       _lastChecked = null;
       _notice = 'Honeywell connection removed from this device.';
@@ -254,10 +274,10 @@ class _ResideoScreenState extends State<ResideoScreen> {
       _selected = _selected.intersection(ids);
       _lastChecked = DateTime.now();
       final locations = devices.map((d) => d.locationId).toSet();
-      if (_locations.isEmpty) {
-        _locations = locations;
+      if (!_layoutSaved) {
+        if (_locations.isEmpty) _locations = locations;
+        _locations = _locations.intersection(locations);
       }
-      _locations = _locations.intersection(locations);
     });
   }
 
@@ -499,6 +519,12 @@ class _ResideoScreenState extends State<ResideoScreen> {
                   const SizedBox(height: 4),
                   Text('System mode: ${d.modeLabel}',
                     style: Theme.of(ctx).textTheme.bodyMedium),
+                  if (d.humidity != null)
+                    Text('Indoor humidity: ${d.humidity!.toStringAsFixed(0)}%'),
+                  if (d.outdoorTemperature != null)
+                    Text('Outside: ${d.display(d.outdoorTemperature)}'),
+                  if (d.outdoorHumidity != null)
+                    Text('Outdoor humidity: ${d.outdoorHumidity!.toStringAsFixed(0)}%'),
                 ])),
                 const SizedBox(height: 20),
                 if (d.isCoolMode) adjustment(false),
@@ -627,6 +653,208 @@ class _ResideoScreenState extends State<ResideoScreen> {
       ],
       if (_busy) const LinearProgressIndicator(),
     ]);
+  }
+
+
+  List<String> _orderedLocations(Iterable<String> ids) {
+    final remainder = ids.toSet();
+    final result = <String>[];
+    for (final id in _locationOrder) {
+      if (remainder.remove(id)) result.add(id);
+    }
+    result.addAll(remainder.toList()..sort());
+    return result;
+  }
+
+  List<ResideoDevice> _orderedDevices(Iterable<ResideoDevice> devices) {
+    final result = devices.toList();
+    result.sort((a, b) {
+      final first = _deviceOrder.indexOf(a.cacheId);
+      final second = _deviceOrder.indexOf(b.cacheId);
+      if (first >= 0 && second >= 0) return first.compareTo(second);
+      if (first >= 0) return -1;
+      if (second >= 0) return 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return result;
+  }
+
+  Future<void> _saveDashboardLayout() async {
+    try {
+      await _api.saveDashboardLayout({
+        'locations': _locations.toList(),
+        'locationOrder': _locationOrder,
+        'deviceOrder': _deviceOrder,
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Could not save thermostat layout on this device.');
+      }
+    }
+  }
+
+  Future<void> _customizeDashboard() async {
+    final names = <String, String>{
+      for (final d in _devices)
+        d.locationId: d.location.isEmpty ? d.locationId : d.location,
+    };
+    final locationOrder = _orderedLocations(names.keys);
+    final deviceOrder = _orderedDevices(_devices).map((d) => d.cacheId).toList();
+    final enabled = _locations.intersection(names.keys.toSet());
+    final byId = <String, ResideoDevice>{
+      for (final d in _devices) d.cacheId: d,
+    };
+    void shift(List<String> items, String key, int direction) {
+      final from = items.indexOf(key);
+      final to = from + direction;
+      if (from < 0 || to < 0 || to >= items.length) return;
+      final temp = items[from];
+      items[from] = items[to];
+      items[to] = temp;
+    }
+    void shiftDevice(String key, String locationId, int direction) {
+      final local = deviceOrder.where((id) =>
+          byId[id]?.locationId == locationId).toList();
+      final index = local.indexOf(key);
+      final neighborIndex = index + direction;
+      if (index < 0 || neighborIndex < 0 ||
+          neighborIndex >= local.length) return;
+      final other = local[neighborIndex];
+      final a = deviceOrder.indexOf(key);
+      final b = deviceOrder.indexOf(other);
+      deviceOrder[a] = other;
+      deviceOrder[b] = key;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, redraw) {
+          List<ResideoDevice> devicesIn(String locationId) {
+            final result = _devices.where((d) =>
+                d.locationId == locationId).toList();
+            result.sort((a, b) => deviceOrder.indexOf(a.cacheId)
+                .compareTo(deviceOrder.indexOf(b.cacheId)));
+            return result;
+          }
+
+          Widget arrows(int index, int count, void Function(int) move) =>
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  tooltip: 'Move up',
+                  icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                  onPressed: index == 0 ? null : () => redraw(() => move(-1)),
+                ),
+                IconButton(
+                  tooltip: 'Move down',
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  onPressed: index >= count - 1
+                      ? null : () => redraw(() => move(1)),
+                ),
+              ]);
+
+          return SizedBox(
+            height: MediaQuery.sizeOf(sheetContext).height * .75,
+            child: Column(children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Row(children: [
+                  Expanded(child: Text('Customize thermostats',
+                      style: Theme.of(sheetContext).textTheme.titleLarge)),
+                  TextButton(onPressed: () => redraw(() {
+                    enabled..clear()..addAll(names.keys);
+                  }), child: const Text('Show all')),
+                ]),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Choose locations and use arrows to set the order.'),
+                ),
+              ),
+              Expanded(child: ListView(children: [
+                for (final locationId in locationOrder) ...[
+                  CheckboxListTile(
+                    key: ValueKey('resideo-layout-location-$locationId'),
+                    value: enabled.contains(locationId),
+                    title: Text(names[locationId] ?? locationId),
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (selected) => redraw(() {
+                      if (selected == true) {
+                        enabled.add(locationId);
+                      } else if (enabled.length > 1) {
+                        enabled.remove(locationId);
+                      }
+                    }),
+                    secondary: arrows(
+                      locationOrder.indexOf(locationId),
+                      locationOrder.length,
+                      (direction) => shift(locationOrder, locationId, direction),
+                    ),
+                  ),
+                  for (final device in devicesIn(locationId))
+                    Padding(
+                      padding: const EdgeInsets.only(left: 26),
+                      child: ListTile(
+                        dense: true,
+                        title: Text(device.name),
+                        leading: const Icon(Icons.thermostat_outlined, size: 20),
+                        trailing: arrows(
+                          devicesIn(locationId).indexWhere(
+                              (d) => d.cacheId == device.cacheId),
+                          devicesIn(locationId).length,
+                          (direction) => shiftDevice(
+                              device.cacheId, locationId, direction),
+                        ),
+                      ),
+                    ),
+                  const Divider(height: 8),
+                ],
+              ])),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+                child: SizedBox(width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const ValueKey('resideo-save-layout'),
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Save selection & order'),
+                    onPressed: enabled.isEmpty ? null : () async {
+                      try {
+                        await _api.saveDashboardLayout({
+                          'locations': enabled.toList(),
+                          'locationOrder': locationOrder,
+                          'deviceOrder': deviceOrder,
+                        });
+                        if (!mounted || !sheetContext.mounted) return;
+                        setState(() {
+                          _locations = Set.of(enabled);
+                          _locationOrder = List.of(locationOrder);
+                          _deviceOrder = List.of(deviceOrder);
+                          _layoutSaved = true;
+                        });
+                        Navigator.pop(sheetContext);
+                      } catch (_) {
+                        if (sheetContext.mounted) {
+                          ScaffoldMessenger.of(sheetContext).showSnackBar(
+                            const SnackBar(content: Text(
+                                'Unable to save thermostat layout.')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
   }
 
   Widget _dashboard() {
