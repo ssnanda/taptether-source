@@ -714,6 +714,7 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                 onEdit: _editRefrigeratorSetpoint,
                 setpointPreview: _temperaturePreview,
                 onStep: _adjustRefrigeratorTarget,
+                temperatureMessage: _temperatureMessage,
               )
             else if (_tab == 0)
               LgThinQOverview(
