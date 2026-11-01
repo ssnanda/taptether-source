@@ -63,7 +63,11 @@ void main() {
 
     expect(find.byKey(const ValueKey('resideo-summary-banner')), findsOneWidget);
     expect(find.byKey(const ValueKey('resideo-summary-count')), findsOneWidget);
-    expect(find.text('3 Thermostats'), findsNWidgets(2));
+    expect(find.text('3 Thermostats'), findsOneWidget);
+    // The location heading contains just its name and count; avoid duplicate
+    // 'thermostats' labels, and keep quick setpoint buttons in compact cards.
+    expect(find.text('9318'), findsWidgets);
+    expect(find.text('Online'), findsNothing);
     expect(find.byKey(const ValueKey('resideo-filter-9318')), findsOneWidget);
     expect(find.byKey(const ValueKey('resideo-group-toggle-9318')), findsOneWidget);
     expect(find.byKey(const ValueKey('resideo-customize')), findsOneWidget);
@@ -75,6 +79,12 @@ void main() {
       'resideo-increase-9318:DEVICE-Upstairs-cool')), findsOneWidget);
     expect(find.text('Cooling'), findsWidgets);
     expect(tester.takeException(), isNull);
+    final thermostat = tester.getSize(
+        find.byKey(const ValueKey('resideo-card-9318:DEVICE-Upstairs')));
+    // Between the two references: shorter than the previous spacious card,
+    // but tall enough for big temperatures and easy touch controls.
+    expect(thermostat.height, lessThan(150));
+    expect(thermostat.height, greaterThan(85));
 
     await tester.tap(find.byKey(const ValueKey('resideo-group-toggle-9318')));
     await tester.pump();
