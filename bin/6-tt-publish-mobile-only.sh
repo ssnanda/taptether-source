@@ -39,10 +39,10 @@ print('Retaining',len(agent_names),'desktop packages and the existing Android AP
 PY
 # Only the IPA and icon are replaced. Verify APK plus every agent asset
 # remains byte-for-byte identical by checking GitHub asset IDs and digests.
-previous_assets="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name == "TapTether.apk" or (.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-"))) | "\\(.name):\\(.id):\\(.size):\\(.digest)"' | sort)"
+previous_assets="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name == "TapTether.apk" or (.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-"))) | "\(.name):\(.id):\(.size):\(.digest)"' | sort)"
 gh release upload "$TAG" -R "$REPO" --clobber \
   "$STAGE/TapTether.ipa" "$STAGE/TapTether-icon.png"
-remaining_assets="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name == "TapTether.apk" or (.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-"))) | "\\(.name):\\(.id):\\(.size):\\(.digest)"' | sort)"
+remaining_assets="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name == "TapTether.apk" or (.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-"))) | "\(.name):\(.id):\(.size):\(.digest)"' | sort)"
 [[ "$previous_assets" == "$remaining_assets" ]] || {
   echo 'The existing APK or agent files unexpectedly changed.' >&2; exit 1;
 }
