@@ -1151,7 +1151,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF142A46))),
                   const SizedBox(height: 4),
-                  Text('${summaryLocation} · ${lastCheck}',
+                  Text('$summaryLocation · $lastCheck',
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: const Color(0xFF36475D))),
@@ -1178,7 +1178,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
                       : const Color(0xFF8294A8)),
                   const SizedBox(width: 4),
                   Flexible(child: Text(allOnline ? 'All Online'
-                      : '${onlineCount}/${visible.length} Online',
+                      : '$onlineCount/${visible.length} Online',
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.w600))),
