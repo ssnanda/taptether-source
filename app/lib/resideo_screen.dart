@@ -62,7 +62,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   @override
   void dispose() {
-    _speech.cancel();
+    unawaited(_speech.cancel());
     for (final timer in _targetTimers.values) {
       timer.cancel();
     }
@@ -365,15 +365,27 @@ class _ResideoScreenState extends State<ResideoScreen> {
       return const SizedBox.shrink();
     }
     final sending = _sendingTargets.contains(d.cacheId);
+    final accent = d.isCoolMode ? const Color(0xFF0875CB)
+        : d.isHeatMode ? const Color(0xFFC65A25)
+        : const Color(0xFF38698D);
+    final buttonStyle = IconButton.styleFrom(
+      backgroundColor: accent.withValues(alpha: .10),
+      foregroundColor: accent,
+      minimumSize: const Size(42, 42),
+      shape: CircleBorder(side: BorderSide(
+        color: accent.withValues(alpha: .18))),
+    );
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      IconButton.filledTonal(
+      IconButton(
+        style: buttonStyle,
         key: ValueKey('resideo-decrease-${d.cacheId}-${heating ? 'heat' : 'cool'}'),
         tooltip: 'Lower ${d.name} ${heating ? 'heat' : 'cool'} target',
         icon: const Icon(Icons.remove_rounded),
         onPressed: sending ? null : () => _adjustTarget(d, heating, -1),
       ),
       const SizedBox(width: 2),
-      IconButton.filledTonal(
+      IconButton(
+        style: buttonStyle,
         key: ValueKey('resideo-increase-${d.cacheId}-${heating ? 'heat' : 'cool'}'),
         tooltip: 'Raise ${d.name} ${heating ? 'heat' : 'cool'} target',
         icon: const Icon(Icons.add_rounded),
@@ -871,13 +883,17 @@ class _ResideoScreenState extends State<ResideoScreen> {
   Future<void> _voiceSearch() async {
     if (_listeningSearch) {
       await _speech.stop();
-      if (mounted) setState(() => _listeningSearch = false);
+      if (mounted) {
+        setState(() => _listeningSearch = false);
+      }
       return;
     }
     try {
       final ready = await _speech.initialize(
         onStatus: (status) {
-          if (!mounted) return;
+          if (!mounted) {
+            return;
+          }
           if (status == 'done' || status == 'notListening') {
             setState(() => _listeningSearch = false);
           }
@@ -892,8 +908,10 @@ class _ResideoScreenState extends State<ResideoScreen> {
         },
       );
       if (!ready || !mounted) {
-        if (mounted) setState(() =>
-            _error = 'Speech recognition unavailable. Use the search field.');
+        if (mounted) {
+          setState(() => _error =
+              'Speech recognition unavailable. Use the search field.');
+        }
         return;
       }
       setState(() => _listeningSearch = true);
