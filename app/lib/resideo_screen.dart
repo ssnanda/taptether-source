@@ -954,9 +954,6 @@ class _ResideoScreenState extends State<ResideoScreen> {
     final selected = visible.where((d) => _selected.contains(d.id)).toList();
     final onlineCount = visible.where((d) => d.online).length;
     final allOnline = visible.isNotEmpty && onlineCount == visible.length;
-    final summaryLocation = orderedLocations.length == 1
-        ? (locations[orderedLocations.first] ?? '')
-        : '${orderedLocations.length} Locations';
     final lastCheck = _lastChecked == null ? 'Checking…'
         : 'Checked ${TimeOfDay.fromDateTime(_lastChecked!).format(context)}';
     final allCooling = visible.isNotEmpty &&
@@ -1158,65 +1155,58 @@ class _ResideoScreenState extends State<ResideoScreen> {
         ] else ...[
           Container(
             key: const ValueKey('resideo-summary-banner'),
-            padding: const EdgeInsets.fromLTRB(15, 17, 12, 17),
+            padding: const EdgeInsets.fromLTRB(13, 10, 12, 10),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(17),
               gradient: const LinearGradient(
                 begin: Alignment.topLeft, end: Alignment.bottomRight,
-                colors: [Color(0xFFF1F0FF), Color(0xFFE0F2FF),
-                  Color(0xFFE2EDFF)],
+                colors: [Color(0xFFF3F7FF), Color(0xFFE7F3FE)],
               ),
             ),
             child: Row(children: [
-              const Icon(Icons.home_outlined, size: 32,
-                  color: Color(0xFF183D6B)),
-              const SizedBox(width: 10),
-              Expanded(flex: 3, child: Column(
+              Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('${visible.length} Thermostats',
                     key: const ValueKey('resideo-summary-count'),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleLarge?.copyWith(
+                    style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF142A46))),
-                  const SizedBox(height: 4),
-                  Text('$summaryLocation · $lastCheck',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: 3),
+                  Text(lastCheck, maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: const Color(0xFF36475D))),
                 ],
               )),
-              Container(height: 46, width: 1,
-                color: const Color(0xFFB7D1E6)),
-              const SizedBox(width: 10),
-              Expanded(flex: 2, child: Column(children: [
-                Icon(allCooling ? Icons.ac_unit_rounded
-                    : allHeating ? Icons.wb_sunny_outlined
-                    : Icons.thermostat_outlined,
-                    size: 24, color: const Color(0xFF0875CB)),
-                const SizedBox(height: 4),
-                Text(summaryMode, maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF172C46))),
-                const SizedBox(height: 3),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.circle, size: 8,
-                    color: allOnline ? const Color(0xFF16B23B)
-                      : const Color(0xFF8294A8)),
-                  const SizedBox(width: 4),
-                  Flexible(child: Text(allOnline ? 'All Online'
-                      : '$onlineCount/${visible.length} Online',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w600))),
-                ]),
-              ])),
+              const SizedBox(width: 8),
+              Icon(allCooling ? Icons.ac_unit_rounded
+                  : allHeating ? Icons.wb_sunny_outlined
+                  : Icons.thermostat_outlined,
+                  size: 21, color: const Color(0xFF0875CB)),
+              const SizedBox(width: 5),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(summaryMode,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF172C46))),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.circle, size: 7,
+                      color: allOnline ? const Color(0xFF16B23B)
+                        : const Color(0xFF8294A8)),
+                    const SizedBox(width: 4),
+                    Text(allOnline ? 'All online'
+                        : '${onlineCount}/${visible.length} online',
+                      style: theme.textTheme.labelSmall),
+                  ]),
+                ],
+              ),
             ]),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 9),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(children: [
@@ -1275,7 +1265,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
                 }),
             ]),
           ),
-          const SizedBox(height: 13),
+          const SizedBox(height: 9),
           TextField(
             controller: _search,
             onChanged: (_) => setState(() {}),
@@ -1300,7 +1290,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
                 borderSide: BorderSide(color: scheme.outlineVariant)),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 11),
           if (_bulkMode) Card(
             margin: const EdgeInsets.only(bottom: 12),
             child: Padding(padding: const EdgeInsets.all(12),
@@ -1334,7 +1324,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
               Container(
                 key: ValueKey('resideo-location-$locationId'),
                 margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.fromLTRB(9, 3, 9, 1),
+                padding: const EdgeInsets.fromLTRB(8, 2, 8, 1),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF7FAFE),
                   borderRadius: BorderRadius.circular(22),
@@ -1353,7 +1343,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
                       }
                     }),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(7, 12, 7, 12),
+                      padding: const EdgeInsets.fromLTRB(7, 8, 7, 8),
                       child: Row(children: [
                         const Icon(Icons.location_on_outlined, size: 23,
                             color: Color(0xFF173B65)),
@@ -1363,7 +1353,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: const Color(0xFF1A2942),
                             fontWeight: FontWeight.w800))),
-                        Text('${visible.where((d) => d.locationId == locationId).length} Thermostats',
+                        Text('${visible.where((d) => d.locationId == locationId).length}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: const Color(0xFF2B3B51))),
                         const SizedBox(width: 5),
