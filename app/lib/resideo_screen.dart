@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import 'resideo_api.dart';
 import 'resideo_oauth_screen.dart';
@@ -27,6 +28,9 @@ class _ResideoScreenState extends State<ResideoScreen> {
   List<ResideoDevice> _devices = [];
   Set<String> _selected = {};
   Set<String> _locations = {};
+  final Set<String> _collapsedLocations = {};
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _listeningSearch = false;
   List<String> _locationOrder = [];
   List<String> _deviceOrder = [];
   bool _layoutSaved = false;
@@ -58,6 +62,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
 
   @override
   void dispose() {
+    _speech.cancel();
     for (final timer in _targetTimers.values) {
       timer.cancel();
     }
@@ -256,6 +261,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
       _locationOrder = [];
       _deviceOrder = [];
       _layoutSaved = false;
+      _collapsedLocations.clear();
       _bulkMode = false;
       _lastChecked = null;
       _notice = 'Honeywell connection removed from this device.';
@@ -861,6 +867,50 @@ class _ResideoScreenState extends State<ResideoScreen> {
     );
   }
 
+
+  Future<void> _voiceSearch() async {
+    if (_listeningSearch) {
+      await _speech.stop();
+      if (mounted) setState(() => _listeningSearch = false);
+      return;
+    }
+    try {
+      final ready = await _speech.initialize(
+        onStatus: (status) {
+          if (!mounted) return;
+          if (status == 'done' || status == 'notListening') {
+            setState(() => _listeningSearch = false);
+          }
+        },
+        onError: (_) {
+          if (mounted) {
+            setState(() {
+              _listeningSearch = false;
+              _error = 'Voice search stopped. Try typing a room name.';
+            });
+          }
+        },
+      );
+      if (!ready || !mounted) {
+        if (mounted) setState(() =>
+            _error = 'Speech recognition unavailable. Use the search field.');
+        return;
+      }
+      setState(() => _listeningSearch = true);
+      await _speech.listen(
+        onResult: (result) {
+          if (mounted) {
+            setState(() => _search.text = result.recognizedWords);
+          }
+        },
+      );
+    } catch (_) {
+      if (mounted) setState(() {
+        _listeningSearch = false;
+        _error = 'Voice search unavailable. Use the search field.';
+      });
+    }
+  }
 
   Widget _dashboard() {
     final theme = Theme.of(context);
