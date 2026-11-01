@@ -25,12 +25,12 @@ assert "github.ref == 'refs/heads/main'" in workflow
 assert "    paths:\n      - VERSION" not in workflow, (
     "VERSION pushes must not publish automatically before iPhone installation"
 )
-assert "if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]')) }}" in workflow
+assert "Legacy full-release preflight (disabled)" in workflow
 assert "- 'app/lib/xbox_*.dart'" in workflow
 assert "- '.github/workflows/taptether.yml'" in workflow
 assert "[build xbox]" in workflow
 assert "[build ipa]" in workflow
-assert "if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]')) }}" in workflow
+assert "  mobile-build-and-publish:" in workflow
 
 assert "  validate:" in workflow
 assert "  build-ubuntu:" in workflow
@@ -109,13 +109,29 @@ assert "Scan entire local network" in xbox_ui
 assert "Xbox app preferences" not in xbox_ui
 
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
-assert "run: bash bin/2a-tt-apk.sh --no-publish" in workflow
+assert "bin/2a-tt-apk.sh" not in workflow.split("  mobile-build-and-publish:",1)[1].split("  agent-only-validate:",1)[0]
 assert "run: bash bin/6-tt-publish-latest.sh" in workflow
-assert "if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]')) }}" in workflow
+assert "Legacy full-release preflight (disabled)" in workflow
 assert "if: ${{ inputs.task == 'build' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) }}" in workflow
-assert workflow.count("if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]')) }}") >= 2
+assert "Android debug build smoke test" not in workflow
 assert "TapTether-complete-build-" in workflow
 assert "retention-days: 7" in workflow
+
+# iOS-only is enforced for every active release and validation entrypoint.
+for dormant in ("build-ubuntu", "build-windows", "build-and-publish",
+                "publish-verified-ipa-196"):
+    header = workflow.split(f"  {dormant}:", 1)[1].split("    steps:", 1)[0]
+    assert "    if: ${{ false }}" in header, f"{dormant} must be disabled"
+enabled_mobile = workflow.split("  mobile-build-and-publish:", 1)[1].split(
+    "  agent-only-validate:", 1)[0]
+enabled_validate = workflow.split("  validate:", 1)[1].split(
+    "  verify-macos-agent:", 1)[0]
+assert "inputs.task == 'release'" in enabled_mobile
+assert "inputs.task == 'build'" in enabled_mobile
+assert "bin/2a-tt-apk.sh" not in enabled_mobile
+assert "flutter build apk" not in enabled_validate
+assert "flutter create --platforms=android" not in enabled_validate
+assert "TAPTETHER_IPA_ONLY: '1'" in enabled_mobile
 
 # Resideo mobile-only releases must reuse public agent packages, never compile
 # or overwrite unrelated macOS/Ubuntu/Windows executables.
@@ -181,13 +197,13 @@ assert "  agent-only-macos:" in workflow
 assert "  agent-only-windows:" in workflow
 assert "The [publish 209] push trigger is valid for 0.8.48+209 only." in workflow
 assert "  cleanup-history:" in workflow
-assert "    needs: build-and-publish" in workflow
+assert "    needs: [build-and-publish, mobile-build-and-publish]" in workflow
 assert "    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup'" in workflow
 assert "always() && (github.event_name == 'schedule'" in workflow
 assert "inputs.task == 'cleanup'" in workflow
 assert "inputs.task != 'cleanup'" in workflow
 assert "contains(github.event.head_commit.message, '[cleanup actions]')" in workflow
-assert "needs.build-and-publish.result == 'success'" in workflow
+assert "needs.mobile-build-and-publish.result == 'success'" in workflow
 
 # Regression guards: the Mac Finder installer must report and recover from
 # launchd failures without copying raw pairing details or logs.
@@ -379,5 +395,5 @@ assert "Check a specific device" in scan_screen
 
 
 print("PASS: one Actions workflow, explicit full release after iPhone install, manual cleanup")
-print("PASS: validate -> Ubuntu/Windows/macOS agents -> IPA/APK -> publish")
+print("PASS: active app paths build/publish IPA only; published APK preserved")
 print("PASS: binary-only public rolling releases; no historical tags")

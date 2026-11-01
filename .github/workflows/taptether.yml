@@ -6,6 +6,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # Resideo 209: direct Honeywell Home developer API with OAuth tokens (lint fixed).
 # Resideo 210: user-entered Consumer Key/Secret, callback, and in-app OAuth.
 # IPA-only release: preserve existing APK and desktop agent artifacts.
+# Android is deferred: all enabled app release, build and validation paths use iOS only.
 # 0.8.58+219: polished thermostat heading; iPhone-only build, reuse published Android asset.
 # 0.8.58+219 IPA-only published and verified; cleanup Actions history.
 # 0.8.51+212: saved thermostat layout, grouped comfort data and app-only release.
@@ -107,8 +108,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Release preflight (only before publishing)
-        if: ${{ inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]')) }}
+      - name: Legacy full-release preflight (disabled)
+        if: ${{ false }}
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
         run: |
@@ -183,9 +184,6 @@ jobs:
       - name: Initialize Flutter runner and dependencies
         run: |
           cd app
-          flutter create --platforms=android --org com.taptether --project-name taptether .
-          bash ../bin/2g-tt-voice-permissions.sh
-          bash ../bin/2h-tt-fridge-background.sh
           flutter pub get
       - name: Prepare bundled branding used by widget tests
         run: |
@@ -201,12 +199,6 @@ jobs:
         run: |
           cd app
           flutter test
-      - name: Android debug build smoke test
-        if: ${{ inputs.task == 'validate' }}
-        run: |
-          cd app
-          flutter build apk --debug
-
   verify-macos-agent:
     # Lightweight native verification of the new macOS Screen Recording CGo
     # code. This job never packages, uploads or publishes artifacts.
@@ -230,7 +222,7 @@ jobs:
 
   build-ubuntu:
     needs: validate
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]')) }}
+    if: ${{ false }} # Combined builds deferred while iOS-only
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -266,7 +258,7 @@ jobs:
 
   build-windows:
     needs: validate
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]')) }}
+    if: ${{ false }} # Combined builds deferred while iOS-only
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -324,7 +316,7 @@ jobs:
 
   build-and-publish:
     needs: [build-ubuntu, build-windows]
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build xbox]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build ipa]')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]')) }}
+    if: ${{ false }} # Combined builds deferred while iOS-only
     permissions:
       contents: write
     runs-on: macos-latest
@@ -487,7 +479,7 @@ jobs:
     # Build iOS only. Reuse publicly verified desktop packages;
     # NEVER rebuild, republish, or rename desktop agent releases.
     needs: validate
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.task == 'mobile-release') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish mobile]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'mobile-release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(github.event.head_commit.message, '[publish mobile]') || contains(github.event.head_commit.message, '[build ipa]') || contains(github.event.head_commit.message, '[build xbox]'))) }}
     permissions:
       contents: write
     runs-on: macos-latest
@@ -531,12 +523,22 @@ jobs:
           bash bin/6-tt-fetch-existing-agents.sh
       - name: Build iPhone IPA without rebuilding agents
         run: bash bin/2a-tt-ipa.sh --no-publish
+      - name: Upload IPA for build-only requests
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.task == 'build') || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[build ipa]') || contains(github.event.head_commit.message, '[build xbox]'))) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: TapTether-iPhone-${{ github.run_id }}
+          path: dist/ios/*.ipa
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish iPhone IPA, retain APK and agents
+        if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'mobile-release')) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile]')) }}
         env:
           GH_TOKEN: ${{ secrets.TAPTETHER_PUBLIC_RELEASE_TOKEN }}
           TAPTETHER_IPA_ONLY: '1'
         run: bash bin/6-tt-publish-mobile-only.sh
       - name: Sync published AltStore metadata to private source
+        if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'mobile-release')) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile]')) }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -738,7 +740,7 @@ jobs:
   # One-time publication of the fully validated 0.8.35+196 build artifact.
   # Reuses the iOS, Android and agent packages from successful CI run 40962701309.
   publish-verified-ipa-196:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish built 196]') }}
+    if: ${{ false }} # Historical combined publisher disabled
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -801,10 +803,10 @@ jobs:
             --jq '.assets[].name' | grep -Fx 'TapTether.ipa'
 
   cleanup-history:
-    needs: build-and-publish
+    needs: [build-and-publish, mobile-build-and-publish]
     # Weekly, explicitly requested cleanup, one-shot maintenance merge, or a successful release.
     # A cleanup request never launches Go, Flutter, or native build jobs.
-    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[cleanup actions]')) || ((inputs.task == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish 209]'))) && needs.build-and-publish.result == 'success')) }}
+    if: ${{ always() && (github.event_name == 'schedule' || inputs.task == 'cleanup' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[cleanup actions]')) || ((inputs.task == 'release' || inputs.task == 'mobile-release' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish mobile]'))) && needs.mobile-build-and-publish.result == 'success')) }}
     continue-on-error: true
     permissions:
       contents: read

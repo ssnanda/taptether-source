@@ -5,13 +5,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(uname -s)" == Darwin ]] || { echo 'IPA builds require macOS with Xcode.' >&2; exit 1; }
 command -v flutter >/dev/null 2>&1 || { echo 'Flutter SDK not found.' >&2; exit 1; }
 command -v xcodebuild >/dev/null 2>&1 || { echo 'Xcode not found.' >&2; exit 1; }
-PUBLISH=1
+PUBLISH=0
 SIGNED=0
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --no-publish|--local-only) PUBLISH=0; shift ;;
     --unsigned) shift ;;
     --signed) SIGNED=1; shift ;;
+    --publish) PUBLISH=1; shift ;;
     *) break ;;
   esac
 done
@@ -52,4 +53,4 @@ python3 "$ROOT/bin/6-tt-generate-altstore.py" \
   --ipa "$OUTPUT" --version-file "$ROOT/VERSION" \
   --output "$ROOT/altstore.json" --icon-output "$ROOT/dist/release/TapTether-icon.png"
 echo "AltStore source: $ROOT/altstore.json"
-if [[ "$PUBLISH" -eq 1 ]]; then bash "$ROOT/bin/6-tt-publish-latest.sh"; fi
+if [[ "$PUBLISH" -eq 1 ]]; then bash "$ROOT/bin/6-tt-publish-mobile-only.sh"; fi

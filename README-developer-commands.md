@@ -1,5 +1,7 @@
 # TapTether developer commands
 
+**iOS-only release policy:** Build and publish only the IPA until Android is explicitly enabled. Preserve the existing published Android APK unchanged. `task=release` and `task=mobile-release` publish the IPA only; `task=build` creates an IPA artifact and does not publish. Desktop agents have independent releases.
+
 These are the everyday entry points. The older numbered release helpers remain in place because GitHub Actions and packaging scripts call them.
 
 | Order | Command | Function |
