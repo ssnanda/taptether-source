@@ -9,6 +9,7 @@ name: 'TapTether - Build, Release & Maintenance'
 # 0.8.51+212: saved thermostat layout, grouped comfort data and app-only release.
 # Retry mobile-only publication after Flutter analyzer corrections.
 # Final analyzer cleanup: wrap multiline conditions before mobile build.
+# Post-release maintenance: purge obsolete completed Actions runs, retain current IPA.
 # One-time exception: [publish 209] in a main squash-merge commit triggers version
 # 0.8.48+209 only: connect direct Honeywell Home API credentials and tokens.
 # VERSION commits never automatically publish (explicit one-time 207 exception). Agent-only pushes remain supported.
