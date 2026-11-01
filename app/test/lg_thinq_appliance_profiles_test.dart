@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/lg_thinq_api.dart';
 import 'package:taptether/lg_thinq_device_screen.dart';
 import 'package:taptether/lg_thinq_features.dart';
+import 'package:taptether/fridge_temperature.dart';
 
 const fridge = LgThinQDevice(
   id: 'fridge-test', name: 'Refrigerator',
@@ -266,6 +267,44 @@ void main() {
     expect(tvs.first.isTelevision, isTrue);
     expect(tvs.first.isAppliance, isFalse);
     expect(tvs.last.isTelevision, isFalse);
+  });
+
+  testWidgets('fridge detail observes confirmed changes without navigation',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(950, 2300));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    var target = 33;
+    final observed = <Object?>[];
+    Map<String, Object?> reportedState() => {
+      ...refrigeratorState,
+      'temperatureInUnits': [
+        {'locationName': 'FREEZER',
+          'targetTemperatureC': -23, 'targetTemperatureF': -7},
+        {'locationName': 'FRIDGE',
+          'targetTemperatureC': 1, 'targetTemperatureF': target},
+      ],
+      'temperature': [
+        {'locationName': 'FREEZER', 'targetTemperature': -7},
+        {'locationName': 'FRIDGE', 'targetTemperature': target},
+      ],
+    };
+    await tester.pumpWidget(MaterialApp(home: LgThinQDeviceScreen(
+      device: fridge,
+      fetchProfile: (_) async => refrigeratorProfile,
+      fetchState: (_) async => reportedState(),
+      sendControl: (_, _) async => target = 34,
+      observeFridgeState: (_, state) async => observed.add(state),
+    )));
+    await tester.pumpAndSettle();
+    expect(observed, hasLength(1));
+    expect(fridgeReadings(observed.single).singleWhere(
+        (reading) => reading.identity == 'FRIDGE:target').value, 33);
+    await tester.tap(find.byKey(const ValueKey('thinq-fridge-plus')));
+    await tester.pumpAndSettle();
+    expect(observed, hasLength(2));
+    expect(fridgeReadings(observed.last).singleWhere(
+        (reading) => reading.identity == 'FRIDGE:target').value, 34);
+    expect(find.text('34°F'), findsOneWidget);
   });
 
   testWidgets('refrigerator single-step adjustment needs no extra dialog',
