@@ -408,7 +408,7 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
 
   /// Expanded temperature control uses the same immediate command path.
   Future<void> _editRefrigeratorSetpoint(ThinQFeature feature) async {
-    if (_busy || _sending || !feature.actionable ||
+    if (!feature.actionable ||
         feature.current is! num ||
         feature.minimum == null || feature.maximum == null) {
       return;
@@ -417,14 +417,15 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
     final increment = feature.step ?? 1;
     final divisions = ((feature.maximum! - minimum) / increment).round();
     if (increment <= 0 || divisions < 1 || divisions > 200) return;
-    var index = (((feature.current as num) - minimum) / increment)
+    var index = (((_temperaturePreview[feature.identity] ??
+        (feature.current as num)) - minimum) / increment)
         .round().clamp(0, divisions).toInt();
     final unit = feature.property.endsWith('F') ? '°F' : '°C';
     num numberAt(int position) {
       final value = minimum + position * increment;
       return value == value.roundToDouble() ? value.toInt() : value;
     }
-    final chosen = await showModalBottomSheet<num>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -453,8 +454,10 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                       IconButton.filledTonal(
                         key: const ValueKey('thinq-sheet-minus'),
                         icon: const Icon(Icons.remove),
-                        onPressed: index == 0 ? null
-                            : () => update(() => index--),
+                        onPressed: index == 0 ? null : () {
+                          update(() => index--);
+                          _setRefrigeratorTarget(feature, numberAt(index));
+                        },
                       ),
                       Text('$current$unit',
                           key: const ValueKey('thinq-sheet-value'),
@@ -462,8 +465,10 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                       IconButton.filledTonal(
                         key: const ValueKey('thinq-sheet-plus'),
                         icon: const Icon(Icons.add),
-                        onPressed: index == divisions ? null
-                            : () => update(() => index++),
+                        onPressed: index == divisions ? null : () {
+                          update(() => index++);
+                          _setRefrigeratorTarget(feature, numberAt(index));
+                        },
                       ),
                     ],
                   ),
@@ -475,6 +480,8 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                     label: '$current$unit',
                     onChanged: (value) =>
                         update(() => index = value.round()),
+                    onChangeEnd: (value) =>
+                        _setRefrigeratorTarget(feature, numberAt(index)),
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -485,11 +492,9 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
                   ),
                   const SizedBox(height: 16),
                   FilledButton(
-                    key: const ValueKey('thinq-apply-setpoint'),
-                    onPressed: current == feature.current ||
-                            !feature.permits(current)
-                        ? null : () => Navigator.pop(sheet, current),
-                    child: const Text('Apply temperature'),
+                    key: const ValueKey('thinq-close-setpoint'),
+                    onPressed: () => Navigator.pop(sheet),
+                    child: const Text('Done'),
                   ),
                 ],
               ),
@@ -498,9 +503,7 @@ class _LgThinQDeviceScreenState extends State<LgThinQDeviceScreen>
         },
       ),
     );
-    if (chosen != null && mounted) {
-      await _submitControl(feature, chosen, skipConfirmation: true);
-    }
+    // No Apply step: the steppers and slider send each change directly.
   }
 
   Future<void> _submitControl(ThinQFeature feature, Object choice,
