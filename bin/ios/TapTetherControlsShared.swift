@@ -36,11 +36,11 @@ enum TapTetherControlTarget: String, AppEnum {
 
     static var typeDisplayRepresentation = TypeDisplayRepresentation("TapTether TV action")
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
-        .open: "Open remote",
-        .power: "TV power",
-        .volumeUp: "Volume up",
-        .volumeDown: "Volume down",
-        .mute: "Mute"
+        .open: DisplayRepresentation("Open remote"),
+        .power: DisplayRepresentation("TV power"),
+        .volumeUp: DisplayRepresentation("Volume up"),
+        .volumeDown: DisplayRepresentation("Volume down"),
+        .mute: DisplayRepresentation("Mute")
     ]
 }
 
