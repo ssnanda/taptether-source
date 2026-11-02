@@ -158,11 +158,11 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       if (_timing.foundDuringWakeMs != null) {
         lines.add('TV found at +${lgElapsed(Duration(
             milliseconds: _timing.foundDuringWakeMs! - powered))}'
-            ' · Connecting ${elapsed}');
+            ' · Connecting $elapsed');
       } else if (_timing.findingStartedMs != null) {
-        lines.add('Finding TV · ${elapsed} since power on');
+        lines.add('Finding TV · $elapsed since power on');
       } else {
-        lines.add('Power on · ${elapsed} elapsed');
+        lines.add('Power on · $elapsed elapsed');
       }
     } else if (_timing.hasRecentWake(now) &&
         _timing.lastPowerToConnectedSeconds != null) {
@@ -171,9 +171,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       if (_timing.lastPowerToFoundSeconds != null) {
         final found = lgElapsed(Duration(
             seconds: _timing.lastPowerToFoundSeconds!));
-        lines.add('Power → Found ${found} · Connected ${connected}');
+        lines.add('Power → Found $found · Connected $connected');
       } else {
-        lines.add('Power → Connected ${connected}');
+        lines.add('Power → Connected $connected');
       }
     }
     final history = <String>[];
