@@ -44,7 +44,9 @@ Future<LgTvDevice?> relocateLgTv(LgTvDevice saved) async {
       network, ports: const [3001]);
   for (final host in candidates) {
     if (host == saved.host ||
-        !await matchesLgTlsPin(host, saved.tlsPin)) continue;
+        !await matchesLgTlsPin(host, saved.tlsPin)) {
+      continue;
+    }
     final client = LgWebOsClient(saved.copyWith(host: host));
     try {
       final verified = await client.connect();

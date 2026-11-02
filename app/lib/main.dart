@@ -758,7 +758,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       }
     });
     // Foreground wake checks remain best effort if iOS suspends this process.
-    // Native background processing resumes when iOS permits; never assume instant wake.
+    // iOS may defer native background wake checks; verify again on resume.
     // When an LG TV is explicitly woken, continue checking the saved IP
     // and TLS-verified LG port even after the TV detail page is dismissed.
     _lgWakeRecoveryTimer = Timer.periodic(const Duration(seconds: 20), (_) {

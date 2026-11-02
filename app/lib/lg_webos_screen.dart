@@ -151,7 +151,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
             if (!mounted || !_foreground) return;
             if (candidate == tv.host) continue;
             if (await matchesLgTlsPin(candidate, tv.tlsPin) &&
-                await _tryRecoveryHost(tv, candidate)) return;
+                await _tryRecoveryHost(tv, candidate)) {
+              return;
+            }
           }
         }
       }
