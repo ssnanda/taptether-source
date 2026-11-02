@@ -1,23 +1,16 @@
+import 'discovery.dart';
+import 'lan_scan.dart';
 import 'lg_webos_client.dart';
 import 'samsung_tv_client.dart';
 
 /// Reachability is separate from saved authorization. A listening port
 /// is not enough to identify a TV.
 Future<bool> lgTvResponds(LgTvDevice saved) async {
-  final response = await readLgWebOsHello(saved.host,
-      connectTimeout: const Duration(milliseconds: 330),
-      replyTimeout: const Duration(milliseconds: 850));
-  if (response == null) return false;
-  if (saved.deviceUuid.isNotEmpty && response.deviceUuid.isNotEmpty &&
-      saved.deviceUuid != response.deviceUuid) {
-    return false;
-  }
-  // An SSAP hello is unauthenticated and DHCP can reassign the saved IP.
-  // A pinned certificate must match before showing a paired TV as online.
+  // Some LG firmware rejects the unauthenticated hello even when the
+  // encrypted remote is ready. The saved certificate proves TV identity.
   if (saved.tlsPin.isNotEmpty) {
     return matchesLgTlsPin(saved.host, saved.tlsPin);
   }
-  // Legacy unpinned pairings cannot establish verified online identity.
   return false;
 }
 
@@ -40,24 +33,20 @@ Future<LgTvDevice?> relocateLgTv(LgTvDevice saved) async {
   if (saved.clientKey.isEmpty || saved.tlsPin.isEmpty) {
     return null;
   }
-  final found = await discoverLgTvs(scanEntireLan: true);
-  for (final candidate in found) {
-    var identified = candidate;
-    if (identified.deviceUuid.isEmpty) {
-      identified = await readLgWebOsHello(candidate.host) ?? candidate;
-    }
-    if (candidate.host == saved.host) {
-      continue;
-    }
-    final matchesUuid = saved.deviceUuid.isNotEmpty &&
-        identified.deviceUuid == saved.deviceUuid;
-    // Existing TLS certificate is a stronger identifier than an IP, and
-    // permits recovery for legacy TV pairings without an exposed UUID.
-    if (!matchesUuid &&
-        !await matchesLgTlsPin(candidate.host, saved.tlsPin)) {
-      continue;
-    }
-    final client = LgWebOsClient(saved.copyWith(host: candidate.host));
+  final network = await detectLanRange();
+  if (network == null) return null;
+  // Most wake-ups keep the same IP; inspect the saved TLS pin first.
+  if (lanRangeContains(network, saved.host) &&
+      await matchesLgTlsPin(saved.host, saved.tlsPin)) {
+    return saved;
+  }
+  // Scan only encrypted LG port 3001; no generic device discovery.
+  final candidates = await findLgControlPortHosts(
+      network, ports: const [3001]);
+  for (final host in candidates) {
+    if (host == saved.host ||
+        !await matchesLgTlsPin(host, saved.tlsPin)) continue;
+    final client = LgWebOsClient(saved.copyWith(host: host));
     try {
       final verified = await client.connect();
       await LgTvStore().save(verified.copyWith(
@@ -90,7 +79,7 @@ Future<SamsungTvDevice?> relocateSamsungTv(
     if (!sameId && !sameMac) {
       continue;
     }
-    final client = SamsungTvClient(saved.copyWith(host: candidate.host));
+    final client = SamsungTvClient(saved.copyWith(host: host));
     try {
       final verified = await client.connect();
       await SamsungTvStore().save(verified.copyWith(

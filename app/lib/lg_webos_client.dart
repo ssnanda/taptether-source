@@ -86,7 +86,11 @@ class LgTvDevice {
 
 class LgTvStore {
   LgTvStore({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+      : _storage = storage ?? const FlutterSecureStorage(
+            iOptions: IOSOptions(
+              accessibility: KeychainAccessibility.first_unlock_this_device,
+            ),
+          );
 
   static const key = 'taptether.lg.webos.pairings.v1';
   final FlutterSecureStorage _storage;
@@ -395,6 +399,39 @@ List<String> lgDiscoveryHosts(DetectedLanRange network, {
   return hosts;
 }
 
+/// Bounded port-only LAN sweep. Open sockets are untrusted candidates;
+/// a saved TLS fingerprint and existing pairing MUST still be verified.
+Future<List<String>> findLgControlPortHosts(DetectedLanRange network, {
+  List<int> ports = const [3001, 3000],
+  int parallelism = 40,
+  Duration timeout = const Duration(milliseconds: 250),
+}) async {
+  final hosts = lgDiscoveryHosts(network);
+  final matches = <String>[];
+  var next = 0;
+  Future<void> worker() async {
+    while (next < hosts.length) {
+      final ip = hosts[next++];
+      for (final port in ports) {
+        Socket? socket;
+        try {
+          socket = await Socket.connect(ip, port, timeout: timeout);
+          matches.add(ip);
+          break;
+        } on SocketException {
+          // No LG port here.
+        } on TimeoutException {
+          // Offline host.
+        } finally {
+          socket?.destroy();
+        }
+      }
+    }
+  }
+  await Future.wait(List.generate(parallelism, (_) => worker()));
+  return matches;
+}
+
 /// A short, on-demand SSDP query. Does not require broad LAN scanning.
 /// Multicast can be blocked by iOS/router permissions; manual IP still works.
 Future<List<LgTvDevice>> discoverLgTvs({
@@ -442,16 +479,16 @@ Future<List<LgTvDevice>> discoverLgTvs({
   // read-only SSAP hello check on the phone's current Wi-Fi CIDR.
   // A TCP or WebSocket connection alone is not a TV match.
   if (found.isEmpty || scanEntireLan) {
-    final hosts = lgDiscoveryHosts(range);
+    final hosts = await findLgControlPortHosts(range);
     var next = 0;
     Future<void> worker() async {
       while (next < hosts.length) {
         final host = hosts[next++];
-        if (found.containsKey(host)) { continue; }
-        final tv = await readLgWebOsHello(host);
-        if (tv != null) {
-          found[host] = tv;
-        }
+        if (found.containsKey(host)) continue;
+        final tv = await readLgWebOsHello(host,
+            connectTimeout: const Duration(milliseconds: 300),
+            replyTimeout: const Duration(milliseconds: 900));
+        if (tv != null) found[host] = tv;
       }
     }
     await Future.wait(List.generate(24, (_) => worker()));
