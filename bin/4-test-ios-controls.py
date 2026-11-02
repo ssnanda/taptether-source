@@ -37,3 +37,14 @@ assert "LgTvStore().read()" in quick
 assert "LgWebOsClient(tv)" in quick
 assert "LgWakeRecovery.instance.queue(tv)" in quick
 print("PASS native iOS TV controls, Live Activity, secure LG action handoff")
+
+# Connection timings remain scoped to the selected LG TV and persist
+# independent of the temporary widget/live-activity UI.
+timing = (root / "app/lib/lg_connection_timing.dart").read_text()
+screen = (root / "app/lib/lg_webos_screen.dart").read_text()
+assert "class LgConnectionTimingStore" in timing
+assert "pin:" in timing and "uuid:" in timing
+assert "_recordPowerOn" in screen and "_recordFinding" in screen
+assert "_recordFound" in screen and "_recordConnected" in screen
+assert "lg-connection-timing" in screen
+assert "Timer.periodic(const Duration(seconds: 1)" in screen

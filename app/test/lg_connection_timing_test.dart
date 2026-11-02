@@ -46,7 +46,9 @@ void main() {
     expect(lgElapsed(const Duration(hours: 1, minutes: 3, seconds: 4)),
         '1:03:04');
     expect(lgClock(null), 'Never');
-    expect(lgClock(0, fromEpoch: (_) => first), '5:17 PM');
+    expect(lgClock(0, fromEpoch: (_) => first, now: first), '5:17 PM');
+    expect(lgClock(0, fromEpoch: (_) => first,
+        now: first.add(const Duration(days: 1))), 'Yesterday 5:17 PM');
   });
 
   test('TV TLS pin is a stable timing key across DHCP IP changes', () {
