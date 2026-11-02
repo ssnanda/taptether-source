@@ -102,8 +102,9 @@ permissions:
 
 concurrency:
   group: taptether-one-workflow-${{ github.ref }}
-  # Cancel superseded PR validation, but never interrupt a release.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Cancel PR validation, or a one-time explicitly superseded iOS build.
+  # Ordinary releases remain non-interruptible.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[supersede ios]')) }}
 
 jobs:
   validate:
