@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 import 'lg_webos_client.dart';
 import 'lg_connection_timing.dart';
