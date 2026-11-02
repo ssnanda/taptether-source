@@ -146,7 +146,7 @@ class _GoveeScreenState extends State<GoveeScreen> {
   }
 
   Future<void> _updateBrightness(GoveeDevice device, double value) {
-    final next = value.round().clamp(1, 100);
+    final next = value.round().clamp(1, 100).toInt();
     return _command(device,
       () => _connection.brightness(device, next),
       device.withLocal(brightness: next));
@@ -312,7 +312,7 @@ class _GoveeScreenState extends State<GoveeScreen> {
               if (max <= min) return const SizedBox.shrink();
               return Slider(
                 value: (device.colorTemperature ?? 4000)
-                    .toDouble().clamp(min, max),
+                    .toDouble().clamp(min, max).toDouble(),
                 min: min, max: max,
                 onChanged: available ? (v) => setState(() =>
                   _replace(device.withLocal(colorTemperature: v.round()))) : null,
