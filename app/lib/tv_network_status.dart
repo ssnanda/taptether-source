@@ -1,4 +1,3 @@
-import 'discovery.dart';
 import 'lan_scan.dart';
 import 'lg_webos_client.dart';
 import 'samsung_tv_client.dart';
