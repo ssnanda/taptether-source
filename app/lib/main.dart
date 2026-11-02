@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'lg_webos_client.dart';
+import 'lg_connection_timing.dart';
 import 'lg_wake_recovery.dart';
 import 'lg_webos_screen.dart';
 import 'tv_quick_controls.dart';
@@ -547,6 +548,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _retryingConnection = false;
   List<SavedComputer> savedComputers = [];
   List<LgTvDevice> savedLgTvs = [];
+  final _lgTimingStore = LgConnectionTimingStore();
+  final Map<String, LgConnectionTiming> _lgTiming = {};
   List<SamsungTvDevice> savedSamsungTvs = [];
   List<XboxConsole> savedXboxConsoles = [];
   List<LgThinQDevice> _enabledThinQ = const [];
@@ -1780,10 +1783,23 @@ class _RemoteScreenState extends State<RemoteScreen>
       final tvs = await LgTvStore().read();
       if (mounted) {
         setState(() => savedLgTvs = tvs);
+        unawaited(_loadLgConnectionTimings(tvs));
         unawaited(_refreshTvStatuses());
       }
     } catch (_) {
       // TV remote storage may be unavailable until iOS Keychain unlocks.
+    }
+  }
+
+  Future<void> _loadLgConnectionTimings(List<LgTvDevice> tvs) async {
+    for (final tv in tvs) {
+      try {
+        final history = await _lgTimingStore.read(tv);
+        if (!mounted) return;
+        setState(() => _lgTiming[_lgTimingStore.identity(tv)] = history);
+      } catch (_) {
+        // Historical connection times are optional for the device list.
+      }
     }
   }
 
@@ -3275,10 +3291,22 @@ class _RemoteScreenState extends State<RemoteScreen>
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w700,
                     fontSize: 14)),
-              subtitle: Text(savedDeviceOnNetwork(_wifiRange, tv.host)
-                  ? 'LG webOS · This network' : 'LG webOS · Other network',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11.5)),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(savedDeviceOnNetwork(_wifiRange, tv.host)
+                      ? 'LG webOS · This network'
+                      : 'LG webOS · Other network',
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11.5)),
+                  if (_lgTiming[_lgTimingStore.identity(tv)]?.lastConnectedMs != null)
+                    Text('Last connected ${lgClock(
+                        _lgTiming[_lgTimingStore.identity(tv)]!.lastConnectedMs)}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall),
+                ],
+              ),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 IconButton(
                   key: ValueKey('diagnostics-lg-${tv.host}'),
