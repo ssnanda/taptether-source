@@ -176,6 +176,7 @@ class _GoveeScreenState extends State<GoveeScreen> {
             autocorrect: false,
             enableSuggestions: false,
             obscureText: true,
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
               labelText: 'Govee Developer API Key',
               border: OutlineInputBorder(),
@@ -328,7 +329,7 @@ class _GoveeScreenState extends State<GoveeScreen> {
               decoration: const InputDecoration(
                 labelText: 'Scene', border: OutlineInputBorder(),
                 isDense: true),
-              value: scenes.any((s) => s.$2 == device.scene) ? device.scene : null,
+              initialValue: scenes.any((s) => s.$2 == device.scene) ? device.scene : null,
               items: [
                 for (final entry in scenes)
                   DropdownMenuItem(value: entry.$2, child: Text(entry.$1,
