@@ -78,6 +78,10 @@ unless extension
   ref = phase.add_file_reference(extension.product_reference)
   ref.settings = { 'ATTRIBUTES' => ['CodeSignOnCopy', 'RemoveHeadersOnCopy'] }
   runner.add_dependency(extension)
+  # Flutter's Thin Binary script must finish before the extension is copied.
+  # Otherwise Xcode's dependency graph can form a Runner build cycle.
+  runner.build_phases.delete(phase)
+  runner.build_phases << phase
 end
 runner.build_configurations.each do |config|
   config.build_settings['CODE_SIGN_ENTITLEMENTS'] = 'Runner/Runner.entitlements'
