@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -115,16 +116,22 @@ class GoveeDevice {
         switch (instance) {
           case 'online':
             if (value is bool) newOnline = value;
+            break;
           case 'powerSwitch':
             if (value is num) newPower = value != 0;
+            break;
           case 'brightness':
             if (value is num) newBrightness = value.toInt();
+            break;
           case 'colorRgb':
             if (value is num) newColor = value.toInt();
+            break;
           case 'colorTemperatureK':
             if (value is num) newTemperature = value.toInt();
+            break;
           case 'lightScene':
             if (value is num) newScene = value.toInt();
+            break;
         }
       }
     }
