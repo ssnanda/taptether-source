@@ -136,10 +136,12 @@ class _GoveeScreenState extends State<GoveeScreen> {
     } on GoveeApiException catch (error) {
       if (mounted) setState(() { _replace(device); _error = error.message; });
     } catch (_) {
-      if (mounted) setState(() {
-        _replace(device);
-        _error = 'Govee command failed. Try again.';
-      });
+      if (mounted) {
+        setState(() {
+          _replace(device);
+          _error = 'Govee command failed. Try again.';
+        });
+      }
     } finally {
       if (mounted) setState(() => _working.remove(device.id));
     }
@@ -336,9 +338,11 @@ class _GoveeScreenState extends State<GoveeScreen> {
                       overflow: TextOverflow.ellipsis)),
               ],
               onChanged: available ? (value) {
-                if (value != null) unawaited(_command(device,
-                  () => _connection.scene(device, value),
-                  device.withLocal(scene: value)));
+                if (value != null) {
+                  unawaited(_command(device,
+                    () => _connection.scene(device, value),
+                    device.withLocal(scene: value)));
+                }
               } : null,
             ),
           ],
