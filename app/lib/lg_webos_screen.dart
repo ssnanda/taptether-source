@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 import 'lg_webos_client.dart';
+import 'lg_connection_timing.dart';
 import 'tv_quick_controls.dart';
 import 'lg_wake_recovery.dart';
 import 'lan_scan.dart';
@@ -30,6 +32,9 @@ class LgWebOsScreen extends StatefulWidget {
 class _LgWebOsScreenState extends State<LgWebOsScreen>
     with WidgetsBindingObserver {
   final _store = LgTvStore();
+  final _timingStore = LgConnectionTimingStore();
+  LgConnectionTiming _timing = const LgConnectionTiming();
+  Timer? _elapsedTimer;
   final _ip = TextEditingController();
   List<LgTvDevice> _saved = [];
   List<LgTvDevice> _discovered = [];
@@ -65,6 +70,11 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _foreground && _timing.isActiveWake(DateTime.now())) {
+        setState(() {});
+      }
+    });
     _connectionTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted || !_foreground || _busy || _recovering ||
           _suspended) { return; }
@@ -79,6 +89,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
+    if (_foreground && _selected != null) {
+      unawaited(_reloadTiming(_selected!));
+    }
     if (_foreground && !_suspended &&
         _selected?.clientKey.isNotEmpty == true) {
       if (_ready) {
@@ -87,6 +100,111 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         unawaited(_recover(force: true));
       }
     }
+  }
+
+  Future<void> _reloadTiming(LgTvDevice tv) async {
+    try {
+      final timing = await _timingStore.read(tv);
+      if (mounted && _selected != null &&
+          _timingStore.identity(_selected!) == _timingStore.identity(tv)) {
+        setState(() => _timing = timing);
+      }
+    } catch (_) {
+      // Timing metadata must not interrupt the TV remote.
+    }
+  }
+
+  Future<void> _recordPowerOn(LgTvDevice tv) async {
+    final now = DateTime.now();
+    if (mounted) setState(() => _timing = _timing.powerOn(now));
+    try {
+      await _timingStore.powerOn(tv, now);
+    } catch (_) {
+      // Power-on and recovery continue even if the timing store is unavailable.
+    }
+  }
+
+  Future<void> _recordFinding(LgTvDevice tv) async {
+    final now = DateTime.now();
+    if (mounted) setState(() => _timing = _timing.finding(now));
+    try {
+      await _timingStore.finding(tv, now);
+    } catch (_) {}
+  }
+
+  Future<void> _recordFound(LgTvDevice tv) async {
+    final now = DateTime.now();
+    if (mounted) setState(() => _timing = _timing.found(now));
+    try {
+      await _timingStore.found(tv, now);
+    } catch (_) {}
+  }
+
+  Future<void> _recordConnected(LgTvDevice tv) async {
+    final now = DateTime.now();
+    if (mounted) setState(() => _timing = _timing.connected(now));
+    try {
+      await _timingStore.connected(tv, now);
+    } catch (_) {}
+  }
+
+  Widget _connectionTimingSummary(LgTvDevice? tv) {
+    if (tv == null) return const SizedBox.shrink();
+    final now = DateTime.now();
+    final lines = <String>[];
+    final powered = _timing.lastPoweredOnMs;
+    if (_timing.isActiveWake(now) && powered != null) {
+      final elapsed = lgElapsed(Duration(
+          milliseconds: now.millisecondsSinceEpoch - powered));
+      if (_timing.foundDuringWakeMs != null) {
+        lines.add('TV found at +${lgElapsed(Duration(
+            milliseconds: _timing.foundDuringWakeMs! - powered))}'
+            ' · Connecting ${elapsed}');
+      } else if (_timing.findingStartedMs != null) {
+        lines.add('Finding TV · ${elapsed} since power on');
+      } else {
+        lines.add('Power on · ${elapsed} elapsed');
+      }
+    } else if (_timing.hasRecentWake(now) &&
+        _timing.lastPowerToConnectedSeconds != null) {
+      final connected = lgElapsed(Duration(
+          seconds: _timing.lastPowerToConnectedSeconds!));
+      if (_timing.lastPowerToFoundSeconds != null) {
+        final found = lgElapsed(Duration(
+            seconds: _timing.lastPowerToFoundSeconds!));
+        lines.add('Power → Found ${found} · Connected ${connected}');
+      } else {
+        lines.add('Power → Connected ${connected}');
+      }
+    }
+    final history = <String>[];
+    if (_timing.lastPoweredOnMs != null) {
+      history.add('Power ${lgClock(_timing.lastPoweredOnMs)}');
+    }
+    if (_timing.lastFoundMs != null) {
+      history.add('Found ${lgClock(_timing.lastFoundMs)}');
+    }
+    if (_timing.lastConnectedMs != null) {
+      history.add('Last connected ${lgClock(_timing.lastConnectedMs)}');
+    }
+    if (history.isNotEmpty) lines.add(history.join(' · '));
+    if (lines.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      key: const ValueKey('lg-connection-timing'),
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < lines.length; i++)
+            Text(lines[i], maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: i == 0 ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              )),
+        ],
+      ),
+    );
   }
 
   /// A socket can remain nominally open after Wi-Fi changes. Check the
@@ -128,6 +246,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         const Duration(seconds: 15)) { return; }
     _lastRecovery = now;
     _recovering = true;
+    unawaited(_recordFinding(tv));
     try {
       if (mounted) { setState(() {
         _status = 'Reconnecting to ${tv.name}…';
@@ -176,6 +295,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     // Never migrate a stored key to a different IP without a trusted TLS pin.
     if (host != tv.host && tv.tlsPin.isEmpty) { return false; }
     final updated = tv.copyWith(host: host);
+    if (tv.tlsPin.isNotEmpty) {
+      unawaited(_recordFound(updated));
+    }
     final client = LgWebOsClient(updated);
     try {
       final paired = await client.connect();
@@ -188,6 +310,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       _connected = paired;
       _target = paired;
       await _store.save(paired);
+      if (tv.tlsPin.isEmpty) unawaited(_recordFound(paired));
+      unawaited(_recordConnected(paired));
       unawaited(TvQuickControls.instance.select(paired, connected: true));
       if (!mounted) return false;
       setState(() {
@@ -213,6 +337,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         final matches = saved.where((tv) => tv.host == host);
         if (matches.isNotEmpty) {
           _target = matches.first;
+          unawaited(_reloadTiming(_target!));
           unawaited(TvQuickControls.instance.select(_target!,
               connected: false));
           setState(() => _status = 'Selected ${_target!.name} · $host');
@@ -268,6 +393,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       return;
     }
     _target = tv;
+    unawaited(_reloadTiming(tv));
     _suspended = false;
     setState(() {
       _busy = true;
@@ -297,6 +423,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         _busy = false;
         _status = 'Connected · ${client.transport}';
       });
+      unawaited(_recordFound(paired));
+      unawaited(_recordConnected(paired));
       unawaited(TvQuickControls.instance.select(paired, connected: true));
       await _reloadSaved();
       // Optional identifiers must not delay opening the remote.
@@ -780,6 +908,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     _waking = true;
     try {
       await (widget.wakeDevice ?? wakeLgTv)(wakeTarget);
+      unawaited(_recordPowerOn(wakeTarget));
       _suspended = false;
       if (widget.wakeDevice == null) {
         unawaited(TvQuickControls.instance.select(
@@ -910,6 +1039,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
                 maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall)),
           ]),
+          _connectionTimingSummary(tv),
           if (_busy || _discovering)
             const LinearProgressIndicator(),
           if (_error != null) Text(_error!,
@@ -1049,6 +1179,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   void dispose() {
     _connectionTimer?.cancel();
     _wakeRecoveryTimer?.cancel();
+    _elapsedTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _ip.dispose();
     if (_session != null) unawaited(_session!.disconnect());
