@@ -2714,7 +2714,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               key: const ValueKey('drawer-govee-devices'),
               leading: const Icon(Icons.lightbulb_rounded),
               title: const Text('Govee Devices'),
-              subtitle: const Text('Lights and smart devices'),
+              subtitle: const Text('Lights and compatible smart devices'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(MaterialPageRoute<void>(
