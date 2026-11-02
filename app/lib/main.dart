@@ -7,6 +7,7 @@ import 'computer_store.dart';
 import 'lg_webos_client.dart';
 import 'lg_wake_recovery.dart';
 import 'lg_webos_screen.dart';
+import 'tv_quick_controls.dart';
 import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
 import 'resideo_screen.dart';
@@ -76,6 +77,7 @@ Future<void> main() async {
       } catch (_) {}
     }
   }
+  TvQuickControls.instance.initialize();
   runApp(const TapTetherApp());
 }
 
@@ -719,6 +721,16 @@ class _RemoteScreenState extends State<RemoteScreen>
   @override
   void initState() {
     super.initState();
+    TvQuickControls.instance.onOpenRemote = (tv) =>
+        openLgWebOs(host: tv.host);
+    TvQuickControls.instance.onResult = (message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)));
+    };
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(TvQuickControls.instance.consumePending());
+    });
     unawaited(AutomaticDeviceBackup.instance.initialize());
     unawaited(loadInstalledVersion());
     unawaited(checkForUpdates());
@@ -809,6 +821,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appForeground = state == AppLifecycleState.resumed;
     if (_appForeground) {
+      unawaited(TvQuickControls.instance.consumePending());
       AutomaticDeviceBackup.instance.requestSoon();
       _syncScreen();
       unawaited(_refreshNetworkLocation());

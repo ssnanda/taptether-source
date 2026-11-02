@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'lg_webos_client.dart';
+import 'tv_quick_controls.dart';
 import 'lg_wake_recovery.dart';
 import 'lan_scan.dart';
 import 'lg_tv_info_collector.dart';
@@ -187,6 +188,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       _connected = paired;
       _target = paired;
       await _store.save(paired);
+      unawaited(TvQuickControls.instance.select(paired, connected: true));
       if (!mounted) return false;
       setState(() {
         _status = 'Connected · ${client.transport}';
@@ -211,6 +213,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         final matches = saved.where((tv) => tv.host == host);
         if (matches.isNotEmpty) {
           _target = matches.first;
+          unawaited(TvQuickControls.instance.select(_target!,
+              connected: false));
           setState(() => _status = 'Selected ${_target!.name} · $host');
           if (widget.autoReconnect) await _recover(force: true);
         } else if (mounted) {
@@ -293,6 +297,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         _busy = false;
         _status = 'Connected · ${client.transport}';
       });
+      unawaited(TvQuickControls.instance.select(paired, connected: true));
       await _reloadSaved();
       // Optional identifiers must not delay opening the remote.
       unawaited(_identify(client, paired));
@@ -777,6 +782,10 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       await (widget.wakeDevice ?? wakeLgTv)(wakeTarget);
       _suspended = false;
       if (widget.wakeDevice == null) {
+        unawaited(TvQuickControls.instance.select(
+            wakeTarget, connected: false));
+      }
+      if (widget.wakeDevice == null) {
         // The pending job can also run after navigating away from this page.
         try {
           await LgWakeRecovery.instance.queue(wakeTarget);
@@ -817,6 +826,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     }
     try {
       await _session!.powerOff();
+      unawaited(TvQuickControls.instance.select(current, connected: false));
       await _session!.disconnect();
       if (mounted) {
         setState(() {
