@@ -162,7 +162,7 @@ class GoveeConnection {
 
   Future<void> saveKey(String value) async {
     final key = value.trim();
-    if (key.isEmpty || key.contains(RegExp(r'\\s'))) {
+    if (key.isEmpty || key.contains(RegExp(r'\s'))) {
       throw const GoveeApiException('Enter the API key from Govee Home.');
     }
     // Validate before overwriting a working key.
