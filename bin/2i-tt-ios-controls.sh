@@ -36,8 +36,8 @@ widget_info = {
     'CFBundleInfoDictionaryVersion': '6.0',
     'CFBundleName': '$(PRODUCT_NAME)',
     'CFBundlePackageType': 'XPC!',
-    'CFBundleShortVersionString': '$(MARKETING_VERSION)',
-    'CFBundleVersion': '$(CURRENT_PROJECT_VERSION)',
+    'CFBundleShortVersionString': (ios.parents[1] / 'VERSION').read_text().strip().split('+')[0],
+    'CFBundleVersion': (ios.parents[1] / 'VERSION').read_text().strip().split('+')[1],
     'NSExtension': {'NSExtensionPointIdentifier': 'com.apple.widgetkit-extension'},
 }
 for path, entries in (
@@ -78,10 +78,13 @@ unless extension
   ref = phase.add_file_reference(extension.product_reference)
   ref.settings = { 'ATTRIBUTES' => ['CodeSignOnCopy', 'RemoveHeadersOnCopy'] }
   runner.add_dependency(extension)
-  # Flutter's Thin Binary script must finish before the extension is copied.
-  # Otherwise Xcode's dependency graph can form a Runner build cycle.
+  # Flutter's Thin Binary reads Runner.app/Info.plist. Embedding the appex
+  # after Thin Binary creates an Xcode dependency cycle; embed immediately
+  # BEFORE Thin Binary (Flutter's documented phase order).
   runner.build_phases.delete(phase)
-  runner.build_phases << phase
+  thin = runner.build_phases.find { |item| item.display_name == 'Thin Binary' }
+  raise 'Flutter Thin Binary phase missing' unless thin
+  runner.build_phases.insert(runner.build_phases.index(thin), phase)
 end
 runner.build_configurations.each do |config|
   config.build_settings['CODE_SIGN_ENTITLEMENTS'] = 'Runner/Runner.entitlements'
