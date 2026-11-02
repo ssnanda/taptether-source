@@ -757,6 +757,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         unawaited(_refreshTvStatuses());
       }
     });
+    // Foreground wake checks remain best effort if iOS suspends this process.
     // When an LG TV is explicitly woken, continue checking the saved IP
     // and TLS-verified LG port even after the TV detail page is dismissed.
     _lgWakeRecoveryTimer = Timer.periodic(const Duration(seconds: 20), (_) {
