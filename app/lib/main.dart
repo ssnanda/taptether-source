@@ -511,7 +511,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   String? _detectedLocation;
   // On This Network is the default, All Devices keeps the full inventory.
   bool _showAllDevices = false;
-  bool _showQuickActions = false;
+  bool _showAddDevicesPage = false;
   bool _checkingHeartbeat = false;
   bool _recoveringDiscovery = false;
   bool _probingOfflineAgents = false;
@@ -831,7 +831,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         _detectedLocation = label;
         if (current == null) {
           _showPairForm = false;
-          _showQuickActions = false;
+          _showAddDevicesPage = false;
           nearbyComputers.clear();
           _online.clear();
           _savedAgentVersions.clear();
@@ -2166,9 +2166,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     ));
     if (!mounted) return;
     await loadComputers();
-    if (addNew == true && mounted && _wifiRange != null) {
-      setState(() => _showPairForm = true);
-    }
+    if (addNew == true && mounted) showPairForm();
   }
 
   Future<void> openSshTerminal() async {
@@ -2214,11 +2212,30 @@ class _RemoteScreenState extends State<RemoteScreen>
     ));
   }
 
+  void openAddDevices() {
+    _stopScreen();
+    if (agent.configured) agent.disconnect();
+    setState(() {
+      _showAddDevicesPage = true;
+      _showPairForm = false;
+      nearbyComputers = [];
+      status = 'Not connected';
+    });
+  }
+
+  void _closeAddDevicesPage() {
+    setState(() {
+      _showAddDevicesPage = false;
+      _showPairForm = false;
+    });
+  }
+
   void showPairForm() {
     if (_wifiRange == null) return;
     _stopScreen();
     if (agent.configured) agent.disconnect();
     setState(() {
+      _showAddDevicesPage = true;
       _showPairForm = true;
       status = 'Enter verified computer pairing details.';
     });
@@ -2640,77 +2657,14 @@ class _RemoteScreenState extends State<RemoteScreen>
             }
           },
         ),
-        if (_wifiRange != null) ExpansionTile(
+        ListTile(
+          key: const ValueKey('drawer-add-devices'),
           leading: const Icon(Icons.add_circle_outline),
-          title: const Text('Add & Discover'),
-          childrenPadding: const EdgeInsets.only(left: 16),
-          children: [
-            ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('Pair computer'),
-              onTap: () {
-                Navigator.pop(context);
-                showPairForm();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.tv_outlined),
-              title: const Text('Add LG webOS TV'),
-              onTap: () {
-                Navigator.pop(context);
-                openLgWebOs();
-              },
-            ), 
-            ListTile(
-              leading: const Icon(Icons.tv),
-              title: const Text('Add Samsung Smart TV'),
-              onTap: () {
-                Navigator.pop(context);
-                openSamsungTv();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.videogame_asset_outlined),
-              title: const Text('Add Xbox'),
-              onTap: () {
-                Navigator.pop(context);
-                openXboxRemote();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.qr_code_scanner),
-              title: const Text('Scan QR'),
-              onTap: () {
-                Navigator.pop(context);
-                scanQrPairing();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.radar),
-              title: const Text('Discover computers'),
-              onTap: () {
-                Navigator.pop(context);
-                if (agent.configured) agent.disconnect();
-                searchNearby();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.network_check),
-              title: const Text('Scan local IP network'),
-              onTap: () {
-                Navigator.pop(context);
-                scanNetwork();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.install_desktop),
-              title: const Text('Install Agent'),
-              onTap: installingAgent ? null : () {
-                Navigator.pop(context);
-                openAgentInstaller();
-              },
-            ),
-          ],
+          title: const Text('Add Devices'),
+          onTap: () {
+            Navigator.pop(context);
+            openAddDevices();
+          },
         ),
         ListTile(
           key: const ValueKey('drawer-device-backups'),
@@ -2945,6 +2899,99 @@ class _RemoteScreenState extends State<RemoteScreen>
       )),
     );
   }
+
+  Widget _addDevicesPage() => ListView(
+    key: const ValueKey('add-devices-page'),
+    padding: const EdgeInsets.all(16),
+    children: [
+      Text('Pair or discover a device',
+          style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 6),
+      Text('Add a computer, TV, or Xbox here instead of scrolling '
+          'through saved devices.',
+          style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(height: 12),
+      if (_wifiRange == null)
+        const Card(child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('Connect to Wi-Fi to add or discover devices.'),
+        )),
+          if (_showPairForm) ...[
+          const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('For first-time pairing, enter the token and TLS SHA-256 fingerprint from your computer. Verified devices are saved securely on this phone.'),
+          const SizedBox(height: 12),
+          TextField(controller: host, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Computer LAN IP (e.g. 192.168.1.10)', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: token, obscureText: true, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Agent pairing token', border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: pin, autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Certificate SHA-256 fingerprint', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          FilledButton.icon(onPressed: () async { await connect(); }, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
+          ],
+      if (_wifiRange != null && _showAddDevicesPage) ...[
+        const SizedBox(height: 4),
+        if (_wifiRange != null)
+          Row(children: [
+            Expanded(child: Text('Wi-Fi: ${_wifiRange!.cidr}',
+              style: Theme.of(context).textTheme.bodySmall)),
+            TextButton.icon(
+              onPressed: _labelCurrentNetwork,
+              icon: const Icon(Icons.location_on_outlined, size: 16),
+              label: const Text('Label network'),
+            ),
+          ]),
+        for (final nearby in nearbyComputers)
+          Card(child: ListTile(
+            leading: const Icon(Icons.radar),
+            title: Text(nearby.name),
+            subtitle: Text('${nearby.host} · ${nearby.platform}'),
+            trailing: const Icon(Icons.add_link),
+            onTap: () => selectDiscovered(nearby),
+          )),
+        Wrap(spacing: 8, runSpacing: 4, children: [
+          ActionChip(
+            avatar: const Icon(Icons.add, size: 18),
+            label: const Text('Pair'),
+            onPressed: showPairForm,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.tv_outlined, size: 18),
+            label: const Text('TV'),
+            onPressed: _chooseTvType,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.qr_code_scanner, size: 18),
+            label: const Text('Scan QR'),
+            onPressed: scanQrPairing,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.radar, size: 18),
+            label: Text(searching ? 'Searching…' : 'Discover'),
+            onPressed: searching ? null : searchNearby,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.network_check, size: 18),
+            label: const Text('Scan IPs'),
+            onPressed: scanNetwork,
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.install_desktop, size: 18),
+            label: const Text('Install agent'),
+            onPressed: installingAgent ? null : openAgentInstaller,
+          ),
+        ]),
+        if (searching || !_discoveryReport.isEmpty)
+          ScanReportPanel(
+            title: 'Discovery results',
+            report: _discoveryReport,
+          ),
+      ],
+    ],
+  );
 
   Widget deviceDashboard() {
     final visibleDevices = _showAllDevices
@@ -3282,75 +3329,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
           ),
       ],
-      if (_wifiRange != null) ...[
-        const SizedBox(height: 8),
-        Align(alignment: Alignment.centerRight, child: TextButton.icon(
-          key: const ValueKey('quick-actions-toggle'),
-          onPressed: () =>
-              setState(() => _showQuickActions = !_showQuickActions),
-          icon: Icon(_showQuickActions
-              ? Icons.close_rounded : Icons.add_rounded, size: 18),
-          label: Text(_showQuickActions ? 'Close' : 'Add device'),
-        )),
-      ],
-      if (_wifiRange != null && _showQuickActions) ...[
-        const SizedBox(height: 4),
-        if (_wifiRange != null)
-          Row(children: [
-            Expanded(child: Text('Wi-Fi: ${_wifiRange!.cidr}',
-              style: Theme.of(context).textTheme.bodySmall)),
-            TextButton.icon(
-              onPressed: _labelCurrentNetwork,
-              icon: const Icon(Icons.location_on_outlined, size: 16),
-              label: const Text('Label network'),
-            ),
-          ]),
-        for (final nearby in nearbyComputers)
-          Card(child: ListTile(
-            leading: const Icon(Icons.radar),
-            title: Text(nearby.name),
-            subtitle: Text('${nearby.host} · ${nearby.platform}'),
-            trailing: const Icon(Icons.add_link),
-            onTap: () => selectDiscovered(nearby),
-          )),
-        Wrap(spacing: 8, runSpacing: 4, children: [
-          ActionChip(
-            avatar: const Icon(Icons.add, size: 18),
-            label: const Text('Pair'),
-            onPressed: showPairForm,
-          ),
-          ActionChip(
-            avatar: const Icon(Icons.tv_outlined, size: 18),
-            label: const Text('TV'),
-            onPressed: _chooseTvType,
-          ),
-          ActionChip(
-            avatar: const Icon(Icons.qr_code_scanner, size: 18),
-            label: const Text('Scan QR'),
-            onPressed: scanQrPairing,
-          ),
-          ActionChip(
-            avatar: const Icon(Icons.radar, size: 18),
-            label: Text(searching ? 'Searching…' : 'Discover'),
-            onPressed: searching ? null : searchNearby,
-          ),
-          ActionChip(
-            avatar: const Icon(Icons.network_check, size: 18),
-            label: const Text('Scan IPs'),
-            onPressed: scanNetwork,
-          ),
-          ActionChip(
-            avatar: const Icon(Icons.install_desktop, size: 18),
-            label: const Text('Install agent'),
-            onPressed: installingAgent ? null : openAgentInstaller,
-          ),
-        ]),
-        if (searching || !_discoveryReport.isEmpty)
-          ScanReportPanel(
-            title: 'Discovery results',
-            report: _discoveryReport,
-          ),
-      ],
+
     ],
    );
   }
@@ -3788,6 +3767,8 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (mounted) {
         setState(() {
         status = 'Connected to ${host.text.trim()}';
+        _showAddDevicesPage = false;
+        _showPairForm = false;
         _connectionLost = false;
         _agentInputDenied = false;
         _connectionTechnical = null;
@@ -4846,6 +4827,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _stopScreen();
     agent.disconnect();
     setState(() {
+      _showAddDevicesPage = false;
       _connectionLost = false;
       _agentInputDenied = false;
       _connectionTechnical = null;
@@ -4984,18 +4966,23 @@ class _RemoteScreenState extends State<RemoteScreen>
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       key: _scaffoldKey,
-      drawer: appDrawer(),
+      drawer: _showAddDevicesPage ? null : appDrawer(),
       appBar: connected && landscape ? null : AppBar(
         leading: IconButton(
-          key: ValueKey(connected ? 'back-to-devices' : 'open-navigation'),
-          tooltip: connected ? 'Back to My Devices' : 'Open navigation',
-          icon: Icon(connected ? Icons.arrow_back_rounded
-              : Icons.menu_rounded),
-          onPressed: connected
-              ? _backToMyDevices
+          key: ValueKey(connected ? 'back-to-devices'
+              : _showAddDevicesPage ? 'back-from-add-devices'
+              : 'open-navigation'),
+          tooltip: connected ? 'Back to My Devices'
+              : _showAddDevicesPage ? 'Back to Devices'
+              : 'Open navigation',
+          icon: Icon(connected || _showAddDevicesPage
+              ? Icons.arrow_back_rounded : Icons.menu_rounded),
+          onPressed: connected ? _backToMyDevices
+              : _showAddDevicesPage ? _closeAddDevicesPage
               : () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        title: Text(connected ? (discoveredName ?? 'Remote') : 'TapTether',
+        title: Text(_showAddDevicesPage && !connected ? 'Add Devices'
+            : connected ? (discoveredName ?? 'Remote') : 'TapTether',
             maxLines: 1, overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontWeight: FontWeight.w800, letterSpacing: -.6,
@@ -5015,9 +5002,21 @@ class _RemoteScreenState extends State<RemoteScreen>
               if (matches.isNotEmpty) unawaited(_renameComputer(matches.first));
             },
           ),
-        ] : null,
+        ] : _showAddDevicesPage ? null : [
+          TextButton.icon(
+            key: const ValueKey('open-add-devices'),
+            onPressed: openAddDevices,
+            icon: const Icon(Icons.add_circle_outline),
+            label: const Text('Add Devices'),
+          ),
+        ],
       ),
-      body: connected && landscape
+      body: !connected && _showAddDevicesPage
+          ? DecoratedBox(
+              decoration: TapTetherDashboardVisuals.pageBackground(context),
+              child: SafeArea(child: _addDevicesPage()),
+            )
+          : connected && landscape
           ? SafeArea(child: _landscapeImmersive())
           : DecoratedBox(
               decoration: TapTetherDashboardVisuals.pageBackground(context),
@@ -5028,29 +5027,13 @@ class _RemoteScreenState extends State<RemoteScreen>
           _offlineHome(),
         if (!connected && _wifiRange != null) ...[
           deviceDashboard(),
-          if (_showPairForm) ...[
-          const Text('Pair with a computer agent', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          const Text('For first-time pairing, enter the token and TLS SHA-256 fingerprint from your computer. Verified devices are saved securely on this phone.'),
-          const SizedBox(height: 12),
-          TextField(controller: host, autocorrect: false,
-              decoration: const InputDecoration(labelText: 'Computer LAN IP (e.g. 192.168.1.10)', border: OutlineInputBorder())),
-          const SizedBox(height: 8),
-          TextField(controller: token, obscureText: true, autocorrect: false,
-              decoration: const InputDecoration(labelText: 'Agent pairing token', border: OutlineInputBorder())),
-          const SizedBox(height: 8),
-          TextField(controller: pin, autocorrect: false,
-              decoration: const InputDecoration(labelText: 'Certificate SHA-256 fingerprint', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          FilledButton.icon(onPressed: () async { await connect(); }, icon: const Icon(Icons.lan), label: const Text('Connect locally')),
-          ],
         ] else ...[
           _connectedControls(),
         ],
         const SizedBox(height: 16),
         if (!connected) ...[
           if (_wifiRange != null &&
-              (_showPairForm || _showQuickActions || savedComputers.isEmpty) &&
+              (_showPairForm || savedComputers.isEmpty) &&
               status.isNotEmpty && status != 'Not connected' &&
               status != 'Select a saved device to connect.') ...[
             Text(status, style: TextStyle(fontSize: 12,

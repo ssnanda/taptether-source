@@ -80,4 +80,18 @@ void main() {
     final material = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(material.themeMode, ThemeMode.light);
   });
+  testWidgets('Add Devices is a page reachable without scrolling', (tester) async {
+    await tester.pumpWidget(const TapTetherApp());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('open-add-devices')), findsOneWidget);
+    expect(find.byKey(const ValueKey('add-devices-page')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('open-add-devices')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('add-devices-page')), findsOneWidget);
+    expect(find.text('Pair or discover a device'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('back-from-add-devices')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('add-devices-page')), findsNothing);
+  });
+
 }
