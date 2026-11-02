@@ -6,6 +6,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'lan_scan.dart';
 import 'lg_webos_client.dart';
+import 'lg_connection_timing.dart';
 import 'tv_network_status.dart';
 
 const lgWakeRecoveryJob = 'com.taptether.taptether.lg-tv-wake';
@@ -92,6 +93,9 @@ class LgWakeRecovery {
         if (!pending.containsKey(key)) continue;
         if (lanRangeContains(network, tv.host) &&
             await matchesLgTlsPin(tv.host, tv.tlsPin)) {
+          try {
+            await LgConnectionTimingStore().found(tv, DateTime.now());
+          } catch (_) {}
           pending.remove(key);
           recoveredAny = true;
         }
@@ -101,6 +105,11 @@ class LgWakeRecovery {
         if (!pending.containsKey(key)) continue;
         final recovered = await relocateLgTv(tv);
         if (recovered != null) {
+          try {
+            final timings = LgConnectionTimingStore();
+            await timings.found(recovered, DateTime.now());
+            await timings.connected(recovered, DateTime.now());
+          } catch (_) {}
           pending.remove(key);
           recoveredAny = true;
         }

@@ -246,7 +246,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         const Duration(seconds: 15)) { return; }
     _lastRecovery = now;
     _recovering = true;
-    unawaited(_recordFinding(tv));
+    await _recordFinding(tv);
     try {
       if (mounted) { setState(() {
         _status = 'Reconnecting to ${tv.name}…';
@@ -296,7 +296,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     if (host != tv.host && tv.tlsPin.isEmpty) { return false; }
     final updated = tv.copyWith(host: host);
     if (tv.tlsPin.isNotEmpty) {
-      unawaited(_recordFound(updated));
+      await _recordFound(updated);
     }
     final client = LgWebOsClient(updated);
     try {
@@ -310,8 +310,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       _connected = paired;
       _target = paired;
       await _store.save(paired);
-      if (tv.tlsPin.isEmpty) unawaited(_recordFound(paired));
-      unawaited(_recordConnected(paired));
+      if (tv.tlsPin.isEmpty) await _recordFound(paired);
+      await _recordConnected(paired);
       unawaited(TvQuickControls.instance.select(paired, connected: true));
       if (!mounted) return false;
       setState(() {
@@ -337,7 +337,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         final matches = saved.where((tv) => tv.host == host);
         if (matches.isNotEmpty) {
           _target = matches.first;
-          unawaited(_reloadTiming(_target!));
+          await _reloadTiming(_target!);
           unawaited(TvQuickControls.instance.select(_target!,
               connected: false));
           setState(() => _status = 'Selected ${_target!.name} · $host');
@@ -393,7 +393,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       return;
     }
     _target = tv;
-    unawaited(_reloadTiming(tv));
+    await _reloadTiming(tv);
     _suspended = false;
     setState(() {
       _busy = true;
@@ -423,8 +423,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
         _busy = false;
         _status = 'Connected · ${client.transport}';
       });
-      unawaited(_recordFound(paired));
-      unawaited(_recordConnected(paired));
+      await _recordFound(paired);
+      await _recordConnected(paired);
       unawaited(TvQuickControls.instance.select(paired, connected: true));
       await _reloadSaved();
       // Optional identifiers must not delay opening the remote.
@@ -908,7 +908,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     _waking = true;
     try {
       await (widget.wakeDevice ?? wakeLgTv)(wakeTarget);
-      unawaited(_recordPowerOn(wakeTarget));
+      await _recordPowerOn(wakeTarget);
       _suspended = false;
       if (widget.wakeDevice == null) {
         unawaited(TvQuickControls.instance.select(

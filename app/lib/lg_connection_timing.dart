@@ -88,15 +88,16 @@ class LgConnectionTiming {
   LgConnectionTiming found(DateTime now) {
     final when = now.millisecondsSinceEpoch;
     final wake = isActiveWake(now) ? lastPoweredOnMs : null;
+    final firstFound = foundDuringWakeMs ?? when;
     return LgConnectionTiming(
       lastPoweredOnMs: lastPoweredOnMs,
       findingStartedMs: findingStartedMs,
-      foundDuringWakeMs: wake != null ? (foundDuringWakeMs ?? when) : foundDuringWakeMs,
+      foundDuringWakeMs: wake != null ? firstFound : foundDuringWakeMs,
       connectedDuringWakeMs: connectedDuringWakeMs,
       lastFoundMs: when,
       lastConnectedMs: lastConnectedMs,
       lastPowerToFoundSeconds: wake != null
-          ? ((when - wake) / 1000).round()
+          ? ((firstFound - wake) / 1000).round()
           : lastPowerToFoundSeconds,
       lastPowerToConnectedSeconds: lastPowerToConnectedSeconds,
     );
@@ -132,13 +133,26 @@ String lgElapsed(Duration duration) {
   return '${total ~/ 3600}:$minutes:$seconds';
 }
 
-String lgClock(int? epochMs, {DateTime Function(int)? fromEpoch}) {
+String lgClock(int? epochMs, {
+  DateTime Function(int)? fromEpoch,
+  DateTime? now,
+}) {
   if (epochMs == null) return 'Never';
   final date = fromEpoch?.call(epochMs) ??
       DateTime.fromMillisecondsSinceEpoch(epochMs);
+  final today = now ?? DateTime.now();
   final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
   final minute = date.minute.toString().padLeft(2, '0');
-  return '$hour:$minute ${date.hour < 12 ? "AM" : "PM"}';
+  final clock = '$hour:$minute ${date.hour < 12 ? "AM" : "PM"}';
+  final eventDay = DateTime(date.year, date.month, date.day);
+  final currentDay = DateTime(today.year, today.month, today.day);
+  final dayDifference = currentDay.difference(eventDay).inDays;
+  if (dayDifference == 0) return clock;
+  if (dayDifference == 1) return 'Yesterday $clock';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final year = date.year != today.year ? ', ${date.year}' : '';
+  return '${months[date.month - 1]} ${date.day}$year · $clock';
 }
 
 /// Asynchronous Keychain-backed storage shared by the foreground app and its

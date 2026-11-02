@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 import 'lg_webos_client.dart';
+import 'lg_connection_timing.dart';
 import 'lg_wake_recovery.dart';
 import 'tv_network_status.dart';
 
@@ -66,6 +67,10 @@ class TvQuickControls {
       }
       if (action == 'power' && !await lgTvResponds(tv)) {
         await wakeLgTv(tv);
+        // Record the actual wake packet before starting background recovery.
+        try {
+          await LgConnectionTimingStore().powerOn(tv, DateTime.now());
+        } catch (_) {}
         await LgWakeRecovery.instance.queue(tv);
         await select(tv, connected: false);
         onResult?.call('Wake signal sent to ${tv.name}.');
@@ -74,6 +79,12 @@ class TvQuickControls {
       final client = LgWebOsClient(tv);
       try {
         await client.connect();
+        try {
+          final now = DateTime.now();
+          final timings = LgConnectionTimingStore();
+          await timings.found(tv, now);
+          await timings.connected(tv, now);
+        } catch (_) {}
         switch (action) {
           case 'power':
             await client.powerOff();
