@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'lg_webos_client.dart';
 import 'lg_wake_recovery.dart';
-import 'discovery.dart';
 import 'lan_scan.dart';
 import 'lg_tv_info_collector.dart';
 import 'lg_thinq_tv_mac.dart';

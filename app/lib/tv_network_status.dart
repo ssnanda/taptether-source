@@ -79,7 +79,7 @@ Future<SamsungTvDevice?> relocateSamsungTv(
     if (!sameId && !sameMac) {
       continue;
     }
-    final client = SamsungTvClient(saved.copyWith(host: host));
+    final client = SamsungTvClient(saved.copyWith(host: candidate.host));
     try {
       final verified = await client.connect();
       await SamsungTvStore().save(verified.copyWith(

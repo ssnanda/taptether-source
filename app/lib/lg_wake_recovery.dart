@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:workmanager/workmanager.dart';
 
-import 'discovery.dart';
 import 'lan_scan.dart';
 import 'lg_webos_client.dart';
 import 'tv_network_status.dart';
