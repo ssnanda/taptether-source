@@ -12,6 +12,7 @@ import AVFoundation
   private var cloudFolder: TapTetherCloudFolder?
   private var backgroundRefreshChannel: FlutterMethodChannel?
   private var soundMeter: TapTetherSoundMeter?
+  private var tvControls: TapTetherTVControlsBridge?
 
   func didInitializeImplicitFlutterEngine(
     _ engineBridge: FlutterImplicitEngineBridge
@@ -23,6 +24,9 @@ import AVFoundation
     let meter = TapTetherSoundMeter()
     meter.register(messenger: engineBridge.applicationRegistrar.messenger())
     soundMeter = meter
+    let controls = TapTetherTVControlsBridge()
+    controls.register(messenger: engineBridge.applicationRegistrar.messenger())
+    tvControls = controls
     let channel = FlutterMethodChannel(
       name: "taptether/background-refresh",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()

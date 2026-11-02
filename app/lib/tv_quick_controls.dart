@@ -77,15 +77,19 @@ class TvQuickControls {
         switch (action) {
           case 'power':
             await client.powerOff();
+            break;
           case 'volumeUp':
             await client.volumeUp();
+            break;
           case 'volumeDown':
             await client.volumeDown();
+            break;
           case 'mute':
             final current = await client.request('ssap://audio/getVolume');
             final muted = current['muted'] == true ||
                 current['mute'] == true;
             await client.mute(!muted);
+            break;
         }
         onResult?.call('TV control sent to ${tv.name}.');
       } finally {
