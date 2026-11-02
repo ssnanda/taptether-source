@@ -9,6 +9,7 @@ import 'lg_webos_screen.dart';
 import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
 import 'resideo_screen.dart';
+import 'govee_screen.dart';
 import 'lg_thinq_device_screen.dart';
 import 'lg_thinq_dashboard_status.dart';
 import 'fridge_alerts.dart';
@@ -2709,6 +2710,17 @@ class _RemoteScreenState extends State<RemoteScreen>
                 openSecuritySettings();
               },
             ),
+            ListTile(
+              key: const ValueKey('drawer-govee-devices'),
+              leading: const Icon(Icons.lightbulb_rounded),
+              title: const Text('Govee Devices'),
+              subtitle: const Text('Lights and smart devices'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const GoveeScreen()));
+              },
+            ),
             ExpansionTile(
               key: const ValueKey('drawer-api-integrations'),
               leading: const Icon(Icons.extension_outlined),
@@ -2722,6 +2734,17 @@ class _RemoteScreenState extends State<RemoteScreen>
                   onTap: () {
                     Navigator.pop(context);
                     _openThinQ();
+                  },
+                ),
+                ListTile(
+                  key: const ValueKey('drawer-govee-api-settings'),
+                  leading: const Icon(Icons.lightbulb_outline_rounded),
+                  title: const Text('Govee API'),
+                  subtitle: const Text('Govee Home developer API key'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => const GoveeScreen(settingsOnly: true)));
                   },
                 ),
                 ListTile(
