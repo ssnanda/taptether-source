@@ -23,11 +23,20 @@ assert "Future.wait(savedSnapshot.map(" in body
 assert "bool _showAllDevices = false;" in main  # Local scope is the default
 assert "allSavedComputers(savedComputers" in main
 assert "savedDeviceOnNetwork(_wifiRange, device.host)" in main
-assert "bool _showQuickActions = false;" in main
+assert "bool _showAddDevicesPage = false;" in main
+assert "Widget _addDevicesPage()" in main
+assert "key: const ValueKey('open-add-devices')" in main
+assert "back-from-add-devices" in main
 assert "Icons.arrow_back" in main
 assert "'Back to My Devices'" in main
 assert "tooltip: 'Switch computer'" not in main
-assert "if (_wifiRange != null && _showQuickActions) ...[" in main
+assert "if (_wifiRange != null && _showAddDevicesPage) ...[" in main
+assert "quick-actions-toggle" not in main
+assert "Add & Discover" not in main
+assert "key: const ValueKey('drawer-add-devices')" in main
+dashboard = main.split("  Widget deviceDashboard()", 1)[1].split("  bool newerThan(", 1)[0]
+assert "Scan IPs" not in dashboard
+assert "if (_showPairForm)" not in dashboard
 assert "if (searching || !_discoveryReport.isEmpty)" in main
 assert "final phone = await _phoneIdentity();" in main
 assert "currentAgent = await agent.agentVersion();" in main
