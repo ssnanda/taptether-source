@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'lg_webos_client.dart';
+import 'lg_wake_recovery.dart';
+import 'discovery.dart';
+import 'lan_scan.dart';
 import 'lg_tv_info_collector.dart';
 import 'lg_thinq_tv_mac.dart';
 import 'device_diagnostics_screen.dart';
@@ -34,6 +37,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   LgTvDevice? _connected;
   LgTvDevice? _target;
   Timer? _connectionTimer;
+  Timer? _wakeRecoveryTimer;
+  DateTime? _wakeNotBefore;
   bool _foreground = true;
   bool _recovering = false;
   bool _healthChecking = false;
@@ -113,12 +118,14 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   /// Only move an IP when a stable UUID or pinned TLS certificate matches.
   Future<void> _recover({bool force = false}) async {
     if (!mounted || !_foreground || _busy || _recovering ||
-        _ready || _suspended) { return; }
+        _ready || _suspended ||
+        (_wakeNotBefore != null &&
+         DateTime.now().isBefore(_wakeNotBefore!))) { return; }
     final tv = _selected;
     if (tv == null || tv.clientKey.isEmpty) { return; }
     final now = DateTime.now();
     if (!force && now.difference(_lastRecovery) <
-        const Duration(seconds: 90)) { return; }
+        const Duration(seconds: 15)) { return; }
     _lastRecovery = now;
     _recovering = true;
     try {
@@ -133,20 +140,21 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       if (!mounted || !_foreground) { return; }
       if (mounted) { setState(() =>
           _status = 'Finding ${tv.name} on Wi-Fi…'); }
-      final candidates = await discoverLgTvs(scanEntireLan: true);
-      for (final candidate in candidates) {
-        if (!mounted || !_foreground) { return; }
-        if (candidate.host == tv.host) { continue; }
-        final sameUuid = tv.deviceUuid.isNotEmpty &&
-            candidate.deviceUuid.isNotEmpty &&
-            tv.deviceUuid == candidate.deviceUuid;
-        final sameTls = tv.tlsPin.isNotEmpty &&
-            await matchesLgTlsPin(candidate.host, tv.tlsPin);
-        // A MAC address is a discovery hint, not proof: iOS cannot query
-        // arbitrary LAN MACs and MAC addresses can be spoofed. Only a pinned
-        // certificate permits sending the saved client key to a new host.
-        if (!sameUuid && !sameTls) { continue; }
-        if (await _tryRecoveryHost(tv, candidate.host)) { return; }
+      // Scan only LG encrypted-control port 3001. An open TCP port does
+      // not prove TV identity: only the saved TLS pin can authorize moving
+      // the existing pairing to a different DHCP address.
+      if (tv.tlsPin.isNotEmpty) {
+        final lan = await detectLanRange();
+        if (lan != null) {
+          final hosts = await findLgControlPortHosts(
+              lan, ports: const [3001]);
+          for (final candidate in hosts) {
+            if (!mounted || !_foreground) return;
+            if (candidate == tv.host) continue;
+            if (await matchesLgTlsPin(candidate, tv.tlsPin) &&
+                await _tryRecoveryHost(tv, candidate)) return;
+          }
+        }
       }
       if (mounted) { setState(() {
         _status = 'TV unavailable · will retry automatically';
@@ -726,6 +734,16 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
 
   /// Explicit device-specific wake never becomes a power-off operation
   /// if a background reconnect happens while the user presses On.
+  void _beginWakeRecovery() {
+    _wakeRecoveryTimer?.cancel();
+    _wakeNotBefore = DateTime.now().add(lgWakeRecoveryDelay);
+    _wakeRecoveryTimer = Timer(lgWakeRecoveryDelay, () {
+      if (mounted && _foreground && !_suspended) {
+        unawaited(_recover(force: true));
+      }
+    });
+  }
+
   Future<void> _wakeSelected() async {
     final current = _selected;
     if (current == null || _waking) {
@@ -757,6 +775,15 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     try {
       await (widget.wakeDevice ?? wakeLgTv)(wakeTarget);
       _suspended = false;
+      if (widget.wakeDevice == null) {
+        // The pending job can also run after navigating away from this page.
+        try {
+          await LgWakeRecovery.instance.queue(wakeTarget);
+        } catch (_) {
+          // iOS may deny scheduling; foreground recovery is still available.
+        }
+        _beginWakeRecovery();
+      }
       if (mounted) {
         setState(() {
           _status = 'Power-on signal sent to ${current.name} (${current.host}).';
@@ -1010,6 +1037,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   @override
   void dispose() {
     _connectionTimer?.cancel();
+    _wakeRecoveryTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _ip.dispose();
     if (_session != null) unawaited(_session!.disconnect());
