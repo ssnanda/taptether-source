@@ -7,16 +7,16 @@ import AppIntents
 private struct TVQuickButtons: View {
     var body: some View {
         HStack(spacing: 14) {
-            Button(intent: TapTetherPowerIntent()) {
+            Button(intent: TapTetherOpenRemoteIntent(target: .power)) {
                 Image(systemName: "power")
             }.accessibilityLabel("TV power")
-            Button(intent: TapTetherVolumeDownIntent()) {
+            Button(intent: TapTetherOpenRemoteIntent(target: .volumeDown)) {
                 Image(systemName: "speaker.minus.fill")
             }.accessibilityLabel("Volume down")
-            Button(intent: TapTetherMuteIntent()) {
+            Button(intent: TapTetherOpenRemoteIntent(target: .mute)) {
                 Image(systemName: "speaker.slash.fill")
             }.accessibilityLabel("Mute")
-            Button(intent: TapTetherVolumeUpIntent()) {
+            Button(intent: TapTetherOpenRemoteIntent(target: .volumeUp)) {
                 Image(systemName: "speaker.plus.fill")
             }.accessibilityLabel("Volume up")
             Button(intent: TapTetherOpenRemoteIntent()) {
@@ -93,7 +93,7 @@ private struct RemoteOpenControl: ControlWidget {
 private struct RemotePowerControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.taptether.control.power") {
-            ControlWidgetButton(action: TapTetherPowerIntent()) {
+            ControlWidgetButton(action: TapTetherOpenRemoteIntent(target: .power)) {
                 Label("TV Power", systemImage: "power")
             }
         }
@@ -106,7 +106,7 @@ private struct RemotePowerControl: ControlWidget {
 private struct RemoteMuteControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.taptether.control.mute") {
-            ControlWidgetButton(action: TapTetherMuteIntent()) {
+            ControlWidgetButton(action: TapTetherOpenRemoteIntent(target: .mute)) {
                 Label("TV Mute", systemImage: "speaker.slash.fill")
             }
         }
@@ -119,7 +119,7 @@ private struct RemoteMuteControl: ControlWidget {
 private struct RemoteUpControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.taptether.control.volumeup") {
-            ControlWidgetButton(action: TapTetherVolumeUpIntent()) {
+            ControlWidgetButton(action: TapTetherOpenRemoteIntent(target: .volumeUp)) {
                 Label("TV Volume Up", systemImage: "speaker.plus.fill")
             }
         }
@@ -132,7 +132,7 @@ private struct RemoteUpControl: ControlWidget {
 private struct RemoteDownControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.taptether.control.volumedown") {
-            ControlWidgetButton(action: TapTetherVolumeDownIntent()) {
+            ControlWidgetButton(action: TapTetherOpenRemoteIntent(target: .volumeDown)) {
                 Label("TV Volume Down", systemImage: "speaker.minus.fill")
             }
         }

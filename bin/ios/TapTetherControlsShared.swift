@@ -27,52 +27,37 @@ struct TapTetherTVActivityAttributes: ActivityAttributes {
 }
 
 @available(iOS 18.0, *)
-struct TapTetherOpenRemoteIntent: AppIntent {
-    static let title: LocalizedStringResource = "Open TV Remote"
-    static let description = IntentDescription("Open the last-used paired LG TV remote in TapTether.")
-    static var openAppWhenRun: Bool = true
-    func perform() async throws -> some IntentResult {
-        TapTetherSharedTV.request("open")
-        return .result()
-    }
+enum TapTetherControlTarget: String, AppEnum {
+    case open
+    case power
+    case volumeUp
+    case volumeDown
+    case mute
+
+    static var typeDisplayRepresentation = TypeDisplayRepresentation("TapTether TV action")
+    static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
+        .open: "Open remote",
+        .power: "TV power",
+        .volumeUp: "Volume up",
+        .volumeDown: "Volume down",
+        .mute: "Mute"
+    ]
 }
 
+/// OpenIntent foregrounds the host app, requiring unlock when necessary.
+/// A widget extension may not use the deprecated openAppWhenRun property.
 @available(iOS 18.0, *)
-struct TapTetherPowerIntent: AppIntent {
-    static let title: LocalizedStringResource = "TV Power"
-    static var openAppWhenRun: Bool = true
-    func perform() async throws -> some IntentResult {
-        TapTetherSharedTV.request("power")
-        return .result()
-    }
-}
+struct TapTetherOpenRemoteIntent: OpenIntent {
+    static let title: LocalizedStringResource = "TapTether TV Remote"
 
-@available(iOS 18.0, *)
-struct TapTetherVolumeUpIntent: AppIntent {
-    static let title: LocalizedStringResource = "TV Volume Up"
-    static var openAppWhenRun: Bool = true
-    func perform() async throws -> some IntentResult {
-        TapTetherSharedTV.request("volumeUp")
-        return .result()
-    }
-}
+    @Parameter(title: "TV action")
+    var target: TapTetherControlTarget
 
-@available(iOS 18.0, *)
-struct TapTetherVolumeDownIntent: AppIntent {
-    static let title: LocalizedStringResource = "TV Volume Down"
-    static var openAppWhenRun: Bool = true
-    func perform() async throws -> some IntentResult {
-        TapTetherSharedTV.request("volumeDown")
-        return .result()
-    }
-}
+    init() { target = .open }
+    init(target: TapTetherControlTarget) { self.target = target }
 
-@available(iOS 18.0, *)
-struct TapTetherMuteIntent: AppIntent {
-    static let title: LocalizedStringResource = "TV Mute"
-    static var openAppWhenRun: Bool = true
     func perform() async throws -> some IntentResult {
-        TapTetherSharedTV.request("mute")
+        TapTetherSharedTV.request(target.rawValue)
         return .result()
     }
 }
