@@ -1,8 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/lg_thinq_tv_mac.dart';
 import 'package:taptether/lg_webos_client.dart';
+import 'package:taptether/lg_wake_recovery.dart';
 
 void main() {
+  test('LG wake recovery has a ten-second foreground delay and expiry', () {
+    expect(lgWakeRecoveryDelay, const Duration(seconds: 10));
+    expect(lgWakeRecoveryWindow, const Duration(minutes: 30));
+    expect(lgWakeRecoveryJob, 'com.taptether.taptether.lg-tv-wake');
+  });
+
   test('paired webOS IP identifies active Ethernet, not stale Wi-Fi', () {
     const payload = {
       'returnValue': true,

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'lg_webos_client.dart';
+import 'lg_wake_recovery.dart';
 import 'lg_webos_screen.dart';
 import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
@@ -67,6 +68,7 @@ Future<void> main() async {
     try {
       await Workmanager().initialize(taptetherBackgroundDispatcher);
       await FridgeAlerts.instance.syncBackgroundTask();
+      await LgWakeRecovery.instance.schedule();
     } catch (_) {
       // A failed registration must be visible in background diagnostics.
       try {
@@ -506,6 +508,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final networkLocationStore = NetworkLocationStore();
   Timer? _heartbeatTimer;
   Timer? _tvRecoveryTimer;
+  Timer? _lgWakeRecoveryTimer;
   Timer? _wifiCheckTimer;
   DetectedLanRange? _wifiRange;
   bool _checkedWifi = false;
@@ -754,6 +757,14 @@ class _RemoteScreenState extends State<RemoteScreen>
         unawaited(_refreshTvStatuses());
       }
     });
+    // When an LG TV is explicitly woken, continue checking the saved IP
+    // and TLS-verified LG port even after the TV detail page is dismissed.
+    _lgWakeRecoveryTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!_appForeground) return;
+      unawaited(LgWakeRecovery.instance.check().then((recovered) {
+        if (recovered && mounted) unawaited(loadLgTvs());
+      }).catchError((Object _) {}));
+    });
     // Only the foreground timer is configurable below 15 minutes.
     // iOS suspends Dart timers when the app is backgrounded.
     _fridgeMonitorTimer = Timer.periodic(const Duration(seconds: 20), (_) {
@@ -801,6 +812,10 @@ class _RemoteScreenState extends State<RemoteScreen>
       unawaited(_refreshNetworkLocation());
       unawaited(_refreshHeartbeats());
       unawaited(_refreshTvStatuses());
+      // Catch up immediately if iOS suspended foreground recovery timers.
+      unawaited(LgWakeRecovery.instance.check().then((recovered) {
+        if (recovered && mounted) unawaited(loadLgTvs());
+      }).catchError((Object _) {}));
       // Recheck on resume despite the usual two-minute status cache.
       // iOS may have skipped cloud refresh while TapTether was suspended.
       unawaited(_refreshThinQStatuses(force: true));
@@ -3694,6 +3709,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _remoteRouteObserver.unsubscribe(this);
     _heartbeatTimer?.cancel();
     _tvRecoveryTimer?.cancel();
+    _lgWakeRecoveryTimer?.cancel();
     _wifiCheckTimer?.cancel();
     _fridgeMonitorTimer?.cancel();
     final listener = _announcementSubscription;

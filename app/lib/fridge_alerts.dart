@@ -9,6 +9,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'fridge_temperature.dart';
 import 'lg_thinq_api.dart';
+import 'lg_wake_recovery.dart';
 
 const fridgeBackgroundJob = 'com.taptether.taptether.fridge-watch';
 const _alertKey = 'taptether.fridge.alerts.enabled.v1';
@@ -39,10 +40,19 @@ int fridgeBackgroundMinutes(Iterable<int> configured) {
 void taptetherBackgroundDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     if (task != fridgeBackgroundJob &&
+        task != lgWakeRecoveryJob &&
         task != Workmanager.iOSBackgroundTask) {
       return true;
     }
     DartPluginRegistrant.ensureInitialized();
+    if (task == lgWakeRecoveryJob) {
+      try {
+        await LgWakeRecovery.instance.check();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
     try {
       await FridgeAlerts.instance.recordBackgroundWake();
       final count = await FridgeAlerts.instance.checkAll();

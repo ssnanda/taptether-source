@@ -13,6 +13,7 @@ root = pathlib.Path(sys.argv[1])
 ios = root / 'app/ios/Runner/Info.plist'
 android = root / 'app/android/app/src/main/AndroidManifest.xml'
 task_id = 'com.taptether.taptether.fridge-watch'
+lg_task_id = 'com.taptether.taptether.lg-tv-wake'
 if ios.is_file():
     with ios.open('rb') as handle:
         info = plistlib.load(handle)
@@ -21,8 +22,9 @@ if ios.is_file():
         modes.append('fetch')
     info['UIBackgroundModes'] = modes
     identifiers = info.get('BGTaskSchedulerPermittedIdentifiers') or []
-    if task_id not in identifiers:
-        identifiers.append(task_id)
+    for identifier in (task_id, lg_task_id):
+        if identifier not in identifiers:
+            identifiers.append(identifier)
     info['BGTaskSchedulerPermittedIdentifiers'] = identifiers
     with ios.open('wb') as handle:
         plistlib.dump(info, handle, fmt=plistlib.FMT_XML)
