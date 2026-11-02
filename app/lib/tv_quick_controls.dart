@@ -57,7 +57,6 @@ class TvQuickControls {
         return;
       }
       final tv = matches.first;
-      await select(tv, connected: false);
       if (action == 'open') {
         await onOpenRemote?.call(tv);
         return;
@@ -68,6 +67,7 @@ class TvQuickControls {
       if (action == 'power' && !await lgTvResponds(tv)) {
         await wakeLgTv(tv);
         await LgWakeRecovery.instance.queue(tv);
+        await select(tv, connected: false);
         onResult?.call('Wake signal sent to ${tv.name}.');
         return;
       }
@@ -91,6 +91,7 @@ class TvQuickControls {
             await client.mute(!muted);
             break;
         }
+        await select(tv, connected: action != 'power');
         onResult?.call('TV control sent to ${tv.name}.');
       } finally {
         await client.disconnect();

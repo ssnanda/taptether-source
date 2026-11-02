@@ -721,8 +721,10 @@ class _RemoteScreenState extends State<RemoteScreen>
   @override
   void initState() {
     super.initState();
-    TvQuickControls.instance.onOpenRemote = (tv) =>
-        openLgWebOs(host: tv.host);
+    TvQuickControls.instance.onOpenRemote = (tv) {
+      if (!mounted) return Future<void>.value();
+      return openLgWebOs(host: tv.host);
+    };
     TvQuickControls.instance.onResult = (message) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
