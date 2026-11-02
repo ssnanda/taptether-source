@@ -18,8 +18,9 @@ if ios.is_file():
     with ios.open('rb') as handle:
         info = plistlib.load(handle)
     modes = info.get('UIBackgroundModes') or []
-    if 'fetch' not in modes:
-        modes.append('fetch')
+    for mode in ('fetch', 'processing'):
+        if mode not in modes:
+            modes.append(mode)
     info['UIBackgroundModes'] = modes
     identifiers = info.get('BGTaskSchedulerPermittedIdentifiers') or []
     for identifier in (task_id, lg_task_id):
