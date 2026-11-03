@@ -12,11 +12,34 @@ app = (root / "app/lib/main.dart").read_text()
 lg = (root / "app/lib/lg_webos_screen.dart").read_text()
 quick = (root / "app/lib/tv_quick_controls.dart").read_text()
 
+native = (root / "bin/ios/TapTetherLgRemoteNative.swift").read_text()
 assert "struct TapTetherTVActivityAttributes: ActivityAttributes" in shared
-assert "struct TapTetherOpenRemoteIntent: OpenIntent" in shared
-assert "openAppWhenRun" not in shared.split("struct TapTetherOpenRemoteIntent: OpenIntent", 1)[1]
-assert "ControlWidgetButton(action:" in widgets
+assert "struct TapTetherTVActionIntent: LiveActivityIntent" in shared
+assert "static var supportedModes: IntentModes { .background }" in shared
+assert "struct TapTetherOpenRemoteIntent: OpenIntent" not in shared
+assert "openAppWhenRun" not in shared
+assert "SecItemAdd" in shared and "SecItemCopyMatching" in shared
+assert "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly" in shared
+assert "URLSessionWebSocketTask" in native
+assert "SHA256.hash(data: der)" in native
+assert "identityMismatch" in native
+assert "ssap://com.webos.applicationManager/listLaunchPoints" in native
+assert "ssap://com.webos.applicationManager/launch" in native
+assert "ssap://audio/volumeUp" in native
+assert "ssap://audio/setMute" in native
+assert "ssap://system/turnOff" in native
+assert "type:button" in native and "name:HOME" in native
+assert "client-key" in native
+assert "TapTetherLgRemoteNative.swift" in staging
+assert "clientKey" in runner and "TapTetherTVKeychain.save" in runner
+assert "clientKey" in quick and "tlsPin" in quick
+assert "ControlWidgetButton(action: TapTetherTVActionIntent" in widgets
+assert "Button(intent: TapTetherTVActionIntent" in widgets
 assert "ActivityConfiguration(for: TapTetherTVActivityAttributes.self)" in widgets
+assert "activityBackgroundTint(TVControlStyle.background)" in widgets
+assert "TVAppShortcuts" in widgets
+for action in (".netflix", ".youtube", ".prime", ".appleTV", ".apps"):
+    assert "target: " + action in widgets
 for control in ("RemoteOpenControl", "RemotePowerControl", "RemoteMuteControl",
                 "RemoteUpControl", "RemoteDownControl"):
     assert f"struct {control}: ControlWidget" in widgets
@@ -36,6 +59,11 @@ assert "TvQuickControls.instance.select" in lg
 assert "LgTvStore().read()" in quick
 assert "LgWebOsClient(tv)" in quick
 assert "LgWakeRecovery.instance.queue(tv)" in quick
+assert "TvQuickControls.instance.select" in lg
+assert "selected TV's address and label" in shared
+# The only shared credential must be a Keychain item, not a UserDefaults key.
+assert 'defaults.set(clientKey' not in runner
+assert 'defaults.set(data["clientKey"]' not in runner
 print("PASS native iOS TV controls, Live Activity, secure LG action handoff")
 
 # Connection timings remain scoped to the selected LG TV and persist
