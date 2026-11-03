@@ -382,6 +382,11 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               'They do not provide authenticated controller buttons. '
               'Xbox Remote Play opens Microsoft’s official browser app, '
               'where you sign in and select your console.'),
+          const SizedBox(height: 6),
+          Text('On the console: Settings → Devices & connections → '
+              'Remote features → Enable remote features. '
+              'Use Sleep power mode for remote wake.',
+              style: Theme.of(context).textTheme.bodySmall),
           if (selected == null) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
