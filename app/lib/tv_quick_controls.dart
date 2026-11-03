@@ -8,9 +8,10 @@ import 'lg_connection_timing.dart';
 import 'lg_wake_recovery.dart';
 import 'tv_network_status.dart';
 
-/// Native iOS shortcuts only store a requested action and a TV identity.
-/// All authenticated commands use the existing Flutter secure TV store, and
-/// the Flutter app is foregrounded (unlock required) for control intents.
+/// iOS Live Activity and Control Center actions execute native authenticated
+/// SSAP requests without foregrounding Flutter. The selected TV identity is
+/// shared with the widget; its client key is copied only into Runner Keychain.
+/// The old pending-action handler remains for migration from older builds.
 class TvQuickControls {
   TvQuickControls._();
   static final instance = TvQuickControls._();
@@ -33,6 +34,9 @@ class TvQuickControls {
       await channel.invokeMethod<bool>('select', {
         'host': tv.host,
         'name': tv.name,
+        'tlsPin': tv.tlsPin,
+        'clientKey': tv.clientKey,
+        'macAddress': tv.macAddress,
         'connected': connected,
       });
     } on PlatformException {
