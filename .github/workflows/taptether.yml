@@ -495,7 +495,8 @@ jobs:
     if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.task == 'release' || inputs.task == 'mobile-release' || inputs.task == 'build')) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(github.event.head_commit.message, '[publish mobile]') || contains(github.event.head_commit.message, '[build ipa]') || contains(github.event.head_commit.message, '[build xbox]'))) }}
     permissions:
       contents: write
-    runs-on: macos-latest
+    # Intel macOS 26 avoids GitHub-hosted ARM runner acquisition shortages.
+    runs-on: macos-26-intel
     timeout-minutes: 80
     env:
       TAPTETHER_USE_EXISTING_AGENT_RELEASE: '1'
