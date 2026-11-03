@@ -21,9 +21,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(TextField, 'Xbox IP address'), findsOneWidget);
     expect(find.text('Check Xbox IP'), findsOneWidget);
-    expect(find.text('Scan entire local network'), findsOneWidget);
+    expect(find.text('Find Xbox across this Wi-Fi'), findsOneWidget);
     expect(find.text('Check Xbox IP').evaluate().first.renderObject,
         isNotNull);
+    expect(find.text('Open Xbox Remote Play'), findsOneWidget);
+    expect(find.text('Deep network diagnostics (slower)'), findsOneWidget);
     await tester.tap(find.text('Check Xbox IP'));
     await tester.pumpAndSettle();
     expect(targets, ['192.168.68.84']);
