@@ -318,14 +318,14 @@ enum TapTetherLgRemoteNative {
         }
         var sent = false
         for destination in destinations {
-            var sockaddr = sockaddr_in()
-            sockaddr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-            sockaddr.sin_family = sa_family_t(AF_INET)
-            sockaddr.sin_port = UInt16(9).bigEndian
-            guard inet_pton(AF_INET, destination, &sockaddr.sin_addr) == 1
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_port = UInt16(9).bigEndian
+            guard inet_pton(AF_INET, destination, &address.sin_addr) == 1
             else { continue }
             let count = packet.withUnsafeBytes { buf in
-                withUnsafePointer(to: &sockaddr) { pointer in
+                withUnsafePointer(to: &address) { pointer in
                     pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                         sendto(fd, buf.baseAddress, buf.count, 0, $0,
                                socklen_t(MemoryLayout<sockaddr_in>.size))

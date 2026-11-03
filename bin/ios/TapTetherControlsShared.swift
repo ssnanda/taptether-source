@@ -41,7 +41,7 @@ enum TapTetherTVKeychain {
     }
 
     static func read() throws -> String {
-        var lookup: [String: Any] = [
+        let lookup: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
@@ -59,7 +59,7 @@ enum TapTetherTVKeychain {
     }
 }
 
-enum TapTetherTVActionError: LocalizedError {
+enum TapTetherTVActionError: LocalizedError, Equatable {
     case notPaired
     case keychainUnavailable
     case invalidAddress
