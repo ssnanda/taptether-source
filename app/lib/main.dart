@@ -3527,6 +3527,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (apps.isEmpty || apps.first is! Map) return;
       final app = apps.first as Map;
       if (app['version'] is! String || app['buildVersion'] == null) return;
+      // AltStore tracks the mobile build, not the separately published agents.
       final latest = "${app['version']}+${app['buildVersion']}";
       final platform = agentPlatform ?? _connectedPlatform;
       final latestAgent = platform == null ? null :
