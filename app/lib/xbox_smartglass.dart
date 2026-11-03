@@ -62,65 +62,158 @@ class XboxConsole {
       );
 }
 
-/// Safe parsing of the unencrypted DD01 discovery reply. No trust is granted
-/// to the sender, even if it presents a plausible X.509 certificate.
-XboxConsole? parseXboxDiscovery(List<int> packet, String host) {
-  if (!isPrivateIPv4(host) || packet.length < 36 ||
-      packet.length > 8192 || packet[0] != 0xdd || packet[1] != 0x01) {
-    return null;
-  }
-  try {
-    final bytes = Uint8List.fromList(packet);
-    final view = ByteData.sublistView(bytes);
-    final payloadLength = view.getUint16(2, Endian.big);
-    if (view.getUint16(4, Endian.big) != 0 ||
-        payloadLength != bytes.length - 6) {
-      return null;
-    }
-    final flags = view.getUint32(6, Endian.big);
-    if (flags & 0x08 != 0) return null; // certificate is pending
-    if (view.getUint16(10, Endian.big) != 1) return null; // Xbox One family
-    var offset = 14; // response's two reserved bytes after device type
-    (String, int)? readString() {
-      if (offset + 2 > bytes.length) return null;
-      final size = view.getUint16(offset, Endian.big);
-      offset += 2;
-      if (size < 1 || size > 128 || offset + size + 1 > bytes.length ||
-          bytes[offset + size] != 0) {
-        return null;
-      }
-      final value = utf8.decode(bytes.sublist(offset, offset + size));
-      offset += size + 1;
-      return (value, offset);
-    }
+/// A bounded, redacted description of an Xbox UDP response. Never exposes
+/// a certificate, Live ID, title, token, UUID or registration secret.
+class XboxPacketDiagnosis {
+  const XboxPacketDiagnosis({
+    required this.length,
+    required this.headerHex,
+    required this.reason,
+    this.type,
+    this.version,
+    this.flags,
+    this.deviceType,
+    this.console,
+  });
 
-    final consoleName = readString();
-    final uuid = readString();
-    if (consoleName == null || uuid == null ||
-        consoleName.$1.trim().isEmpty || uuid.$1.trim().isEmpty ||
-        offset + 6 > bytes.length) {
+  final int length;
+  final String headerHex;
+  final String reason;
+  final int? type;
+  final int? version;
+  final int? flags;
+  final int? deviceType;
+  final XboxConsole? console;
+
+  bool get compatible => console != null;
+  bool get legacyDiscoveryReply => type == 0xdd01;
+
+  String get typeLabel => type == null
+      ? 'short packet'
+      : '0x${type!.toRadixString(16).padLeft(4, '0').toUpperCase()}';
+
+  String get summary => '$typeLabel, $length bytes'
+      '${version == null ? "" : ", version $version"}'
+      '${flags == null ? "" : ", flags 0x${flags!.toRadixString(16)}"}'
+      '${deviceType == null ? "" : ", device type $deviceType"}'
+      ' — $reason';
+}
+
+/// Classify the actual UDP datagram instead of labeling every incompatible
+/// reply "Other". Only DD01 with valid fields can be saved as an Xbox.
+/// The first 14 header bytes contain no console UUID, cert or Live ID.
+XboxPacketDiagnosis inspectXboxDiscovery(List<int> packet, String host) {
+  final headerHex = packet.take(14).map((byte) =>
+      byte.toRadixString(16).padLeft(2, '0')).join(' ');
+  final length = packet.length;
+  final type = length >= 2 ? (packet[0] << 8) | packet[1] : null;
+  final version = length >= 6 ? (packet[4] << 8) | packet[5] : null;
+  final flags = length >= 10 && type == 0xdd01
+      ? ByteData.sublistView(Uint8List.fromList(packet))
+          .getUint32(6, Endian.big)
+      : null;
+  final deviceType = length >= 12 && type == 0xdd01
+      ? (packet[10] << 8) | packet[11]
+      : null;
+  XboxPacketDiagnosis verdict(String reason, {XboxConsole? console}) =>
+      XboxPacketDiagnosis(
+        length: length, headerHex: headerHex, reason: reason,
+        type: type, version: version, flags: flags,
+        deviceType: deviceType, console: console,
+      );
+
+  if (!isPrivateIPv4(host)) return verdict('Not a local Wi-Fi address');
+  if (length < 6) return verdict('Incomplete SmartGlass header');
+  if (length > 8192) return verdict('Packet exceeds safe discovery limit');
+  if (type != 0xdd01) {
+    if (type == 0xdd00) {
+      return verdict('Discovery request, not a console response');
+    }
+    if (type == 0xcc01) {
+      return verdict('Encrypted connection response, not discovery');
+    }
+    if (type == 0xd00d) {
+      return verdict('Encrypted SmartGlass session message, not discovery');
+    }
+    return verdict('Not a SmartGlass DD01 discovery response');
+  }
+  if (version != 0) return verdict('Unsupported discovery header version');
+  if (length < 14) return verdict('Truncated DD01 flags and console type');
+  final payloadLength = (packet[2] << 8) | packet[3];
+  if (payloadLength != length - 6) {
+    return verdict('DD01 payload length mismatch: '
+        'declared $payloadLength, received ${length - 6}');
+  }
+  if (flags! & 0x08 != 0) {
+    return verdict('Xbox certificate pending; retry after console starts');
+  }
+  if (deviceType != 1) {
+    return verdict('Unexpected SmartGlass device type $deviceType');
+  }
+  final bytes = Uint8List.fromList(packet);
+  final view = ByteData.sublistView(bytes);
+  var offset = 14;
+  String? readField() {
+    if (offset + 2 > length) return null;
+    final size = view.getUint16(offset, Endian.big);
+    offset += 2;
+    if (size < 1 || size > 128 || offset + size + 1 > length ||
+        bytes[offset + size] != 0) {
       return null;
     }
-    offset += 4; // last error
+    final value = utf8.decode(bytes.sublist(offset, offset + size),
+        allowMalformed: false);
+    offset += size + 1;
+    return value;
+  }
+
+  try {
+    final name = readField();
+    if (name == null || name.trim().isEmpty) {
+      return verdict('Invalid console name SGString');
+    }
+    final uuid = readField();
+    if (uuid == null || uuid.trim().isEmpty) {
+      return verdict('Invalid console UUID SGString');
+    }
+    if (offset + 6 > length) {
+      return verdict('Truncated last-error or certificate length');
+    }
+    offset += 4; // Last error, not a discovery identity.
     final certificateSize = view.getUint16(offset, Endian.big);
     offset += 2;
-    if (certificateSize < 64 || offset + certificateSize != bytes.length) {
-      return null;
+    if (certificateSize < 64) {
+      return verdict('Missing or undersized Xbox certificate');
+    }
+    if (offset + certificateSize != length) {
+      return verdict('Certificate length mismatch: '
+          'declared $certificateSize, available ${length - offset}');
     }
     final certificate = bytes.sublist(offset);
-    if (certificate.first != 0x30) return null; // DER SEQUENCE
-    final liveId = xboxLiveIdFromDer(certificate);
-    return XboxConsole(
-      host: host,
-      name: consoleName.$1.trim(),
-      uuid: uuid.$1,
-      certificateSha256: sha256.convert(certificate).toString(),
-      liveId: liveId ?? '',
+    if (certificate.first != 0x30) {
+      return verdict('Certificate is not an ASN.1 DER sequence');
+    }
+    final id = xboxLiveIdFromDer(certificate) ?? '';
+    return verdict('Compatible legacy Xbox discovery response',
+      console: XboxConsole(
+        host: host,
+        name: name.trim(),
+        uuid: uuid,
+        certificateSha256: sha256.convert(certificate).toString(),
+        liveId: id,
+      ),
     );
+  } on FormatException {
+    return verdict('Invalid UTF-8 in Xbox discovery fields');
   } catch (_) {
-    return null;
+    return verdict('Malformed legacy Xbox discovery fields');
   }
 }
+
+/// Compatibility helper. Parsing a reply is NOT authentication or a
+/// permission to send encrypted commands to the console.
+XboxConsole? parseXboxDiscovery(List<int> packet, String host) =>
+    inspectXboxDiscovery(packet, host).console;
 
 /// Locate the certificate Subject CN. The issuer's well-known CN is ignored.
 /// This lightweight reader is not X.509 chain validation.
@@ -165,13 +258,49 @@ List<int> xboxWakePacket(String liveId) {
   ];
 }
 
-/// Optional counters distinguish no UDP reply from a malformed legacy reply.
-/// A response is never treated as authenticated pairing.
+/// Targetable, bounded diagnostics of actual reply types and rejection
+/// reasons. Unique entries only; no full payload/certificate is logged.
+class XboxDiscoveryReply {
+  const XboxDiscoveryReply({
+    required this.host,
+    required this.sourcePort,
+    required this.diagnosis,
+  });
+
+  final String host;
+  final int sourcePort;
+  final XboxPacketDiagnosis diagnosis;
+}
+
+/// A reply from UDP 5050 is not necessarily a valid Xbox discovery packet.
 class XboxDiscoveryStats {
   int sent = 0;
   int replies = 0;
   int malformed = 0;
   int compatible = 0;
+  final List<XboxDiscoveryReply> observed = [];
+
+  void record(String host, int port, XboxPacketDiagnosis diagnosis) {
+    replies++;
+    if (diagnosis.compatible) {
+      compatible++;
+    } else {
+      malformed++;
+    }
+    if (observed.length >= 16 ||
+        observed.any((reply) => reply.host == host &&
+            reply.sourcePort == port &&
+            reply.diagnosis.reason == diagnosis.reason &&
+            reply.diagnosis.type == diagnosis.type)) {
+      return;
+    }
+    observed.add(XboxDiscoveryReply(
+      host: host, sourcePort: port, diagnosis: diagnosis,
+    ));
+  }
+
+  Iterable<XboxDiscoveryReply> repliesFrom(String host) =>
+      observed.where((reply) => reply.host == host);
 }
 
 /// An explicit full-network scan sends one legacy discovery packet to every
@@ -221,13 +350,11 @@ Future<List<XboxConsole>> discoverXboxConsoles({
           (targetIp != null && !fullNetwork && ip != targetIp)) {
         continue;
       }
-      if (diagnostics != null) diagnostics.replies++;
-      final candidate = parseXboxDiscovery(reply.data, ip);
+      final inspection = inspectXboxDiscovery(reply.data, ip);
+      diagnostics?.record(ip, reply.port, inspection);
+      final candidate = inspection.console;
       if (candidate != null) {
         found[candidate.uuid] = candidate;
-        if (diagnostics != null) diagnostics.compatible++;
-      } else {
-        if (diagnostics != null) diagnostics.malformed++;
       }
     }
   });
@@ -244,6 +371,20 @@ Future<List<XboxConsole>> discoverXboxConsoles({
         }
       } on SocketException {
         // Some Wi-Fi networks forbid broadcast/multicast; use manual IP.
+      }
+    }
+    if (targetIp != null) {
+      // The first reply may report a certificate still being initialized;
+      // retry twice without flooding all 1,022 addresses.
+      for (var retry = 0; retry < 2; retry++) {
+        await Future<void>.delayed(const Duration(milliseconds: 220));
+        try {
+          if (socket.send(packet, InternetAddress(targetIp), 5050) > 0) {
+            diagnostics?.sent++;
+          }
+        } on SocketException {
+          // Retry on a later explicit discovery request.
+        }
       }
     }
     if (fullNetwork) {
