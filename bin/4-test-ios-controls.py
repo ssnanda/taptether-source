@@ -38,6 +38,10 @@ assert "Button(intent: TapTetherTVActionIntent" in widgets
 assert "ActivityConfiguration(for: TapTetherTVActivityAttributes.self)" in widgets
 assert "activityBackgroundTint(TVControlStyle.background)" in widgets
 assert "TVAppShortcuts" in widgets
+# Both rows must fit inside the system-imposed Lock Screen activity height.
+assert "TVQuickButtons(compact: true)\n                TVAppShortcuts(compact: true)" in widgets
+assert ".frame(height: compact ? 38 : 56)" in widgets
+assert ".padding(.vertical, 8)" in widgets
 for action in (".netflix", ".youtube", ".prime", ".appleTV", ".apps"):
     assert "target: " + action in widgets
 for control in ("RemoteOpenControl", "RemotePowerControl", "RemoteMuteControl",

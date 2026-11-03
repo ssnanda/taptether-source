@@ -19,26 +19,26 @@ private struct TVActionButton: View {
 
     var body: some View {
         Button(intent: TapTetherTVActionIntent(target: target)) {
-            VStack(spacing: compact ? 2 : 5) {
+            VStack(spacing: compact ? 1 : 4) {
                 Image(systemName: symbol)
-                    .font(.system(size: compact ? 16 : 19,
+                    .font(.system(size: compact ? 15 : 19,
                                   weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    .frame(height: compact ? 21 : 23)
+                    .frame(height: compact ? 17 : 23)
                 Text(title)
-                    .font(.system(size: compact ? 9 : 10, weight: .medium))
+                    .font(.system(size: compact ? 8.5 : 10, weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .frame(height: compact ? 48 : 56)
+            .frame(height: compact ? 38 : 56)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: compact ? 10 : 14, style: .continuous)
                     .fill(TVControlStyle.panel)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: compact ? 10 : 14, style: .continuous)
                     .strokeBorder(.white.opacity(0.11), lineWidth: 0.7)
             )
             .contentShape(Rectangle())
@@ -53,7 +53,7 @@ private struct TVQuickButtons: View {
     var compact = false
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 5) {
             TVActionButton(target: .power, symbol: "power", title: "Power",
                            compact: compact)
             TVActionButton(target: .volumeDown, symbol: "speaker.minus.fill",
@@ -73,7 +73,7 @@ private struct TVAppShortcuts: View {
     var compact = false
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 5) {
             TVActionButton(target: .netflix, symbol: "play.rectangle.fill",
                            title: "Netflix", compact: compact)
             TVActionButton(target: .youtube, symbol: "play.tv.fill",
@@ -92,14 +92,14 @@ private struct TVAppShortcuts: View {
 struct TapTetherTVLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TapTetherTVActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
                     Image(systemName: "tv.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(TVControlStyle.accent)
                     Text("TAPTETHER")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .tracking(1)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(0.6)
                         .foregroundStyle(TVControlStyle.accent)
                     Spacer()
                     Circle()
@@ -107,17 +107,20 @@ struct TapTetherTVLiveActivity: Widget {
                               ? Color.green : Color.orange)
                         .frame(width: 7, height: 7)
                     Text(context.state.connected ? "Connected" : "Standby")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.9))
                 }
                 Text(context.state.title)
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                TVQuickButtons()
+                TVQuickButtons(compact: true)
                 TVAppShortcuts(compact: true)
             }
-            .padding(14)
+            // Keep the full Lock Screen Live Activity within iOS's compact
+            // vertical budget. Oversize content is clipped at both ends.
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .activityBackgroundTint(TVControlStyle.background)
             .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
@@ -144,11 +147,11 @@ struct TapTetherTVLiveActivity: Widget {
                         .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 4) {
                         TVQuickButtons(compact: true)
                         TVAppShortcuts(compact: true)
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 2)
                 }
             } compactLeading: {
                 Image(systemName: "tv.fill")
