@@ -14,6 +14,7 @@ class XboxNetworkReport {
     required this.truncated,
     required this.targetPorts,
     this.targetIp,
+    this.tcpSweepPerformed = false,
   });
 
   final String cidr;
@@ -25,6 +26,7 @@ class XboxNetworkReport {
   final int totalAddresses;
   final bool truncated;
   final Map<int, TcpProbeStatus> targetPorts;
+  final bool tcpSweepPerformed;
 
   bool get targetDiscovered => targetIp != null &&
       consoleReplies.any((console) => console.host == targetIp);
@@ -45,7 +47,12 @@ String formatXboxNetworkDiagnostics(XboxNetworkReport report) {
     'Legacy Xbox replies: ${report.udpStats.replies}',
     'Compatible replies: ${report.udpStats.compatible}',
     'Other UDP replies: ${report.udpStats.malformed}',
-    'TCP-visible hosts: ${report.tcpHosts.length}',
+    'Xbox UDP response analysis (header only, no secrets):',
+    for (final reply in report.udpStats.observed)
+      '${reply.host} UDP ${reply.sourcePort}: '
+          '${reply.diagnosis.summary}; header ${reply.diagnosis.headerHex}',
+    'TCP-visible hosts: ${report.tcpHosts.length}'
+        '${report.tcpSweepPerformed ? "" : " (not swept)"}',
     if (report.truncated) 'NOTICE: Scan limited to first four /24 ranges',
     for (final entry in report.targetPorts.entries)
       'Target TCP ${entry.key}: ${tcpProbeLabel(entry.value)}',
@@ -71,6 +78,7 @@ int xboxDiagnosticHostCount(DetectedLanRange range) {
 Future<XboxNetworkReport> runXboxNetworkDiagnostics({
   String? targetIp,
   bool fullNetwork = false,
+  bool deepTcp = false,
   void Function(int completed, int total, String stage)? onProgress,
 }) async {
   final range = await detectLanRange();
@@ -86,6 +94,8 @@ Future<XboxNetworkReport> runXboxNetworkDiagnostics({
   final discovery = discoverXboxConsoles(
     targetIp: targetIp, fullNetwork: fullNetwork,
     diagnostics: stats, duration: const Duration(seconds: 2),
+    onScanProgress: (done, total) =>
+        onProgress?.call(done, total, 'Checking Xbox UDP 5050'),
   );
 
   final ports = <int, TcpProbeStatus>{};
@@ -107,6 +117,12 @@ Future<XboxNetworkReport> runXboxNetworkDiagnostics({
   var total = targetIp == null ? 0 : 1;
   final prefixes = fullNetwork ? xboxDiagnosticPrefixes(range) : <String>[];
   if (fullNetwork) {
+    total = xboxScanTargets(range).length;
+    checked = total;
+  }
+  // Standard Xbox discovery only sends bounded UDP probes. Do not probe
+  // unrelated TCP services on every host unless explicitly requested.
+  if (fullNetwork && deepTcp) {
     checked = 0;
     total = xboxDiagnosticHostCount(range);
     for (final prefix in prefixes) {
@@ -147,5 +163,6 @@ Future<XboxNetworkReport> runXboxNetworkDiagnostics({
           return sum + bounds.endHost - bounds.startHost + 1;
         }),
     targetPorts: ports,
+    tcpSweepPerformed: fullNetwork && deepTcp,
   );
 }

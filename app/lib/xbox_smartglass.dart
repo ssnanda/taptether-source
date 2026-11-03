@@ -328,6 +328,7 @@ Future<List<XboxConsole>> discoverXboxConsoles({
   Duration duration = const Duration(milliseconds: 1600),
   bool fullNetwork = false,
   XboxDiscoveryStats? diagnostics,
+  void Function(int completed, int total)? onScanProgress,
 }) async {
   final network = await detectLanRange();
   if (network == null) {
@@ -380,7 +381,7 @@ Future<List<XboxConsole>> discoverXboxConsoles({
         await Future<void>.delayed(const Duration(milliseconds: 220));
         try {
           if (socket.send(packet, InternetAddress(targetIp), 5050) > 0) {
-            diagnostics?.sent++;
+            if (diagnostics != null) diagnostics.sent++;
           }
         } on SocketException {
           // Retry on a later explicit discovery request.
@@ -394,6 +395,9 @@ Future<List<XboxConsole>> discoverXboxConsoles({
         try {
           if (socket.send(packet, InternetAddress(targets[i]), 5050) > 0) {
             if (diagnostics != null) diagnostics.sent++;
+          }
+          if ((i + 1) % 64 == 0 || i + 1 == targets.length) {
+            onScanProgress?.call(i + 1, targets.length);
           }
         } on SocketException {
           // A single filtered destination must not abort the sweep.
