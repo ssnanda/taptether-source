@@ -274,6 +274,7 @@ class XboxDiscoveryReply {
 
 /// A reply from UDP 5050 is not necessarily a valid Xbox discovery packet.
 /// Keep reasons readable to troubleshoot Series firmware without leaking IDs.
+/// This is protocol classification, not Xbox Live authentication.
 class XboxDiscoveryStats {
   int sent = 0;
   int replies = 0;

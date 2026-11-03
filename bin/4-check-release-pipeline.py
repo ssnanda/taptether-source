@@ -105,7 +105,13 @@ assert "recordBackgroundResult" in fridge_notifications
 assert "Background monitor status" in mobile_dashboard
 xbox_ui = (ROOT / "app" / "lib" / "xbox_remote_screen.dart").read_text()
 assert "Check Xbox IP" in xbox_ui
-assert "Scan entire local network" in xbox_ui
+assert "Find Xbox across this Wi-Fi" in xbox_ui
+assert "Deep network diagnostics (slower)" in xbox_ui
+assert "Xbox Remote Play" in xbox_ui
+xbox_protocol = (ROOT / "app" / "lib" / "xbox_smartglass.dart").read_text()
+assert "inspectXboxDiscovery" in xbox_protocol
+assert "XboxPacketDiagnosis" in xbox_protocol
+assert "onScanProgress" in xbox_protocol
 assert "Xbox app preferences" not in xbox_ui
 
 assert "run: bash bin/2a-tt-ipa.sh --no-publish" in workflow
