@@ -91,7 +91,8 @@ void main() {
     final wrongConsoleType = [...valid]..[11] = 2;
     expect(inspectXboxDiscovery(wrongConsoleType, host).reason,
         contains('device type'));
-    final wrongLength = [...valid]..[3]--;
+    final wrongLength = [...valid];
+    wrongLength[3] -= 1;
     expect(inspectXboxDiscovery(wrongLength, host).reason,
         contains('payload length mismatch'));
     expect(inspectXboxDiscovery([0xdd, 0x01], host).reason,
