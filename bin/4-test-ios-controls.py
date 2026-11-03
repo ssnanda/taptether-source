@@ -28,7 +28,8 @@ assert "ssap://com.webos.applicationManager/launch" in native
 assert "ssap://audio/volumeUp" in native
 assert "ssap://audio/setMute" in native
 assert "ssap://system/turnOff" in native
-assert "type:button" in native and "name:HOME" in native
+assert "type:button" in native and "name:" in native
+assert 'button: "HOME"' in native
 assert "client-key" in native
 assert "TapTetherLgRemoteNative.swift" in staging
 assert "clientKey" in runner and "TapTetherTVKeychain.save" in runner

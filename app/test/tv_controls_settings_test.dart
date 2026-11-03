@@ -14,7 +14,7 @@ void main() {
     expect(find.text('Wide'), findsOneWidget);
     expect(find.text('Control Center'), findsOneWidget);
     expect(find.textContaining('Add a Control'), findsOneWidget);
-    expect(find.textContaining('all ten actions'), findsOneWidget);
+    expect(find.textContaining('All ten actions'), findsOneWidget);
     await tester.tap(find.text('Wide'));
     await tester.pumpAndSettle();
     expect(find.textContaining('larger buttons'), findsOneWidget);
