@@ -261,10 +261,11 @@ enum TapTetherLgRemoteNative {
                 .lowercased())
         }
         if let exact = exact { return exact.id }
-        return entries.first {
+        return entries.first { entry in
             expected.contains(where: { name in
-                $0.title.lowercased().contains(name) ||
-                    $0.id.lowercased().contains(name.replacingOccurrences(of: " ", with: ""))
+                entry.title.lowercased().contains(name) ||
+                    entry.id.lowercased().contains(
+                        name.replacingOccurrences(of: " ", with: ""))
             })
         }?.id
     }
