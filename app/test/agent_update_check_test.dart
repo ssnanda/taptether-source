@@ -3,6 +3,85 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/agent_update_check.dart';
 
 void main() {
+  test('published agent and iOS version are separate', () {
+    const check = AgentUpdateCheck(
+      installed: '0.8.48+209',
+      published: '0.8.48+209',
+    );
+    expect(check.canUpdate, false);
+    expect(const AgentUpdateCheck(
+      installed: '0.8.48+209',
+      published: null,
+    ).canUpdate, false);
+    // Never use the mobile 0.8.69+230 as a surrogate published agent.
+  });
+
+  test('agent catalog requires exact matching public release digests', () {
+    final macFiles = AgentReleaseCatalog.assetNames['darwin']!;
+    const digest = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    Map<String, Object> asset(String name) => {
+      'name': name,
+      'size': 4096,
+      'digest': digest,
+      'browser_download_url':
+          'https://github.com/ssnanda/taptether.com/releases/download/current/$name',
+    };
+    final catalog = {
+      'schemaVersion': 1,
+      'tag': 'current',
+      'platforms': {
+        'darwin': {
+          'version': '0.8.48+209',
+          'assets': {for (final name in macFiles) name: digest},
+        },
+      },
+    };
+    final release = {
+      'tag_name': 'current',
+      'name': 'TapTether 0.8.69+230 (rolling downloads)',
+      'assets': macFiles.map(asset).toList(),
+    };
+    expect(AgentReleaseCatalog.verifiedCurrentVersion(
+      platform: 'darwin', catalog: catalog, release: release,
+    ), '0.8.48+209');
+    expect(AgentReleaseCatalog.verifiedCurrentVersion(
+      platform: 'windows', catalog: catalog, release: release,
+    ), isNull);
+    final tampered = {
+      ...release,
+      'assets': [
+        asset(macFiles[0]),
+        {...asset(macFiles[1]), 'digest': 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'},
+      ],
+    };
+    expect(AgentReleaseCatalog.verifiedCurrentVersion(
+      platform: 'darwin', catalog: catalog, release: tampered,
+    ), isNull);
+  });
+
+  test('platform-only release requires verified version and assets', () {
+    final files = AgentReleaseCatalog.assetNames['darwin']!;
+    const digest = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    final release = {
+      'tag_name': 'macos-current',
+      'name': 'TapTether macOS 0.8.49+210 (agent-only rolling downloads)',
+      'assets': [
+        for (final name in files) {
+          'name': name,
+          'digest': digest,
+          'size': 5000,
+          'browser_download_url': 'https://github.com/ssnanda/taptether.com/releases/download/macos-current/$name',
+        },
+      ],
+    };
+    expect(AgentReleaseCatalog.verifiedPlatformVersion(
+      platform: 'darwin', release: release,
+    ), '0.8.49+210');
+    expect(AgentReleaseCatalog.verifiedPlatformVersion(
+      platform: 'linux', release: release,
+    ), isNull);
+  });
+
   test('matching app and computer agent versions do not trigger an update', () {
     const check = AgentUpdateCheck(
       installed: '0.6.12+55',

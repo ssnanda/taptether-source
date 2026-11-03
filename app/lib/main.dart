@@ -1688,7 +1688,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (!mounted) return;
     final check = AgentUpdateCheck(
       installed: installedAgentVersion,
-      published: _latestAgentByPlatform[device.platform] ?? _latestReleaseVersion,
+      published: _latestAgentByPlatform[device.platform],
     );
     final approved = await showDialog<bool>(
       context: context,
@@ -1732,13 +1732,15 @@ class _RemoteScreenState extends State<RemoteScreen>
     // SSH fallback uses only the package already bundled with this app.
     // Never replace a newer installed agent with an older bundled installer
     // just because an independent platform-only release is available.
-    // The app can lag behind newer full releases too. Compare the computer
-    // against THIS INSTALLED APP's embedded agent version, not the latest
-    // version advertised on the internet.
+    // The embedded installer has an independent agent version; never infer
+    // its version from the iOS app's PackageInfo.
     String? bundledAgentVersion;
     try {
-      final appInfo = await PackageInfo.fromPlatform();
-      bundledAgentVersion = '${appInfo.version}+${appInfo.buildNumber}';
+      final manifest = jsonDecode(await rootBundle.loadString(
+        'assets/agents/manifest.json'));
+      if (manifest is Map && manifest['version'] is String) {
+        bundledAgentVersion = manifest['version'] as String;
+      }
     } catch (_) {}
     if (installedAgentVersion == null || bundledAgentVersion == null ||
         !newerThan(bundledAgentVersion, installedAgentVersion)) {
@@ -3258,8 +3260,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                     showSavedAgentUpdate(
                       online: _online[device.id],
                       installed: _savedAgentVersions[device.id],
-                      published: _latestAgentByPlatform[device.platform] ??
-                          _latestReleaseVersion,
+                      published: _latestAgentByPlatform[device.platform],
                     ))
                   IconButton(
                     tooltip: 'Check agent update',
@@ -3464,54 +3465,51 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   // The iPhone/Android application stays on the full AltStore release.
   // Desktop agents may advance independently in their own GitHub feeds.
-  Future<String> _latestPlatformAgentVersion(
-      HttpClient client, String platform, String fullVersion) async {
-    const platforms = {
-      'linux': ('ubuntu-current', 'Ubuntu', 'Ubuntu'),
-      'darwin': ('macos-current', 'macOS', 'macOS'),
-      'windows': ('windows-current', 'Windows', 'Windows'),
-    };
-    final selected = platforms[platform];
-    if (selected == null) return fullVersion;
+  Future<Map<String, dynamic>?> _readAgentReleaseJson(
+      HttpClient client, Uri uri) async {
     try {
-      final req = await client.getUrl(Uri.parse(
-        'https://api.github.com/repos/ssnanda/taptether.com/releases/tags/${selected.$1}'));
+      final req = await client.getUrl(uri);
       req.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
-      req.headers.set(HttpHeaders.userAgentHeader, 'TapTether-Mobile-Release-Check');
+      req.headers.set(HttpHeaders.userAgentHeader,
+          'TapTether-Mobile-Agent-Release-Check');
       final response = await req.close().timeout(const Duration(seconds: 5));
       if (response.statusCode != 200) {
         await response.drain<void>();
-        return fullVersion; // An absent optional platform feed is normal.
+        return null;
       }
-      final data = jsonDecode(await utf8.decoder.bind(response).join());
-      if (data is! Map || data['tag_name'] != selected.$1 ||
-          data['name'] is! String || data['assets'] is! List) {
-        return fullVersion;
-      }
-      final match = RegExp(
-        r'^TapTether (Ubuntu|macOS|Windows) ([0-9]+\.[0-9]+\.[0-9]+\+[0-9]+)(?:\s|$)',
-      ).firstMatch(data['name'] as String);
-      if (match == null || match.group(1) != selected.$2) return fullVersion;
-      final name = 'TapTetherAgent-${selected.$3}-'
-          '${platform == 'windows' ? 'amd64.zip' : platform == 'darwin' ? 'amd64.tar.gz' : 'amd64.deb'}';
-      final matching = (data['assets'] as List).whereType<Map>().where(
-          (asset) => asset['name'] == name).toList();
-      if (matching.length != 1) return fullVersion;
-      final asset = matching.single;
-      if (asset['digest'] is! String ||
-          !RegExp(r'^sha256:[a-fA-F0-9]{64}$')
-              .hasMatch(asset['digest'] as String) ||
-          asset['browser_download_url'] !=
-              'https://github.com/ssnanda/taptether.com/releases/download/${selected.$1}/$name') {
-        return fullVersion;
-      }
-      final agentVersion = match.group(2)!;
-      return newerThan(agentVersion, fullVersion)
-          ? agentVersion : fullVersion;
+      final result = jsonDecode(await utf8.decoder.bind(response).join()
+          .timeout(const Duration(seconds: 5)));
+      return result is Map<String, dynamic> ? result : null;
     } catch (_) {
-      // Network access is optional. LAN remote control remains fully local.
-      return fullVersion;
+      return null; // Never guess an agent version from the phone app.
     }
+  }
+
+  Future<String?> _latestPlatformAgentVersion(
+      HttpClient client, String platform) async {
+    if (!AgentReleaseCatalog.assetNames.containsKey(platform)) return null;
+    const channels = {
+      'darwin': 'macos-current',
+      'linux': 'ubuntu-current',
+      'windows': 'windows-current',
+    };
+    final platformRelease = await _readAgentReleaseJson(client, Uri.parse(
+      'https://api.github.com/repos/ssnanda/taptether.com/releases/'
+      'tags/${channels[platform]}'));
+    final platformVersion = AgentReleaseCatalog.verifiedPlatformVersion(
+      platform: platform, release: platformRelease);
+    final catalog = await _readAgentReleaseJson(client, Uri.parse(
+      'https://raw.githubusercontent.com/ssnanda/taptether.com/main/'
+      'agent-versions.json'));
+    final currentRelease = await _readAgentReleaseJson(client, Uri.parse(
+      'https://api.github.com/repos/ssnanda/taptether.com/releases/tags/current'));
+    final currentVersion = AgentReleaseCatalog.verifiedCurrentVersion(
+      platform: platform, catalog: catalog, release: currentRelease);
+    if (platformVersion != null && currentVersion != null) {
+      return newerThan(platformVersion, currentVersion)
+          ? platformVersion : currentVersion;
+    }
+    return platformVersion ?? currentVersion;
   }
 
   Future<void> checkForUpdates({String? agentPlatform}) async {
@@ -3531,14 +3529,20 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (app['version'] is! String || app['buildVersion'] == null) return;
       final latest = "${app['version']}+${app['buildVersion']}";
       final platform = agentPlatform ?? _connectedPlatform;
-      final latestAgent = platform == null ? latest :
-          await _latestPlatformAgentVersion(client, platform, latest);
+      final latestAgent = platform == null ? null :
+          await _latestPlatformAgentVersion(client, platform);
       final local = await PackageInfo.fromPlatform();
       final current = '${local.version}+${local.buildNumber}';
       if (!mounted) return;
       setState(() {
         _latestReleaseVersion = latest;
-        if (platform != null) _latestAgentByPlatform[platform] = latestAgent;
+        if (platform != null) {
+          if (latestAgent == null) {
+            _latestAgentByPlatform.remove(platform);
+          } else {
+            _latestAgentByPlatform[platform] = latestAgent;
+          }
+        }
         availableAppVersion = newerThan(latest, current) ? latest : null;
       });
     } catch (_) {
