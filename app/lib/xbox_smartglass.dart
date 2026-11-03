@@ -280,7 +280,15 @@ class XboxDiscoveryStats {
   int replies = 0;
   int malformed = 0;
   int compatible = 0;
+  final Map<String, int> sentByPath = {};
   final List<XboxDiscoveryReply> observed = [];
+
+  void recordProbe(String endpoint, {String? targetIp}) {
+    sent++;
+    final route = endpoint == targetIp ? 'direct'
+        : endpoint == '239.255.255.250' ? 'multicast' : 'broadcast';
+    sentByPath.update(route, (count) => count + 1, ifAbsent: () => 1);
+  }
 
   void record(String host, int port, XboxPacketDiagnosis diagnosis) {
     replies++;
@@ -324,6 +332,19 @@ List<String> xboxScanTargets(DetectedLanRange network,
   return found;
 }
 
+/// Official legacy SmartGlass discovery checks all three transport paths:
+/// direct IPv4, local broadcast and multicast. A direct-only probe can miss
+/// a console that changed IP or ignores unicast replies.
+List<String> xboxDiscoveryEndpoints(
+    DetectedLanRange network, {String? targetIp}) {
+  return <String>{
+    if (targetIp != null) targetIp,
+    lanBroadcastAddress(network),
+    '239.255.255.250',
+    '255.255.255.255',
+  }.toList();
+}
+
 /// Only explicit user actions can initiate discovery. Never scan on startup.
 Future<List<XboxConsole>> discoverXboxConsoles({
   String? targetIp,
@@ -349,8 +370,7 @@ Future<List<XboxConsole>> discoverXboxConsoles({
     while ((datagram = socket.receive()) != null) {
       final reply = datagram!;
       final ip = reply.address.address;
-      if (reply.port != 5050 || !lanRangeContains(network, ip) ||
-          (targetIp != null && !fullNetwork && ip != targetIp)) {
+      if (reply.port != 5050 || !lanRangeContains(network, ip)) {
         continue;
       }
       final inspection = inspectXboxDiscovery(reply.data, ip);
@@ -363,31 +383,22 @@ Future<List<XboxConsole>> discoverXboxConsoles({
   });
   try {
     final packet = xboxDiscoveryPacket();
-    final endpoints = targetIp != null
-        ? <String>[targetIp]
-        : <String>['255.255.255.255',
-            lanBroadcastAddress(network), '239.255.255.250'];
-    for (final endpoint in endpoints.toSet()) {
-      try {
-        if (socket.send(packet, InternetAddress(endpoint), 5050) > 0) {
-          if (diagnostics != null) diagnostics.sent++;
-        }
-      } on SocketException {
-        // Some Wi-Fi networks forbid broadcast/multicast; use manual IP.
-      }
-    }
-    if (targetIp != null) {
-      // The first reply may report a certificate still being initialized;
-      // retry twice without flooding all 1,022 addresses.
-      for (var retry = 0; retry < 2; retry++) {
-        await Future<void>.delayed(const Duration(milliseconds: 220));
+    final endpoints = xboxDiscoveryEndpoints(network, targetIp: targetIp);
+    // Retry each documented discovery route for explicit IP checks, without
+    // repeatedly sweeping unrelated network devices.
+    final rounds = targetIp == null ? 1 : 3;
+    for (var round = 0; round < rounds; round++) {
+      for (final endpoint in endpoints) {
         try {
-          if (socket.send(packet, InternetAddress(targetIp), 5050) > 0) {
-            if (diagnostics != null) diagnostics.sent++;
+          if (socket.send(packet, InternetAddress(endpoint), 5050) > 0) {
+            diagnostics?.recordProbe(endpoint, targetIp: targetIp);
           }
         } on SocketException {
-          // Retry on a later explicit discovery request.
+          // A filtered route does not prevent the others being tested.
         }
+      }
+      if (round + 1 < rounds) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
       }
     }
     if (fullNetwork) {
@@ -396,7 +407,7 @@ Future<List<XboxConsole>> discoverXboxConsoles({
       for (var i = 0; i < targets.length; i++) {
         try {
           if (socket.send(packet, InternetAddress(targets[i]), 5050) > 0) {
-            if (diagnostics != null) diagnostics.sent++;
+            diagnostics?.recordProbe(targets[i], targetIp: targetIp);
           }
           if ((i + 1) % 64 == 0 || i + 1 == targets.length) {
             onScanProgress?.call(i + 1, targets.length);

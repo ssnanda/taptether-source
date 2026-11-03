@@ -26,6 +26,10 @@ void main() {
         isNotNull);
     expect(find.text('Open Xbox Remote Play'), findsOneWidget);
     expect(find.text('Deep network diagnostics (slower)'), findsOneWidget);
+    expect(find.textContaining('Remote Features can already be enabled'),
+        findsOneWidget);
+    expect(find.textContaining('General → Network settings'),
+        findsOneWidget);
     await tester.tap(find.text('Check Xbox IP'));
     await tester.pumpAndSettle();
     expect(targets, ['192.168.68.84']);

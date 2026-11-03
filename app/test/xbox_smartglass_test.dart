@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/xbox_smartglass.dart';
+import 'package:taptether/lan_scan.dart';
 
 List<int> _sgString(String value) {
   final bytes = utf8.encode(value);
@@ -39,6 +40,25 @@ void main() {
     expect(xboxDiscoveryPacket(), [
       0xdd, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 2,
     ]);
+  });
+
+  test('targeted checks probe direct, broadcast and multicast', () {
+    final network = rangeFromWifi('192.168.68.25', '255.255.252.0')!;
+    final routes = xboxDiscoveryEndpoints(network, targetIp: '192.168.68.84');
+    expect(routes, contains('192.168.68.84'));
+    expect(routes, contains('192.168.71.255'));
+    expect(routes, contains('239.255.255.250'));
+    expect(routes, contains('255.255.255.255'));
+    expect(routes.length, 4);
+    expect(routes.toSet().length, routes.length);
+    final stats = XboxDiscoveryStats();
+    for (final route in routes) {
+      stats.recordProbe(route, targetIp: '192.168.68.84');
+    }
+    expect(stats.sent, 4);
+    expect(stats.sentByPath['direct'], 1);
+    expect(stats.sentByPath['broadcast'], 2);
+    expect(stats.sentByPath['multicast'], 1);
   });
 
   test('parses local Xbox discovery with stable ID and certificate pin', () {

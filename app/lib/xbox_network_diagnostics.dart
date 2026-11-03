@@ -44,6 +44,9 @@ String formatXboxNetworkDiagnostics(XboxNetworkReport report) {
     if (report.targetIp != null) 'Target IP: ${report.targetIp}',
     'Address probes: ${report.checkedAddresses}/${report.totalAddresses}',
     'Legacy Xbox UDP 5050 requests: ${report.udpStats.sent}',
+    'Probe routes: ${report.udpStats.sentByPath.entries.map(
+      (e) => '${e.key} ${e.value}').join(', ')}',
+    'Remote Features and legacy SmartGlass discovery are separate services.',
     'Legacy Xbox replies: ${report.udpStats.replies}',
     'Compatible replies: ${report.udpStats.compatible}',
     'Other UDP replies: ${report.udpStats.malformed}',

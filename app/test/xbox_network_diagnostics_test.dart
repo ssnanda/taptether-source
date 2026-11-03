@@ -57,6 +57,7 @@ void main() {
     expect(text, contains('0x3132'));
     expect(text, contains('header 31 32 00 00 00 00'));
     expect(text, contains('not swept'));
+    expect(text, contains('Remote Features and legacy SmartGlass'));
   });
 
   test('UDP counters distinguish sent/replied from authenticated pairing',

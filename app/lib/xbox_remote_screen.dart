@@ -148,15 +148,22 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           if (matches.isNotEmpty) _selected = matches.first;
         }
         final replies = report?.udpStats.observed ?? const [];
-        _message = results.isNotEmpty
+        final targetMatched = ip == null ||
+            results.any((device) => device.host == ip);
+        _message = results.isNotEmpty && targetMatched
             ? 'Discovered ${results.length} Xbox via legacy SmartGlass '
                 '(not authenticated).'
-            : replies.isNotEmpty
-                ? 'UDP 5050 answered, but the reply is not compatible: '
-                    '${replies.first.diagnosis.reason}. See diagnostics.'
-                : fullNetwork
-                    ? 'No compatible legacy Xbox response anywhere on Wi-Fi.'
-                    : 'No Xbox discovery response from $ip.';
+            : results.isNotEmpty && ip != null
+                ? 'No legacy reply from $ip, but an Xbox answered from '
+                    '${results.first.host}. Verify which IP belongs to your console.'
+                : replies.isNotEmpty
+                    ? 'Legacy UDP 5050 answered but was not compatible: '
+                        '${replies.first.diagnosis.reason}. See diagnostics.'
+                    : fullNetwork
+                        ? 'No legacy SmartGlass response across this Wi-Fi. '
+                          'This does not mean Remote Features is disabled.'
+                        : 'No legacy SmartGlass reply from $ip. '
+                          'Remote Features may already be enabled.';
       });
     } catch (error) {
       if (mounted) {
@@ -378,14 +385,16 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             ),
           )),
           const SizedBox(height: 12),
-          const Text('Legacy LAN discovery and Xbox wake use UDP 5050. '
-              'They do not provide authenticated controller buttons. '
-              'Xbox Remote Play opens Microsoft’s official browser app, '
-              'where you sign in and select your console.'),
+          const Text('TapTether checks older SmartGlass discovery over '
+              'UDP 5050. Remote Features can already be enabled while '
+              'the console does not answer that legacy protocol. '
+              'A TCP timeout does not prove the Xbox is offline.'),
           const SizedBox(height: 6),
-          Text('On the console: Settings → Devices & connections → '
-              'Remote features → Enable remote features. '
-              'Use Sleep power mode for remote wake.',
+          Text('To verify the address, compare it with Xbox Settings → '
+              'General → Network settings → Advanced settings → IP address. '
+              'For current console access, use Xbox Remote Play and '
+              'sign in to your Microsoft account. '
+              'Sleep mode is needed only for standby wake.',
               style: Theme.of(context).textTheme.bodySmall),
           if (selected == null) ...[
             const SizedBox(height: 8),
@@ -446,9 +455,12 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         if (report.totalAddresses > 0)
           Text('Addresses checked: ${report.checkedAddresses}/'
               '${report.totalAddresses}'),
-        Text('Xbox UDP 5050: ${report.udpStats.sent} probes sent · '
+        Text('Legacy Xbox UDP 5050: ${report.udpStats.sent} probes · '
             '${report.udpStats.replies} replies · '
             '${report.udpStats.compatible} compatible'),
+        if (report.udpStats.sentByPath.isNotEmpty)
+          Text('Routes tested: ${report.udpStats.sentByPath.entries.map(
+            (entry) => '${entry.key} ${entry.value}').join(' · ')}'),
         if (report.udpStats.malformed > 0)
           Text('Unrecognized UDP replies: ${report.udpStats.malformed}'),
         if (report.udpStats.observed.isNotEmpty)
@@ -497,10 +509,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           const Text('Large network: only the first four /24 blocks '
               'were scanned (up to 1,024 addresses).'),
         const SizedBox(height: 8),
-        const Text('TCP ports do not identify an Xbox. Legacy SmartGlass '
-            'control sessions require encrypted authentication. '
-            'For current remote control, use the official Xbox Remote Play '
-            'button above.'),
+        const Text('TCP timeouts cannot determine whether the Xbox is '
+            'online or Remote Features are enabled. Legacy SmartGlass '
+            'does not provide an authenticated controller here; '
+            'use the Xbox Remote Play button for current consoles.'),
       ]),
     ));
   }
