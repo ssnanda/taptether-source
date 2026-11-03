@@ -233,7 +233,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
 
   /// Reuse the existing pairing key; never register an unknown TV on recovery.
   /// Only move an IP when a stable UUID or pinned TLS certificate matches.
-  Future<void> _recover({bool force = false}) async {
+  Future<void> _recover({
+    bool force = false, bool userInitiated = false,
+  }) async {
     if (!mounted || !_foreground || _busy || _recovering ||
         _ready || _suspended ||
         (_wakeNotBefore != null &&
@@ -254,7 +256,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       // IP is a last-known route, never the TV identity. TLS pin and saved
       // registration key are required to reuse a pairing at any address.
       // First try the last known address; most reconnects do not need a scan.
-      if (await _tryRecoveryHost(tv, tv.host)) { return; }
+      if (await _tryRecoveryHost(tv, tv.host,
+          userInitiated: userInitiated)) { return; }
       if (!mounted || !_foreground) { return; }
       if (mounted) { setState(() =>
           _status = 'Finding ${tv.name} on Wi-Fi…'); }
@@ -270,7 +273,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
             if (!mounted || !_foreground) return;
             if (candidate == tv.host) continue;
             if (await matchesLgTlsPin(candidate, tv.tlsPin) &&
-                await _tryRecoveryHost(tv, candidate)) {
+                await _tryRecoveryHost(tv, candidate,
+                    userInitiated: userInitiated)) {
               return;
             }
           }
@@ -285,7 +289,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
     }
   }
 
-  Future<bool> _tryRecoveryHost(LgTvDevice tv, String host) async {
+  Future<bool> _tryRecoveryHost(
+      LgTvDevice tv, String host, {bool userInitiated = false}) async {
     // Never send a stored client key to an unverified new address.
     if (host != tv.host && tv.tlsPin.isNotEmpty &&
         !await matchesLgTlsPin(host, tv.tlsPin)) { return false; }
@@ -311,7 +316,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       await _store.save(paired);
       if (tv.tlsPin.isEmpty) await _recordFound(paired);
       await _recordConnected(paired);
-      unawaited(_showQuickControlsIfOn(client, paired));
+      unawaited(_showQuickControlsIfOn(
+          client, paired, userInitiated: userInitiated));
       if (!mounted) return false;
       setState(() {
         _status = 'Connected · ${client.transport}';
@@ -327,12 +333,14 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
   }
 
   Future<void> _showQuickControlsIfOn(
-      LgWebOsClient client, LgTvDevice paired) async {
+      LgWebOsClient client, LgTvDevice paired,
+      {bool userInitiated = false}) async {
     // Only LG's authenticated on-state may start the Lock Screen panel.
     final poweredOn = await TvQuickControls.readPowerOn(client);
     if (!mounted) return;
     await TvQuickControls.instance.select(
-      paired, connected: poweredOn, tvPowerOn: poweredOn);
+      paired, connected: poweredOn, tvPowerOn: poweredOn,
+      userInitiated: userInitiated);
   }
 
   Future<void> _load() async {
@@ -349,7 +357,9 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
           unawaited(TvQuickControls.instance.select(_target!,
               connected: false));
           setState(() => _status = 'Selected ${_target!.name} · $host');
-          if (widget.autoReconnect) await _recover(force: true);
+          if (widget.autoReconnect) {
+            await _recover(force: true, userInitiated: true);
+          }
         } else if (mounted) {
           setState(() {
             _status = 'This TV is no longer saved.';
@@ -433,7 +443,8 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       });
       await _recordFound(paired);
       await _recordConnected(paired);
-      unawaited(_showQuickControlsIfOn(client, paired));
+      unawaited(_showQuickControlsIfOn(
+          client, paired, userInitiated: true));
       await _reloadSaved();
       // Optional identifiers must not delay opening the remote.
       unawaited(_identify(client, paired));

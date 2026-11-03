@@ -13,6 +13,8 @@ final class TapTetherTVControlsBridge {
     private var wifiMonitor = NWPathMonitor(requiredInterfaceType: .wifi)
     private var wifiConnected = false
     private var expirationTimer: Timer?
+    private var powerMonitorTimer: Timer?
+    private var powerCheckInProgress = false
 
     func register(messenger: FlutterBinaryMessenger) {
         // A cellular connection must never keep a local-TV activity visible.
@@ -82,15 +84,20 @@ final class TapTetherTVControlsBridge {
                              forKey: TapTetherSharedTV.macKey)
                 let connected = data["connected"] as? Bool ?? false
                 let powerOn = data["tvPowerOn"] as? Bool ?? false
+                let userInitiated = data["userInitiated"] as? Bool ?? false
                 if #available(iOS 18.0, *) {
                     Task { @MainActor in
-                        if TapTetherTVActivityPolicy.allowed(
+                        if !TapTetherTVActivityPolicy.allowed(
                             connected: connected, powerOn: powerOn,
                             wifi: self.wifiConnected
                         ) {
+                            await self.dismissAllActivities()
+                        } else if userInitiated {
+                            // Only an explicit TV selection may create an
+                            // activity. A background rediscovery never does.
                             await self.showActivity(host: host, name: name)
                         } else {
-                            await self.dismissAllActivities()
+                            await TapTetherTVActivityExpiry.dismissExpired()
                         }
                         result(true)
                     }
@@ -161,9 +168,10 @@ final class TapTetherTVControlsBridge {
             self?.channel?.invokeMethod("pendingControl", arguments: nil)
             if #available(iOS 18.0, *) {
                 Task { @MainActor in
-                    await TapTetherTVActivityExpiry.dismissExpired()
                     if self?.wifiConnected != true {
                         await self?.dismissAllActivities()
+                    } else {
+                        await TapTetherTVActivityExpiry.verifyActiveTVPower()
                     }
                 }
             }
@@ -174,6 +182,9 @@ final class TapTetherTVControlsBridge {
     @MainActor private func dismissAllActivities() async {
         expirationTimer?.invalidate()
         expirationTimer = nil
+        powerMonitorTimer?.invalidate()
+        powerMonitorTimer = nil
+        powerCheckInProgress = false
         TapTetherTVActivityExpiry.cancel()
         for activity in Activity<TapTetherTVActivityAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
@@ -224,10 +235,34 @@ final class TapTetherTVControlsBridge {
             Task { @MainActor in await self?.dismissAllActivities() }
         }
         TapTetherTVActivityExpiry.schedule(at: deadline)
+        startPowerMonitor()
+    }
+
+    /// Best effort while Runner is executing. iOS may suspend this Timer
+    /// in the background; the permitted BGAppRefreshTask and foreground
+    /// refresh use the same read-only, fail-closed power check.
+    @available(iOS 18.0, *)
+    @MainActor private func startPowerMonitor() {
+        powerMonitorTimer?.invalidate()
+        powerMonitorTimer = Timer.scheduledTimer(
+            withTimeInterval: 60, repeats: true
+        ) { [weak self] _ in
+            guard let self = self, !self.powerCheckInProgress else { return }
+            self.powerCheckInProgress = true
+            Task { @MainActor in
+                defer { self.powerCheckInProgress = false }
+                guard self.wifiConnected else {
+                    await self.dismissAllActivities()
+                    return
+                }
+                await TapTetherTVActivityExpiry.verifyActiveTVPower()
+            }
+        }
     }
 
     deinit {
         expirationTimer?.invalidate()
+        powerMonitorTimer?.invalidate()
         wifiMonitor.cancel()
         if let observer = observer {
             NotificationCenter.default.removeObserver(observer)
@@ -252,7 +287,7 @@ enum TapTetherTVActivityExpiry {
                 return
             }
             let operation = Task { @MainActor in
-                await dismissExpired()
+                await verifyActiveTVPower()
                 refresh.setTaskCompleted(success: true)
             }
             refresh.expirationHandler = { operation.cancel() }
@@ -266,8 +301,37 @@ enum TapTetherTVActivityExpiry {
     static func schedule(at deadline: Date) {
         cancel()
         let request = BGAppRefreshTaskRequest(identifier: identifier)
-        request.earliestBeginDate = deadline
+        // The system decides when to grant execution. Request a check
+        // after one minute, never claim guaranteed 60-second polling.
+        request.earliestBeginDate = min(
+            Date().addingTimeInterval(60), deadline)
         try? BGTaskScheduler.shared.submit(request)
+    }
+
+    @MainActor
+    static func verifyActiveTVPower() async {
+        await dismissExpired()
+        let candidates = Activity<TapTetherTVActivityAttributes>.activities
+        for activity in candidates {
+            // Do not validate a different TV after manual selection.
+            let identity = activity.id
+            let on = await TapTetherLgRemoteNative.selectedTVIsOn(
+                host: activity.attributes.pairedHost)
+            if !on {
+                if let active = Activity<TapTetherTVActivityAttributes>
+                    .activities.first(where: { $0.id == identity }) {
+                    await active.end(nil, dismissalPolicy: .immediate)
+                }
+            }
+        }
+        let remaining = Activity<TapTetherTVActivityAttributes>.activities
+        if let deadline = remaining.compactMap({
+            $0.content.state.expiresAt
+        }).min() {
+            schedule(at: deadline)
+        } else {
+            cancel()
+        }
     }
 
     @MainActor

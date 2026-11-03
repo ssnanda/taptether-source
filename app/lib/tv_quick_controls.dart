@@ -49,6 +49,7 @@ class TvQuickControls {
   Future<void> select(LgTvDevice tv, {
     required bool connected,
     bool tvPowerOn = false,
+    bool userInitiated = false,
   }) async {
     if (!Platform.isIOS || tv.clientKey.isEmpty) return;
     try {
@@ -60,6 +61,7 @@ class TvQuickControls {
         'macAddress': tv.macAddress,
         'connected': connected && tvPowerOn,
         'tvPowerOn': tvPowerOn,
+        'userInitiated': userInitiated,
       });
     } on PlatformException {
       // Live Activities may be disabled in system settings.

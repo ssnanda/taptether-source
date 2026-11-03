@@ -97,6 +97,65 @@ enum TapTetherLgRemoteNative {
         await updateActivity(host: host, title: label, connected: connected)
     }
 
+    /// Read the actual LG power state via the saved TLS pin and device-only
+    /// client key. This is strictly a read: background checks never wake,
+    /// power on, or create a Lock Screen activity.
+    static func selectedTVIsOn(host: String) async -> Bool {
+        guard let defaults = TapTetherSharedTV.defaults,
+              defaults.string(forKey: TapTetherSharedTV.hostKey) == host,
+              let pin = defaults.string(forKey: TapTetherSharedTV.pinKey),
+              validPrivateHost(host), validFingerprint(pin),
+              let key = try? TapTetherTVKeychain.read() else {
+            return false
+        }
+        let delegate = TapTetherLgPinDelegate(expected: pin)
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 5
+        config.timeoutIntervalForResource = 10
+        config.allowsCellularAccess = false
+        let session = URLSession(configuration: config,
+                                 delegate: delegate, delegateQueue: nil)
+        guard let url = URL(string: "wss://\(host):3001") else {
+            session.invalidateAndCancel()
+            return false
+        }
+        let socket = session.webSocketTask(with: url)
+        socket.resume()
+        defer {
+            socket.cancel(with: .normalClosure, reason: nil)
+            session.invalidateAndCancel()
+        }
+        do {
+            let registration: [String: Any] = [
+                "forcePairing": false,
+                "pairingType": "PROMPT",
+                "client-key": key,
+                "manifest": [
+                    "manifestVersion": 1,
+                    "appVersion": "1.0",
+                    "permissions": permissions
+                ] as [String: Any]
+            ]
+            let answer = try await send(socket,
+                id: "tt-monitor-register", type: "register",
+                payload: registration)
+            let response = answer["payload"] as? [String: Any] ?? [:]
+            guard answer["type"] as? String == "registered",
+                  response["client-key"] as? String == key else {
+                return false
+            }
+            let status = try await request(socket,
+                id: "tt-monitor-power",
+                uri: "ssap://com.webos.service.tvpower/power/getPowerState")
+            let state = (status["state"] as? String ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            return state == "active" || state == "screen saver"
+        } catch {
+            return false
+        }
+    }
+
     private static func makeMessage(_ fields: [String: Any]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: fields)
         guard let message = String(data: data, encoding: .utf8) else {

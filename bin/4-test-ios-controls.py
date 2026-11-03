@@ -77,6 +77,17 @@ assert "getPowerState" in quick
 assert "confirmedPowerOn" in quick
 assert "tvPowerOn" in quick and "tvPowerOn" in runner
 assert "_showQuickControlsIfOn" in lg
+assert "userInitiated: userInitiated" in lg
+assert "userInitiated: true" in lg
+assert "'userInitiated': userInitiated" in quick
+assert "else if userInitiated" in runner
+assert "withTimeInterval: 60, repeats: true" in runner
+assert "verifyActiveTVPower" in runner
+assert "TapTetherLgRemoteNative.selectedTVIsOn" in runner
+assert "static func selectedTVIsOn(host: String)" in native
+assert "ssap://com.webos.service.tvpower/power/getPowerState" in native
+assert "Activity.request(" not in runner.split("static func verifyActiveTVPower()", 1)[1]
+assert "sendWakePacket" not in native.split("static func selectedTVIsOn(host: String)", 1)[1].split("private static func makeMessage", 1)[0]
 assert "UIApplication.didBecomeActiveNotification" in runner
 assert "group.com.taptether.taptether.controls" in shared
 assert "com.apple.security.application-groups" in staging
