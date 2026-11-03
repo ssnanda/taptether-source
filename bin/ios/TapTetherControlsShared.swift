@@ -121,6 +121,9 @@ struct TapTetherTVActionIntent: LiveActivityIntent {
     static let description = IntentDescription(
         "Control the last selected, securely paired LG TV on local Wi-Fi."
     )
+    // IntentModes was introduced in iOS 26. Older iOS versions execute
+    // LiveActivityIntent in Runner's background process by default.
+    @available(iOS 26.0, *)
     static var supportedModes: IntentModes { .background }
 
     @Parameter(title: "Action")

@@ -309,7 +309,7 @@ enum TapTetherLgRemoteNative {
             "\(parts[0]).\(parts[1]).\(parts[2]).255",
             "255.255.255.255"
         ]
-        let fd = Darwin.socket(AF_INET, Int32(SOCK_DGRAM.rawValue), 0)
+        let fd = Darwin.socket(AF_INET, SOCK_DGRAM, 0)
         guard fd >= 0 else { return false }
         defer { Darwin.close(fd) }
         var allow: Int32 = 1
