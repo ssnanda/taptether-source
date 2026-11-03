@@ -2,8 +2,9 @@ import ActivityKit
 import Flutter
 import UIKit
 
-/// Flutter communication lives in Runner; AppIntent and widget code never
-/// receives the LG pairing key or any other authentication secret.
+/// Flutter shares the selected LG TV's identity with the widget, while
+/// copying its pairing key into Runner-only device Keychain storage.
+/// Background LiveActivityIntent calls run native SSAP in the app process.
 final class TapTetherTVControlsBridge {
     private var channel: FlutterMethodChannel?
     private var observer: NSObjectProtocol?
@@ -24,12 +25,36 @@ final class TapTetherTVControlsBridge {
                 guard let data = call.arguments as? [String: Any],
                       let host = data["host"] as? String,
                       let name = data["name"] as? String,
-                      !host.isEmpty, !name.isEmpty else {
-                    result(FlutterError(code: "INVALID_TV", message: nil, details: nil))
+                      let certificate = data["tlsPin"] as? String,
+                      let clientKey = data["clientKey"] as? String,
+                      !host.isEmpty, !name.isEmpty,
+                      certificate.count == 64, !clientKey.isEmpty else {
+                    result(FlutterError(code: "PINNED_TV_REQUIRED",
+                        message: "Use an encrypted and paired LG TV.", details: nil))
                     return
                 }
-                TapTetherSharedTV.defaults?.set(host, forKey: TapTetherSharedTV.hostKey)
-                TapTetherSharedTV.defaults?.set(name, forKey: TapTetherSharedTV.nameKey)
+                // The token is duplicated only into Runner's device-only
+                // Keychain, never into widget extension storage or defaults.
+                do {
+                    try TapTetherTVKeychain.save(clientKey)
+                } catch {
+                    result(FlutterError(code: "KEYCHAIN",
+                        message: "Cannot prepare background TV control.",
+                        details: nil))
+                    return
+                }
+                guard let defaults = TapTetherSharedTV.defaults else {
+                    result(FlutterError(code: "APP_GROUP",
+                        message: "TV control storage unavailable.",
+                        details: nil))
+                    return
+                }
+                defaults.set(host, forKey: TapTetherSharedTV.hostKey)
+                defaults.set(name, forKey: TapTetherSharedTV.nameKey)
+                defaults.set(certificate.uppercased(),
+                             forKey: TapTetherSharedTV.pinKey)
+                defaults.set(data["macAddress"] as? String ?? "",
+                             forKey: TapTetherSharedTV.macKey)
                 let connected = data["connected"] as? Bool ?? false
                 if #available(iOS 18.0, *) {
                     Task { @MainActor in
