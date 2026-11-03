@@ -162,7 +162,7 @@ class _TvControlsSettingsScreenState extends State<TvControlsSettingsScreen> {
                       for (final title in const [
                         'Power', 'Volume −', 'Volume +', 'Mute',
                         'Home', 'Back', 'OK', 'Netflix', 'YouTube',
-                        'Prime Video', 'Apple TV', 'Apps',
+                        'Prime Video', 'Apple TV', 'Play/Pause',
                       ])
                         Chip(
                           visualDensity: VisualDensity.compact,

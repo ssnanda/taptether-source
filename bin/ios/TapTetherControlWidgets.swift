@@ -85,8 +85,8 @@ private struct TVAppShortcuts: View {
                            title: "Prime", compact: compact, wide: wide)
             TVActionButton(target: .appleTV, symbol: "appletv.fill",
                            title: "Apple TV", compact: compact, wide: wide)
-            TVActionButton(target: .apps, symbol: "square.grid.2x2.fill",
-                           title: "Apps", compact: compact, wide: wide)
+            TVActionButton(target: .playPause, symbol: "playpause.fill",
+                           title: "Play/Pause", compact: compact, wide: wide)
         }
     }
 }
@@ -292,15 +292,15 @@ private struct TVAppleControl: ControlWidget {
 }
 
 @available(iOS 18.0, *)
-private struct TVAppsControl: ControlWidget {
+private struct TVPlayPauseControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "com.taptether.control.apps") {
-            ControlWidgetButton(action: TapTetherTVActionIntent(target: .apps)) {
-                Label("TV Apps", systemImage: "square.grid.2x2.fill")
+        StaticControlConfiguration(kind: "com.taptether.control.playpause") {
+            ControlWidgetButton(action: TapTetherTVActionIntent(target: .playPause)) {
+                Label("TV Play/Pause", systemImage: "playpause.fill")
             }
         }
-        .displayName("TapTether TV Apps")
-        .description("Open the LG TV launcher")
+        .displayName("TapTether TV Play/Pause")
+        .description("Pause or resume TV playback without opening TapTether")
     }
 }
 
@@ -344,7 +344,7 @@ struct TapTetherControlWidgets: WidgetBundle {
         TVYouTubeControl()
         TVPrimeControl()
         TVAppleControl()
-        TVAppsControl()
+        TVPlayPauseControl()
         TVBackControl()
         TVSelectControl()
     }

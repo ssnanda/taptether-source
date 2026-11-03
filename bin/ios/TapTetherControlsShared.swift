@@ -122,7 +122,7 @@ enum TapTetherTVActivityPolicy {
 @available(iOS 18.0, *)
 enum TapTetherControlTarget: String, AppEnum {
     case power, volumeUp, volumeDown, mute, home, back, ok
-    case netflix, youtube, prime, appleTV, apps
+    case netflix, youtube, prime, appleTV, playPause
 
     static var typeDisplayRepresentation = TypeDisplayRepresentation("TV action")
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
@@ -137,7 +137,7 @@ enum TapTetherControlTarget: String, AppEnum {
         .youtube: DisplayRepresentation("YouTube"),
         .prime: DisplayRepresentation("Prime Video"),
         .appleTV: DisplayRepresentation("Apple TV"),
-        .apps: DisplayRepresentation("TV apps")
+        .playPause: DisplayRepresentation("TV Play/Pause")
     ]
 }
 

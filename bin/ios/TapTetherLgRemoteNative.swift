@@ -274,9 +274,11 @@ enum TapTetherLgRemoteNative {
                     (status["mute"] as? Bool) ?? false
                 _ = try await request(socket, id: "tt-lock-mute",
                     uri: "ssap://audio/setMute", payload: ["mute": !muted])
-            case .home, .apps:
+            case .home:
                 try await sendPointerButton(socket, host: host,
                     session: session, button: "HOME")
+            case .playPause:
+                try await togglePlayback(socket, host: host, session: session)
             case .back:
                 try await sendPointerButton(socket, host: host,
                     session: session, button: "BACK")
@@ -299,6 +301,68 @@ enum TapTetherLgRemoteNative {
             if delegate.mismatch { throw TapTetherTVActionError.identityMismatch }
             throw TapTetherTVActionError.unavailable
         }
+    }
+
+    /// LG exposes separate play and pause operations rather than a universal
+    /// SSAP toggle. Prefer a verified foreground playback state. Some TVs
+    /// reject media-state queries; in that case, alternate the last successful
+    /// command, with Pause as the safe first press.
+    private static func togglePlayback(
+        _ socket: URLSessionWebSocketTask, host: String, session: URLSession
+    ) async throws {
+        let stateKey = "lastMediaPause.\(host)"
+        let defaults = TapTetherSharedTV.defaults
+        var currentlyPlaying: Bool?
+        if let info = try? await request(socket, id: "tt-lock-play-status",
+            uri: "ssap://com.webos.media/getForegroundAppInfo") {
+            let entries = info["foregroundAppInfo"] as? [[String: Any]] ?? []
+            let state = entries.first(where: {
+                ($0["playState"] as? String)?.isEmpty == false
+            })?["playState"] as? String
+            if let state = state?.lowercased() {
+                if state == "playing" || state == "play" ||
+                    state == "playstate_playing" {
+                    currentlyPlaying = true
+                } else if state == "paused" || state == "pause" ||
+                    state == "playstate_paused" {
+                    currentlyPlaying = false
+                }
+            }
+        }
+        let lastPaused = defaults?.object(forKey: stateKey) as? Bool
+        let pause = currentlyPlaying ?? !(lastPaused ?? false)
+        let key = pause ? "PAUSE" : "PLAY"
+        let uri = pause ? "ssap://media.controls/pause" :
+            "ssap://media.controls/play"
+        do {
+            _ = try await request(socket, id: "tt-lock-playpause", uri: uri)
+        } catch TapTetherTVActionError.rejected {
+            // Some apps only accept the native LG remote's media key.
+            try await sendMediaPointerButton(
+                socket, host: host, session: session, button: key)
+        }
+        defaults?.set(pause, forKey: stateKey)
+    }
+
+    private static func sendMediaPointerButton(
+        _ socket: URLSessionWebSocketTask,
+        host: String, session: URLSession, button: String
+    ) async throws {
+        guard button == "PLAY" || button == "PAUSE" else {
+            throw TapTetherTVActionError.rejected
+        }
+        let payload = try await request(socket, id: "tt-lock-media-pointer",
+            uri: "ssap://com.webos.service.networkinput/getPointerInputSocket")
+        guard let socketPath = payload["socketPath"] as? String,
+              let url = URL(string: socketPath), url.host == host,
+              (url.scheme == "ws" && url.port == 3000 ||
+               url.scheme == "wss" && url.port == 3001) else {
+            throw TapTetherTVActionError.rejected
+        }
+        let pointer = session.webSocketTask(with: url)
+        pointer.resume()
+        defer { pointer.cancel(with: .normalClosure, reason: nil) }
+        try await pointer.send(.string("type:button\nname:\(button)\n\n"))
     }
 
     private static func installedAppId(

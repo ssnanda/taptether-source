@@ -39,6 +39,18 @@ assert "Button(intent: TapTetherTVActionIntent" in widgets
 assert "ActivityConfiguration(for: TapTetherTVActivityAttributes.self)" in widgets
 assert "activityBackgroundTint(TVControlStyle.background)" in widgets
 assert "TVAppShortcuts" in widgets
+assert 'target: .playPause' in widgets
+assert 'TVPlayPauseControl()' in widgets
+assert 'TVAppsControl' not in widgets
+assert 'target: .apps' not in widgets
+assert 'case .playPause:' in native
+assert 'ssap://media.controls/play' in native
+assert 'ssap://media.controls/pause' in native
+assert 'getForegroundAppInfo' in native
+assert 'togglePlayback' in native
+assert 'TV Play/Pause' in shared
+assert 'case netflix, youtube, prime, appleTV, playPause' in shared
+assert 'Play/Pause' in (root / "app/lib/tv_controls_settings_screen.dart").read_text()
 # Both rows must fit inside the system-imposed Lock Screen activity height.
 assert 'TVQuickButtons(compact: true,' in widgets
 assert 'TVAppShortcuts(compact: true,' in widgets
@@ -54,7 +66,7 @@ assert 'case .back:' in native and 'case .ok:' in native
 assert 'sendPointerButton' in native and 'button: "BACK"' in native
 assert 'tv_controls_settings_screen.dart' in app
 assert 'drawer-tv-quick-controls' in app
-for action in (".netflix", ".youtube", ".prime", ".appleTV", ".apps"):
+for action in (".netflix", ".youtube", ".prime", ".appleTV", ".playPause"):
     assert "target: " + action in widgets
 for control in ("RemoteOpenControl", "RemotePowerControl", "RemoteMuteControl",
                 "RemoteUpControl", "RemoteDownControl",
