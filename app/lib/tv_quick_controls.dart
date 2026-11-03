@@ -28,7 +28,28 @@ class TvQuickControls {
     });
   }
 
-  Future<void> select(LgTvDevice tv, {required bool connected}) async {
+  /// A connected socket alone is not proof the TV panel is powered on.
+  /// If power status is unavailable, suppress the Live Activity.
+  static bool confirmedPowerOn(Map<String, dynamic> reply) {
+    final state = reply['state']?.toString().toLowerCase().trim();
+    return state == 'active' || state == 'screen saver';
+  }
+
+  static Future<bool> readPowerOn(LgWebOsClient client) async {
+    try {
+      final reply = await client.request(
+        'ssap://com.webos.service.tvpower/power/getPowerState',
+      ).timeout(const Duration(seconds: 3));
+      return confirmedPowerOn(reply);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> select(LgTvDevice tv, {
+    required bool connected,
+    bool tvPowerOn = false,
+  }) async {
     if (!Platform.isIOS || tv.clientKey.isEmpty) return;
     try {
       await channel.invokeMethod<bool>('select', {
@@ -37,7 +58,8 @@ class TvQuickControls {
         'tlsPin': tv.tlsPin,
         'clientKey': tv.clientKey,
         'macAddress': tv.macAddress,
-        'connected': connected,
+        'connected': connected && tvPowerOn,
+        'tvPowerOn': tvPowerOn,
       });
     } on PlatformException {
       // Live Activities may be disabled in system settings.
@@ -122,7 +144,8 @@ class TvQuickControls {
             await client.mute(!muted);
             break;
         }
-        await select(tv, connected: action != 'power');
+        final tvOn = action == 'power' ? false : await readPowerOn(client);
+        await select(tv, connected: tvOn, tvPowerOn: tvOn);
         onResult?.call('TV control sent to ${tv.name}.');
       } finally {
         await client.disconnect();

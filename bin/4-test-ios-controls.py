@@ -63,6 +63,20 @@ for control in ("RemoteOpenControl", "RemotePowerControl", "RemoteMuteControl",
 assert "DynamicIslandExpandedRegion(.bottom)" in widgets
 assert "WidgetBundle" in widgets
 assert "Activity.request(" in runner
+assert "NWPathMonitor(requiredInterfaceType: .wifi)" in runner
+assert "TapTetherTVActivityPolicy.allowed" in runner
+assert "TapTetherTVActivityExpiry.schedule" in runner
+assert "TapTetherTVActivityExpiry.dismissExpired" in runner
+assert "dismissalPolicy: .immediate" in runner
+assert "15 * 60" in shared and "hour >= 9 && hour < 21" in shared
+assert "expiresAt: Date?" in shared
+assert "staleDate: deadline" in runner
+assert 'tv-controls-expire' in staging
+assert "TapTetherTVActivityExpiry.register()" in (root / "bin/ios/AppDelegate.swift").read_text()
+assert "getPowerState" in quick
+assert "confirmedPowerOn" in quick
+assert "tvPowerOn" in quick and "tvPowerOn" in runner
+assert "_showQuickControlsIfOn" in lg
 assert "UIApplication.didBecomeActiveNotification" in runner
 assert "group.com.taptether.taptether.controls" in shared
 assert "com.apple.security.application-groups" in staging

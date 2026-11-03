@@ -28,6 +28,14 @@ runner_info = ios / 'Runner' / 'Info.plist'
 with runner_info.open('rb') as handle:
     info = plistlib.load(handle)
 info['NSSupportsLiveActivities'] = True
+# The expiry task removes the panel when the OS grants background time.
+identifier = 'com.taptether.taptether.tv-controls-expire'
+modes = info.setdefault('UIBackgroundModes', [])
+if 'fetch' not in modes:
+    modes.append('fetch')
+permitted = info.setdefault('BGTaskSchedulerPermittedIdentifiers', [])
+if identifier not in permitted:
+    permitted.append(identifier)
 ats = info.setdefault('NSAppTransportSecurity', {})
 ats['NSAllowsLocalNetworking'] = True
 with runner_info.open('wb') as handle:

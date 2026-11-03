@@ -94,8 +94,29 @@ struct TapTetherTVActivityAttributes: ActivityAttributes {
         var connected: Bool
         // Optional to preserve decoding of Live Activities from older builds.
         var layout: String?
+        // Optional for existing Live Activities after an app update.
+        var expiresAt: Date?
     }
     var pairedHost: String
+}
+
+/// A TV control may start only on the phone's Wi-Fi, with confirmed TV power
+/// and inside the 09:00–21:00 local window. It never runs for more than 15 min.
+@available(iOS 18.0, *)
+enum TapTetherTVActivityPolicy {
+    static let lifetime: TimeInterval = 15 * 60
+    static func allowed(connected: Bool, powerOn: Bool, wifi: Bool,
+                        now: Date = Date()) -> Bool {
+        let hour = Calendar.autoupdatingCurrent.component(.hour, from: now)
+        return connected && powerOn && wifi && hour >= 9 && hour < 21
+    }
+
+    static func deadline(from start: Date = Date()) -> Date {
+        let nightly = Calendar.autoupdatingCurrent.date(
+            bySettingHour: 21, minute: 0, second: 0, of: start
+        ) ?? start
+        return min(start.addingTimeInterval(lifetime), nightly)
+    }
 }
 
 @available(iOS 18.0, *)

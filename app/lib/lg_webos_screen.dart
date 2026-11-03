@@ -311,7 +311,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       await _store.save(paired);
       if (tv.tlsPin.isEmpty) await _recordFound(paired);
       await _recordConnected(paired);
-      unawaited(TvQuickControls.instance.select(paired, connected: true));
+      unawaited(_showQuickControlsIfOn(client, paired));
       if (!mounted) return false;
       setState(() {
         _status = 'Connected · ${client.transport}';
@@ -324,6 +324,15 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       await client.disconnect();
       return false;
     }
+  }
+
+  Future<void> _showQuickControlsIfOn(
+      LgWebOsClient client, LgTvDevice paired) async {
+    // Only LG's authenticated on-state may start the Lock Screen panel.
+    final poweredOn = await TvQuickControls.readPowerOn(client);
+    if (!mounted) return;
+    await TvQuickControls.instance.select(
+      paired, connected: poweredOn, tvPowerOn: poweredOn);
   }
 
   Future<void> _load() async {
@@ -424,7 +433,7 @@ class _LgWebOsScreenState extends State<LgWebOsScreen>
       });
       await _recordFound(paired);
       await _recordConnected(paired);
-      unawaited(TvQuickControls.instance.select(paired, connected: true));
+      unawaited(_showQuickControlsIfOn(client, paired));
       await _reloadSaved();
       // Optional identifiers must not delay opening the remote.
       unawaited(_identify(client, paired));

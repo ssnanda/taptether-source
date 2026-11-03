@@ -53,6 +53,9 @@ import AVFoundation
     // Register background task handlers before UIKit's launch completes.
     // The background Flutter engine needs its own plugin registration for
     // Keychain, local notifications and network requests.
+    if #available(iOS 18.0, *) {
+      TapTetherTVActivityExpiry.register()
+    }
     WorkmanagerPlugin.registerLaunchHandlers()
     WorkmanagerPlugin.setPluginRegistrantCallback { registry in
       GeneratedPluginRegistrant.register(with: registry)

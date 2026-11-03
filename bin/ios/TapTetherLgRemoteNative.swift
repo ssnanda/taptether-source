@@ -352,15 +352,23 @@ enum TapTetherLgRemoteNative {
     private static func updateActivity(
         host: String, title: String, connected: Bool
     ) async {
-        let updated = TapTetherTVActivityAttributes.ContentState(
-            title: title, connected: connected,
-            layout: TapTetherSharedTV.lockLayout
-        )
-        let content = ActivityContent(state: updated,
-            staleDate: Date().addingTimeInterval(3600))
+        let now = Date()
+        let hour = Calendar.autoupdatingCurrent.component(.hour, from: now)
         for activity in Activity<TapTetherTVActivityAttributes>.activities
             where activity.attributes.pairedHost == host {
-            await activity.update(content)
+            let deadline = activity.content.state.expiresAt
+            if !connected || deadline == nil || deadline! <= now ||
+                hour < 9 || hour >= 21 {
+                await activity.end(nil, dismissalPolicy: .immediate)
+                continue
+            }
+            let updated = TapTetherTVActivityAttributes.ContentState(
+                title: title, connected: true,
+                layout: TapTetherSharedTV.lockLayout,
+                expiresAt: deadline
+            )
+            await activity.update(ActivityContent(
+                state: updated, staleDate: deadline))
         }
     }
 }
