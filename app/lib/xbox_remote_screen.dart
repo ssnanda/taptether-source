@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'discovery.dart';
 import 'lan_scan.dart';
@@ -75,16 +76,38 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     }
   }
 
-  Future<void> _scan({String? ip, bool fullNetwork = false}) async {
+  /// Microsoft moved official Xbox Remote Play to the browser in 2025.
+  /// Keep account sign-in with Microsoft, never capture Xbox credentials.
+  Future<void> _openRemotePlay() async {
+    try {
+      final uri = Uri.parse('https://www.xbox.com/remoteplay');
+      final launched = await launchUrl(
+          uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        setState(() => _error = 'Unable to open official Xbox Remote Play.');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Unable to open official Xbox Remote Play.');
+      }
+    }
+  }
+
+  Future<void> _scan({
+    String? ip,
+    bool fullNetwork = false,
+    bool deepTcp = false,
+  }) async {
     if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
       _diagnostics = null;
       _scanProgress = fullNetwork
-          ? 'Preparing full local network scan…'
+          ? deepTcp ? 'Preparing optional deep network diagnostics…'
+              : 'Searching Xbox UDP 5050 across this Wi-Fi…'
           : 'Checking Xbox IP ${ip ?? ""}…';
-      _message = fullNetwork ? 'Scanning the active Wi-Fi subnet…'
+      _message = fullNetwork ? 'Searching the active Wi-Fi for Xbox…'
           : 'Checking the selected Xbox address…';
     });
     try {
@@ -100,6 +123,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         report = await runXboxNetworkDiagnostics(
           targetIp: ip,
           fullNetwork: fullNetwork,
+          deepTcp: deepTcp,
           onProgress: (done, total, stage) {
             if (mounted && (done == total || done % 32 == 0)) {
               setState(() => _scanProgress =
@@ -123,11 +147,16 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               item.certificateSha256 == _selected!.certificateSha256);
           if (matches.isNotEmpty) _selected = matches.first;
         }
+        final replies = report?.udpStats.observed ?? const [];
         _message = results.isNotEmpty
-            ? 'Discovered ${results.length} compatible Xbox console(s).'
-            : fullNetwork
-                ? 'Scan completed. No Xbox legacy protocol reply.'
-                : 'No Xbox legacy discovery reply from $ip.';
+            ? 'Discovered ${results.length} Xbox via legacy SmartGlass '
+                '(not authenticated).'
+            : replies.isNotEmpty
+                ? 'UDP 5050 answered, but the reply is not compatible: '
+                    '${replies.first.diagnosis.reason}. See diagnostics.'
+                : fullNetwork
+                    ? 'No compatible legacy Xbox response anywhere on Wi-Fi.'
+                    : 'No Xbox discovery response from $ip.';
       });
     } catch (error) {
       if (mounted) {
@@ -154,14 +183,16 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     await _scan(ip: ip);
   }
 
-  Future<void> _scanFullNetwork() async {
+  Future<void> _scanFullNetwork({bool deepTcp = false}) async {
     final ip = _ip.text.trim();
     if (ip.isNotEmpty && !isPrivateIPv4(ip)) {
       setState(() => _error = 'Correct the Xbox IP or clear it first.');
       return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
-    await _scan(fullNetwork: true, ip: ip.isEmpty ? null : ip);
+    await _scan(
+        fullNetwork: true, deepTcp: deepTcp,
+        ip: ip.isEmpty ? null : ip);
   }
 
 
@@ -243,7 +274,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     final saved = selected != null &&
         _saved.any((d) => _sameIdentity(d, selected));
     return Scaffold(
-      appBar: AppBar(title: const Text('Xbox discovery')),
+      appBar: AppBar(title: const Text('Xbox')),
       body: SafeArea(child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -267,7 +298,13 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           OutlinedButton.icon(
             onPressed: _busy ? null : _scanFullNetwork,
             icon: const Icon(Icons.radar),
-            label: const Text('Scan entire local network'),
+            label: const Text('Find Xbox across this Wi-Fi'),
+          ),
+          TextButton.icon(
+            onPressed: _busy ? null
+                : () => _scanFullNetwork(deepTcp: true),
+            icon: const Icon(Icons.bug_report_outlined, size: 18),
+            label: const Text('Deep network diagnostics (slower)'),
           ),
           if (_busy) ...[
             const SizedBox(height: 12),
@@ -319,7 +356,12 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
                   OutlinedButton.icon(
                     onPressed: _busy ? null : () => _scan(ip: selected.host),
                     icon: const Icon(Icons.refresh),
-                    label: const Text('Check connection'),
+                    label: const Text('Check Xbox IP'),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: _openRemotePlay,
+                    icon: const Icon(Icons.open_in_browser),
+                    label: const Text('Xbox Remote Play'),
                   ),
                   if (saved) TextButton.icon(
                     onPressed: _busy ? null : _forget,
@@ -336,10 +378,18 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             ),
           )),
           const SizedBox(height: 12),
-          const Text('Xbox remote features can be enabled without '
-              'the older UDP 5050 protocol being supported. '
-              'A TCP response proves only a reachable service, not '
-              'Xbox control compatibility.'),
+          const Text('Legacy LAN discovery and Xbox wake use UDP 5050. '
+              'They do not provide authenticated controller buttons. '
+              'Xbox Remote Play opens Microsoft’s official browser app, '
+              'where you sign in and select your console.'),
+          if (selected == null) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _openRemotePlay,
+              icon: const Icon(Icons.open_in_browser),
+              label: const Text('Open Xbox Remote Play'),
+            ),
+          ],
           if (widget.initialHost == null) ...[
             const SizedBox(height: 12),
             for (final device in _saved) ListTile(
@@ -396,13 +446,34 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             '${report.udpStats.compatible} compatible'),
         if (report.udpStats.malformed > 0)
           Text('Unrecognized UDP replies: ${report.udpStats.malformed}'),
+        if (report.udpStats.observed.isNotEmpty)
+          ExpansionTile(
+            key: const ValueKey('xbox-udp-reply-diagnostics'),
+            tilePadding: EdgeInsets.zero,
+            initiallyExpanded: true,
+            title: const Text('UDP reply analysis'),
+            subtitle: const Text('Exact rejection reasons; header only'),
+            children: [
+              for (final reply in report.udpStats.observed)
+                ListTile(
+                  dense: true,
+                  title: Text('${reply.host}:${reply.sourcePort}'),
+                  subtitle: Text('${reply.diagnosis.summary}\n'
+                      'Header: ${reply.diagnosis.headerHex}'),
+                ),
+            ],
+          ),
         if (report.targetIp != null) ...[
           const SizedBox(height: 6),
           Text('Target ${report.targetIp}: '
-              '${report.targetDiscovered ? "Xbox protocol reply received" : "No Xbox protocol reply"}'),
+              '${report.targetDiscovered ? "Legacy Xbox identified "
+                  "(not authenticated)" :
+                  report.udpStats.repliesFrom(report.targetIp!).isNotEmpty
+                      ? "UDP reply received; Xbox not confirmed"
+                      : "No Xbox discovery reply"}'),
           Text(ports.isEmpty ? 'TCP tests unavailable' : ports),
         ],
-        if (report.totalAddresses > 1)
+        if (report.tcpSweepPerformed)
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
             title: Text('TCP-visible hosts: ${report.tcpHosts.length}'),
@@ -421,9 +492,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           const Text('Large network: only the first four /24 blocks '
               'were scanned (up to 1,024 addresses).'),
         const SizedBox(height: 8),
-        const Text('No response does not prove a device is offline. '
-            'Xbox Remote Play and authenticated controls are not '
-            'implemented.'),
+        const Text('TCP ports do not identify an Xbox. Legacy SmartGlass '
+            'control sessions require encrypted authentication. '
+            'For current remote control, use the official Xbox Remote Play '
+            'button above.'),
       ]),
     ));
   }
