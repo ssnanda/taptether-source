@@ -9,6 +9,7 @@ import 'lg_connection_timing.dart';
 import 'lg_wake_recovery.dart';
 import 'lg_webos_screen.dart';
 import 'tv_quick_controls.dart';
+import 'tv_controls_settings_screen.dart';
 import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
 import 'resideo_screen.dart';
@@ -2756,6 +2757,17 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () {
                 Navigator.pop(context);
                 openSecuritySettings();
+              },
+            ),
+            ListTile(
+              key: const ValueKey('drawer-tv-quick-controls'),
+              leading: const Icon(Icons.settings_remote_outlined),
+              title: const Text('TV Quick Controls'),
+              subtitle: const Text('Lock Screen layout & Control Center'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const TvControlsSettingsScreen()));
               },
             ),
             ListTile(

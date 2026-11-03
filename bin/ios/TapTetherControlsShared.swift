@@ -12,6 +12,10 @@ enum TapTetherSharedTV {
     static let pinKey = "lastLgCertificate"
     static let macKey = "lastLgMac"
     static let actionKey = "pendingLgAction" // Migrates older foreground shortcuts.
+    static let layoutKey = "lockScreenLayout"
+    static var lockLayout: String {
+        defaults?.string(forKey: layoutKey) == "wide" ? "wide" : "compact"
+    }
     static var defaults: UserDefaults? { UserDefaults(suiteName: group) }
 }
 
@@ -88,13 +92,15 @@ struct TapTetherTVActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var title: String
         var connected: Bool
+        // Optional to preserve decoding of Live Activities from older builds.
+        var layout: String?
     }
     var pairedHost: String
 }
 
 @available(iOS 18.0, *)
 enum TapTetherControlTarget: String, AppEnum {
-    case power, volumeUp, volumeDown, mute, home
+    case power, volumeUp, volumeDown, mute, home, back, ok
     case netflix, youtube, prime, appleTV, apps
 
     static var typeDisplayRepresentation = TypeDisplayRepresentation("TV action")
@@ -104,6 +110,8 @@ enum TapTetherControlTarget: String, AppEnum {
         .volumeDown: DisplayRepresentation("Volume down"),
         .mute: DisplayRepresentation("Mute"),
         .home: DisplayRepresentation("TV home"),
+        .back: DisplayRepresentation("TV back"),
+        .ok: DisplayRepresentation("TV OK"),
         .netflix: DisplayRepresentation("Netflix"),
         .youtube: DisplayRepresentation("YouTube"),
         .prime: DisplayRepresentation("Prime Video"),

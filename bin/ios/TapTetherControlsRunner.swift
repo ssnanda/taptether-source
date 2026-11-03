@@ -65,6 +65,36 @@ final class TapTetherTVControlsBridge {
                 } else {
                     result(false)
                 }
+            case "getLayout":
+                result(TapTetherSharedTV.lockLayout)
+            case "setLayout":
+                guard let value = call.arguments as? String,
+                      value == "compact" || value == "wide",
+                      let defaults = TapTetherSharedTV.defaults else {
+                    result(FlutterError(code: "INVALID_LAYOUT",
+                        message: "Select Compact or Wide.", details: nil))
+                    return
+                }
+                defaults.set(value, forKey: TapTetherSharedTV.layoutKey)
+                if #available(iOS 18.0, *) {
+                    Task { @MainActor in
+                        // Force the widget extension to render the new sizing
+                        // without needing to reopen the Flutter remote.
+                        for activity in Activity<TapTetherTVActivityAttributes>.activities {
+                            let previous = activity.content.state
+                            let state = TapTetherTVActivityAttributes.ContentState(
+                                title: previous.title,
+                                connected: previous.connected,
+                                layout: value
+                            )
+                            await activity.update(ActivityContent(
+                                state: state, staleDate: Date().addingTimeInterval(3600)))
+                        }
+                        result(true)
+                    }
+                } else {
+                    result(true)
+                }
             case "consume":
                 guard let defaults = TapTetherSharedTV.defaults else {
                     result(nil)
@@ -106,7 +136,8 @@ final class TapTetherTVControlsBridge {
                                           connected: Bool) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let state = TapTetherTVActivityAttributes.ContentState(
-            title: name, connected: connected
+            title: name, connected: connected,
+            layout: TapTetherSharedTV.lockLayout
         )
         let content = ActivityContent(state: state,
                                       staleDate: Date().addingTimeInterval(3600))

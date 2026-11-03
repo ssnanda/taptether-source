@@ -16,29 +16,30 @@ private struct TVActionButton: View {
     let symbol: String
     let title: String
     var compact = false
+    var wide = false
 
     var body: some View {
         Button(intent: TapTetherTVActionIntent(target: target)) {
-            VStack(spacing: compact ? 1 : 4) {
+            VStack(spacing: wide ? 2 : compact ? 1 : 4) {
                 Image(systemName: symbol)
-                    .font(.system(size: compact ? 15 : 19,
+                    .font(.system(size: wide ? 17 : compact ? 15 : 19,
                                   weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    .frame(height: compact ? 17 : 23)
+                    .frame(height: wide ? 19 : compact ? 17 : 23)
                 Text(title)
-                    .font(.system(size: compact ? 8.5 : 10, weight: .medium))
+                    .font(.system(size: wide ? 10 : compact ? 8.5 : 10, weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .frame(height: compact ? 38 : 56)
+            .frame(height: wide ? 44 : compact ? 38 : 56)
             .background(
-                RoundedRectangle(cornerRadius: compact ? 10 : 14, style: .continuous)
+                RoundedRectangle(cornerRadius: wide ? 12 : compact ? 10 : 14, style: .continuous)
                     .fill(TVControlStyle.panel)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: compact ? 10 : 14, style: .continuous)
+                RoundedRectangle(cornerRadius: wide ? 12 : compact ? 10 : 14, style: .continuous)
                     .strokeBorder(.white.opacity(0.11), lineWidth: 0.7)
             )
             .contentShape(Rectangle())
@@ -51,19 +52,20 @@ private struct TVActionButton: View {
 @available(iOS 18.0, *)
 private struct TVQuickButtons: View {
     var compact = false
+    var wide = false
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: wide ? 3 : 5) {
             TVActionButton(target: .power, symbol: "power", title: "Power",
-                           compact: compact)
+                           compact: compact, wide: wide)
             TVActionButton(target: .volumeDown, symbol: "speaker.minus.fill",
-                           title: "Vol −", compact: compact)
+                           title: "Vol −", compact: compact, wide: wide)
             TVActionButton(target: .mute, symbol: "speaker.slash.fill",
-                           title: "Mute", compact: compact)
+                           title: "Mute", compact: compact, wide: wide)
             TVActionButton(target: .volumeUp, symbol: "speaker.plus.fill",
-                           title: "Vol +", compact: compact)
+                           title: "Vol +", compact: compact, wide: wide)
             TVActionButton(target: .home, symbol: "house.fill",
-                           title: "Home", compact: compact)
+                           title: "Home", compact: compact, wide: wide)
         }
     }
 }
@@ -71,19 +73,20 @@ private struct TVQuickButtons: View {
 @available(iOS 18.0, *)
 private struct TVAppShortcuts: View {
     var compact = false
+    var wide = false
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: wide ? 3 : 5) {
             TVActionButton(target: .netflix, symbol: "play.rectangle.fill",
-                           title: "Netflix", compact: compact)
+                           title: "Netflix", compact: compact, wide: wide)
             TVActionButton(target: .youtube, symbol: "play.tv.fill",
-                           title: "YouTube", compact: compact)
+                           title: "YouTube", compact: compact, wide: wide)
             TVActionButton(target: .prime, symbol: "play.square.stack.fill",
-                           title: "Prime", compact: compact)
+                           title: "Prime", compact: compact, wide: wide)
             TVActionButton(target: .appleTV, symbol: "appletv.fill",
-                           title: "Apple TV", compact: compact)
+                           title: "Apple TV", compact: compact, wide: wide)
             TVActionButton(target: .apps, symbol: "square.grid.2x2.fill",
-                           title: "Apps", compact: compact)
+                           title: "Apps", compact: compact, wide: wide)
         }
     }
 }
@@ -92,7 +95,8 @@ private struct TVAppShortcuts: View {
 struct TapTetherTVLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TapTetherTVActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading,
+                   spacing: context.state.layout == "wide" ? 3 : 4) {
                 HStack(spacing: 5) {
                     Image(systemName: "tv.fill")
                         .font(.system(size: 11, weight: .bold))
@@ -114,13 +118,15 @@ struct TapTetherTVLiveActivity: Widget {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                TVQuickButtons(compact: true)
-                TVAppShortcuts(compact: true)
+                TVQuickButtons(compact: true,
+                               wide: context.state.layout == "wide")
+                TVAppShortcuts(compact: true,
+                               wide: context.state.layout == "wide")
             }
             // Keep the full Lock Screen Live Activity within iOS's compact
             // vertical budget. Oversize content is clipped at both ends.
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, context.state.layout == "wide" ? 3 : 10)
+            .padding(.vertical, context.state.layout == "wide" ? 5 : 8)
             .activityBackgroundTint(TVControlStyle.background)
             .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
@@ -298,6 +304,32 @@ private struct TVAppsControl: ControlWidget {
     }
 }
 
+@available(iOS 18.0, *)
+private struct TVBackControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.taptether.control.back") {
+            ControlWidgetButton(action: TapTetherTVActionIntent(target: .back)) {
+                Label("TV Back", systemImage: "arrow.uturn.backward")
+            }
+        }
+        .displayName("TapTether TV Back")
+        .description("Go back on the selected LG TV without opening TapTether")
+    }
+}
+
+@available(iOS 18.0, *)
+private struct TVSelectControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.taptether.control.ok") {
+            ControlWidgetButton(action: TapTetherTVActionIntent(target: .ok)) {
+                Label("TV OK", systemImage: "checkmark.circle.fill")
+            }
+        }
+        .displayName("TapTether TV OK")
+        .description("Select an item on the paired LG TV without opening TapTether")
+    }
+}
+
 @main
 @available(iOS 18.0, *)
 struct TapTetherControlWidgets: WidgetBundle {
@@ -313,5 +345,7 @@ struct TapTetherControlWidgets: WidgetBundle {
         TVPrimeControl()
         TVAppleControl()
         TVAppsControl()
+        TVBackControl()
+        TVSelectControl()
     }
 }

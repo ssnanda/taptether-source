@@ -216,7 +216,14 @@ enum TapTetherLgRemoteNative {
                 _ = try await request(socket, id: "tt-lock-mute",
                     uri: "ssap://audio/setMute", payload: ["mute": !muted])
             case .home, .apps:
-                try await sendHome(socket, host: host, pin: pin, session: session)
+                try await sendPointerButton(socket, host: host,
+                    session: session, button: "HOME")
+            case .back:
+                try await sendPointerButton(socket, host: host,
+                    session: session, button: "BACK")
+            case .ok:
+                try await sendPointerButton(socket, host: host,
+                    session: session, button: "ENTER")
             case .netflix, .youtube, .prime, .appleTV:
                 let list = try await request(socket, id: "tt-lock-app-list",
                     uri: "ssap://com.webos.applicationManager/listLaunchPoints")
@@ -270,10 +277,13 @@ enum TapTetherLgRemoteNative {
         }?.id
     }
 
-    private static func sendHome(
+    private static func sendPointerButton(
         _ socket: URLSessionWebSocketTask,
-        host: String, pin: String, session: URLSession
+        host: String, session: URLSession, button: String
     ) async throws {
+        guard ["HOME", "BACK", "ENTER"].contains(button) else {
+            throw TapTetherTVActionError.rejected
+        }
         let response = try await request(socket, id: "tt-lock-pointer",
             uri: "ssap://com.webos.service.networkinput/getPointerInputSocket")
         guard let socketPath = response["socketPath"] as? String,
@@ -285,7 +295,7 @@ enum TapTetherLgRemoteNative {
         let pointer = session.webSocketTask(with: url)
         pointer.resume()
         defer { pointer.cancel(with: .normalClosure, reason: nil) }
-        try await pointer.send(.string("type:button\nname:HOME\n\n"))
+        try await pointer.send(.string("type:button\nname:\(button)\n\n"))
     }
 
     /// Best-effort LAN magic packet: broadcast only to the selected TV's
@@ -343,7 +353,8 @@ enum TapTetherLgRemoteNative {
         host: String, title: String, connected: Bool
     ) async {
         let updated = TapTetherTVActivityAttributes.ContentState(
-            title: title, connected: connected
+            title: title, connected: connected,
+            layout: TapTetherSharedTV.lockLayout
         )
         let content = ActivityContent(state: updated,
             staleDate: Date().addingTimeInterval(3600))

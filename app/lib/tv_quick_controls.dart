@@ -46,6 +46,22 @@ class TvQuickControls {
     }
   }
 
+  /// The widget reads the layout from the shared app-group and an Activity
+  /// content update renders the new layout without opening the TV remote.
+  Future<String> getLockScreenLayout() async {
+    if (!Platform.isIOS) return 'compact';
+    final stored = await channel.invokeMethod<String>('getLayout');
+    return stored == 'wide' ? 'wide' : 'compact';
+  }
+
+  Future<void> setLockScreenLayout(String layout) async {
+    if (layout != 'compact' && layout != 'wide') {
+      throw ArgumentError.value(layout, 'layout', 'Use compact or wide');
+    }
+    if (!Platform.isIOS) return;
+    await channel.invokeMethod<bool>('setLayout', layout);
+  }
+
   Future<void> consumePending() async {
     if (!Platform.isIOS || _working) return;
     _working = true;

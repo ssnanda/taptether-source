@@ -39,13 +39,25 @@ assert "ActivityConfiguration(for: TapTetherTVActivityAttributes.self)" in widge
 assert "activityBackgroundTint(TVControlStyle.background)" in widgets
 assert "TVAppShortcuts" in widgets
 # Both rows must fit inside the system-imposed Lock Screen activity height.
-assert "TVQuickButtons(compact: true)\n                TVAppShortcuts(compact: true)" in widgets
-assert ".frame(height: compact ? 38 : 56)" in widgets
-assert ".padding(.vertical, 8)" in widgets
+assert 'TVQuickButtons(compact: true,' in widgets
+assert 'TVAppShortcuts(compact: true,' in widgets
+assert '.frame(height: wide ? 44 : compact ? 38 : 56)' in widgets
+assert 'context.state.layout == "wide" ? 3 : 10' in widgets
+assert 'context.state.layout == "wide" ? 5 : 8' in widgets
+assert 'var layout: String?' in shared
+assert 'lockLayout' in shared and 'layoutKey' in shared
+assert 'case "setLayout":' in runner and 'case "getLayout":' in runner
+assert 'getLockScreenLayout' in quick and 'setLockScreenLayout' in quick
+assert 'TVBackControl()' in widgets and 'TVSelectControl()' in widgets
+assert 'case .back:' in native and 'case .ok:' in native
+assert 'sendPointerButton' in native and 'button: "BACK"' in native
+assert 'tv_controls_settings_screen.dart' in app
+assert 'drawer-tv-quick-controls' in app
 for action in (".netflix", ".youtube", ".prime", ".appleTV", ".apps"):
     assert "target: " + action in widgets
 for control in ("RemoteOpenControl", "RemotePowerControl", "RemoteMuteControl",
-                "RemoteUpControl", "RemoteDownControl"):
+                "RemoteUpControl", "RemoteDownControl",
+                "TVBackControl", "TVSelectControl"):
     assert f"struct {control}: ControlWidget" in widgets
 assert "DynamicIslandExpandedRegion(.bottom)" in widgets
 assert "WidgetBundle" in widgets
