@@ -8,10 +8,13 @@ RUNNER="$IOS/Runner/AppDelegate.swift"
 test -f "$RUNNER" || { echo "Flutter iOS runner must exist first" >&2; exit 1; }
 mkdir -p "$IOS/TapTetherControls"
 cp "$ROOT/bin/ios/TapTetherControlsShared.swift" "$IOS/TapTetherControls/TapTetherControlsShared.swift"
+cp "$ROOT/bin/ios/TapTetherLgRemoteNative.swift" "$IOS/TapTetherControls/TapTetherLgRemoteNative.swift"
 cp "$ROOT/bin/ios/TapTetherControlWidgets.swift" "$IOS/TapTetherControls/TapTetherControlWidgets.swift"
 if ! grep -q 'enum TapTetherSharedTV' "$RUNNER"; then
   printf '\n' >> "$RUNNER"
   cat "$ROOT/bin/ios/TapTetherControlsShared.swift" >> "$RUNNER"
+  printf '\n' >> "$RUNNER"
+  cat "$ROOT/bin/ios/TapTetherLgRemoteNative.swift" >> "$RUNNER"
   printf '\n' >> "$RUNNER"
   cat "$ROOT/bin/ios/TapTetherControlsRunner.swift" >> "$RUNNER"
 fi
@@ -25,6 +28,8 @@ runner_info = ios / 'Runner' / 'Info.plist'
 with runner_info.open('rb') as handle:
     info = plistlib.load(handle)
 info['NSSupportsLiveActivities'] = True
+ats = info.setdefault('NSAppTransportSecurity', {})
+ats['NSAllowsLocalNetworking'] = True
 with runner_info.open('wb') as handle:
     plistlib.dump(info, handle, sort_keys=False)
 widget = ios / 'TapTetherControls'
@@ -39,6 +44,7 @@ widget_info = {
     'CFBundleShortVersionString': (ios.parents[1] / 'VERSION').read_text().strip().split('+')[0],
     'CFBundleVersion': (ios.parents[1] / 'VERSION').read_text().strip().split('+')[1],
     'NSExtension': {'NSExtensionPointIdentifier': 'com.apple.widgetkit-extension'},
+    'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True},
 }
 for path, entries in (
     (widget / 'Info.plist', widget_info),
@@ -69,7 +75,7 @@ extension = project.targets.find { |target| target.name == 'TapTetherControls' }
 unless extension
   extension = project.new_target(:app_extension, 'TapTetherControls', :ios, '18.0')
   group = project.main_group.new_group('TapTetherControls', 'TapTetherControls')
-  %w[TapTetherControlsShared.swift TapTetherControlWidgets.swift].each do |file|
+  %w[TapTetherControlsShared.swift TapTetherLgRemoteNative.swift TapTetherControlWidgets.swift].each do |file|
     ref = group.new_file(file)
     extension.source_build_phase.add_file_reference(ref)
   end
