@@ -578,7 +578,6 @@ class _RemoteScreenState extends State<RemoteScreen>
   String installedVersion = '…';
   String? availableAppVersion;
   String? connectedAgentVersion;
-  String? _latestReleaseVersion;
   final Map<String, String> _latestAgentByPlatform = {};
   bool _macShortcuts = false;
   bool _haptics = true;
@@ -3536,7 +3535,6 @@ class _RemoteScreenState extends State<RemoteScreen>
       final current = '${local.version}+${local.buildNumber}';
       if (!mounted) return;
       setState(() {
-        _latestReleaseVersion = latest;
         if (platform != null) {
           if (latestAgent == null) {
             _latestAgentByPlatform.remove(platform);
