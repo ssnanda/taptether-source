@@ -3038,7 +3038,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             key: const ValueKey('add-xbox-action'),
             avatar: const Icon(Icons.videogame_asset_outlined, size: 18),
             label: const Text('Xbox'),
-            onPressed: openXboxRemote,
+            onPressed: () => unawaited(openXboxRemote()),
           ),
           ActionChip(
             avatar: const Icon(Icons.qr_code_scanner, size: 18),

@@ -41,6 +41,24 @@ void main() {
         throwsFormatException);
   });
 
+  test('diagnostic export describes replies without payload secrets', () {
+    const host = '192.168.68.84';
+    final stats = XboxDiscoveryStats();
+    final packet = inspectXboxDiscovery([0x31, 0x32, 0, 0, 0, 0], host);
+    stats.record(host, 5050, packet);
+    final report = XboxNetworkReport(
+      cidr: '192.168.68.0/22', targetIp: host,
+      consoleReplies: const [], tcpHosts: const [],
+      udpStats: stats, checkedAddresses: 1, totalAddresses: 1,
+      truncated: false, targetPorts: const {},
+    );
+    final text = formatXboxNetworkDiagnostics(report);
+    expect(text, contains('Not a SmartGlass DD01'));
+    expect(text, contains('0x3132'));
+    expect(text, contains('header 31 32 00 00 00 00'));
+    expect(text, contains('not swept'));
+  });
+
   test('UDP counters distinguish sent/replied from authenticated pairing',
       () {
     final report = XboxDiscoveryStats();

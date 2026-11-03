@@ -296,7 +296,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: _busy ? null : _scanFullNetwork,
+            onPressed: _busy ? null : () => _scanFullNetwork(),
             icon: const Icon(Icons.radar),
             label: const Text('Find Xbox across this Wi-Fi'),
           ),

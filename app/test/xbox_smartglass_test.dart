@@ -68,6 +68,45 @@ void main() {
     expect(parseXboxDiscovery(packet, '192.168.68.122'), isNull);
   });
 
+  test('diagnoses exact response type, certificate state and bad frame', () {
+    const host = '192.168.68.84';
+    final valid = _response();
+    final result = inspectXboxDiscovery(valid, host);
+    expect(result.compatible, isTrue);
+    expect(result.typeLabel, '0xDD01');
+    expect(result.version, 0);
+    expect(result.reason, contains('Compatible legacy'));
+    expect(result.headerHex.split(' '), hasLength(14));
+    expect(result.summary, isNot(contains('FD12345678901234')));
+
+    final pending = [...valid]..[9] = 8;
+    expect(inspectXboxDiscovery(pending, host).reason,
+        contains('certificate pending'));
+    final otherType = [...valid]..[0] = 0x55;
+    expect(inspectXboxDiscovery(otherType, host).reason,
+        contains('Not a SmartGlass DD01'));
+    final wrongVersion = [...valid]..[5] = 2;
+    expect(inspectXboxDiscovery(wrongVersion, host).reason,
+        contains('Unsupported discovery'));
+    final wrongConsoleType = [...valid]..[11] = 2;
+    expect(inspectXboxDiscovery(wrongConsoleType, host).reason,
+        contains('device type'));
+    final wrongLength = [...valid]..[3]--;
+    expect(inspectXboxDiscovery(wrongLength, host).reason,
+        contains('payload length mismatch'));
+    expect(inspectXboxDiscovery([0xdd, 0x01], host).reason,
+        contains('Incomplete'));
+
+    final stats = XboxDiscoveryStats();
+    stats.record(host, 5050, inspectXboxDiscovery(pending, host));
+    stats.record(host, 5050, inspectXboxDiscovery(pending, host));
+    stats.record(host, 5050, inspectXboxDiscovery(valid, host));
+    expect(stats.replies, 3);
+    expect(stats.malformed, 2);
+    expect(stats.compatible, 1);
+    expect(stats.repliesFrom(host).length, 2);
+  });
+
   test('standby wake packet includes exact Live ID and no account data', () {
     final packet = xboxWakePacket('FD12345678901234');
     expect(packet.take(6), [0xdd, 2, 0, 19, 0, 2]);
