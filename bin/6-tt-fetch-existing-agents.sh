@@ -20,7 +20,7 @@ trap 'rm -rf "$TMP"' EXIT
 # version. Current desktop agents may be many iOS releases older.
 gh api "repos/$REPO/releases/tags/current" > "$TMP/release.json"
 gh api "repos/$REPO/contents/agent-versions.json" --jq '.content' |
-  tr -d '\r\n' | base64 --decode > "$TMP/agent-versions.json"
+  python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))' > "$TMP/agent-versions.json"
 AGENT_VERSION="$(python3 - "$TMP" <<'PY'
 import json,pathlib,re,sys
 folder=pathlib.Path(sys.argv[1])
