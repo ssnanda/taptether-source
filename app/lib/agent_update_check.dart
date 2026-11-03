@@ -40,23 +40,23 @@ class AgentReleaseCatalog {
     required Object? release,
   }) {
     final names = assetNames[platform];
-    if (names == null || catalog is! Map || release is! Map) return null;
+    if (names == null || catalog is! Map || release is! Map) { return null; }
     if (catalog['schemaVersion'] != 1 || catalog['tag'] != 'current' ||
         release['tag_name'] != 'current' || release['assets'] is! List) {
       return null;
     }
     final platforms = catalog['platforms'];
-    if (platforms is! Map || platforms[platform] is! Map) return null;
+    if (platforms is! Map || platforms[platform] is! Map) { return null; }
     final info = platforms[platform] as Map;
     final version = info['version'];
     final pinned = info['assets'];
     if (version is! String || !_versionPattern.hasMatch(version) ||
-        pinned is! Map || pinned.length != names.length) return null;
+        pinned is! Map || pinned.length != names.length) { return null; }
     final assets = release['assets'] as List;
     for (final name in names) {
       final digest = pinned[name];
-      if (digest is! String || !_digestPattern.hasMatch(digest)) return null;
-      if (!_matchAsset(assets, name, digest, 'current')) return null;
+      if (digest is! String || !_digestPattern.hasMatch(digest)) { return null; }
+      if (!_matchAsset(assets, name, digest, 'current')) { return null; }
     }
     return version;
   }
@@ -78,15 +78,15 @@ class AgentReleaseCatalog {
       r'^TapTether (Ubuntu|macOS|Windows) ([0-9]+\.[0-9]+\.[0-9]+\+[0-9]+) '
       r'\(agent-only rolling downloads\)$',
     ).firstMatch(release['name'] as String);
-    if (match == null || match.group(1) != channel.$2) return null;
+    if (match == null || match.group(1) != channel.$2) { return null; }
     final assets = release['assets'] as List;
     for (final name in names) {
       final matches = assets.whereType<Map>()
           .where((entry) => entry['name'] == name).toList();
-      if (matches.length != 1) return null;
+      if (matches.length != 1) { return null; }
       final digest = matches.single['digest'];
       if (digest is! String || !_digestPattern.hasMatch(digest) ||
-          !_matchAsset(assets, name, digest, channel.$1)) return null;
+          !_matchAsset(assets, name, digest, channel.$1)) { return null; }
     }
     return match.group(2);
   }
@@ -94,7 +94,7 @@ class AgentReleaseCatalog {
   static bool _matchAsset(List assets, String name, String digest, String tag) {
     final entries = assets.whereType<Map>()
         .where((entry) => entry['name'] == name).toList();
-    if (entries.length != 1) return false;
+    if (entries.length != 1) { return false; }
     final item = entries.single;
     final size = item['size'];
     return size is num && size > 1024 &&
