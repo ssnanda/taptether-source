@@ -8,7 +8,7 @@ import 'lan_scan.dart';
 import 'xbox_smartglass.dart';
 import 'xbox_network_diagnostics.dart';
 import 'xbox_manual_targets.dart';
-import 'xbox_remote_play.dart';
+import 'xbox_remote_session_screen.dart';
 
 /// TapTether 0.8.76 Xbox Connect: real Microsoft Remote Play touch controls.
 /// Connect to Microsoft's actual Xbox Remote Play touch controller.
@@ -38,7 +38,9 @@ class XboxRemoteScreen extends StatefulWidget {
 class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
   final _store = XboxConsoleStore();
   final _manualStore = XboxManualTargetStore();
+  final _setupStore = XboxRemoteSetupStore();
   final _ip = TextEditingController();
+  bool _remoteFeaturesReady = false;
   List<XboxConsole> _saved = [];
   List<XboxManualTarget> _manual = [];
   List<XboxConsole> _found = [];
@@ -67,8 +69,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         _ip.text = await _store.lastTargetIp() ??
             (manual.isNotEmpty ? manual.first.host : '');
       }
+      final confirmed = await _setupStore.confirmed(_ip.text.trim());
       if (!mounted) return;
       setState(() {
+        _remoteFeaturesReady = confirmed;
         _saved = devices;
         _manual = manual;
         if (widget.initialHost != null) {
@@ -87,26 +91,56 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     }
   }
 
-  /// Microsoft's in-app Remote Play browser manages authentication,
-  /// console selection, and the real on-screen gamepad. No credentials pass
-  /// through TapTether and no UDP reply is required to open this session.
-  Future<void> _openRemotePlay() async {
-    if (_busy) return;
-    setState(() => _error = null);
+  Future<void> _restoreRemoteFeatures(String ip) async {
+    final confirmed = await _setupStore.confirmed(ip);
+    if (!mounted || _ip.text.trim() != ip) return;
+    setState(() => _remoteFeaturesReady = confirmed);
+  }
+
+  Future<void> _setRemoteFeatures(bool enabled) async {
+    final host = _ip.text.trim();
+    if (!isPrivateIPv4(host)) {
+      setState(() => _error = 'Enter the Xbox IP before confirming setup.');
+      return;
+    }
     try {
-      final launched = await (widget.connect?.call() ??
-          const XboxRemotePlayLauncher().connect());
+      await _setupStore.setConfirmed(host, enabled);
+      if (mounted) setState(() {
+        _remoteFeaturesReady = enabled;
+        _error = null;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Unable to save Xbox setup.');
+    }
+  }
+
+  /// Microsoft's browser handles sign-in and console selection; native
+  /// virtual-button delivery remains an experimental page-scoped PoC.
+  Future<void> _openRemotePlay() async {
+    final host = _ip.text.trim();
+    if (_busy || !isPrivateIPv4(host) || !_remoteFeaturesReady) return;
+    setState(() => _error = null);
+    if (widget.connect == null) {
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => XboxRemoteSessionScreen(host: host),
+      ));
+      if (!mounted) return;
+      setState(() => _message = 'Xbox session closed. You can reconnect '
+          'without rescanning. Browser controls are experimental.');
+      return;
+    }
+    try {
+      final launched = await widget.connect!.call();
       if (!mounted) return;
       if (launched) {
         setState(() => _message = 'Microsoft Remote Play opened. '
-            'Select your Xbox in the official page, then use its touch '
-            'controls. This is not a verified local SmartGlass connection.');
+            'Sign in and select your Xbox. Console response not verified.');
       } else {
         setState(() => _error = 'Unable to open Microsoft Remote Play.');
       }
     } catch (_) {
-      if (mounted) setState(() => _error =
-          'Unable to open Microsoft Remote Play.');
+      if (mounted) setState(() =>
+          _error = 'Unable to open Microsoft Remote Play.');
     }
   }
 
@@ -382,19 +416,55 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               hintText: '192.168.68.82',
               border: OutlineInputBorder(),
             ),
+            onChanged: (value) {
+              setState(() => _remoteFeaturesReady = false);
+              unawaited(_restoreRemoteFeatures(value.trim()));
+            },
             onSubmitted: (_) => _byIp(),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
+          Text('1 · Find Xbox or enter its IP',
+            style: Theme.of(context).textTheme.titleSmall),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              onPressed: _busy ? null : _byIp,
+              icon: const Icon(Icons.search),
+              label: const Text('Check IP'),
+            )),
+            const SizedBox(width: 8),
+            Expanded(child: OutlinedButton.icon(
+              onPressed: _busy ? null : () => _scanFullNetwork(),
+              icon: const Icon(Icons.radar),
+              label: const Text('Scan Wi-Fi'),
+            )),
+          ]),
+          Text('If Xbox discovery does not reply, use its IP shown on '
+              'the console. Scanning is not required to connect.',
+              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 12),
+          CheckboxListTile(
+            key: const ValueKey('xbox-remote-features'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('2 · Remote Features enabled'),
+            subtitle: const Text('Settings → Devices & connections → '
+                'Remote features. Confirm once; TapTether saves it.'),
+            value: _remoteFeaturesReady,
+            onChanged: _busy ? null :
+                (enabled) => _setRemoteFeatures(enabled == true),
+          ),
+          const SizedBox(height: 6),
           FilledButton.icon(
             key: const ValueKey('xbox-connect'),
-            onPressed: _busy ? null : _openRemotePlay,
+            onPressed: _busy || !_remoteFeaturesReady ||
+                !isPrivateIPv4(_ip.text.trim()) ? null : _openRemotePlay,
             icon: const Icon(Icons.gamepad_rounded),
-            label: const Text('Connect Xbox'),
+            label: const Text('3 · Connect & test controller'),
           ),
-          const SizedBox(height: 5),
-          Text('Microsoft Remote Play provides the authenticated '
-              'connection and touch controller. Choose your console '
-              'after signing in; the IP above is for local diagnostics.',
+          const SizedBox(height: 6),
+          Text('Microsoft sign-in and console selection are next. '
+              'Virtual buttons are an experimental proof of concept, '
+              'not verified Xbox pairing.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
           OutlinedButton.icon(
@@ -476,7 +546,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
                   FilledButton.tonalIcon(
                     onPressed: _openRemotePlay,
                     icon: const Icon(Icons.open_in_browser),
-                    label: const Text('Xbox Remote Play'),
+                    label: const Text('Connect & test controller'),
                   ),
                   if (saved) TextButton.icon(
                     onPressed: _busy ? null : _forget,
