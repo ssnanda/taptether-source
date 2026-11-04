@@ -7,6 +7,10 @@ class XboxVirtualGamepad {
   static const buttonB = 1;
   static const buttonX = 2;
   static const buttonY = 3;
+  static const lb = 4;
+  static const rb = 5;
+  static const lt = 6;
+  static const rt = 7;
   static const view = 8;
   static const menu = 9;
   static const up = 12;
@@ -16,7 +20,7 @@ class XboxVirtualGamepad {
   static const guide = 16;
 
   static const validButtons = <int>{
-    buttonA, buttonB, buttonX, buttonY, view, menu,
+    buttonA, buttonB, buttonX, buttonY, lb, rb, lt, rt, view, menu,
     up, down, left, right, guide,
   };
 
@@ -29,7 +33,7 @@ class XboxVirtualGamepad {
     return {pressed:false, touched:false, value:0};
   });
   var pad = {
-    id:'TapTether Xbox Virtual Gamepad (PoC)',
+    id:'Xbox Wireless Controller (TapTether)',
     index:0, connected:true, mapping:'standard',
     axes:[0,0,0,0], buttons:buttons,
     timestamp:performance.now(),
@@ -76,7 +80,13 @@ class XboxVirtualGamepad {
     if (!api.test()) return 'unsupported';
     window.__tapTetherVirtualGamepad = api;
     try {
-      window.dispatchEvent(new Event('gamepadconnected'));
+      var event = typeof GamepadEvent === 'function'
+        ? new GamepadEvent('gamepadconnected', {gamepad:pad})
+        : new Event('gamepadconnected');
+      if (!event.gamepad) {
+        Object.defineProperty(event, 'gamepad', {value:pad});
+      }
+      window.dispatchEvent(event);
     } catch (_) {}
     window.addEventListener('pagehide', function(){ api.releaseAll(); });
     window.addEventListener('blur', function(){ api.releaseAll(); });
