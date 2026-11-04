@@ -237,7 +237,7 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
       label: isOk ? 'OK' : command,
       button: true,
       child: GestureDetector(
-        key: ValueKey('lg-dpad-' + command.toLowerCase()),
+        key: ValueKey('lg-dpad-${command.toLowerCase()}'),
         behavior: HitTestBehavior.opaque,
         onTap: () => _pressDirection(command),
         onLongPressStart: isOk ? null
