@@ -87,3 +87,30 @@ class XboxManualTargetStore {
     AutomaticDeviceBackup.instance.requestSoon();
   }
 }
+
+
+/// User-acknowledged Xbox setting, not proof supplied by LAN discovery.
+/// Keeping it per IP avoids repeatedly asking after the user already
+/// enabled Remote Features on their console.
+class XboxRemoteSetupStore {
+  XboxRemoteSetupStore({FlutterSecureStorage? storage})
+      : _storage = storage ?? const FlutterSecureStorage();
+  static const prefix = 'taptether.xbox.remote-features.v1.';
+  final FlutterSecureStorage _storage;
+
+  Future<bool> confirmed(String host) async {
+    if (!isPrivateIPv4(host)) return false;
+    return await _storage.read(key: prefix + host) == 'true';
+  }
+
+  Future<void> setConfirmed(String host, bool value) async {
+    if (!isPrivateIPv4(host)) {
+      throw const FormatException('Use a private Xbox IP address.');
+    }
+    if (value) {
+      await _storage.write(key: prefix + host, value: 'true');
+    } else {
+      await _storage.delete(key: prefix + host);
+    }
+  }
+}
