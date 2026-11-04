@@ -38,18 +38,16 @@ class XboxRemoteScreen extends StatefulWidget {
 class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
   final _store = XboxConsoleStore();
   final _manualStore = XboxManualTargetStore();
-  final _setupStore = XboxRemoteSetupStore();
   final _ip = TextEditingController();
-  bool _remoteFeaturesReady = false;
   List<XboxConsole> _saved = [];
   List<XboxManualTarget> _manual = [];
   List<XboxConsole> _found = [];
   XboxConsole? _selected;
   bool _busy = false;
+  bool _showDiagnostics = false;
   XboxNetworkReport? _diagnostics;
   String? _scanProgress;
-  String _message = 'Connect with Microsoft Remote Play. Local '
-      'discovery is optional and does not sign you in.';
+  String _message = '';
   String? _error;
 
   @override
@@ -69,20 +67,17 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         _ip.text = await _store.lastTargetIp() ??
             (manual.isNotEmpty ? manual.first.host : '');
       }
-      final confirmed = await _setupStore.confirmed(_ip.text.trim());
       if (!mounted) return;
       setState(() {
-        _remoteFeaturesReady = confirmed;
         _saved = devices;
         _manual = manual;
         if (widget.initialHost != null) {
           final matches = devices.where((d) => d.host == widget.initialHost);
           if (matches.isNotEmpty) {
             _selected = matches.first;
-            _message = 'Saved Xbox — current connection not checked';
+            _message = '';
           } else if (manual.any((d) => d.host == widget.initialHost)) {
-            _message = 'Saved Xbox address — identity not independently '
-                'verified. Connect using Microsoft Remote Play.';
+            _message = '';
           }
         }
       });
@@ -91,52 +86,25 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     }
   }
 
-  Future<void> _restoreRemoteFeatures(String ip) async {
-    final confirmed = await _setupStore.confirmed(ip);
-    if (!mounted || _ip.text.trim() != ip) return;
-    setState(() => _remoteFeaturesReady = confirmed);
-  }
-
-  Future<void> _setRemoteFeatures(bool enabled) async {
-    final host = _ip.text.trim();
-    if (!isPrivateIPv4(host)) {
-      setState(() => _error = 'Enter the Xbox IP before confirming setup.');
-      return;
-    }
-    try {
-      await _setupStore.setConfirmed(host, enabled);
-      if (mounted) {
-        setState(() {
-          _remoteFeaturesReady = enabled;
-          _error = null;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Unable to save Xbox setup.');
-    }
-  }
-
   /// Microsoft's browser handles sign-in and console selection; native
   /// virtual-button delivery remains an experimental page-scoped PoC.
   Future<void> _openRemotePlay() async {
     final host = _ip.text.trim();
-    if (_busy || !isPrivateIPv4(host) || !_remoteFeaturesReady) return;
+    if (_busy || !isPrivateIPv4(host)) return;
     setState(() => _error = null);
     if (widget.connect == null) {
       await Navigator.of(context).push(MaterialPageRoute<void>(
         builder: (_) => XboxRemoteSessionScreen(host: host),
       ));
       if (!mounted) return;
-      setState(() => _message = 'Xbox session closed. You can reconnect '
-          'without rescanning. Browser controls are experimental.');
+      setState(() => _message = 'Disconnected');
       return;
     }
     try {
       final launched = await widget.connect!.call();
       if (!mounted) return;
       if (launched) {
-        setState(() => _message = 'Microsoft Remote Play opened. '
-            'Sign in and select your Xbox. Console response not verified.');
+        setState(() => _message = 'Opened');
       } else {
         setState(() => _error = 'Unable to open Microsoft Remote Play.');
       }
@@ -191,8 +159,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       setState(() {
         _manual = targets;
         _error = null;
-        _message = '$name saved in Devices as an unverified address. '
-            'Use Connect Xbox to open authenticated Remote Play.';
+        _message = 'Saved';
       });
       await widget.onSaved?.call();
     } catch (error) {
@@ -212,7 +179,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       setState(() {
         _manual = targets;
         _error = null;
-        _message = 'Saved Xbox address removed.';
+        _message = 'Removed';
       });
       await widget.onSaved?.call();
     } catch (_) {
@@ -237,8 +204,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           ? deepTcp ? 'Preparing optional deep network diagnostics…'
               : 'Searching Xbox UDP 5050 across this Wi-Fi…'
           : 'Checking Xbox IP ${ip ?? ""}…';
-      _message = fullNetwork ? 'Searching the active Wi-Fi for Xbox…'
-          : 'Checking the selected Xbox address…';
+      _message = 'Scanning…';
     });
     try {
       if (ip != null) {
@@ -277,23 +243,13 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               item.certificateSha256 == _selected!.certificateSha256);
           if (matches.isNotEmpty) _selected = matches.first;
         }
-        final replies = report?.udpStats.observed ?? const [];
-        final targetMatched = ip == null ||
-            results.any((device) => device.host == ip);
-        _message = results.isNotEmpty && targetMatched
-            ? 'Discovered ${results.length} Xbox via LAN discovery '
-                '(not authenticated).'
-            : results.isNotEmpty && ip != null
-                ? 'No discovery reply from $ip, but an Xbox answered from '
-                    '${results.first.host}. Verify which IP belongs to your console.'
-                : replies.isNotEmpty
-                    ? 'Xbox LAN probe answered but was not compatible: '
-                        '${replies.first.diagnosis.reason}. See diagnostics.'
-                    : fullNetwork
-                        ? 'No Xbox LAN discovery response across this Wi-Fi. '
-                          'This does not mean Remote Features is disabled.'
-                        : 'No Xbox LAN discovery reply from $ip. '
-                          'Remote Features may already be enabled.';
+        _message = results.isNotEmpty
+            ? 'Found ${results.length} Xbox ${results.length == 1 ? 'device' : 'devices'}'
+            : 'No Xbox found';
+        if (results.isNotEmpty) {
+          _selected = results.first;
+          _ip.text = results.first.host;
+        }
       });
     } catch (error) {
       if (mounted) {
@@ -346,7 +302,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       setState(() {
         _selected = stored.firstWhere((e) => e.uuid == device.uuid);
         _saved = stored;
-        _message = 'Xbox saved. This is discovery, not controller pairing.';
+        _message = 'Saved';
       });
       await widget.onSaved?.call();
     } catch (error) {
@@ -395,7 +351,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       setState(() {
         _saved = stored;
         _selected = null;
-        _message = 'Xbox removed from My Devices.';
+        _message = 'Removed';
       });
       await widget.onSaved?.call();
     } catch (_) {
@@ -410,199 +366,164 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     final selected = _selected;
     final saved = selected != null &&
         _saved.any((d) => _sameIdentity(d, selected));
+    final validIp = isPrivateIPv4(_ip.text.trim());
     return Scaffold(
-      appBar: AppBar(title: const Text('Xbox')),
+      appBar: AppBar(title: const Text('Xbox'), actions: [
+        IconButton(
+          key: const ValueKey('xbox-diagnostics-toggle'),
+          icon: const Icon(Icons.tune_rounded),
+          tooltip: 'Diagnostics',
+          onPressed: () => setState(() =>
+              _showDiagnostics = !_showDiagnostics),
+        ),
+      ]),
       body: SafeArea(child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(14, 16, 14, 18),
         children: [
           TextField(
             controller: _ip,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
-              labelText: 'Xbox IP address',
-              hintText: '192.168.68.82',
+              labelText: 'Xbox IP',
               border: OutlineInputBorder(),
+              isDense: true,
             ),
-            onChanged: (value) {
-              setState(() => _remoteFeaturesReady = false);
-              unawaited(_restoreRemoteFeatures(value.trim()));
-            },
-            onSubmitted: (_) => _byIp(),
-          ),
-          const SizedBox(height: 8),
-          Text('1 · Find Xbox or enter its IP',
-            style: Theme.of(context).textTheme.titleSmall),
-          Row(children: [
-            Expanded(child: OutlinedButton.icon(
-              onPressed: _busy ? null : _byIp,
-              icon: const Icon(Icons.search),
-              label: const Text('Check IP'),
-            )),
-            const SizedBox(width: 8),
-            Expanded(child: OutlinedButton.icon(
-              onPressed: _busy ? null : () => _scanFullNetwork(),
-              icon: const Icon(Icons.radar),
-              label: const Text('Scan Wi-Fi'),
-            )),
-          ]),
-          Text('If Xbox discovery does not reply, use its IP shown on '
-              'the console. Scanning is not required to connect.',
-              style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 12),
-          CheckboxListTile(
-            key: const ValueKey('xbox-remote-features'),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text('2 · Remote Features enabled'),
-            subtitle: const Text('Settings → Devices & connections → '
-                'Remote features. Confirm once; TapTether saves it.'),
-            value: _remoteFeaturesReady,
-            onChanged: _busy ? null :
-                (enabled) => _setRemoteFeatures(enabled == true),
-          ),
-          const SizedBox(height: 6),
-          FilledButton.icon(
-            key: const ValueKey('xbox-connect'),
-            onPressed: _busy || !_remoteFeaturesReady ||
-                !isPrivateIPv4(_ip.text.trim()) ? null : _openRemotePlay,
-            icon: const Icon(Icons.gamepad_rounded),
-            label: const Text('3 · Connect & test controller'),
-          ),
-          const SizedBox(height: 6),
-          Text('Microsoft sign-in and console selection are next. '
-              'Virtual buttons are an experimental proof of concept, '
-              'not verified Xbox pairing.',
-              style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            key: const ValueKey('xbox-save-manual'),
-            onPressed: _busy ? null : _saveManual,
-            icon: const Icon(Icons.bookmark_add_outlined),
-            label: const Text('Save Xbox to Devices'),
+            onChanged: (_) => setState(() {
+              _selected = null;
+              _error = null;
+            }),
           ),
           const SizedBox(height: 14),
-          TextButton.icon(
-            onPressed: _busy ? null
-                : () => _scanFullNetwork(deepTcp: true),
-            icon: const Icon(Icons.bug_report_outlined, size: 18),
-            label: const Text('Deep network diagnostics (slower)'),
-          ),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              key: const ValueKey('xbox-scan'),
+              onPressed: _busy ? null : () => _scanFullNetwork(),
+              icon: const Icon(Icons.radar_rounded, size: 18),
+              label: const Text('Scan'),
+            )),
+            const SizedBox(width: 7),
+            Expanded(child: FilledButton.icon(
+              key: const ValueKey('xbox-connect'),
+              onPressed: _busy || !validIp ? null : _openRemotePlay,
+              icon: const Icon(Icons.gamepad_rounded, size: 18),
+              label: const Text('Connect'),
+            )),
+            const SizedBox(width: 7),
+            Expanded(child: OutlinedButton.icon(
+              key: const ValueKey('xbox-save-manual'),
+              onPressed: _busy || !validIp ? null : _saveManual,
+              icon: const Icon(Icons.bookmark_outline_rounded, size: 18),
+              label: const Text('Save'),
+            )),
+          ]),
           if (_busy) ...[
             const SizedBox(height: 12),
             const LinearProgressIndicator(),
             const SizedBox(height: 6),
-            Text(_scanProgress ?? 'Checking Wi-Fi…'),
+            Text(_scanProgress ?? 'Scanning…'),
           ],
           if (_error != null) Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(_error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
-          const SizedBox(height: 12),
-          Text(_message, style: Theme.of(context).textTheme.bodyMedium),
-          if (_diagnostics != null) ...[
-            const SizedBox(height: 12),
-            _networkDiagnostics(_diagnostics!),
-          ],
-          const SizedBox(height: 12),
-          if (selected != null) Card(child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  const Icon(Icons.videogame_asset_outlined, size: 38),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(selected.name, style:
-                            Theme.of(context).textTheme.titleLarge),
-                        Text(selected.host),
-                      ])),
-                  if (saved) const Icon(Icons.bookmark_added_outlined),
-                ]),
-                const SizedBox(height: 16),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  if (!saved) FilledButton.icon(
-                    onPressed: _busy ? null : () => _save(selected),
-                    icon: const Icon(Icons.bookmark_add_outlined),
-                    label: const Text('Save Xbox'),
-                  ),
-                  if (saved) FilledButton.icon(
-                    onPressed: _busy || selected.liveId.isEmpty
-                        ? null : _wake,
-                    icon: const Icon(Icons.power_settings_new),
-                    label: const Text('Wake Xbox'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : () => _scan(ip: selected.host),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Check Xbox IP'),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: _openRemotePlay,
-                    icon: const Icon(Icons.open_in_browser),
-                    label: const Text('Connect & test controller'),
-                  ),
-                  if (saved) TextButton.icon(
-                    onPressed: _busy ? null : _forget,
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Forget'),
-                  ),
-                ]),
-                const SizedBox(height: 12),
-                Text(selected.liveId.isEmpty
-                    ? 'Wake unavailable: Xbox did not provide a readable Live ID.'
-                    : 'Wake needs Xbox Sleep/network standby enabled.',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          )),
-          const SizedBox(height: 12),
-          const Text('TapTether checks an older Xbox LAN discovery method over '
-              'UDP 5050. Remote Features can already be enabled while '
-              'the console does not answer those requests. '
-              'A TCP timeout does not prove the Xbox is offline.'),
-          const SizedBox(height: 6),
-          Text('To verify the address, compare it with Xbox Settings → '
-              'General → Network settings → Advanced settings → IP address. '
-              'For current console access, use Xbox Remote Play and '
-              'sign in to your Microsoft account. '
-              'Sleep mode is needed only for standby wake.',
-              style: Theme.of(context).textTheme.bodySmall),
-          if (widget.initialHost == null) ...[
-            const SizedBox(height: 12),
-            for (final target in _manual) ListTile(
-              key: ValueKey('xbox-manual-${target.host}'),
-              leading: const Icon(Icons.videogame_asset_outlined),
-              title: Text(target.name),
-              subtitle: Text('${target.host} · Manually saved, not verified'),
-              onTap: _busy ? null : () => setState(() {
-                _ip.text = target.host;
-                _selected = null;
-              }),
-              trailing: IconButton(
-                tooltip: 'Forget ${target.name}',
-                onPressed: _busy ? null : () => _forgetManual(target.host),
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ),
-            for (final device in _saved) ListTile(
-              leading: const Icon(Icons.bookmark_outline),
-              title: Text(device.name),
-              subtitle: Text(device.host),
-              onTap: _busy ? null : () =>
-                  setState(() => _selected = device),
-            ),
-          ],
-          for (final candidate in _found) ListTile(
-            leading: const Icon(Icons.videogame_asset_outlined),
-            title: Text(candidate.name),
-            subtitle: Text(candidate.host),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _busy ? null : () =>
-                setState(() => _selected = candidate),
+          if (_message.isNotEmpty && _error == null) Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(_message, key: const ValueKey('xbox-status')),
           ),
+          if (_showDiagnostics) ...[
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, children: [
+              TextButton.icon(
+                onPressed: _busy || !validIp ? null : _byIp,
+                icon: const Icon(Icons.search, size: 18),
+                label: const Text('Check IP'),
+              ),
+              TextButton.icon(
+                onPressed: _busy ? null
+                    : () => _scanFullNetwork(deepTcp: true),
+                icon: const Icon(Icons.bug_report_outlined, size: 18),
+                label: const Text('Deep scan'),
+              ),
+            ]),
+            if (_diagnostics != null) _networkDiagnostics(_diagnostics!),
+          ],
+          if (selected != null) Card(
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.sports_esports_rounded),
+              title: Text(selected.name),
+              subtitle: Text(selected.host),
+              trailing: PopupMenuButton<String>(
+                tooltip: 'Xbox options',
+                onSelected: (action) {
+                  if (action == 'save') unawaited(_save(selected));
+                  if (action == 'wake') unawaited(_wake());
+                  if (action == 'forget') unawaited(_forget());
+                },
+                itemBuilder: (_) => [
+                  if (!saved) const PopupMenuItem(
+                    value: 'save', child: Text('Save')),
+                  if (saved && selected.liveId.isNotEmpty)
+                    const PopupMenuItem(value: 'wake', child: Text('Wake')),
+                  if (saved) const PopupMenuItem(
+                    value: 'forget', child: Text('Forget')),
+                ],
+              ),
+              onTap: () => setState(() => _ip.text = selected.host),
+            ),
+          ),
+          if (widget.initialHost == null) ...[
+            if (_manual.isNotEmpty || _saved.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 16, bottom: 5),
+                child: Text('Saved',
+                    style: Theme.of(context).textTheme.titleSmall),
+              ),
+            for (final target in _manual)
+              ListTile(
+                key: ValueKey('xbox-manual-' + target.host),
+                dense: true,
+                leading: const Icon(Icons.sports_esports_rounded),
+                title: Text(target.name),
+                subtitle: Text(target.host),
+                onTap: () => setState(() {
+                  _ip.text = target.host;
+                  _selected = null;
+                  _message = '';
+                }),
+                trailing: IconButton(
+                  tooltip: 'Forget ' + target.name,
+                  onPressed: () => _forgetManual(target.host),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+            for (final device in _saved)
+              if (!_manual.any((item) => item.host == device.host))
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.sports_esports_rounded),
+                  title: Text(device.name),
+                  subtitle: Text(device.host),
+                  onTap: () => setState(() {
+                    _selected = device;
+                    _ip.text = device.host;
+                    _message = '';
+                  }),
+                ),
+          ],
+          for (final device in _found)
+            if (selected == null || device.host != selected.host)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.sports_esports_rounded),
+                title: Text(device.name),
+                subtitle: Text(device.host),
+                onTap: () => setState(() {
+                  _selected = device;
+                  _ip.text = device.host;
+                }),
+              ),
         ],
       )),
     );
