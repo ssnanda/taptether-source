@@ -474,17 +474,6 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             label: const Text('Save Xbox to Devices'),
           ),
           const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _byIp,
-            icon: const Icon(Icons.search),
-            label: const Text('Check Xbox IP'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _scanFullNetwork(),
-            icon: const Icon(Icons.radar),
-            label: const Text('Find Xbox across this Wi-Fi'),
-          ),
           TextButton.icon(
             onPressed: _busy ? null
                 : () => _scanFullNetwork(deepTcp: true),
