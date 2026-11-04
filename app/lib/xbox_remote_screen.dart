@@ -481,7 +481,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               ),
             for (final target in _manual)
               ListTile(
-                key: ValueKey('xbox-manual-' + target.host),
+                key: ValueKey('xbox-manual-${target.host}'),
                 dense: true,
                 leading: const Icon(Icons.sports_esports_rounded),
                 title: Text(target.name),
@@ -492,7 +492,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
                   _message = '';
                 }),
                 trailing: IconButton(
-                  tooltip: 'Forget ' + target.name,
+                  tooltip: 'Forget ${target.name}',
                   onPressed: () => _forgetManual(target.host),
                   icon: const Icon(Icons.close_rounded),
                 ),
