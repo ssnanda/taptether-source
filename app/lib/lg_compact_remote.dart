@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'tv_remote_controller.dart';
 import 'phone_sound_meter.dart';
 import 'lg_voice_search.dart';
 
-/// Single-screen TV remote. Optional actions open overlays, never add rows.
+/// Single-screen TV remote with an in-place touchpad/directional-pad toggle.
 class LgCompactRemote extends StatefulWidget {
   const LgCompactRemote({super.key, required this.client,
     required this.device, required this.onError});
@@ -26,6 +29,9 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
   bool _mediaPlaying = true;
   bool _mediaBusy = false;
   bool _voiceSearchOpen = false;
+  bool _arrowsMode = false;
+  bool _repeatBusy = false;
+  Timer? _directionRepeat;
   DateTime _lastPan = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -187,42 +193,113 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
     );
   }
 
-  Future<void> _openDpad() async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialog) {
-        Widget key(String key, IconData icon) => IconButton.filledTonal(
-          tooltip: key, iconSize: 30, icon: Icon(icon),
-          onPressed: () => unawaited(_run(
-              () => widget.client.button(key))),
-        );
-        return AlertDialog(
-          title: const Text('Navigation'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            key('UP', Icons.keyboard_arrow_up),
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              key('LEFT', Icons.keyboard_arrow_left),
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(20)),
-                  onPressed: () => unawaited(_run(
-                      () => widget.client.button('ENTER'))),
-                  child: const Text('OK'),
-                )),
-              key('RIGHT', Icons.keyboard_arrow_right),
-            ]),
-            key('DOWN', Icons.keyboard_arrow_down),
-          ]),
-          actions: [TextButton(
-            onPressed: () => Navigator.pop(dialog),
-            child: const Text('Close'),
-          )],
-        );
+  void _stopDirectionRepeat() {
+    _directionRepeat?.cancel();
+    _directionRepeat = null;
+  }
+
+  void _pressDirection(String command) {
+    unawaited(HapticFeedback.selectionClick());
+    unawaited(_run(() => widget.client.button(command)));
+  }
+
+  void _repeatDirection(String command) {
+    if (_repeatBusy || !widget.client.connected) return;
+    _repeatBusy = true;
+    unawaited(_run(() => widget.client.button(command))
+        .whenComplete(() => _repeatBusy = false));
+  }
+
+  void _startDirectionRepeat(String command) {
+    _stopDirectionRepeat();
+    unawaited(HapticFeedback.selectionClick());
+    _repeatDirection(command);
+    _directionRepeat = Timer.periodic(
+      const Duration(milliseconds: 210), (_) {
+        if (!mounted || !_arrowsMode) {
+          _stopDirectionRepeat();
+          return;
+        }
+        _repeatDirection(command);
       },
     );
   }
+
+  void _toggleNavigationMode() {
+    _stopDirectionRepeat();
+    setState(() => _arrowsMode = !_arrowsMode);
+  }
+
+  Widget _directionKey(String command, IconData icon, double size,
+      ColorScheme scheme) {
+    final isOk = command == 'ENTER';
+    return Semantics(
+      label: isOk ? 'OK' : command,
+      button: true,
+      child: GestureDetector(
+        key: ValueKey('lg-dpad-' + command.toLowerCase()),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _pressDirection(command),
+        onLongPressStart: isOk ? null
+            : (_) => _startDirectionRepeat(command),
+        onLongPressEnd: isOk ? null : (_) => _stopDirectionRepeat(),
+        onLongPressCancel: isOk ? null : _stopDirectionRepeat,
+        child: SizedBox(
+          height: size, width: size,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isOk ? scheme.primary : scheme.primaryContainer,
+            ),
+            child: Center(
+              child: isOk
+                  ? Text('OK', style: TextStyle(
+                      fontSize: size * .25,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onPrimary))
+                  : Icon(icon, size: size * .53,
+                      color: scheme.onPrimaryContainer),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _directionPad(ColorScheme scheme) => LayoutBuilder(
+    builder: (context, constraints) {
+      // Fit five large buttons into the same space as the touchpad.
+      final usable = math.min(
+        constraints.maxWidth - 20, constraints.maxHeight - 20);
+      final size = (usable / 3.32).clamp(34.0, 122.0).toDouble();
+      final gap = (size * .16).clamp(6.0, 18.0).toDouble();
+      return Center(
+        child: SizedBox(
+          width: size * 3 + gap * 2,
+          height: size * 3 + gap * 2,
+          child: Column(mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _directionKey('UP', Icons.keyboard_arrow_up_rounded,
+                  size, scheme),
+              SizedBox(height: gap),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                _directionKey('LEFT', Icons.keyboard_arrow_left_rounded,
+                    size, scheme),
+                SizedBox(width: gap),
+                _directionKey('ENTER', Icons.circle, size, scheme),
+                SizedBox(width: gap),
+                _directionKey('RIGHT', Icons.keyboard_arrow_right_rounded,
+                    size, scheme),
+              ]),
+              SizedBox(height: gap),
+              _directionKey('DOWN', Icons.keyboard_arrow_down_rounded,
+                  size, scheme),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 
   Future<void> _openVoiceSearch() async {
     if (!widget.client.connected) {
@@ -413,35 +490,39 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
               _apps.isEmpty ? null : _openApps),
         ]),
         SizedBox(height: tight ? 4 : 8),
-        Expanded(child: Semantics(
-          label: widget.client.pointerIsRelative
-              ? 'TV touchpad. Swipe to move pointer and tap to click.'
-              : 'TV touchpad. Swipe for arrow navigation and tap for OK.',
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanUpdate: _pan,
-            onTap: () => unawaited(_run(widget.client.pointerClick)),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer.withValues(alpha: .30),
-                border: Border.all(color: scheme.outlineVariant),
-                borderRadius: BorderRadius.circular(23),
-              ),
-              child: Center(child: Column(
-                mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Icon(Icons.touch_app_outlined, size: 32),
-                  const SizedBox(height: 7),
-                  const Text('Touchpad',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Text(widget.client.pointerIsRelative
-                      ? 'Swipe to browse · Tap to click'
-                      : 'Swipe for arrows · Tap for OK',
-                      style: const TextStyle(fontSize: 12)),
-                ],
-              )),
-            ),
+        Expanded(child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer.withValues(alpha: .30),
+            border: Border.all(color: scheme.outlineVariant),
+            borderRadius: BorderRadius.circular(23),
           ),
+          child: _arrowsMode
+              ? _directionPad(scheme)
+              : Semantics(
+                  label: widget.client.pointerIsRelative
+                      ? 'TV touchpad. Swipe to move pointer and tap to click.'
+                      : 'TV touchpad. Swipe for arrow navigation and tap for OK.',
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onPanUpdate: _pan,
+                    onTap: () => unawaited(
+                        _run(widget.client.pointerClick)),
+                    child: Center(child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.touch_app_outlined, size: 32),
+                        const SizedBox(height: 7),
+                        const Text('Touchpad',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(widget.client.pointerIsRelative
+                            ? 'Swipe to browse · Tap to click'
+                            : 'Swipe for arrows · Tap for OK',
+                            style: const TextStyle(fontSize: 12)),
+                      ],
+                    )),
+                  ),
+                ),
         )),
         SizedBox(height: tight ? 5 : 9),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
@@ -450,9 +531,11 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
           _actionIcon('Back', Icons.arrow_back, () =>
             unawaited(_run(() => widget.client.button('BACK')))),
           IconButton.filledTonal(
-            tooltip: 'Arrows and OK',
-            icon: const Icon(Icons.gamepad_outlined),
-            onPressed: _openDpad,
+            key: const ValueKey('lg-navigation-mode-toggle'),
+            tooltip: _arrowsMode ? 'Touchpad' : 'Arrows and OK',
+            icon: Icon(_arrowsMode
+                ? Icons.touch_app_outlined : Icons.gamepad_outlined),
+            onPressed: _toggleNavigationMode,
           ),
           _actionIcon('Keyboard', Icons.keyboard_outlined, _openKeyboard),
           _actionIcon('Voice search', Icons.mic_none, _openVoiceSearch),
@@ -491,6 +574,7 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
   @override
   void dispose() {
     _timer?.cancel();
+    _stopDirectionRepeat();
     _typing.dispose();
     super.dispose();
   }

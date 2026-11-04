@@ -99,6 +99,28 @@ void main() {
     expect(find.byType(BottomSheet), findsNothing);
   });
 
+  testWidgets('holding an arrow repeats and releasing stops it',
+      (tester) async {
+    final fake = FakeLgRemote();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SizedBox(width: 390, height: 600,
+        child: LgCompactRemote(
+          client: fake, device: fake.device, onError: (_) {})))));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Arrows and OK'));
+    await tester.pump();
+    final up = find.byKey(const ValueKey('lg-dpad-up'));
+    final gesture = await tester.startGesture(tester.getCenter(up));
+    await tester.pump(const Duration(milliseconds: 750));
+    final heldCount = fake.remoteButtons.where((key) => key == 'UP').length;
+    expect(heldCount, greaterThan(1));
+    await gesture.up();
+    await tester.pump();
+    final afterRelease = fake.remoteButtons.length;
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(fake.remoteButtons.length, afterRelease);
+  });
+
   testWidgets('compact remote fits viewport without scrolling or number pad',
       (tester) async {
     final fake = FakeLgRemote();
@@ -120,8 +142,31 @@ void main() {
     await tester.pump();
     expect(fake.clicks, 1);
     await tester.tap(find.byTooltip('Arrows and OK'));
-    await tester.pumpAndSettle();
-    expect(find.text('Navigation'), findsOneWidget);
+    await tester.pump();
+    expect(find.text('Navigation'), findsNothing);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('Touchpad'), findsNothing);
     expect(find.text('OK'), findsOneWidget);
+    expect(find.byTooltip('Touchpad'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('lg-dpad-up')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('lg-dpad-left')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('lg-dpad-enter')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('lg-dpad-right')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('lg-dpad-down')));
+    await tester.pump();
+    expect(fake.remoteButtons,
+        containsAllInOrder(['UP', 'LEFT', 'ENTER', 'RIGHT', 'DOWN']));
+    await tester.tap(find.byTooltip('Touchpad'));
+    await tester.pump();
+    expect(find.text('Touchpad'), findsOneWidget);
+    expect(find.text('OK'), findsNothing);
+    expect(find.byTooltip('Arrows and OK'), findsOneWidget);
+    await tester.tap(find.text('Touchpad'));
+    await tester.pump();
+    expect(fake.clicks, 2);
   });
 }
