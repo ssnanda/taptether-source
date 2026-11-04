@@ -104,10 +104,16 @@ assert "recordBackgroundWake" in fridge_notifications
 assert "recordBackgroundResult" in fridge_notifications
 assert "Background monitor status" in mobile_dashboard
 xbox_ui = (ROOT / "app" / "lib" / "xbox_remote_screen.dart").read_text()
-assert "Check Xbox IP" in xbox_ui
-assert "Find Xbox across this Wi-Fi" in xbox_ui
+assert "1 · Find Xbox or enter its IP" in xbox_ui
+assert "2 · Remote Features enabled" in xbox_ui
+assert "3 · Connect & test controller" in xbox_ui
+assert "Scan Wi-Fi" in xbox_ui
 assert "Deep network diagnostics (slower)" in xbox_ui
 assert "Xbox Remote Play" in xbox_ui
+controller = (ROOT / "app" / "lib" / "xbox_remote_session_screen.dart").read_text()
+assert "XboxVirtualGamepad.buttonScript" in controller
+assert "WebViewWidget(controller: _browser)" in controller
+assert "XboxRemoteSessionScreen(host: host)" in xbox_ui
 xbox_protocol = (ROOT / "app" / "lib" / "xbox_smartglass.dart").read_text()
 assert "inspectXboxDiscovery" in xbox_protocol
 assert "XboxPacketDiagnosis" in xbox_protocol
