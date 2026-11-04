@@ -70,6 +70,8 @@ on:
       - 'versions/macos-agent.txt'
       - 'app/lib/xbox_*.dart'
       - 'app/test/xbox_*.dart'
+      - 'app/lib/govee_*.dart'
+      - 'app/test/govee_*.dart'
       - 'app/lib/dashboard_visuals.dart'
       - 'app/lib/device_dashboard_header.dart'
       - 'app/lib/device_visibility.dart'
