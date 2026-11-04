@@ -104,11 +104,11 @@ assert "recordBackgroundWake" in fridge_notifications
 assert "recordBackgroundResult" in fridge_notifications
 assert "Background monitor status" in mobile_dashboard
 xbox_ui = (ROOT / "app" / "lib" / "xbox_remote_screen.dart").read_text()
-assert "1 · Find Xbox or enter its IP" in xbox_ui
-assert "2 · Remote Features enabled" in xbox_ui
-assert "3 · Connect & test controller" in xbox_ui
-assert "Scan Wi-Fi" in xbox_ui
-assert "Deep network diagnostics (slower)" in xbox_ui
+assert "label: const Text('Scan')" in xbox_ui
+assert "label: const Text('Connect')" in xbox_ui
+assert "label: const Text('Save')" in xbox_ui
+assert "xbox-diagnostics-toggle" in xbox_ui
+assert "2 · Remote Features enabled" not in xbox_ui
 assert "Xbox Remote Play" in xbox_ui
 controller = (ROOT / "app" / "lib" / "xbox_remote_session_screen.dart").read_text()
 assert "XboxVirtualGamepad.buttonScript" in controller
