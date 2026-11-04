@@ -10,7 +10,7 @@ import 'xbox_network_diagnostics.dart';
 import 'xbox_manual_targets.dart';
 import 'xbox_remote_session_screen.dart';
 
-/// TapTether 0.8.77: guided Xbox Remote Play controller proof-of-concept.
+/// TapTether 0.8.78: compact Xbox remote controls and direct connect.
 /// Connect to Microsoft's actual Xbox Remote Play touch controller.
 /// Legacy LAN discovery and SmartGlass wake are optional independent tools.
 class XboxRemoteScreen extends StatefulWidget {
