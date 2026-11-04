@@ -7,6 +7,10 @@ void main() {
     expect(XboxVirtualGamepad.buttonB, 1);
     expect(XboxVirtualGamepad.buttonX, 2);
     expect(XboxVirtualGamepad.buttonY, 3);
+    expect(XboxVirtualGamepad.lb, 4);
+    expect(XboxVirtualGamepad.rb, 5);
+    expect(XboxVirtualGamepad.lt, 6);
+    expect(XboxVirtualGamepad.rt, 7);
     expect(XboxVirtualGamepad.view, 8);
     expect(XboxVirtualGamepad.menu, 9);
     expect(XboxVirtualGamepad.up, 12);
@@ -28,7 +32,9 @@ void main() {
         throwsArgumentError);
     expect(() => XboxVirtualGamepad.buttonScript(99, true),
         throwsArgumentError);
-    expect(() => XboxVirtualGamepad.buttonScript(6, true),
+    expect(XboxVirtualGamepad.buttonScript(6, true),
+        contains('pad.button(6,true)'));
+    expect(() => XboxVirtualGamepad.buttonScript(17, true),
         throwsArgumentError);
   });
 
@@ -50,6 +56,7 @@ void main() {
     expect(XboxVirtualGamepad.bootstrap, contains('getGamepads'));
     expect(XboxVirtualGamepad.bootstrap, contains('window.__tapTetherVirtualGamepad'));
     expect(XboxVirtualGamepad.bootstrap, contains('releaseAll'));
+    expect(XboxVirtualGamepad.bootstrap, contains('GamepadEvent'));
     expect(XboxVirtualGamepad.bootstrap, isNot(contains('xbl.io')));
   });
 }
