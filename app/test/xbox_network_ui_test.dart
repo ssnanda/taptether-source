@@ -19,15 +19,23 @@ void main() {
       },
     )));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(TextField, 'Xbox IP address'), findsOneWidget);
-    expect(find.text('3 · Connect & test controller'), findsOneWidget);
-    expect(find.byKey(const ValueKey('xbox-remote-features')), findsOneWidget);
-    expect(find.text('Save Xbox to Devices'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Xbox IP'), findsOneWidget);
+    expect(find.text('Scan'), findsOneWidget);
+    expect(find.text('Connect'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.textContaining('Remote Features'), findsNothing);
+    expect(find.text('Deep scan'), findsNothing);
+    expect(tester.getTopLeft(find.byKey(const ValueKey('xbox-scan'))).dx,
+        lessThan(tester.getTopLeft(
+          find.byKey(const ValueKey('xbox-connect'))).dx));
+    expect(tester.getTopLeft(find.byKey(
+        const ValueKey('xbox-connect'))).dx,
+        lessThan(tester.getTopLeft(
+          find.byKey(const ValueKey('xbox-save-manual'))).dx));
+    await tester.tap(find.byKey(const ValueKey('xbox-diagnostics-toggle')));
+    await tester.pumpAndSettle();
     expect(find.text('Check IP'), findsOneWidget);
-    expect(find.text('Scan Wi-Fi'), findsOneWidget);
-    expect(find.text('Check IP').evaluate().first.renderObject,
-        isNotNull);
-    expect(find.text('Deep network diagnostics (slower)'), findsOneWidget);
+    expect(find.text('Deep scan'), findsOneWidget);
     await tester.tap(find.text('Check IP'));
     await tester.pumpAndSettle();
     expect(targets, ['192.168.68.84']);
@@ -44,15 +52,10 @@ void main() {
       },
     )));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(
-        const ValueKey('xbox-remote-features')));
-    await tester.tap(find.byKey(const ValueKey('xbox-remote-features')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const ValueKey('xbox-connect')));
     await tester.tap(find.byKey(const ValueKey('xbox-connect')));
     await tester.pumpAndSettle();
     expect(opened, 1);
-    expect(find.textContaining('Microsoft Remote Play opened'), findsOneWidget);
+    expect(find.text('Opened'), findsOneWidget);
   });
 
   testWidgets('Save Xbox IP works without an Xbox discovery response',
@@ -63,15 +66,13 @@ void main() {
       onSaved: () async { saved++; },
     )));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Save Xbox to Devices'));
-    await tester.tap(find.text('Save Xbox to Devices'));
+    await tester.tap(find.byKey(const ValueKey('xbox-save-manual')));
     await tester.pumpAndSettle();
-    expect(find.text('Save Xbox address'), findsOneWidget);
-    expect(find.textContaining('not been authenticated'), findsOneWidget);
+    expect(find.text('Save Xbox'), findsOneWidget);
+    expect(find.textContaining('not been authenticated'), findsNothing);
     await tester.tap(find.widgetWithText(FilledButton, 'Save').last);
     await tester.pumpAndSettle();
     expect(saved, 1);
-    expect(find.textContaining('saved in Devices as an unverified address'),
-        findsOneWidget);
+    expect(find.text('Saved'), findsOneWidget);
   });
 }
