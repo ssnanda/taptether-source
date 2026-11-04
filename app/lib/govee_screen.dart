@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'govee_api.dart';
+import 'govee_placement.dart';
 
 /// Govee Home integration using Govee's published developer API.
 /// The only saved credential is the user's API key, in iOS Keychain.
@@ -16,6 +17,8 @@ class GoveeScreen extends StatefulWidget {
 
 class _GoveeScreenState extends State<GoveeScreen> {
   final _connection = GoveeConnection();
+  final _placementStore = GoveePlacementStore();
+  Map<String, GoveePlacement> _placements = {};
   final _keyInput = TextEditingController();
   final _working = <String>{};
   List<GoveeDevice> _devices = GoveeConnection.cachedDevices;
@@ -41,10 +44,13 @@ class _GoveeScreenState extends State<GoveeScreen> {
 
   Future<void> _start() async {
     try {
+      final placements = await _placementStore.read();
       final connected = await _connection.restore();
       if (!mounted) return;
       setState(() {
+        _placements = placements;
         _connected = connected;
+        if (!connected) _devices = [];
         _loading = false;
       });
       if (connected) unawaited(_refresh());
@@ -100,17 +106,21 @@ class _GoveeScreenState extends State<GoveeScreen> {
       final devices = await _connection.devices();
       if (!mounted) return;
       setState(() { _devices = devices; _checked = DateTime.now(); });
-      // A failed status query never hides otherwise controllable devices.
-      // Serial queries avoid saturating an account with concurrent requests.
-      for (final device in devices) {
+      // H5054 sleeping leak sensors use a separate Govee app/gateway feed.
+      // The developer API's offline flag would mislabel them. Skip the
+      // unsupported poll, and query other supported devices in small batches.
+      final queryable = devices.where((d) => d.sku.toUpperCase() != 'H5054')
+          .toList();
+      for (var start = 0; start < queryable.length; start += 4) {
         if (!mounted) return;
-        try {
-          final live = await _connection.updateState(device);
-          if (!mounted) return;
-          setState(() => _replace(live));
-        } catch (_) {
-          // The API may omit state support on older devices.
-        }
+        await Future.wait(queryable.skip(start).take(4).map((device) async {
+          try {
+            final live = await _connection.updateState(device);
+            if (mounted) setState(() => _replace(live));
+          } catch (_) {
+            // Leave this device's status unknown, never mark it offline.
+          }
+        }));
       }
     } on GoveeApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -125,6 +135,124 @@ class _GoveeScreenState extends State<GoveeScreen> {
     _devices = [
       for (final d in _devices) d.id == updated.id ? updated : d,
     ];
+  }
+
+  Future<void> _organize({GoveeDevice? device}) async {
+    final selected = <String>{
+      if (device != null) goveeDeviceKey(device),
+    };
+    final initial = device == null
+        ? const GoveePlacement()
+        : _placements[goveeDeviceKey(device)] ?? const GoveePlacement();
+    final locationInput = TextEditingController(text: initial.location);
+    final roomInput = TextEditingController(text: initial.room);
+    final answer = await showDialog<({Set<String> ids, GoveePlacement value})>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, redraw) => AlertDialog(
+          title: Text(device == null
+              ? 'Organize IoT devices' : 'Organize ${device.name}'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  key: const ValueKey('govee-location'),
+                  controller: locationInput,
+                  maxLength: 60,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Location (optional)',
+                    hintText: 'Home, Office',
+                  ),
+                ),
+                TextField(
+                  key: const ValueKey('govee-room'),
+                  controller: roomInput,
+                  maxLength: 60,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Room (optional)',
+                    hintText: 'Kitchen, Upstairs, Restroom',
+                  ),
+                ),
+                if (device == null) ...[
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Apply to selected devices:'),
+                  ),
+                  SizedBox(
+                    height: 235,
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _devices.length,
+                      itemBuilder: (_, index) {
+                        final item = _devices[index];
+                        final id = goveeDeviceKey(item);
+                        return CheckboxListTile(
+                          key: ValueKey('govee-select-$id'),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(item.name,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                          value: selected.contains(id),
+                          onChanged: (checked) => redraw(() {
+                            if (checked == true) {
+                              selected.add(id);
+                            } else {
+                              selected.remove(id);
+                            }
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const ValueKey('govee-save-placement'),
+              onPressed: selected.isEmpty ? null : () {
+                Navigator.pop(dialogContext, (
+                  ids: Set<String>.from(selected),
+                  value: GoveePlacement(
+                    location: locationInput.text.trim(),
+                    room: roomInput.text.trim(),
+                  ),
+                ));
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    locationInput.dispose();
+    roomInput.dispose();
+    if (answer == null || !mounted) return;
+    final changed = Map<String, GoveePlacement>.from(_placements);
+    for (final id in answer.ids) {
+      if (answer.value.isEmpty) {
+        changed.remove(id);
+      } else {
+        changed[id] = answer.value;
+      }
+    }
+    try {
+      await _placementStore.save(changed);
+      if (mounted) setState(() { _placements = changed; _error = null; });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Unable to save IoT rooms and locations.');
+      }
+    }
   }
 
   Future<void> _command(GoveeDevice device, Future<void> Function() send,
@@ -224,26 +352,41 @@ class _GoveeScreenState extends State<GoveeScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             CircleAvatar(
+              radius: 17,
               backgroundColor: device.isLight
                 ? theme.colorScheme.primaryContainer
                 : theme.colorScheme.secondaryContainer,
               child: Icon(device.isLight ? Icons.lightbulb_rounded
-                  : Icons.devices_other_rounded),
+                  : device.isPassiveSensor ? Icons.sensors_rounded
+                  : Icons.devices_other_rounded, size: 19),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(device.name, maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium),
                 Text(
-                  device.online == false ? 'Offline · ${device.sku}'
-                    : device.online == true ? 'Online · ${device.sku}'
-                    : 'Govee · ${device.sku}',
+                  '${device.availabilityLabel} · ${device.sku}',
+                  maxLines: 2,
                   style: theme.textTheme.bodySmall,
                 ),
+                if ((_placements[goveeDeviceKey(device)]?.location
+                        .isNotEmpty ?? false) &&
+                    (_placements[goveeDeviceKey(device)]?.room
+                        .isNotEmpty ?? false))
+                  Text(
+                    'Room: ${_placements[goveeDeviceKey(device)]!.room}',
+                    style: theme.textTheme.bodySmall,
+                  ),
               ],
             )),
+            IconButton(
+              key: ValueKey('govee-edit-${goveeDeviceKey(device)}'),
+              icon: const Icon(Icons.edit_outlined, size: 19),
+              tooltip: 'Assign location or room to ${device.name}',
+              onPressed: () => _organize(device: device),
+            ),
             if (busy) const SizedBox(height: 18, width: 18,
               child: CircularProgressIndicator(strokeWidth: 2)),
             if (device.hasPower) Switch.adaptive(
@@ -253,6 +396,18 @@ class _GoveeScreenState extends State<GoveeScreen> {
                 device.withLocal(powered: on)) : null,
             ),
           ]),
+          if (device.sensorTemperature != null ||
+              device.sensorHumidity != null) ...[
+            const SizedBox(height: 5),
+            Wrap(spacing: 12, children: [
+              if (device.sensorTemperature != null)
+                Text('Temp ${device.sensorTemperature}',
+                    style: theme.textTheme.bodySmall),
+              if (device.sensorHumidity != null)
+                Text('Humidity ${device.sensorHumidity}%',
+                    style: theme.textTheme.bodySmall),
+            ]),
+          ],
           if (device.hasBrightness) ...[
             const SizedBox(height: 12),
             Row(children: [
@@ -354,45 +509,112 @@ class _GoveeScreenState extends State<GoveeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final groups = goveeGroups(_devices, _placements);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.settingsOnly ? 'Govee API' : 'Govee Devices'),
+        title: Text(widget.settingsOnly ? 'Govee API' : 'IoT'),
         actions: [
-          IconButton(
-            tooltip: 'Refresh Govee devices',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _connected && !_loading ? _refresh : null),
+          if (!widget.settingsOnly)
+            IconButton(
+              key: const ValueKey('iot-settings'),
+              tooltip: 'Govee API settings',
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const GoveeScreen(settingsOnly: true)));
+                if (mounted) {
+                  setState(() => _loading = true);
+                  await _start();
+                }
+              },
+              icon: const Icon(Icons.settings_outlined)),
+          if (!widget.settingsOnly)
+            IconButton(
+              tooltip: 'Refresh IoT devices',
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: _connected && !_loading ? _refresh : null),
         ],
       ),
       body: SafeArea(child: ListView(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         children: [
-          _credentialPanel(theme),
-          if (_error != null) Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(_error!, style: TextStyle(
-                color: theme.colorScheme.error)),
-          ),
-          if (_loading) const LinearProgressIndicator(),
-          if (_connected) ...[
+          if (widget.settingsOnly || !_connected)
+            _credentialPanel(theme),
+          if (_error != null)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(children: [
-                Text('Your devices', style: theme.textTheme.titleLarge),
-                const Spacer(),
-                Text('${_devices.length}', style: theme.textTheme.titleMedium),
-              ]),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(_error!, style: TextStyle(
+                color: theme.colorScheme.error)),
             ),
+          if (_loading) const LinearProgressIndicator(),
+          if (_connected && !widget.settingsOnly) ...[
+            Row(children: [
+              Expanded(child: Text('Govee · ${_devices.length} devices',
+                  style: theme.textTheme.titleMedium)),
+              TextButton.icon(
+                key: const ValueKey('govee-organize'),
+                onPressed: _devices.isEmpty ? null : () => _organize(),
+                icon: const Icon(Icons.room_preferences_outlined, size: 18),
+                label: const Text('Organize'),
+              ),
+            ]),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 9),
+              child: Text('Grouped by location, or by room when no location '
+                  'is set. Tap the pencil to assign either.'),
+            ),
+            if (_devices.any((d) => d.sku.toUpperCase() == 'H5054'))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'H5054 leak and battery updates are available in Govee '
+                  'Home, not the developer API. Status here is unavailable '
+                  'rather than assumed offline.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
             if (_devices.isEmpty && !_loading)
-              const Padding(padding: EdgeInsets.all(20),
-                child: Text('No compatible Govee devices found. '
-                    'Check the API key and which devices Govee exposes.')),
-            for (final device in _devices) _deviceCard(theme, device),
-            if (_checked != null) const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text('Controls are shown only when supported by Govee. '
-                  'Device status is refreshed when this page opens or you tap refresh.'),
-            ),
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No supported Govee devices returned. '
+                    'Check your Govee API connection.'),
+              ),
+            for (final entry in groups.entries)
+              Container(
+                key: ValueKey('govee-group-${entry.key}'),
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.fromLTRB(9, 9, 9, 3),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(15),
+                  color: theme.colorScheme.surfaceContainerLow,
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(Icons.location_on_outlined,
+                        size: 17, color: theme.colorScheme.primary),
+                      const SizedBox(width: 7),
+                      Expanded(child: Text(entry.key,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold))),
+                      Text('${entry.value.length}',
+                        style: theme.textTheme.labelMedium),
+                      const SizedBox(width: 8),
+                    ]),
+                    const SizedBox(height: 8),
+                    for (final device in entry.value)
+                      _deviceCard(theme, device),
+                  ],
+                ),
+              ),
+            if (_checked != null)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text('Latest refresh: ${TimeOfDay.fromDateTime(_checked!).format(context)}. '
+                  'Some sensor values are not exposed by the Govee API.',
+                  style: theme.textTheme.bodySmall),
+              ),
           ],
         ],
       )),
