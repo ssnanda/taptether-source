@@ -563,14 +563,6 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               'sign in to your Microsoft account. '
               'Sleep mode is needed only for standby wake.',
               style: Theme.of(context).textTheme.bodySmall),
-          if (selected == null) ...[
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _openRemotePlay,
-              icon: const Icon(Icons.open_in_browser),
-              label: const Text('Open Xbox Remote Play'),
-            ),
-          ],
           if (widget.initialHost == null) ...[
             const SizedBox(height: 12),
             for (final target in _manual) ListTile(
