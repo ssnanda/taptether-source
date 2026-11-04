@@ -49,6 +49,8 @@ class GoveeDevice {
     this.color,
     this.colorTemperature,
     this.scene,
+    this.sensorTemperature,
+    this.sensorHumidity,
   });
   final String sku;
   final String id;
@@ -61,6 +63,27 @@ class GoveeDevice {
   final int? color;
   final int? colorTemperature;
   final int? scene;
+  final num? sensorTemperature;
+  final num? sensorHumidity;
+
+  bool get isPassiveSensor => sku.toUpperCase() == 'H5054' ||
+      kind == 'devices.types.sensor' ||
+      kind == 'devices.types.thermometer' ||
+      kind == 'devices.types.air_quality_monitor';
+
+  /// Govee's developer API is not its app's sensor/gateway status feed.
+  /// In particular, the sleeping H5054 is often reported offline even
+  /// though alerts arrive in Govee Home through its own gateway.
+  String get availabilityLabel {
+    if (sku.toUpperCase() == 'H5054') {
+      return 'Status unavailable via API';
+    }
+    if (online == true) return 'Online';
+    if (online == false) {
+      return isPassiveSensor ? 'No live API status' : 'Offline';
+    }
+    return 'Status unavailable';
+  }
 
   factory GoveeDevice.fromJson(Map<String, dynamic> json) {
     final caps = json['capabilities'];
@@ -101,12 +124,16 @@ class GoveeDevice {
     brightness: brightness ?? this.brightness, color: color ?? this.color,
     colorTemperature: colorTemperature ?? this.colorTemperature,
     scene: scene ?? this.scene,
+    sensorTemperature: sensorTemperature,
+    sensorHumidity: sensorHumidity,
   );
 
   GoveeDevice withState(Map<String, dynamic> payload) {
     bool? newOnline = online, newPower = powered;
     int? newBrightness = brightness, newColor = color;
     int? newTemperature = colorTemperature, newScene = scene;
+    num? newSensorTemperature = sensorTemperature;
+    num? newSensorHumidity = sensorHumidity;
     final list = payload['capabilities'];
     if (list is List) {
       for (final c in list.whereType<Map>()) {
@@ -116,6 +143,12 @@ class GoveeDevice {
         switch (instance) {
           case 'online':
             if (value is bool) newOnline = value;
+            break;
+          case 'sensorTemperature':
+            if (value is num) newSensorTemperature = value;
+            break;
+          case 'sensorHumidity':
+            if (value is num) newSensorHumidity = value;
             break;
           case 'powerSwitch':
             if (value is num) newPower = value != 0;
@@ -139,6 +172,8 @@ class GoveeDevice {
       sku: sku, id: id, name: name, kind: kind, capabilities: capabilities,
       online: newOnline, powered: newPower, brightness: newBrightness,
       color: newColor, colorTemperature: newTemperature, scene: newScene,
+      sensorTemperature: newSensorTemperature,
+      sensorHumidity: newSensorHumidity,
     );
   }
 }
