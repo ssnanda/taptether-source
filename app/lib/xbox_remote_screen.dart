@@ -127,7 +127,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     );
     final name = await showDialog<String>(context: context, builder: (context) =>
       AlertDialog(
-        title: const Text('Save Xbox address'),
+        title: const Text('Save Xbox'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           Text('Address: $host'),
           const SizedBox(height: 12),
@@ -136,8 +136,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             maxLength: 60,
             decoration: const InputDecoration(labelText: 'Xbox name'),
           ),
-          const Text('Saved manually — the console has not been '
-              'authenticated or discovered by TapTether.'),
+          const SizedBox.shrink(),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context),
