@@ -10,6 +10,7 @@ import 'xbox_network_diagnostics.dart';
 import 'xbox_manual_targets.dart';
 import 'xbox_remote_play.dart';
 
+/// TapTether 0.8.76 Xbox Connect: real Microsoft Remote Play touch controls.
 /// Connect to Microsoft's actual Xbox Remote Play touch controller.
 /// Legacy LAN discovery and SmartGlass wake are optional independent tools.
 class XboxRemoteScreen extends StatefulWidget {
