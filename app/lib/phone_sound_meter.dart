@@ -3,85 +3,108 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// A rough on-phone ambient sound estimate, NOT a calibrated dB SPL reading.
-/// Phone microphone gain and placement vary, so we avoid claiming the TV alone
-/// produced the sound or that this value is suitable for safety decisions.
+/// A rough estimate of ambient sound at the phone, not calibrated TV SPL.
 double approximateAmbientDb(double dbfs, {double correction = 0}) =>
     (dbfs + 100 + correction).clamp(0.0, 120.0).toDouble();
 
-class PhoneSoundMeterSheet extends StatefulWidget {
-  const PhoneSoundMeterSheet({super.key});
+/// Measures while the TV remote is visible; never saves or uploads audio.
+class PhoneSoundLevelInline extends StatefulWidget {
+  const PhoneSoundLevelInline({super.key, this.enabled = true});
+
+  /// Suspend capture when voice search needs the microphone.
+  final bool enabled;
 
   @override
-  State<PhoneSoundMeterSheet> createState() => _PhoneSoundMeterSheetState();
+  State<PhoneSoundLevelInline> createState() => _PhoneSoundLevelInlineState();
 }
 
-class _PhoneSoundMeterSheetState extends State<PhoneSoundMeterSheet>
+class _PhoneSoundLevelInlineState extends State<PhoneSoundLevelInline>
     with WidgetsBindingObserver {
   static const _channel = MethodChannel('taptether/sound-meter');
+  bool _foreground = true;
   bool _starting = false;
   bool _running = false;
+  bool _unavailable = false;
   double? _dbfs;
-  String? _error;
-  double _calibration = 0;
+
+  bool get _shouldRun => mounted && _foreground && widget.enabled;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _channel.setMethodCallHandler((call) async {
-      if (call.method != 'level' || !mounted || !_running) return;
+      if (call.method != 'level' || !mounted || !_running || !_shouldRun) {
+        return;
+      }
       final args = call.arguments;
       if (args is Map && args['dbfs'] is num) {
         setState(() => _dbfs = (args['dbfs'] as num).toDouble());
       }
     });
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) {
-      unawaited(_stop());
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_start());
+    });
   }
 
   Future<void> _start() async {
-    if (_starting || _running) return;
-    setState(() { _starting = true; _error = null; });
+    if (!_shouldRun || _running || _starting) return;
+    _starting = true;
     try {
       final allowed = await _channel.invokeMethod<bool>('start') ?? false;
-      if (!mounted) {
-        if (allowed) await _channel.invokeMethod<void>('stop');
+      if (!_shouldRun) {
+        if (allowed) await _stop();
         return;
       }
       setState(() {
         _running = allowed;
-        if (!allowed) {
-          _error = 'Microphone access is off. Allow TapTether microphone '
-              'access in iPhone Settings to measure room sound.';
-        }
+        _unavailable = !allowed;
+        _dbfs = null;
       });
-    } on PlatformException catch (_) {
-      if (mounted) {
-        setState(() =>
-            _error = 'Unable to start the phone microphone. Try again.');
-      }
+    } on PlatformException {
+      if (_shouldRun) setState(() => _unavailable = true);
     } on MissingPluginException {
-      if (mounted) {
-        setState(() =>
-            _error = 'The sound meter requires the iPhone version of TapTether.');
-      }
+      if (_shouldRun) setState(() => _unavailable = true);
     } finally {
-      if (mounted) setState(() => _starting = false);
+      _starting = false;
     }
   }
 
   Future<void> _stop() async {
-    if (mounted) setState(() { _running = false; _dbfs = null; });
+    if (mounted) {
+      setState(() {
+        _running = false;
+        _dbfs = null;
+      });
+    }
     try {
       await _channel.invokeMethod<void>('stop');
     } catch (_) {
-      // Recording may already be stopped by iOS.
+      // iOS may have already stopped microphone capture.
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PhoneSoundLevelInline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.enabled == oldWidget.enabled) return;
+    if (widget.enabled) {
+      unawaited(_start());
+    } else {
+      unawaited(_stop());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _foreground = true;
+      unawaited(_start());
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _foreground = false;
+      unawaited(_stop());
     }
   }
 
@@ -95,65 +118,36 @@ class _PhoneSoundMeterSheetState extends State<PhoneSoundMeterSheet>
 
   @override
   Widget build(BuildContext context) {
+    final level = _dbfs == null ? null : approximateAmbientDb(_dbfs!);
+    final display = level == null
+        ? (_unavailable ? 'Mic off' : '— dB')
+        : '≈ ${level.round()} dB';
     final scheme = Theme.of(context).colorScheme;
-    final level = _dbfs == null
-        ? null : approximateAmbientDb(_dbfs!, correction: _calibration);
-    return SafeArea(top: false, child: Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 22),
-      child: Column(mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            const Icon(Icons.multitrack_audio_outlined),
-            const SizedBox(width: 8),
-            Expanded(child: Text('Sound level · Phone mic',
-                style: Theme.of(context).textTheme.titleLarge)),
-            IconButton(tooltip: 'Close sound meter',
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.close)),
-          ]),
-          const SizedBox(height: 12),
-          Center(child: Text(level == null
-              ? '— dB' : '≈ ${level.round()} dB',
-              key: const ValueKey('lg-phone-db-value'),
-              style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: scheme.primary,
-              ))),
-          const SizedBox(height: 10),
-          LinearProgressIndicator(
-            value: level == null ? 0 : (level / 110).clamp(0, 1).toDouble(),
-            minHeight: 12, borderRadius: BorderRadius.circular(8)),
-          const SizedBox(height: 10),
-          const Text('Approximate sound at the PHONE, including voices, '
-              'traffic and other room noise. It is not a direct measurement '
-              'of the TV or a calibrated sound-level meter.'),
-          const SizedBox(height: 12),
-          Text('Calibration adjustment: '
-              '${_calibration >= 0 ? '+' : ''}${_calibration.round()} dB',
-              style: Theme.of(context).textTheme.labelMedium),
-          Slider(
-            key: const ValueKey('lg-db-calibration'),
-            value: _calibration, min: -20, max: 20, divisions: 40,
-            label: '${_calibration.round()} dB',
-            onChanged: (value) => setState(() => _calibration = value)),
-          const Text('Optional: compare against a calibrated sound meter '
-              'at the same location and adjust the offset. Changes are '
-              'temporary and audio is never stored or uploaded.'),
-          if (_error != null) Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Text(_error!,
-              style: TextStyle(color: scheme.error))),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            key: const ValueKey('lg-phone-db-start-stop'),
-            onPressed: _starting ? null : (_running ? _stop : _start),
-            icon: Icon(_running ? Icons.stop_circle_outlined
-                : Icons.mic_none),
-            label: Text(_starting ? 'Starting microphone…'
-                : _running ? 'Stop measuring' : 'Start measuring'),
+
+    return Tooltip(
+      message: _unavailable
+          ? 'Enable the TapTether microphone in iPhone Settings'
+          : 'Approximate room sound at the phone microphone',
+      child: Semantics(
+        label: level == null
+            ? 'Phone sound level unavailable'
+            : 'Approximate sound at phone: ${level.round()} decibels',
+        child: InkWell(
+          onTap: _unavailable ? () => unawaited(_start()) : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.multitrack_audio_outlined, size: 17,
+                  color: scheme.primary),
+              const SizedBox(width: 4),
+              Text(display, key: const ValueKey('lg-phone-db-value'),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: scheme.primary, fontWeight: FontWeight.w700)),
+            ]),
           ),
-        ],
+        ),
       ),
-    ));
+    );
   }
 }

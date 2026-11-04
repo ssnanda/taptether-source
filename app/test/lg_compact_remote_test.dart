@@ -83,7 +83,7 @@ void main() {
     expect(fake.remoteButtons, contains('SETTINGS'));
   });
 
-  testWidgets('phone meter entry point does not start microphone automatically',
+  testWidgets('phone sound level appears in TV header without a sheet',
       (tester) async {
     final fake = FakeLgRemote();
     await tester.pumpWidget(MaterialApp(
@@ -91,10 +91,12 @@ void main() {
         child: LgCompactRemote(
           client: fake, device: fake.device, onError: (_) {})))));
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('lg-phone-sound-meter')));
-    await tester.pumpAndSettle();
-    expect(find.text('Sound level · Phone mic'), findsOneWidget);
-    expect(find.text('Start measuring'), findsOneWidget);
+    expect(find.byKey(const ValueKey('lg-phone-sound-meter')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('lg-phone-db-value')),
+        findsOneWidget);
+    expect(find.text('Start measuring'), findsNothing);
+    expect(find.byType(BottomSheet), findsNothing);
   });
 
   testWidgets('compact remote fits viewport without scrolling or number pad',

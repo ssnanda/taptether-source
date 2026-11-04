@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/phone_sound_meter.dart';
 
 void main() {
-  test('ambient level is a bounded estimate with optional calibration', () {
+  test('ambient level is a bounded estimate', () {
     expect(approximateAmbientDb(-80), 20);
     expect(approximateAmbientDb(-35), 65);
     expect(approximateAmbientDb(-35, correction: 5), 70);
@@ -11,17 +12,69 @@ void main() {
     expect(approximateAmbientDb(-150), 0);
   });
 
-  testWidgets('sound meter is opt-in, labeled approximate, not TV-only',
+  testWidgets('inline meter starts automatically, updates dB and stops',
       (tester) async {
+    const channel = MethodChannel('taptether/sound-meter');
+    final commands = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel, (call) async {
+        commands.add(call.method);
+        return call.method == 'start' ? true : null;
+      });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
     await tester.pumpWidget(const MaterialApp(
-      home: Scaffold(body: PhoneSoundMeterSheet())));
-    expect(find.text('Sound level · Phone mic'), findsOneWidget);
+      home: Scaffold(body: PhoneSoundLevelInline())));
+    await tester.pump();
+    expect(commands, contains('start'));
     expect(find.text('— dB'), findsOneWidget);
-    expect(find.textContaining('not a direct measurement'), findsOneWidget);
-    expect(find.byKey(const ValueKey('lg-phone-db-start-stop')),
-        findsOneWidget);
-    expect(find.text('Start measuring'), findsOneWidget);
-    expect(find.byKey(const ValueKey('lg-db-calibration')), findsOneWidget);
-    // Opening the sheet must not start native microphone capture.
+    expect(find.text('Start measuring'), findsNothing);
+    expect(find.byType(BottomSheet), findsNothing);
+
+    tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      'taptether/sound-meter',
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('level', <String, double>{'dbfs': -35})),
+      (_) {},
+    );
+    await tester.pump();
+    expect(find.text('≈ 65 dB'), findsOneWidget);
+
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+    await tester.pump();
+    expect(commands, contains('stop'));
+  });
+
+  testWidgets('disabled meter waits for the screen to enable it',
+      (tester) async {
+    const channel = MethodChannel('taptether/sound-meter');
+    final commands = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel, (call) async {
+        commands.add(call.method);
+        return call.method == 'start' ? true : null;
+      });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: PhoneSoundLevelInline(enabled: false))));
+    await tester.pump();
+    expect(commands, isNot(contains('start')));
+
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: PhoneSoundLevelInline())));
+    await tester.pump();
+    expect(commands, contains('start'));
+
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: PhoneSoundLevelInline(enabled: false))));
+    await tester.pump();
+    expect(commands, contains('stop'));
   });
 }

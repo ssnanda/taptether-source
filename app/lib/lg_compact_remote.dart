@@ -25,6 +25,7 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
   bool _muted = false;
   bool _mediaPlaying = true;
   bool _mediaBusy = false;
+  bool _voiceSearchOpen = false;
   DateTime _lastPan = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -228,14 +229,21 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
       widget.onError('Connect to the TV before using voice search.');
       return;
     }
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => LgVoiceSearchSheet(
-        onSend: widget.client.insertText,
-      ),
-    );
+    setState(() => _voiceSearchOpen = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (_) => LgVoiceSearchSheet(
+          onSend: widget.client.insertText,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _voiceSearchOpen = false);
+    }
   }
 
   Future<void> _openKeyboard() async {
@@ -321,15 +329,6 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
     unawaited(_run(() => widget.client.pointerMove(dx, dy)));
   }
 
-  Future<void> _showSoundMeter() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => const PhoneSoundMeterSheet(),
-    );
-  }
-
   Future<void> _showCaptions() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -393,12 +392,9 @@ class _LgCompactRemoteState extends State<LgCompactRemote> {
           if (_volume != null)
             Text('Vol $_volume',
                 style: Theme.of(context).textTheme.labelSmall),
-          IconButton(
+          PhoneSoundLevelInline(
             key: const ValueKey('lg-phone-sound-meter'),
-            tooltip: 'Sound level measured by phone',
-            onPressed: _showSoundMeter,
-            icon: const Icon(Icons.multitrack_audio_outlined),
-            iconSize: 20,
+            enabled: !_voiceSearchOpen,
           ),
           IconButton(
             iconSize: 19, tooltip: 'Refresh now playing',
