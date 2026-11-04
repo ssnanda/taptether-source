@@ -105,10 +105,12 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     }
     try {
       await _setupStore.setConfirmed(host, enabled);
-      if (mounted) setState(() {
-        _remoteFeaturesReady = enabled;
-        _error = null;
-      });
+      if (mounted) {
+        setState(() {
+          _remoteFeaturesReady = enabled;
+          _error = null;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _error = 'Unable to save Xbox setup.');
     }
@@ -139,8 +141,9 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         setState(() => _error = 'Unable to open Microsoft Remote Play.');
       }
     } catch (_) {
-      if (mounted) setState(() =>
-          _error = 'Unable to open Microsoft Remote Play.');
+      if (mounted) {
+        setState(() => _error = 'Unable to open Microsoft Remote Play.');
+      }
     }
   }
 
@@ -193,8 +196,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       });
       await widget.onSaved?.call();
     } catch (error) {
-      if (mounted) setState(() => _error =
-          error.toString().replaceFirst('FormatException: ', ''));
+      if (mounted) {
+        setState(() => _error =
+            error.toString().replaceFirst('FormatException: ', ''));
+      }
     }
   }
 
@@ -211,8 +216,10 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       });
       await widget.onSaved?.call();
     } catch (_) {
-      if (mounted) setState(() => _error =
-          'Unable to remove this saved Xbox address.');
+      if (mounted) {
+        setState(() =>
+            _error = 'Unable to remove this saved Xbox address.');
+      }
     }
   }
 

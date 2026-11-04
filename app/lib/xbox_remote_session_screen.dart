@@ -120,8 +120,8 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       } else if (pressed) {
         setState(() {
           _attempts++;
-          _status = 'Input #' + _attempts.toString() +
-              ' delivered to browser. Xbox response not verified.';
+          _status = 'Input #$_attempts delivered to browser. '
+              'Xbox response not verified.';
         });
       }
     } catch (_) {
@@ -167,7 +167,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       {double width = 55}) {
     return Semantics(
       button: true,
-      label: 'Xbox ' + label,
+      label: 'Xbox $label',
       enabled: _bridgeReady,
       child: Listener(
         onPointerDown: _bridgeReady ? (_) => _press(button) : null,
@@ -215,7 +215,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
           child: Column(children: [
-            Text('Saved address: ' + widget.host + ' · Not authenticated',
+            Text('Saved address: ${widget.host} · Not authenticated',
               style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 4),
             Text(_status, textAlign: TextAlign.center,

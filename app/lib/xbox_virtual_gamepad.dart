@@ -90,8 +90,8 @@ class XboxVirtualGamepad {
       throw ArgumentError.value(button, 'button', 'Unsupported Xbox button');
     }
     return '(function(){const pad=window.__tapTetherVirtualGamepad;'
-      'return pad ? pad.button(' + button.toString() + ',' +
-      (pressed ? 'true' : 'false') + ') : false;})();';
+      'return pad ? pad.button($button,${pressed ? 'true' : 'false'})'
+      ' : false;})();';
   }
 
   static const releaseScript =
