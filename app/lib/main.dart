@@ -2771,17 +2771,6 @@ class _RemoteScreenState extends State<RemoteScreen>
                   builder: (_) => const TvControlsSettingsScreen()));
               },
             ),
-            ListTile(
-              key: const ValueKey('drawer-govee-devices'),
-              leading: const Icon(Icons.lightbulb_rounded),
-              title: const Text('Govee Devices'),
-              subtitle: const Text('Lights and compatible smart devices'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const GoveeScreen()));
-              },
-            ),
             ExpansionTile(
               key: const ValueKey('drawer-api-integrations'),
               leading: const Icon(Icons.extension_outlined),
@@ -3138,6 +3127,8 @@ class _RemoteScreenState extends State<RemoteScreen>
               setState(() => _showAllDevices = all),
           onThermostats: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const ResideoScreen())),
+          onIot: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const GoveeScreen())),
           onLocate: _refreshDevicesManually,
         ),
         const SizedBox(height: 8),
