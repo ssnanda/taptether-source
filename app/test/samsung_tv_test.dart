@@ -84,7 +84,7 @@ void main() {
         'AA:BB:CC:DD:EE:FF');
   });
 
-  testWidgets('Samsung shares no-scroll touchpad and optional arrow dialog',
+  testWidgets('Samsung shares touchpad and in-place arrow toggle',
       (tester) async {
     final client = FakeSamsungRemote();
     await tester.pumpWidget(MaterialApp(
@@ -102,7 +102,13 @@ void main() {
     await tester.pump();
     expect(client.clicks, 1);
     await tester.tap(find.byTooltip('Arrows and OK'));
-    await tester.pumpAndSettle();
-    expect(find.text('Navigation'), findsOneWidget);
+    await tester.pump();
+    expect(find.text('Navigation'), findsNothing);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('OK'), findsOneWidget);
+    expect(find.byTooltip('Touchpad'), findsOneWidget);
+    await tester.tap(find.byTooltip('Touchpad'));
+    await tester.pump();
+    expect(find.text('Touchpad'), findsOneWidget);
   });
 }
