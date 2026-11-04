@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Three compact shortcuts: saved inventory, current Wi-Fi, and thermostats.
+/// Four compact shortcuts: inventory, Wi-Fi, thermostats and IoT.
 /// Tooltip and semantics names keep icon-only navigation accessible.
 class DeviceDashboardHeader extends StatelessWidget {
   const DeviceDashboardHeader({
@@ -10,6 +10,7 @@ class DeviceDashboardHeader extends StatelessWidget {
     required this.locating,
     required this.onScopeChanged,
     required this.onThermostats,
+    required this.onIot,
     required this.onManage,
     required this.onLocate,
   });
@@ -19,6 +20,7 @@ class DeviceDashboardHeader extends StatelessWidget {
   final bool locating;
   final ValueChanged<bool> onScopeChanged;
   final VoidCallback onThermostats;
+  final VoidCallback onIot;
   final VoidCallback onManage;
   final VoidCallback onLocate;
 
@@ -32,6 +34,7 @@ class DeviceDashboardHeader extends StatelessWidget {
       required IconData icon,
       required bool selected,
       required VoidCallback onTap,
+      bool textIcon = false,
     }) {
       return Expanded(
         child: Tooltip(
@@ -50,8 +53,14 @@ class DeviceDashboardHeader extends StatelessWidget {
                 child: SizedBox(
                   height: 42,
                   child: Center(
-                    child: Icon(icon, size: 22,
-                      color: selected ? colors.onPrimary : colors.onSurfaceVariant),
+                    child: textIcon
+                        ? Text('IoT', style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w800,
+                            color: selected ? colors.onPrimary
+                                : colors.onSurfaceVariant))
+                        : Icon(icon, size: 22,
+                            color: selected ? colors.onPrimary
+                                : colors.onSurfaceVariant),
                   ),
                 ),
               ),
@@ -83,6 +92,13 @@ class DeviceDashboardHeader extends StatelessWidget {
           icon: Icons.thermostat_rounded,
           selected: false,
           onTap: onThermostats,
+        ),
+        const SizedBox(width: 7),
+        shortcut(
+          id: 'device-scope-iot', label: 'IoT',
+          icon: Icons.sensors_rounded, textIcon: true,
+          selected: false,
+          onTap: onIot,
         ),
         const SizedBox(width: 5),
         if (onWifi)
