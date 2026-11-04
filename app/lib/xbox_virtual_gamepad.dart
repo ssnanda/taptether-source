@@ -80,9 +80,14 @@ class XboxVirtualGamepad {
     if (!api.test()) return 'unsupported';
     window.__tapTetherVirtualGamepad = api;
     try {
-      var event = typeof GamepadEvent === 'function'
-        ? new GamepadEvent('gamepadconnected', {gamepad:pad})
-        : new Event('gamepadconnected');
+      var event;
+      try {
+        event = typeof GamepadEvent === 'function'
+          ? new GamepadEvent('gamepadconnected', {gamepad:pad})
+          : new Event('gamepadconnected');
+      } catch (_) {
+        event = new Event('gamepadconnected');
+      }
       if (!event.gamepad) {
         Object.defineProperty(event, 'gamepad', {value:pad});
       }
