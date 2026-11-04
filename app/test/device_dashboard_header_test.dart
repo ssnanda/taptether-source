@@ -9,11 +9,13 @@ void main() {
     var refreshes = 0;
     var manages = 0;
     var thermostats = 0;
+    var iot = 0;
     await tester.pumpWidget(MaterialApp(home: Scaffold(
       body: DeviceDashboardHeader(
         allDevices: true, onWifi: true, locating: false,
         onScopeChanged: selected.add,
         onThermostats: () => thermostats++,
+        onIot: () => iot++,
         onManage: () => manages++,
         onLocate: () => refreshes++,
       ),
@@ -21,12 +23,15 @@ void main() {
     expect(find.byTooltip('All devices'), findsOneWidget);
     expect(find.byTooltip('On this network'), findsOneWidget);
     expect(find.byTooltip('Thermostats'), findsOneWidget);
+    expect(find.byTooltip('IoT'), findsOneWidget);
     expect(find.text('All Devices'), findsNothing);
     expect(find.text('On This Network'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('device-scope-network')));
     expect(selected, [false]);
     await tester.tap(find.byKey(const ValueKey('device-scope-thermostats')));
     expect(thermostats, 1);
+    await tester.tap(find.byKey(const ValueKey('device-scope-iot')));
+    expect(iot, 1);
     await tester.tap(find.byKey(const ValueKey('locate-saved-devices')));
     expect(refreshes, 1);
     await tester.tap(find.byKey(const ValueKey('manage-saved-devices')));
@@ -41,6 +46,7 @@ void main() {
         allDevices: true, onWifi: false, locating: false,
         onScopeChanged: (_) {},
         onThermostats: () => thermostats++,
+        onIot: () {},
         onManage: () {},
         onLocate: () => fail('No Wi-Fi scan while offline'),
       ),
@@ -57,6 +63,7 @@ void main() {
         allDevices: false, onWifi: true, locating: true,
         onScopeChanged: (_) {},
         onThermostats: () {},
+        onIot: () {},
         onManage: () {},
         onLocate: () => fail('Cannot duplicate a locate request'),
       ),
