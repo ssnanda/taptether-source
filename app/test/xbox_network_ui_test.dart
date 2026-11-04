@@ -20,19 +20,19 @@ void main() {
     )));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(TextField, 'Xbox IP address'), findsOneWidget);
-    expect(find.text('Connect Xbox'), findsOneWidget);
+    expect(find.text('3 · Connect & test controller'), findsOneWidget);
+    expect(find.byKey(const ValueKey('xbox-remote-features')), findsOneWidget);
     expect(find.text('Save Xbox to Devices'), findsOneWidget);
-    expect(find.text('Check Xbox IP'), findsOneWidget);
-    expect(find.text('Find Xbox across this Wi-Fi'), findsOneWidget);
-    expect(find.text('Check Xbox IP').evaluate().first.renderObject,
+    expect(find.text('Check IP'), findsOneWidget);
+    expect(find.text('Scan Wi-Fi'), findsOneWidget);
+    expect(find.text('Check IP').evaluate().first.renderObject,
         isNotNull);
-    expect(find.text('Open Xbox Remote Play'), findsOneWidget);
     expect(find.text('Deep network diagnostics (slower)'), findsOneWidget);
     expect(find.textContaining('Remote Features can already be enabled'),
         findsOneWidget);
     expect(find.textContaining('General → Network settings'),
         findsOneWidget);
-    await tester.tap(find.text('Check Xbox IP'));
+    await tester.tap(find.text('Check IP'));
     await tester.pumpAndSettle();
     expect(targets, ['192.168.68.84']);
   });
@@ -48,7 +48,12 @@ void main() {
       },
     )));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Connect Xbox'));
+    await tester.ensureVisible(find.byKey(
+        const ValueKey('xbox-remote-features')));
+    await tester.tap(find.byKey(const ValueKey('xbox-remote-features')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('xbox-connect')));
+    await tester.tap(find.byKey(const ValueKey('xbox-connect')));
     await tester.pumpAndSettle();
     expect(opened, 1);
     expect(find.textContaining('Microsoft Remote Play opened'), findsOneWidget);
