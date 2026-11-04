@@ -21,6 +21,7 @@ import 'package:workmanager/workmanager.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
 import 'xbox_smartglass.dart';
+import 'xbox_manual_targets.dart';
 import 'xbox_remote_screen.dart';
 import 'tv_network_status.dart';
 import 'remote_layout_settings.dart';
@@ -553,6 +554,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final Map<String, LgConnectionTiming> _lgTiming = {};
   List<SamsungTvDevice> savedSamsungTvs = [];
   List<XboxConsole> savedXboxConsoles = [];
+  List<XboxManualTarget> savedXboxManual = [];
   List<LgThinQDevice> _enabledThinQ = const [];
   Set<String> _fridgeAlertsEnabled = {};
   final Map<String, ThinQDashboardStatus> _thinQStatuses = {};
@@ -1820,7 +1822,13 @@ class _RemoteScreenState extends State<RemoteScreen>
   Future<void> loadXboxConsoles() async {
     try {
       final consoles = await XboxConsoleStore().read();
-      if (mounted) setState(() => savedXboxConsoles = consoles);
+      final manual = await XboxManualTargetStore().read();
+      if (mounted) {
+        setState(() {
+          savedXboxConsoles = consoles;
+          savedXboxManual = manual;
+        });
+      }
     } catch (_) {
       // Saved metadata stays in secure device storage.
     }
@@ -3084,12 +3092,17 @@ class _RemoteScreenState extends State<RemoteScreen>
         savedDeviceOnNetwork(_wifiRange, tv.host)).length +
         savedSamsungTvs.where((tv) =>
         savedDeviceOnNetwork(_wifiRange, tv.host)).length;
+    final manualXbox = savedXboxManual.where((x) =>
+        !savedXboxConsoles.any((verified) => verified.host == x.host)).toList();
     final localXbox = savedXboxConsoles.where((xbox) =>
-        savedDeviceOnNetwork(_wifiRange, xbox.host)).length;
+        savedDeviceOnNetwork(_wifiRange, xbox.host)).length +
+        manualXbox.where((x) =>
+        savedDeviceOnNetwork(_wifiRange, x.host)).length;
     final localEmpty = visibleDevices.isEmpty &&
         localTvs == 0 && localXbox == 0;
     final noSaved = savedComputers.isEmpty && savedLgTvs.isEmpty &&
-        savedSamsungTvs.isEmpty && savedXboxConsoles.isEmpty;
+        savedSamsungTvs.isEmpty && savedXboxConsoles.isEmpty &&
+        savedXboxManual.isEmpty;
     // Status is verified locally or reported by a successful ThinQ API read.
     // Xboxes have no reachability probe here, so cannot be marked Online.
     final onlineComputers = visibleDevices.where((device) =>
@@ -3109,6 +3122,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         _tvVisible('samsung:${tv.host}')).length;
     final visibleXboxCount = savedXboxConsoles.where((xbox) =>
         _showAllDevices ||
+        savedDeviceOnNetwork(_wifiRange, xbox.host)).length +
+        manualXbox.where((xbox) => _showAllDevices ||
         savedDeviceOnNetwork(_wifiRange, xbox.host)).length;
     final onlineAppliances = _enabledThinQ.where((device) =>
         _thinQStatuses.containsKey(device.id)).length;
@@ -3369,6 +3384,32 @@ class _RemoteScreenState extends State<RemoteScreen>
               ]),
               onTap: savedDeviceOnNetwork(_wifiRange, tv.host)
                   ? () => openSamsungTv(host: tv.host) : null,
+            ),
+          ),
+      for (final xbox in manualXbox)
+        if (!onlineGroup && (_showAllDevices ||
+            savedDeviceOnNetwork(_wifiRange, xbox.host)))
+          Card(
+            key: ValueKey('xbox-manual-${xbox.host}'),
+            margin: const EdgeInsets.only(bottom: 5),
+            child: ListTile(
+              dense: true,
+              minVerticalPadding: 3,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+              leading: TapTetherDashboardVisuals.iconTile(
+                Icons.sports_esports_rounded,
+                const Color(0xFFF2B448), const Color(0xFFF78A46),
+                size: 36),
+              title: Text(xbox.name, maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700,
+                    fontSize: 14)),
+              subtitle: Text(savedDeviceOnNetwork(_wifiRange, xbox.host)
+                  ? 'Xbox · Manually saved · Not verified'
+                  : 'Xbox · Other network · Not verified',
+                  style: const TextStyle(fontSize: 11.5)),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => openXboxRemote(host: xbox.host),
             ),
           ),
       for (final xbox in savedXboxConsoles)
