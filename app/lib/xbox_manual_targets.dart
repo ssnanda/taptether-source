@@ -80,7 +80,8 @@ class XboxManualTargetStore {
   }
 
   Future<void> remove(String host) async {
-    final all = await read()..removeWhere((e) => e.host == host);
+    final all = await read();
+    all.removeWhere((e) => e.host == host);
     await _storage.write(key: key,
         value: jsonEncode(all.map((e) => e.toJson()).toList()));
     AutomaticDeviceBackup.instance.requestSoon();
