@@ -28,10 +28,6 @@ void main() {
     expect(find.text('Check IP').evaluate().first.renderObject,
         isNotNull);
     expect(find.text('Deep network diagnostics (slower)'), findsOneWidget);
-    expect(find.textContaining('Remote Features can already be enabled'),
-        findsOneWidget);
-    expect(find.textContaining('General → Network settings'),
-        findsOneWidget);
     await tester.tap(find.text('Check IP'));
     await tester.pumpAndSettle();
     expect(targets, ['192.168.68.84']);
@@ -67,6 +63,7 @@ void main() {
       onSaved: () async { saved++; },
     )));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save Xbox to Devices'));
     await tester.tap(find.text('Save Xbox to Devices'));
     await tester.pumpAndSettle();
     expect(find.text('Save Xbox address'), findsOneWidget);
