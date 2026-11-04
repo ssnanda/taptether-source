@@ -48,7 +48,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
   bool _busy = false;
   XboxNetworkReport? _diagnostics;
   String? _scanProgress;
-  String _message = 'Connect with Microsoft Remote Play. Legacy local '
+  String _message = 'Connect with Microsoft Remote Play. Local '
       'discovery is optional and does not sign you in.';
   String? _error;
 
@@ -79,7 +79,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           final matches = devices.where((d) => d.host == widget.initialHost);
           if (matches.isNotEmpty) {
             _selected = matches.first;
-            _message = 'Saved legacy Xbox — current connection not checked';
+            _message = 'Saved Xbox — current connection not checked';
           } else if (manual.any((d) => d.host == widget.initialHost)) {
             _message = 'Saved Xbox address — identity not independently '
                 'verified. Connect using Microsoft Remote Play.';
@@ -274,18 +274,18 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         final targetMatched = ip == null ||
             results.any((device) => device.host == ip);
         _message = results.isNotEmpty && targetMatched
-            ? 'Discovered ${results.length} Xbox via legacy SmartGlass '
+            ? 'Discovered ${results.length} Xbox via LAN discovery '
                 '(not authenticated).'
             : results.isNotEmpty && ip != null
-                ? 'No legacy reply from $ip, but an Xbox answered from '
+                ? 'No discovery reply from $ip, but an Xbox answered from '
                     '${results.first.host}. Verify which IP belongs to your console.'
                 : replies.isNotEmpty
-                    ? 'Legacy UDP 5050 answered but was not compatible: '
+                    ? 'Xbox LAN probe answered but was not compatible: '
                         '${replies.first.diagnosis.reason}. See diagnostics.'
                     : fullNetwork
-                        ? 'No legacy SmartGlass response across this Wi-Fi. '
+                        ? 'No Xbox LAN discovery response across this Wi-Fi. '
                           'This does not mean Remote Features is disabled.'
-                        : 'No legacy SmartGlass reply from $ip. '
+                        : 'No Xbox LAN discovery reply from $ip. '
                           'Remote Features may already be enabled.';
       });
     } catch (error) {
@@ -552,9 +552,9 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             ),
           )),
           const SizedBox(height: 12),
-          const Text('TapTether checks older SmartGlass discovery over '
+          const Text('TapTether checks an older Xbox LAN discovery method over '
               'UDP 5050. Remote Features can already be enabled while '
-              'the console does not answer that legacy protocol. '
+              'the console does not answer those requests. '
               'A TCP timeout does not prove the Xbox is offline.'),
           const SizedBox(height: 6),
           Text('To verify the address, compare it with Xbox Settings → '
@@ -637,7 +637,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         if (report.totalAddresses > 0)
           Text('Addresses checked: ${report.checkedAddresses}/'
               '${report.totalAddresses}'),
-        Text('Legacy Xbox UDP 5050: ${report.udpStats.sent} probes · '
+        Text('Xbox LAN UDP 5050: ${report.udpStats.sent} probes · '
             '${report.udpStats.replies} replies · '
             '${report.udpStats.compatible} compatible'),
         if (report.udpStats.sentByPath.isNotEmpty)
@@ -665,7 +665,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         if (report.targetIp != null) ...[
           const SizedBox(height: 6),
           Text('Target ${report.targetIp}: '
-              '${report.targetDiscovered ? "Legacy Xbox identified "
+              '${report.targetDiscovered ? "Xbox identified "
                   "(not authenticated)" :
                   report.udpStats.repliesFrom(report.targetIp!).isNotEmpty
                       ? "UDP reply received; Xbox not confirmed"
