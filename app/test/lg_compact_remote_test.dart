@@ -165,6 +165,8 @@ void main() {
     expect(find.text('Touchpad'), findsOneWidget);
     expect(find.text('OK'), findsNothing);
     expect(find.byTooltip('Arrows and OK'), findsOneWidget);
+    expect(find.byKey(const ValueKey('lg-navigation-mode-toggle')),
+        findsOneWidget);
     await tester.tap(find.text('Touchpad'));
     await tester.pump();
     expect(fake.clicks, 2);
