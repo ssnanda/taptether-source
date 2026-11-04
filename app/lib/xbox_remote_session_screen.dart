@@ -24,9 +24,9 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
   late final WebViewController _browser;
   bool _loading = true;
   bool _bridgeReady = false;
-  String _status = 'Sign in with Microsoft, then select your Xbox.';
+  String _status = 'Sign in';
   String _currentUrl = '';
-  int _attempts = 0;
+  Future<void> _inputQueue = Future<void>.value();
 
   @override
   void initState() {
@@ -40,6 +40,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
           setState(() {
             _loading = true;
             _bridgeReady = false;
+            _status = 'Loading';
             _currentUrl = url;
           });
         },
@@ -56,7 +57,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
           setState(() {
             _loading = false;
             _bridgeReady = false;
-            _status = 'Microsoft page failed to load. Try Safari.';
+            _status = 'Unavailable';
           });
         },
         onNavigationRequest: (request) {
@@ -76,8 +77,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       if (mounted) {
         setState(() {
           _bridgeReady = false;
-          _status = 'Complete Microsoft sign-in. Return to xbox.com '
-              'before testing the controller.';
+          _status = 'Sign in';
         });
       }
       return;
@@ -89,18 +89,13 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       final ready = r.toString().contains('installed');
       setState(() {
         _bridgeReady = ready;
-        _status = ready
-            ? 'Virtual controller available in this page (experimental). '
-              'Select your Xbox and test A. Console response not verified.'
-            : 'This browser blocked the virtual controller. '
-              'Microsoft may require a compatible physical gamepad.';
+        _status = ready ? 'Controls ready' : 'Controls unavailable';
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _bridgeReady = false;
-        _status = 'Virtual controller unavailable here. Use Safari or '
-            'a compatible physical gamepad.';
+        _status = 'Controls unavailable';
       });
     }
   }
@@ -114,31 +109,36 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       if (result.toString().toLowerCase() == 'false') {
         setState(() {
           _bridgeReady = false;
-          _status = 'Page controller disconnected. Tap Retry after '
-              'the Xbox page loads.';
-        });
-      } else if (pressed) {
-        setState(() {
-          _attempts++;
-          _status = 'Input #$_attempts delivered to browser. '
-              'Xbox response not verified.';
+          _status = 'Reconnect controls';
         });
       }
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _bridgeReady = false;
-        _status = 'Browser rejected the input. Retry the page controller.';
+        _status = 'Reconnect controls';
       });
     }
   }
 
-  void _press(int button) => unawaited(_send(button, true));
-
-  void _release(int button) {
-    unawaited(Future<void>.delayed(const Duration(milliseconds: 120),
-        () => _send(button, false)));
+  Future<void> _queueInput(int button, bool pressed) async {
+    final previous = _inputQueue;
+    final done = Completer<void>();
+    _inputQueue = done.future;
+    try {
+      await previous;
+      if (!pressed) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+      }
+      if (mounted) await _send(button, pressed);
+    } finally {
+      done.complete();
+    }
   }
+
+  void _press(int button) => unawaited(_queueInput(button, true));
+
+  void _release(int button) => unawaited(_queueInput(button, false));
 
   Future<void> _releaseAll() async {
     try {
@@ -213,13 +213,13 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       ),
       body: SafeArea(child: Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-          child: Column(children: [
-            Text('Saved address: ${widget.host} · Not authenticated',
-              style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 4),
-            Text(_status, textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall),
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 7),
+          child: Row(children: [
+            Icon(_bridgeReady ? Icons.check_circle_rounded
+                : Icons.circle_outlined, size: 15,
+                color: _bridgeReady ? Colors.green : Colors.grey),
+            const SizedBox(width: 6),
+            Text(_status, style: Theme.of(context).textTheme.bodySmall),
           ]),
         ),
         if (_loading) const LinearProgressIndicator(),
@@ -228,8 +228,12 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
           padding: const EdgeInsets.fromLTRB(4, 5, 4, 8),
           color: Theme.of(context).colorScheme.surfaceContainerLow,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('Basic controller · proof of concept',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+              _control('LT', XboxVirtualGamepad.lt, accent, width: 66),
+              _control('LB', XboxVirtualGamepad.lb, accent, width: 66),
+              _control('RB', XboxVirtualGamepad.rb, accent, width: 66),
+              _control('RT', XboxVirtualGamepad.rt, accent, width: 66),
+            ]),
             Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
               SizedBox(width: 180, child: Column(children: [
                 _control('↑', XboxVirtualGamepad.up, accent),
@@ -254,8 +258,8 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
             ]),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               _control('View', XboxVirtualGamepad.view, accent, width: 77),
-              _control('Menu', XboxVirtualGamepad.menu, accent, width: 77),
               _control('Xbox', XboxVirtualGamepad.guide, accent, width: 77),
+              _control('Menu', XboxVirtualGamepad.menu, accent, width: 77),
             ]),
           ]),
         ),
