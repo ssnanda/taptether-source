@@ -84,6 +84,8 @@ on:
       - 'app/lib/main.dart'
       - 'app/lib/lg_compact_remote.dart'
       - 'app/lib/phone_sound_meter.dart'
+      - 'app/lib/upside_down_app_rotation.dart'
+      - 'app/test/upside_down_app_rotation_test.dart'
       - 'app/lib/lg_webos_screen.dart'
       - 'app/lib/lg_webos_client.dart'
       - 'app/test/lg_compact_remote_test.dart'
