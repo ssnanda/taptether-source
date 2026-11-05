@@ -14,6 +14,7 @@ import 'lg_thinq_api.dart';
 import 'lg_thinq_screen.dart';
 import 'resideo_screen.dart';
 import 'govee_screen.dart';
+import 'luma_cameras_screen.dart';
 import 'lg_thinq_device_screen.dart';
 import 'lg_thinq_dashboard_status.dart';
 import 'fridge_alerts.dart';
@@ -2726,6 +2727,16 @@ class _RemoteScreenState extends State<RemoteScreen>
           },
         ),
         ListTile(
+          key: const ValueKey('drawer-luma-cameras'),
+          leading: const Icon(Icons.video_camera_back_outlined),
+          title: const Text('Luma Cameras'),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const LumaCamerasScreen()));
+          },
+        ),
+        ListTile(
           key: const ValueKey('drawer-device-backups'),
           leading: const Icon(Icons.backup_outlined),
           title: const Text('Device Backup'),
@@ -2814,6 +2825,18 @@ class _RemoteScreenState extends State<RemoteScreen>
                     Navigator.pop(context);
                     Navigator.of(context).push(MaterialPageRoute<void>(
                       builder: (_) => const ResideoScreen(settingsOnly: true)));
+                  },
+                ),
+                ListTile(
+                  key: const ValueKey('drawer-luma-api-settings'),
+                  leading: const Icon(Icons.video_camera_back_outlined),
+                  title: const Text('Luma NVR'),
+                  subtitle: const Text('Local recorder IP and login'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) =>
+                          const LumaCamerasScreen(settingsOnly: true)));
                   },
                 ),
               ],
@@ -3051,6 +3074,14 @@ class _RemoteScreenState extends State<RemoteScreen>
             onPressed: () => unawaited(openXboxRemote()),
           ),
           ActionChip(
+            key: const ValueKey('add-luma-action'),
+            avatar: const Icon(Icons.videocam_outlined, size: 18),
+            label: const Text('Luma NVR'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const LumaCamerasScreen())),
+          ),
+          ActionChip(
             avatar: const Icon(Icons.qr_code_scanner, size: 18),
             label: const Text('Scan QR'),
             onPressed: scanQrPairing,
@@ -3144,6 +3175,9 @@ class _RemoteScreenState extends State<RemoteScreen>
             MaterialPageRoute<void>(builder: (_) => const ResideoScreen())),
           onIot: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const GoveeScreen())),
+          onCameras: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const LumaCamerasScreen())),
           onLocate: _refreshDevicesManually,
         ),
         const SizedBox(height: 8),

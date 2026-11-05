@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Four compact shortcuts: inventory, Wi-Fi, thermostats and IoT.
+/// Compact shortcuts for devices, Wi-Fi, thermostats, IoT and cameras.
 /// Tooltip and semantics names keep icon-only navigation accessible.
 class DeviceDashboardHeader extends StatelessWidget {
   const DeviceDashboardHeader({
@@ -11,6 +11,7 @@ class DeviceDashboardHeader extends StatelessWidget {
     required this.onScopeChanged,
     required this.onThermostats,
     required this.onIot,
+    required this.onCameras,
     required this.onManage,
     required this.onLocate,
   });
@@ -21,6 +22,7 @@ class DeviceDashboardHeader extends StatelessWidget {
   final ValueChanged<bool> onScopeChanged;
   final VoidCallback onThermostats;
   final VoidCallback onIot;
+  final VoidCallback onCameras;
   final VoidCallback onManage;
   final VoidCallback onLocate;
 
@@ -99,6 +101,13 @@ class DeviceDashboardHeader extends StatelessWidget {
           icon: Icons.sensors_rounded, textIcon: true,
           selected: false,
           onTap: onIot,
+        ),
+        const SizedBox(width: 7),
+        shortcut(
+          id: 'device-scope-cameras', label: 'Cameras',
+          icon: Icons.videocam_outlined,
+          selected: false,
+          onTap: onCameras,
         ),
         const SizedBox(width: 5),
         if (onWifi)
