@@ -61,6 +61,7 @@ import 'scan_report.dart';
 import 'agent_update_check.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'upside_down_app_rotation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -108,8 +109,10 @@ class _TapTetherAppState extends State<TapTetherApp> {
       theme: TapTetherPalette.light(),
       darkTheme: TapTetherPalette.dark(),
       themeMode: mode,
-      builder: (context, navigator) => AppLockGate(
-        child: navigator ?? const SizedBox.shrink(),
+      builder: (context, navigator) => UpsideDownAppRotation(
+        child: AppLockGate(
+          child: navigator ?? const SizedBox.shrink(),
+        ),
       ),
       home: const RemoteScreen(),
     ),

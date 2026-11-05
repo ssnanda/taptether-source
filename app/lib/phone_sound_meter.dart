@@ -26,6 +26,7 @@ class _PhoneSoundLevelInlineState extends State<PhoneSoundLevelInline>
   bool _running = false;
   bool _unavailable = false;
   double? _dbfs;
+  String _microphone = 'Phone microphone';
 
   bool get _shouldRun => mounted && _foreground && widget.enabled;
 
@@ -39,7 +40,12 @@ class _PhoneSoundLevelInlineState extends State<PhoneSoundLevelInline>
       }
       final args = call.arguments;
       if (args is Map && args['dbfs'] is num) {
-        setState(() => _dbfs = (args['dbfs'] as num).toDouble());
+        setState(() {
+          _dbfs = (args['dbfs'] as num).toDouble();
+          if (args['microphone'] is String) {
+            _microphone = args['microphone'] as String;
+          }
+        });
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -127,7 +133,11 @@ class _PhoneSoundLevelInlineState extends State<PhoneSoundLevelInline>
     return Tooltip(
       message: _unavailable
           ? 'Enable the TapTether microphone in iPhone Settings'
-          : 'Approximate room sound at the phone microphone',
+          : _microphone == 'Bottom microphone'
+              ? 'Bottom mic near USB-C. Point that end toward the TV. '
+                  'Approximate room noise, not TV-only sound.'
+              : '$_microphone. Approximate room noise at the phone; '
+                  'not a calibrated TV-only sound meter.',
       child: Semantics(
         label: level == null
             ? 'Phone sound level unavailable'

@@ -17,8 +17,11 @@ if ios.is_file():
     with ios.open('rb') as handle:
         info = plistlib.load(handle)
     info['NSMicrophoneUsageDescription'] = (
-        'TapTether uses your microphone only when you start Voice Search '
-        'or the optional phone sound level meter. The meter never stores audio.')
+        'TapTether uses the microphone for voice search and live ambient '
+        'sound level while the TV remote is open. Audio is not saved or uploaded.')
+    info['NSMotionUsageDescription'] = (
+        'TapTether uses phone orientation to rotate its remote when held '
+        'upside down. Motion readings are not saved.')
     info['NSSpeechRecognitionUsageDescription'] = (
         'TapTether converts your spoken search phrase to text after '
         'you start voice search.')

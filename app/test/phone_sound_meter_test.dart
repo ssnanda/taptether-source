@@ -37,11 +37,15 @@ void main() {
     tester.binding.defaultBinaryMessenger.handlePlatformMessage(
       'taptether/sound-meter',
       const StandardMethodCodec().encodeMethodCall(
-        const MethodCall('level', <String, double>{'dbfs': -35})),
+        const MethodCall('level', <String, Object>{
+          'dbfs': -35, 'microphone': 'Bottom microphone',
+        })),
       (_) {},
     );
     await tester.pump();
     expect(find.text('≈ 65 dB'), findsOneWidget);
+    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.message, contains('Bottom mic near USB-C'));
 
     await tester.pumpWidget(const MaterialApp(home: Scaffold()));
     await tester.pump();
