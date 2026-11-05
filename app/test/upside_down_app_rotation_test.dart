@@ -7,7 +7,7 @@ import 'package:taptether/upside_down_app_rotation.dart';
 void main() {
   testWidgets('upside-down event rotates the app without rebuilding its child',
       (tester) async {
-    final orientations = StreamController<bool>.broadcast();
+    final orientations = StreamController<bool>.broadcast(sync: true);
     addTearDown(orientations.close);
     var childBuilds = 0;
 
@@ -41,7 +41,7 @@ void main() {
 
   testWidgets('portrait inverted safe-area insets are swapped',
       (tester) async {
-    final orientations = StreamController<bool>.broadcast();
+    final orientations = StreamController<bool>.broadcast(sync: true);
     addTearDown(orientations.close);
 
     EdgeInsets? observedPadding;
