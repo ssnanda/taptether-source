@@ -227,7 +227,9 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
     // Limit concurrent NVR camera requests to avoid overloading the recorder.
     for (var offset = 0; offset < cameras.length; offset += 4) {
       if (!mounted || !_foreground || _viewerOpen ||
-          !identical(_client, client)) return;
+          !identical(_client, client)) {
+        return;
+      }
       final group = cameras.skip(offset).take(4);
       await Future.wait(group.map((camera) async {
         try {
@@ -697,8 +699,10 @@ class _LumaRecorderSettingsScreenState
       _ntpPort.text = ntp['portNo'] ?? '123';
       _ntpInterval.text = ntp['synchronizeInterval'] ?? '60';
     } catch (_) {
-      if (mounted) setState(() =>
-          _error = 'This recorder did not provide time settings.');
+      if (mounted) {
+        setState(() =>
+            _error = 'This recorder did not provide time settings.');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
