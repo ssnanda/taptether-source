@@ -7,6 +7,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IOS="$ROOT/app/ios"
 RUNNER="$IOS/Runner/AppDelegate.swift"
 test -f "$RUNNER" || { echo "Flutter iOS runner must exist first" >&2; exit 1; }
+grep -q 'com.itspector.taptether' "$IOS/Runner.xcodeproj/project.pbxproj" || {
+  echo "Generated iOS Runner does not use the ITSpector LLC bundle identifier" >&2; exit 1;
+}
 mkdir -p "$IOS/TapTetherControls"
 cp "$ROOT/bin/ios/TapTetherControlsShared.swift" "$IOS/TapTetherControls/TapTetherControlsShared.swift"
 cp "$ROOT/bin/ios/TapTetherLgRemoteNative.swift" "$IOS/TapTetherControls/TapTetherLgRemoteNative.swift"
