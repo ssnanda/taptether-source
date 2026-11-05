@@ -23,17 +23,18 @@ import pathlib
 import plistlib
 import sys
 ios = pathlib.Path(sys.argv[1])
-group = 'group.com.taptether.taptether.controls'
+group = 'group.com.itspector.taptether.controls'
 runner_info = ios / 'Runner' / 'Info.plist'
 with runner_info.open('rb') as handle:
     info = plistlib.load(handle)
 info['NSSupportsLiveActivities'] = True
 # The expiry task removes the panel when the OS grants background time.
-identifier = 'com.taptether.taptether.tv-controls-expire'
+identifier = 'com.itspector.taptether.tv-controls-expire'
 modes = info.setdefault('UIBackgroundModes', [])
 if 'fetch' not in modes:
     modes.append('fetch')
 permitted = info.setdefault('BGTaskSchedulerPermittedIdentifiers', [])
+permitted[:] = [item for item in permitted if item != 'com.taptether.taptether.tv-controls-expire']
 if identifier not in permitted:
     permitted.append(identifier)
 ats = info.setdefault('NSAppTransportSecurity', {})
@@ -68,6 +69,7 @@ if runner_entitlements.exists():
 else:
     entitlements = {}
 groups = entitlements.setdefault('com.apple.security.application-groups', [])
+groups[:] = [item for item in groups if item != 'group.com.taptether.taptether.controls']
 if group not in groups:
     groups.append(group)
 with runner_entitlements.open('wb') as handle:
@@ -106,7 +108,7 @@ end
 extension.build_configurations.each do |config|
   options = config.build_settings
   options['PRODUCT_NAME'] = '$(TARGET_NAME)'
-  options['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.taptether.taptether.controls'
+  options['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.itspector.taptether.controls'
   options['INFOPLIST_FILE'] = 'TapTetherControls/Info.plist'
   options['GENERATE_INFOPLIST_FILE'] = 'NO'
   options['CODE_SIGN_ENTITLEMENTS'] = 'TapTetherControls/TapTetherControls.entitlements'

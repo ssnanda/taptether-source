@@ -140,8 +140,19 @@ python3 "$ROOT/bin/4-sync-app-version.py"
 cd "$ROOT/app"
 # Flutter-generated iOS runner is not stored in this repo; generate when absent.
 if [[ ! -d ios/Runner.xcodeproj ]]; then
-  flutter create --platforms=ios --org com.taptether --project-name taptether .
+  flutter create --platforms=ios --org com.itspector --project-name taptether .
 fi
+# Existing local generated Xcode runners may still use the previous app identifier.
+# Update only the generated project; the original app stays installed separately.
+python3 - <<'PY'
+from pathlib import Path
+project = Path('ios/Runner.xcodeproj/project.pbxproj')
+source = project.read_text()
+source = source.replace('com.taptether.taptether', 'com.itspector.taptether')
+if 'com.itspector.taptether' not in source:
+    raise SystemExit('Expected iOS bundle identifier com.itspector.taptether')
+project.write_text(source)
+PY
 [[ -d ios/Runner.xcodeproj ]] || die 'Flutter did not create an iOS Xcode project.'
 [[ -d ios/Runner.xcworkspace ]] || die 'iOS Xcode workspace missing; run flutter pub get.'
 # Stage existing TapTether native iOS features just like the release workflow.
@@ -149,6 +160,7 @@ flutter pub get
 bash "$ROOT/bin/2f-tt-ios-cloud-backup.sh"
 bash "$ROOT/bin/2g-tt-voice-permissions.sh"
 bash "$ROOT/bin/2h-tt-fridge-background.sh"
+bash "$ROOT/bin/2i-tt-ios-controls.sh"
 python3 "$ROOT/bin/9-tt-brand-icons.py"
 banner BUILDING
 LOG="$ROOT/app/build/iphone-install-build.log"

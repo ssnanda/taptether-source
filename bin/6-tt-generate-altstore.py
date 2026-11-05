@@ -12,6 +12,8 @@ OWNER = "ssnanda"
 REPO = "taptether.com"
 TAG = "current"
 BASE = f"https://github.com/{OWNER}/{REPO}/releases/download/{TAG}"
+IOS_BUNDLE_ID = "com.itspector.taptether"
+CONTROLS_BUNDLE_ID = "com.itspector.taptether.controls"
 
 def main():
     parser = argparse.ArgumentParser()
@@ -28,6 +30,11 @@ def main():
         if len(candidates) != 1:
             parser.error("IPA must contain exactly one Payload/*.app/Info.plist")
         info = plistlib.loads(archive.read(candidates[0]))
+        extensions = [name for name in archive.namelist()
+                      if name.startswith("Payload/") and name.endswith(".appex/Info.plist")]
+        if len(extensions) != 1:
+            parser.error("IPA must contain exactly one iOS Controls extension")
+        extension_info = plistlib.loads(archive.read(extensions[0]))
     bundle = info.get("CFBundleIdentifier")
     actual_version = str(info.get("CFBundleShortVersionString", ""))
     build = str(info.get("CFBundleVersion", ""))
@@ -35,8 +42,10 @@ def main():
     version = Path(args.version_file).read_text().strip()
     if "+" not in version or (actual_version, build) != tuple(version.split("+", 1)):
         parser.error(f"IPA version {actual_version}+{build} does not match VERSION {version}; rebuild the IPA")
-    if not bundle or "$" in bundle:
-        parser.error(f"Invalid embedded IPA bundle identifier: {bundle!r}")
+    if bundle != IOS_BUNDLE_ID:
+        parser.error(f"Unexpected iOS app bundle identifier: {bundle!r} (expected {IOS_BUNDLE_ID})")
+    if extension_info.get("CFBundleIdentifier") != CONTROLS_BUNDLE_ID:
+        parser.error(f"Unexpected iOS controls bundle identifier: {extension_info.get('CFBundleIdentifier')!r}")
     now = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
     url = BASE + "/TapTether.ipa"
     release = {
@@ -51,7 +60,7 @@ def main():
     app = {
         "name": "TapTether",
         "bundleIdentifier": bundle,
-        "developerName": "TapTether",
+        "developerName": "ITSpector LLC",
         "subtitle": "Your devices. Your control. Your network.",
         "localizedDescription": "A privacy-first local-network keyboard, trackpad and system volume remote for your own devices.",
         "iconURL": BASE + "/TapTether-icon.png",

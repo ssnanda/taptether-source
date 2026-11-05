@@ -276,7 +276,7 @@ final class TapTetherTVControlsBridge {
 /// complement this task; activity state is never extended by a refresh.
 @available(iOS 18.0, *)
 enum TapTetherTVActivityExpiry {
-    static let identifier = "com.taptether.taptether.tv-controls-expire"
+    static let identifier = "com.itspector.taptether.tv-controls-expire"
 
     static func register() {
         BGTaskScheduler.shared.register(

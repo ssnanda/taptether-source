@@ -27,6 +27,8 @@ class AboutTapTetherScreen extends StatelessWidget {
       Text('Your devices. Your control. Your network.',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 6),
+      const Text('by ITSpector LLC', textAlign: TextAlign.center),
       const SizedBox(height: 10),
       const Text(
         'One remote for your computers and TVs. Control a Mac, Windows '

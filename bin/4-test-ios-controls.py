@@ -101,8 +101,15 @@ assert "ssap://com.webos.service.tvpower/power/getPowerState" in native
 assert "Activity.request(" not in runner.split("static func verifyActiveTVPower()", 1)[1]
 assert "sendWakePacket" not in native.split("static func selectedTVIsOn(host: String)", 1)[1].split("private static func makeMessage", 1)[0]
 assert "UIApplication.didBecomeActiveNotification" in runner
-assert "group.com.taptether.taptether.controls" in shared
+assert "group.com.itspector.taptether.controls" in shared
 assert "com.apple.security.application-groups" in staging
+assert "com.itspector.taptether.controls" in staging
+assert "com.itspector.taptether.tv-controls-expire" in runner
+assert "com.itspector.taptether.lg-controls" in shared
+assert "--org com.itspector" in (root / ".github/workflows/taptether.yml").read_text()
+assert "com.itspector.taptether.fridge-watch" in (root / "app/lib/fridge_alerts.dart").read_text()
+assert "com.itspector.taptether.lg-tv-wake" in (root / "app/lib/lg_wake_recovery.dart").read_text()
+assert '"developerName": "ITSpector LLC"' in (root / "bin/6-tt-generate-altstore.py").read_text()
 assert "NSSupportsLiveActivities" in staging
 assert "new_target(:app_extension" in staging
 assert "Embed TapTether Controls" in staging

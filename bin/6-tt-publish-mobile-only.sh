@@ -39,6 +39,33 @@ print('Retaining',len(agent_names),'desktop packages and the existing Android AP
 PY
 # Only the IPA and icon are replaced. Verify APK plus every agent asset
 # remains byte-for-byte identical by checking GitHub asset IDs and digests.
+# Keep the exact preceding iOS IPA in an immutable versioned release before
+# replacing the "current" rolling download. Do not copy private source.
+previous_version="$(python3 - "$STAGE/prior-release.json" <<'PY'
+import json,re,sys
+name=json.load(open(sys.argv[1]))['name']
+match=re.fullmatch(r'TapTether (\\d+\\.\\d+\\.\\d+\\+\\d+) \\(rolling downloads\\)',name)
+if not match: raise SystemExit('Cannot archive unrecognized previous release')
+print(match.group(1))
+PY
+)"
+archive_tag="ios-$previous_version"
+if ! gh release view "$archive_tag" -R "$REPO" >/dev/null 2>&1; then
+  mkdir -p "$STAGE/archive"
+  gh release download "$TAG" -R "$REPO" -p TapTether.ipa -D "$STAGE/archive"
+  python3 - "$STAGE/prior-release.json" "$STAGE/archive/TapTether.ipa" <<'PY'
+import hashlib,json,sys
+meta=json.load(open(sys.argv[1]))
+asset=next(a for a in meta['assets'] if a['name']=='TapTether.ipa')
+digest='sha256:'+hashlib.sha256(open(sys.argv[2],'rb').read()).hexdigest()
+if asset.get('digest') != digest:
+    raise SystemExit('Previous IPA digest mismatch; refusing to overwrite current')
+PY
+  gh release create "$archive_tag" "$STAGE/archive/TapTether.ipa" \\
+    -R "$REPO" --target main --title "TapTether $previous_version (iOS archive)" \\
+    --notes "Preserved original iOS IPA for $previous_version; unsigned, requires signing." \\
+    --latest=false
+fi
 previous_assets="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name == "TapTether.apk" or (.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-"))) | "\(.name):\(.id):\(.size):\(.digest)"' | sort)"
 gh release upload "$TAG" -R "$REPO" --clobber \
   "$STAGE/TapTether.ipa" "$STAGE/TapTether-icon.png"

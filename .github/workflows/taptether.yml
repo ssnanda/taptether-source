@@ -377,7 +377,7 @@ jobs:
       - name: Generate native iOS and Android runners
         run: |
           cd app
-          flutter create --platforms=ios,android --org com.taptether --project-name taptether .
+          flutter create --platforms=ios,android --org com.itspector --project-name taptether .
           bash ../bin/2g-tt-voice-permissions.sh
           bash ../bin/2h-tt-fridge-background.sh
           flutter pub get
@@ -525,7 +525,7 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check Pillow
           cd app
-          flutter create --platforms=ios --org com.taptether --project-name taptether .
+          flutter create --platforms=ios --org com.itspector --project-name taptether .
           bash ../bin/2g-tt-voice-permissions.sh
           bash ../bin/2h-tt-fridge-background.sh
           flutter pub get
