@@ -44,7 +44,7 @@ PY
 previous_version="$(python3 - "$STAGE/prior-release.json" <<'PY'
 import json,re,sys
 name=json.load(open(sys.argv[1]))['name']
-match=re.fullmatch(r'TapTether (\\d+\\.\\d+\\.\\d+\\+\\d+) \\(rolling downloads\\)',name)
+match=re.fullmatch(r'TapTether (\d+\.\d+\.\d+\+\d+) \(rolling downloads\)',name)
 if not match: raise SystemExit('Cannot archive unrecognized previous release')
 print(match.group(1))
 PY
@@ -61,9 +61,9 @@ digest='sha256:'+hashlib.sha256(open(sys.argv[2],'rb').read()).hexdigest()
 if asset.get('digest') != digest:
     raise SystemExit('Previous IPA digest mismatch; refusing to overwrite current')
 PY
-  gh release create "$archive_tag" "$STAGE/archive/TapTether.ipa" \\
-    -R "$REPO" --target main --title "TapTether $previous_version (iOS archive)" \\
-    --notes "Preserved original iOS IPA for $previous_version; unsigned, requires signing." \\
+  gh release create "$archive_tag" "$STAGE/archive/TapTether.ipa" \
+    -R "$REPO" --target main --title "TapTether $previous_version (iOS archive)" \
+    --notes "Preserved original iOS IPA for $previous_version; unsigned, requires signing." \
     --latest=false
 fi
 previous_assets="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name == "TapTether.apk" or (.name | startswith("TapTetherAgent-") or startswith("TapTetherInputCore-") or startswith("TapTetherScreenCore-"))) | "\(.name):\(.id):\(.size):\(.digest)"' | sort)"

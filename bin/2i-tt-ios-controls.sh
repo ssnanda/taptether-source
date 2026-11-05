@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integrate a real iOS WidgetKit extension into the generated Flutter project.
+# ITSpector LLC uses com.itspector.taptether and a dedicated controls App ID.
 # Safe to rerun after flutter create; does not affect desktop agents or Android.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
