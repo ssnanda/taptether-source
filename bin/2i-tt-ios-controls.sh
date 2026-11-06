@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Integrate a real iOS WidgetKit extension into the generated Flutter project.
-# ITSpector LLC uses com.itspector.taptether and a dedicated controls App ID.
+# Preserve the original com.taptether.taptether app ID for in-place upgrades.
+# Publisher display name remains ITSpector LLC; publisher and bundle ID differ.
 # Safe to rerun after flutter create; does not affect desktop agents or Android.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IOS="$ROOT/app/ios"
 RUNNER="$IOS/Runner/AppDelegate.swift"
 test -f "$RUNNER" || { echo "Flutter iOS runner must exist first" >&2; exit 1; }
-grep -q 'com.itspector.taptether' "$IOS/Runner.xcodeproj/project.pbxproj" || {
-  echo "Generated iOS Runner does not use the ITSpector LLC bundle identifier" >&2; exit 1;
+grep -q 'PRODUCT_BUNDLE_IDENTIFIER' "$IOS/Runner.xcodeproj/project.pbxproj" || {
+  echo "Generated iOS Runner project is missing bundle settings" >&2; exit 1;
 }
 mkdir -p "$IOS/TapTetherControls"
 cp "$ROOT/bin/ios/TapTetherControlsShared.swift" "$IOS/TapTetherControls/TapTetherControlsShared.swift"
@@ -27,18 +28,18 @@ import pathlib
 import plistlib
 import sys
 ios = pathlib.Path(sys.argv[1])
-group = 'group.com.itspector.taptether.controls'
+group = 'group.com.taptether.taptether.controls'
 runner_info = ios / 'Runner' / 'Info.plist'
 with runner_info.open('rb') as handle:
     info = plistlib.load(handle)
 info['NSSupportsLiveActivities'] = True
 # The expiry task removes the panel when the OS grants background time.
-identifier = 'com.itspector.taptether.tv-controls-expire'
+identifier = 'com.taptether.taptether.tv-controls-expire'
 modes = info.setdefault('UIBackgroundModes', [])
 if 'fetch' not in modes:
     modes.append('fetch')
 permitted = info.setdefault('BGTaskSchedulerPermittedIdentifiers', [])
-permitted[:] = [item for item in permitted if item != 'com.taptether.taptether.tv-controls-expire']
+permitted[:] = [item for item in permitted if item != 'com.itspector.taptether.tv-controls-expire']
 if identifier not in permitted:
     permitted.append(identifier)
 ats = info.setdefault('NSAppTransportSecurity', {})
@@ -73,7 +74,7 @@ if runner_entitlements.exists():
 else:
     entitlements = {}
 groups = entitlements.setdefault('com.apple.security.application-groups', [])
-groups[:] = [item for item in groups if item != 'group.com.taptether.taptether.controls']
+groups[:] = [item for item in groups if item != 'group.com.itspector.taptether.controls']
 if group not in groups:
     groups.append(group)
 with runner_entitlements.open('wb') as handle:
@@ -107,12 +108,15 @@ unless extension
   runner.build_phases.insert(runner.build_phases.index(thin), phase)
 end
 runner.build_configurations.each do |config|
+  # The existing 0.8.81 app and its iPhone Keychain belong to this ID.
+  # Force it even when a stale locally generated Xcode project used ITSpector.
+  config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.taptether.taptether'
   config.build_settings['CODE_SIGN_ENTITLEMENTS'] = 'Runner/Runner.entitlements'
 end
 extension.build_configurations.each do |config|
   options = config.build_settings
   options['PRODUCT_NAME'] = '$(TARGET_NAME)'
-  options['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.itspector.taptether.controls'
+  options['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.taptether.taptether.controls'
   options['INFOPLIST_FILE'] = 'TapTetherControls/Info.plist'
   options['GENERATE_INFOPLIST_FILE'] = 'NO'
   options['CODE_SIGN_ENTITLEMENTS'] = 'TapTetherControls/TapTetherControls.entitlements'

@@ -6,7 +6,7 @@ import Security
 /// Shared UI state contains only the selected TV's address and label.
 /// The LG pairing key stays in the Runner's device-only iOS Keychain.
 enum TapTetherSharedTV {
-    static let group = "group.com.itspector.taptether.controls"
+    static let group = "group.com.taptether.taptether.controls"
     static let hostKey = "lastLgHost"
     static let nameKey = "lastLgName"
     static let pinKey = "lastLgCertificate"
@@ -23,7 +23,7 @@ enum TapTetherSharedTV {
 /// The Swift runner writes this after Flutter reads its existing secure store.
 /// Widget extensions never receive this secret through UserDefaults.
 enum TapTetherTVKeychain {
-    static let service = "com.itspector.taptether.lg-controls"
+    static let service = "com.taptether.taptether.lg-controls"
     static let account = "selected-client-key"
 
     static func save(_ clientKey: String) throws {

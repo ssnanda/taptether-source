@@ -9,7 +9,7 @@ import 'lg_webos_client.dart';
 import 'lg_connection_timing.dart';
 import 'tv_network_status.dart';
 
-const lgWakeRecoveryJob = 'com.itspector.taptether.lg-tv-wake';
+const lgWakeRecoveryJob = 'com.taptether.taptether.lg-tv-wake';
 const lgWakeRecoveryDelay = Duration(seconds: 10);
 const lgWakeRecoveryWindow = Duration(minutes: 30);
 const _pendingKey = 'taptether.lg.wake.pending.v1';

@@ -140,17 +140,17 @@ python3 "$ROOT/bin/4-sync-app-version.py"
 cd "$ROOT/app"
 # Flutter-generated iOS runner is not stored in this repo; generate when absent.
 if [[ ! -d ios/Runner.xcodeproj ]]; then
-  flutter create --platforms=ios --org com.itspector --project-name taptether .
+  flutter create --platforms=ios --org com.taptether --project-name taptether .
 fi
-# Existing local generated Xcode runners may still use the previous app identifier.
-# Update only the generated project; the original app stays installed separately.
+# Preserve the original installed app identity so this is a true upgrade.
+# Normalize locally generated Xcode projects from either publisher prefix.
 python3 - <<'PY'
 from pathlib import Path
 project = Path('ios/Runner.xcodeproj/project.pbxproj')
 source = project.read_text()
-source = source.replace('com.taptether.taptether', 'com.itspector.taptether')
-if 'com.itspector.taptether' not in source:
-    raise SystemExit('Expected iOS bundle identifier com.itspector.taptether')
+source = source.replace('com.itspector.taptether', 'com.taptether.taptether')
+if 'com.taptether.taptether' not in source:
+    raise SystemExit('Expected existing TapTether app identifier com.taptether.taptether')
 project.write_text(source)
 PY
 [[ -d ios/Runner.xcodeproj ]] || die 'Flutter did not create an iOS Xcode project.'
@@ -182,7 +182,7 @@ APP="$ROOT/app/build/ios/iphoneos/Runner.app"
 [[ -d "$APP" ]] || die "Signed app not found at $APP"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist" 2>/dev/null || true)"
 APP_NAME="$(/usr/libexec/PlistBuddy -c 'Print CFBundleDisplayName' "$APP/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print CFBundleName' "$APP/Info.plist" 2>/dev/null || echo Runner)"
-[[ -n "$BUNDLE_ID" ]] || die 'Missing bundle identifier in built app.'
+[[ "$BUNDLE_ID" == 'com.taptether.taptether' ]] || die "Refusing to replace the old TapTether installation with a different app identity ($BUNDLE_ID)."
 BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Info.plist" 2>/dev/null || true)"
 BUILT_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP/Info.plist" 2>/dev/null || true)"
 if [[ "$BUILT_VERSION" != "$EXPECTED_BUILD_NAME" || "$BUILT_NUMBER" != "$EXPECTED_BUILD_NUMBER" ]]; then

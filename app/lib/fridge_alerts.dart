@@ -11,7 +11,7 @@ import 'fridge_temperature.dart';
 import 'lg_thinq_api.dart';
 import 'lg_wake_recovery.dart';
 
-const fridgeBackgroundJob = 'com.itspector.taptether.fridge-watch';
+const fridgeBackgroundJob = 'com.taptether.taptether.fridge-watch';
 const _alertKey = 'taptether.fridge.alerts.enabled.v1';
 const _baselinePrefix = 'taptether.fridge.alerts.baseline.v1.';
 const _lastCheckedPrefix = 'taptether.fridge.alerts.checked.v1.';

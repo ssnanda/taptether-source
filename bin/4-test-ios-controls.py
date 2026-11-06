@@ -101,15 +101,26 @@ assert "ssap://com.webos.service.tvpower/power/getPowerState" in native
 assert "Activity.request(" not in runner.split("static func verifyActiveTVPower()", 1)[1]
 assert "sendWakePacket" not in native.split("static func selectedTVIsOn(host: String)", 1)[1].split("private static func makeMessage", 1)[0]
 assert "UIApplication.didBecomeActiveNotification" in runner
-assert "group.com.itspector.taptether.controls" in shared
+assert "group.com.taptether.taptether.controls" in shared
 assert "com.apple.security.application-groups" in staging
-assert "com.itspector.taptether.controls" in staging
-assert "com.itspector.taptether.tv-controls-expire" in runner
-assert "com.itspector.taptether.lg-controls" in shared
-assert "--org com.itspector" in (root / ".github/workflows/taptether.yml").read_text()
-assert "com.itspector.taptether.fridge-watch" in (root / "app/lib/fridge_alerts.dart").read_text()
-assert "com.itspector.taptether.lg-tv-wake" in (root / "app/lib/lg_wake_recovery.dart").read_text()
+assert "com.taptether.taptether.controls" in staging
+assert "com.taptether.taptether.tv-controls-expire" in runner
+assert "com.taptether.taptether.lg-controls" in shared
+assert "--org com.taptether" in (root / ".github/workflows/taptether.yml").read_text()
+assert "com.taptether.taptether.fridge-watch" in (root / "app/lib/fridge_alerts.dart").read_text()
+assert "com.taptether.taptether.lg-tv-wake" in (root / "app/lib/lg_wake_recovery.dart").read_text()
 assert '"developerName": "ITSpector LLC"' in (root / "bin/6-tt-generate-altstore.py").read_text()
+# Same iOS bundle ID as 0.8.81+242: this is an in-place upgrade,
+# not a second app. The brand/publisher is independent of bundle prefix.
+altstore_gen = (root / "bin/6-tt-generate-altstore.py").read_text()
+installer = (root / "bin/3-install-iphone.sh").read_text()
+assert 'IOS_BUNDLE_ID = "com.taptether.taptether"' in altstore_gen
+assert 'CONTROLS_BUNDLE_ID = "com.taptether.taptether.controls"' in altstore_gen
+assert "com.taptether.taptether" in installer
+assert "--org com.taptether" in installer
+assert "config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.taptether.taptether'" in staging
+assert 'com.taptether.taptether' in (root / "bin/2h-tt-fridge-background.sh").read_text()
+
 assert "NSSupportsLiveActivities" in staging
 assert "new_target(:app_extension" in staging
 assert "Embed TapTether Controls" in staging

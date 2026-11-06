@@ -12,8 +12,8 @@ OWNER = "ssnanda"
 REPO = "taptether.com"
 TAG = "current"
 BASE = f"https://github.com/{OWNER}/{REPO}/releases/download/{TAG}"
-IOS_BUNDLE_ID = "com.itspector.taptether"
-CONTROLS_BUNDLE_ID = "com.itspector.taptether.controls"
+IOS_BUNDLE_ID = "com.taptether.taptether"
+CONTROLS_BUNDLE_ID = "com.taptether.taptether.controls"
 
 def main():
     parser = argparse.ArgumentParser()

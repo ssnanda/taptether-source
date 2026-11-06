@@ -12,8 +12,8 @@ import xml.etree.ElementTree as ET
 root = pathlib.Path(sys.argv[1])
 ios = root / 'app/ios/Runner/Info.plist'
 android = root / 'app/android/app/src/main/AndroidManifest.xml'
-task_id = 'com.itspector.taptether.fridge-watch'
-lg_task_id = 'com.itspector.taptether.lg-tv-wake'
+task_id = 'com.taptether.taptether.fridge-watch'
+lg_task_id = 'com.taptether.taptether.lg-tv-wake'
 if ios.is_file():
     with ios.open('rb') as handle:
         info = plistlib.load(handle)
@@ -23,7 +23,7 @@ if ios.is_file():
             modes.append(mode)
     info['UIBackgroundModes'] = modes
     identifiers = [item for item in (info.get('BGTaskSchedulerPermittedIdentifiers') or [])
-                   if not item.startswith('com.taptether.taptether.')]
+                   if not item.startswith(('com.taptether.taptether.', 'com.itspector.taptether.'))]
     for identifier in (task_id, lg_task_id):
         if identifier not in identifiers:
             identifiers.append(identifier)
