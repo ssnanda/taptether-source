@@ -342,11 +342,15 @@ class DeviceBackupStore {
     // Different Keychain accessibility is used by ThinQ and fridge alerts.
     for (final key in _lgKeys) {
       final value = await _integrationStorage.read(key: key);
-      if (value != null) values[key] = value;
+      if (value != null) {
+        values[key] = value;
+      }
     }
     for (final key in _otherKeys) {
       final value = await _storage.read(key: key);
-      if (value != null) values[key] = value;
+      if (value != null) {
+        values[key] = value;
+      }
     }
     final vault = await _resideoVault.read();
     if (vault != null && vault.isNotEmpty) {
@@ -361,7 +365,9 @@ class DeviceBackupStore {
 
   static Map<String, dynamic>? _vaultData(
       String? raw, {required bool credentials}) {
-    if (raw == null) return null;
+    if (raw == null) {
+      return null;
+    }
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map || decoded.isEmpty) {
@@ -409,15 +415,23 @@ class DeviceBackupStore {
     try {
       for (final entry in entries.entries) {
         if (entry.key == DeviceBackupCodec.resideoCredentialsKey ||
-            entry.key == DeviceBackupCodec.resideoLayoutKey) continue;
+            entry.key == DeviceBackupCodec.resideoLayoutKey) {
+          continue;
+        }
         final target = _usesBackgroundKeychain(entry.key)
             ? _integrationStorage : _storage;
         await target.write(key: entry.key, value: entry.value);
         changed.add(entry.key);
       }
-      if (credentials != null || layout != null) vaultTouched = true;
-      if (credentials != null) await _resideoVault.write(credentials);
-      if (layout != null) await _resideoVault.writeLayout(layout);
+      if (credentials != null || layout != null) {
+        vaultTouched = true;
+      }
+      if (credentials != null) {
+        await _resideoVault.write(credentials);
+      }
+      if (layout != null) {
+        await _resideoVault.writeLayout(layout);
+      }
       return entries.length;
     } catch (_) {
       for (final key in changed.reversed) {
