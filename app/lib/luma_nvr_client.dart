@@ -235,7 +235,8 @@ String lumaPortDiagnosis({required bool tcpReachable, required int port}) {
     return 'TCP port $port is reachable, but it did not answer as '
         'HTTPS/ISAPI. If this external port forwards to the NVR SDK/Server '
         'port 8000, select Server / SDK. SDK access requires a native '
-        'protocol library; port reachability does not verify a login.';
+        'protocol library; port reachability does not verify a login. '
+        'HTTPS/ISAPI camera access instead needs the HTTPS/Web port.';
   }
   return 'Cannot reach TCP port $port at this NVR address. '
       'Check the NVR HTTPS/Web port (usually 443), then use the '
