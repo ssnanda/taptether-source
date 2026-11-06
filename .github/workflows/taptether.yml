@@ -103,8 +103,15 @@ on:
       - 'app/lib/appearance.dart'
       - 'app/lib/remote_mode_bar.dart'
       - 'app/test/dashboard_visuals_test.dart'
+      - 'app/lib/device_backup.dart'
+      - 'app/lib/automatic_device_backup.dart'
+      - 'app/lib/backup_preview.dart'
       - 'app/lib/device_backup_screen.dart'
+      - 'app/lib/resideo_*.dart'
       - 'app/test/device_backup_screen_test.dart'
+      - 'app/test/device_backup_test.dart'
+      - 'app/test/integration_backup_roundtrip_test.dart'
+      - 'app/test/backup_preview_test.dart'
       - '.github/workflows/taptether.yml'
   schedule:
     # Weekly maintenance runs cleanup only, without building anything.
