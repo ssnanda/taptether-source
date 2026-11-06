@@ -215,6 +215,23 @@ void validateLumaPut(String xml) {
   }
 }
 
+/// Distinguishes a reachable TCP port from an HTTPS/ISAPI endpoint.
+/// The Luma mobile-app SDK/server port is a different, proprietary protocol.
+String lumaPortDiagnosis({required bool tcpReachable, required int port}) {
+  if (tcpReachable) {
+    return 'TCP port $port is reachable, but it did not answer as '
+        'HTTPS/ISAPI. The Luma mobile app uses a separate SDK Server port '
+        '(usually 8000, sometimes forwarded to a different number). '
+        'TapTether needs the NVR HTTPS/Web port (usually 443). '
+        'For access away from the recorder, use a VPN.';
+  }
+  return 'Cannot reach TCP port $port at this NVR address. '
+      'Check the NVR HTTPS/Web port (usually 443), then use the '
+      'same Wi-Fi or a VPN to reach its private address. '
+      'The port configured in the Luma mobile app may be the '
+      'different SDK Server port.';
+}
+
 /// Only the configured NVR is contacted; redirects are rejected so HTTP Basic
 /// credentials cannot be forwarded to another host.
 class LumaNvrClient {
@@ -236,6 +253,19 @@ class LumaNvrClient {
     client.badCertificateCallback = (cert, host, port) =>
         host.toLowerCase() == settings.host && port == settings.port;
     return client;
+  }
+
+  /// Read-only network check. No username or password is transmitted.
+  /// A successful TCP connection does not mean this is an ISAPI port.
+  Future<String> diagnoseFailedConnection() async {
+    try {
+      final socket = await Socket.connect(settings.host, settings.port,
+          timeout: const Duration(seconds: 3));
+      socket.destroy();
+      return lumaPortDiagnosis(tcpReachable: true, port: settings.port);
+    } catch (_) {
+      return lumaPortDiagnosis(tcpReachable: false, port: settings.port);
+    }
   }
 
   Uri _url(String path) => Uri(

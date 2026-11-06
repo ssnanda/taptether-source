@@ -55,6 +55,16 @@ void main() {
         '192.168.1.79', 'admin', ''), throwsA(isA<LumaNvrException>()));
   });
 
+  test('port diagnosis distinguishes open SDK port from HTTPS API', () {
+    final open = lumaPortDiagnosis(tcpReachable: true, port: 58000);
+    expect(open, contains('TCP port 58000 is reachable'));
+    expect(open, contains('separate SDK Server port'));
+    expect(open, contains('HTTPS/Web port'));
+    final closed = lumaPortDiagnosis(tcpReachable: false, port: 443);
+    expect(closed, contains('Cannot reach TCP port 443'));
+    expect(closed, contains('VPN'));
+  });
+
   test('camera channel stream and snapshot paths use N01', () {
     expect(lumaSnapshotPath(1),
         '/ISAPI/Streaming/channels/101/picture');

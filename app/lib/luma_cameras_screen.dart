@@ -145,7 +145,14 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
         setState(() => _error = 'Connection successful: ${info.name}');
       }
     } on LumaNvrException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      var message = error.message;
+      if (candidate != null &&
+          (message.contains('8 seconds') ||
+           message.contains('TLS handshake') ||
+           message.contains('Cannot reach the NVR'))) {
+        message = await candidate.diagnoseFailedConnection();
+      }
+      if (mounted) setState(() => _error = message);
     } catch (_) {
       if (mounted) {
         setState(() => _error = 'Could not connect to the Luma NVR.');
@@ -281,8 +288,8 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
             keyboardType: TextInputType.url,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              labelText: 'NVR IP address or hostname',
-              hintText: '192.168.1.79 or host:port',
+              labelText: 'NVR HTTPS / ISAPI address',
+              hintText: '192.168.1.79 or hostname:HTTPS-port',
             ),
           ),
           const SizedBox(height: 10),
@@ -347,10 +354,22 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
                 label: const Text('Remove saved connection'),
               ),
             ),
-          const SizedBox(height: 7),
-          Text('Connects directly to this NVR over local HTTPS. '
-              'Credentials are stored only in the phone’s secure storage.',
-              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 10),
+          Text(
+            'Use the recorder HTTPS/Web port (normally 443), '
+            'not the Server port entered in the Luma mobile app. '
+            'That app uses a different SDK protocol. '
+            'On cellular, use a VPN to reach the recorder; '
+            'its private LAN address works only on the local network.',
+            key: const ValueKey('luma-isapi-port-help'),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'The phone securely stores credentials. Test connection '
+            'checks HTTPS/ISAPI; it does not test the Luma SDK port.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
       ),
     ));
