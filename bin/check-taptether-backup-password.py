@@ -8,7 +8,6 @@ No network, cloud, app, or iOS Keychain access is used.
 import argparse
 import base64
 import binascii
-import getpass
 import hashlib
 import json
 from pathlib import Path
@@ -98,7 +97,7 @@ def validate_decrypted(plaintext: bytes) -> None:
         raise InvalidBackup("Password authenticated but backup entries are invalid.")
 
 
-def verify_password(envelope: dict) -> int:
+def verify_password(envelope: dict, password: str) -> int:
     if envelope["format"] == UNPROTECTED:
         print("NO PASSWORD: this backup is unencrypted. No password to check.")
         return 0
@@ -110,11 +109,6 @@ def verify_password(envelope: dict) -> int:
         print("Missing Python package: cryptography", file=sys.stderr)
         print("Install it for your Python environment, then rerun this script:", file=sys.stderr)
         print("  python3 -m pip install cryptography", file=sys.stderr)
-        return 2
-    try:
-        password = getpass.getpass("TapTether backup password (hidden): ")
-    except (KeyboardInterrupt, EOFError):
-        print("\nCancelled. No backup data changed.", file=sys.stderr)
         return 2
     if not password:
         print("NO MATCH: no password entered. The backup was not modified.")
@@ -134,15 +128,18 @@ def verify_password(envelope: dict) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check a TapTether backup password without restoring private data.")
-    parser.add_argument("--info", action="store_true", help="Show backup metadata only; do not prompt for a password")
+    parser.add_argument("--info", action="store_true", help="Show backup metadata only; password not required")
     parser.add_argument("backup", type=Path, help="Path to a .ttbackup file")
+    parser.add_argument("password", nargs="?", help="Backup password (quote if it contains spaces)")
     args = parser.parse_args()
+    if not args.info and args.password is None:
+        parser.error("Add the password after the backup file path. No interactive prompt is used.")
     try:
         envelope = read_envelope(args.backup.expanduser())
         if args.info:
             show_info(envelope)
             return 0
-        return verify_password(envelope)
+        return verify_password(envelope, args.password)
     except InvalidBackup as exc:
         print(f"INVALID BACKUP: {exc}", file=sys.stderr)
         return 2
