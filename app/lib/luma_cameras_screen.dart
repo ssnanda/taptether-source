@@ -142,10 +142,12 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
         setState(() { _error = error.message; _statusSuccess = false; });
       }
     } catch (_) {
-      if (mounted) setState(() {
-        _error = 'Unable to save Luma settings to secure storage.';
-        _statusSuccess = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Unable to save Luma settings to secure storage.';
+          _statusSuccess = false;
+        });
+      }
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -200,10 +202,12 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
         setState(() { _error = message; _statusSuccess = false; });
       }
     } catch (_) {
-      if (mounted) setState(() {
-        _error = 'Could not connect to the Luma NVR.';
-        _statusSuccess = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Could not connect to the Luma NVR.';
+          _statusSuccess = false;
+        });
+      }
     } finally {
       candidate?.close();
       if (mounted) setState(() => _working = false);
