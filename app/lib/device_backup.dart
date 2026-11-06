@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'resideo_local_vault.dart';
+
 /// Portable, user-controlled encrypted pairing backup.
 /// Nothing leaves this phone except via the user's explicitly selected file.
 class DeviceBackupCodec {
@@ -14,6 +16,13 @@ class DeviceBackupCodec {
   static const maxFileBytes = 4 * 1024 * 1024;
   static const maxKeys = 150;
   static const unprotectedFormat = 'taptether-unprotected-devices';
+  // Portable, authenticated backup payloads. Never export the Resideo
+  // device-bound encryption key or raw vault ciphertext.
+  static const resideoCredentialsKey = 'taptether.backup.resideo.credentials.v1';
+  static const resideoLayoutKey = 'taptether.backup.resideo.layout.v1';
+  static const goveeKey = 'taptether_govee_developer_key_v1';
+  static const goveePlacementKey = 'taptether_govee_placements_v1';
+  static const lumaKey = 'taptether_luma_nvr_v1';
 
   // Passwordless portable files deliberately have NO encryption. Only offer
   // this after an explicit confirmation: anyone with the .ttbackup file can
@@ -128,6 +137,13 @@ class DeviceBackupCodec {
       key == 'taptether.lg.thinq.client-id.v1' ||
       key == 'taptether.lg.thinq.enabled.v1' ||
       key == 'taptether.lg.thinq.local-names.v1' ||
+      key == goveeKey ||
+      key == goveePlacementKey ||
+      key == lumaKey ||
+      key == resideoCredentialsKey ||
+      key == resideoLayoutKey ||
+      key == 'taptether.fridge.alerts.enabled.v1' ||
+      key.startsWith('taptether.fridge.alerts.interval.v1.') ||
       key == 'taptether.device.ed25519.v1' ||
       key == 'taptether.network.locations.v1' ||
       key == 'taptether.appearance.theme.v1' ||
@@ -151,6 +167,18 @@ class DeviceBackupCodec {
       throw const FormatException('Too many stored backup entries.');
     }
     return entries;
+  }
+
+  /// Verify the actual saved bytes by decrypting every record.
+  /// Never print or persist the decrypted data.
+  static Future<void> verifyFile(
+      List<int> bytes, Map<String, String> expected, {String? password}) async {
+    final restored = await restoreFile(bytes, password: password);
+    if (restored.length != expected.length ||
+        restored.entries.any((entry) => expected[entry.key] != entry.value)) {
+      throw const FormatException(
+          'Backup verification failed: records do not match.');
+    }
   }
 
   static Future<Uint8List> encrypt(
@@ -270,17 +298,95 @@ class DeviceBackupCodec {
   }
 }
 
-/// Restores exactly the decrypted TapTether entries. App-lock PIN hashes and
-/// biometric state are intentionally excluded; the new installation retains
-/// its own lock settings. A failed write attempts to roll back original data.
+/// Backs up ordinary Keychain values and decrypted, portable Resideo records.
+/// The Resideo vault key, app PIN and biometrics are excluded from backups.
 class DeviceBackupStore {
-  DeviceBackupStore({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+  DeviceBackupStore({
+    FlutterSecureStorage? storage,
+    FlutterSecureStorage? integrationStorage,
+    ResideoLocalVault? resideoVault,
+  })  : _storage = storage ?? const FlutterSecureStorage(),
+        _integrationStorage = integrationStorage ??
+            storage ??
+            const FlutterSecureStorage(
+              iOptions: IOSOptions(
+                accessibility: KeychainAccessibility.first_unlock_this_device,
+              ),
+            ),
+        _resideoVault = resideoVault ?? ResideoLocalVault(storage: storage);
 
   final FlutterSecureStorage _storage;
+  final FlutterSecureStorage _integrationStorage;
+  final ResideoLocalVault _resideoVault;
 
-  Future<Map<String, String>> snapshot() async =>
-      DeviceBackupCodec.selectKeys(await _storage.readAll());
+  static const _lgKeys = <String>[
+    'taptether.lg.thinq.pat.v1',
+    'taptether.lg.thinq.country.v1',
+    'taptether.lg.thinq.client-id.v1',
+    'taptether.lg.thinq.enabled.v1',
+    'taptether.lg.thinq.local-names.v1',
+    'taptether.fridge.alerts.enabled.v1',
+  ];
+  static const _otherKeys = <String>[
+    DeviceBackupCodec.goveeKey,
+    DeviceBackupCodec.goveePlacementKey,
+    DeviceBackupCodec.lumaKey,
+  ];
+
+  static bool _usesBackgroundKeychain(String key) =>
+      _lgKeys.contains(key) ||
+      key.startsWith('taptether.fridge.alerts.interval.v1.');
+
+  Future<Map<String, String>> snapshot() async {
+    final values = await _storage.readAll();
+    // Different Keychain accessibility is used by ThinQ and fridge alerts.
+    for (final key in _lgKeys) {
+      final value = await _integrationStorage.read(key: key);
+      if (value != null) values[key] = value;
+    }
+    for (final key in _otherKeys) {
+      final value = await _storage.read(key: key);
+      if (value != null) values[key] = value;
+    }
+    final vault = await _resideoVault.read();
+    if (vault != null && vault.isNotEmpty) {
+      values[DeviceBackupCodec.resideoCredentialsKey] = jsonEncode(vault);
+    }
+    final layout = await _resideoVault.readLayout();
+    if (layout != null && layout.isNotEmpty) {
+      values[DeviceBackupCodec.resideoLayoutKey] = jsonEncode(layout);
+    }
+    return DeviceBackupCodec.selectKeys(values);
+  }
+
+  static Map<String, dynamic>? _vaultData(
+      String? raw, {required bool credentials}) {
+    if (raw == null) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map || decoded.isEmpty) {
+        throw const FormatException('Invalid integration backup data.');
+      }
+      const allowed = <String>{
+        'apiKey', 'apiSecret', 'accessToken',
+        'refreshToken', 'redirectUri', 'expiresAtUtc',
+      };
+      final map = <String, dynamic>{};
+      for (final pair in decoded.entries) {
+        if (pair.key is! String ||
+            (credentials &&
+                (!allowed.contains(pair.key) || pair.value is! String))) {
+          throw const FormatException('Invalid integration backup data.');
+        }
+        map[pair.key as String] = pair.value;
+      }
+      return map;
+    } on FormatException {
+      rethrow;
+    } catch (_) {
+      throw const FormatException('Invalid integration backup data.');
+    }
+  }
 
   Future<int> restore(Map<String, String> entries) async {
     if (entries.isEmpty ||
@@ -288,24 +394,59 @@ class DeviceBackupStore {
         entries.keys.any((key) => !DeviceBackupCodec.supportedKey(key))) {
       throw const FormatException('Invalid TapTether backup.');
     }
+    // Reject malformed vault entries before changing any live credentials.
+    final credentials = _vaultData(
+        entries[DeviceBackupCodec.resideoCredentialsKey],
+        credentials: true);
+    final layout = _vaultData(
+        entries[DeviceBackupCodec.resideoLayoutKey],
+        credentials: false);
     final originals = await snapshot();
+    final originalCredentials = await _resideoVault.read();
+    final originalLayout = await _resideoVault.readLayout();
     final changed = <String>[];
+    var vaultTouched = false;
     try {
-      for (final item in entries.entries) {
-        await _storage.write(key: item.key, value: item.value);
-        changed.add(item.key);
+      for (final entry in entries.entries) {
+        if (entry.key == DeviceBackupCodec.resideoCredentialsKey ||
+            entry.key == DeviceBackupCodec.resideoLayoutKey) continue;
+        final target = _usesBackgroundKeychain(entry.key)
+            ? _integrationStorage : _storage;
+        await target.write(key: entry.key, value: entry.value);
+        changed.add(entry.key);
       }
-      return changed.length;
+      if (credentials != null || layout != null) vaultTouched = true;
+      if (credentials != null) await _resideoVault.write(credentials);
+      if (layout != null) await _resideoVault.writeLayout(layout);
+      return entries.length;
     } catch (_) {
       for (final key in changed.reversed) {
+        final target =
+            _usesBackgroundKeychain(key) ? _integrationStorage : _storage;
         try {
           if (originals.containsKey(key)) {
-            await _storage.write(key: key, value: originals[key]);
+            await target.write(key: key, value: originals[key]);
           } else {
-            await _storage.delete(key: key);
+            await target.delete(key: key);
           }
         } catch (_) {
-          // Keep original error; a partial rollback requires user attention.
+          // Keep original failure; rollback is best effort.
+        }
+      }
+      if (vaultTouched) {
+        try {
+          if (originalCredentials == null) {
+            await _resideoVault.clear();
+          } else {
+            await _resideoVault.write(originalCredentials);
+          }
+          if (originalLayout == null) {
+            await _resideoVault.clearLayout();
+          } else {
+            await _resideoVault.writeLayout(originalLayout);
+          }
+        } catch (_) {
+          // Keep original failure; rollback is best effort.
         }
       }
       rethrow;

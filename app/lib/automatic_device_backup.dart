@@ -263,13 +263,19 @@ class AutomaticDeviceBackup extends ChangeNotifier {
       final fileBytes = _withoutPassword
           ? DeviceBackupCodec.exportUnprotected(selected)
           : await DeviceBackupCodec.encrypt(selected, password!);
+      await DeviceBackupCodec.verifyFile(
+          fileBytes, selected, password: _withoutPassword ? null : password);
       final response = await _channel.invokeMapMethod<String, dynamic>(
         'writeBackup',
         <String, Object>{
           'bytes': Uint8List.fromList(fileBytes), 'kind': 'auto'});
-      if (response?['saved'] != true) {
+      final fileName = response?['filename']?.toString();
+      if (response?['saved'] != true || fileName == null || fileName.isEmpty) {
         throw StateError('The backup destination did not verify the write.');
       }
+      await DeviceBackupCodec.verifyFile(
+          await readBackup(fileName), selected,
+          password: _withoutPassword ? null : password);
       _lastDigest = digest;
       _lastBackup = DateTime.now().toUtc();
       _folderName = response?['folder']?.toString() ?? _folderName;

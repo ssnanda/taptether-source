@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import 'automatic_device_backup.dart';
 import 'resideo_local_vault.dart';
 
 /// Honeywell Home / Resideo v2 thermostat payload. Device IDs and location
@@ -377,8 +379,10 @@ class ResideoConnection {
 
   Future<Map<String, dynamic>?> dashboardLayout() => _vault.readLayout();
 
-  Future<void> saveDashboardLayout(Map<String, dynamic> layout) =>
-      _vault.writeLayout(layout);
+  Future<void> saveDashboardLayout(Map<String, dynamic> layout) async {
+    await _vault.writeLayout(layout);
+    AutomaticDeviceBackup.instance.requestSoon();
+  }
 
   Future<(List<ResideoDevice>, DateTime?)> cachedDevices() async {
     if (_recentDevices != null) {
@@ -467,12 +471,14 @@ class ResideoConnection {
       if (c.expiresAtUtc != null)
         'expiresAtUtc': c.expiresAtUtc!.toUtc().toIso8601String(),
     });
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<void> disconnect() async {
     _recentDevices = null;
     _recentAt = null;
     await _vault.clear();
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   /// Localhost is a secure OAuth loopback redirect when registered verbatim.

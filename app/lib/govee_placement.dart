@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'govee_api.dart';
+import 'automatic_device_backup.dart';
 
 /// User-defined organization; never inferred from the device model or
 /// manufacturer cloud account. Entries are tied to stable Govee device IDs.
@@ -92,5 +93,6 @@ class GoveePlacementStore {
       normalized[entry.key] = entry.value.toJson();
     }
     await _storage.write(key: key, value: jsonEncode(normalized));
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 }

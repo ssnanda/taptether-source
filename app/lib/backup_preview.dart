@@ -3,11 +3,14 @@ import 'dart:convert';
 /// Human-readable inspection of verified backup data. No raw records,
 /// fingerprint material, tokens, private keys or other secrets are surfaced.
 class BackupPreview {
-  BackupPreview._(this.recordCount, this.groups, this.otherRecordCount);
+  BackupPreview._(this.recordCount, this.groups, this.otherRecordCount,
+      this.integrationNames, this.missingIntegrationNames);
 
   final int recordCount;
   final Map<String, List<String>> groups;
   final int otherRecordCount;
+  final List<String> integrationNames;
+  final List<String> missingIntegrationNames;
 
   int get deviceCount => groups.values.fold<int>(0,
       (total, names) => total + names.length);
@@ -47,7 +50,20 @@ class BackupPreview {
       }
       groups[source.value] = names;
     }
+    const integrationRecords = <String, String>{
+      'taptether.lg.thinq.pat.v1': 'LG ThinQ',
+      'taptether_govee_developer_key_v1': 'Govee',
+      'taptether.backup.resideo.credentials.v1': 'Resideo',
+      'taptether_luma_nvr_v1': 'Luma',
+    };
+    final included = <String>[];
+    final missing = <String>[];
+    for (final entry in integrationRecords.entries) {
+      (records.containsKey(entry.key) ? included : missing)
+          .add(entry.value);
+    }
     return BackupPreview._(
-      records.length, groups, records.length - deviceRecords);
+      records.length, groups, records.length - deviceRecords,
+      included, missing);
   }
 }

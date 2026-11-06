@@ -372,11 +372,16 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     if (!mounted) {
       return;
     }
+    await DeviceBackupCodec.verifyFile(
+        encrypted, entries, password: _usePassword ? password : null);
     if (Platform.isIOS) {
       if (!_auto.folderAvailable) {
         if (!await _auto.chooseFolder() || !mounted) return;
       }
       final filename = await _auto.saveManual(encrypted);
+      await DeviceBackupCodec.verifyFile(
+          await _auto.readBackup(filename), entries,
+          password: _usePassword ? password : null);
       await _loadBackups();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -411,12 +416,15 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
     final password = await _getExportPasswordForChange();
     if (password == null) return null;
     final bytes = await DeviceBackupCodec.encrypt(existing, password);
+    await DeviceBackupCodec.verifyFile(bytes, existing, password: password);
     if (!mounted) return null;
     if (Platform.isIOS) {
       if (!_auto.folderAvailable) {
         if (!await _auto.chooseFolder() || !mounted) return null;
       }
       final saved = await _auto.savePreRestore(bytes);
+      await DeviceBackupCodec.verifyFile(
+          await _auto.readBackup(saved), existing, password: password);
       await _loadBackups();
       return saved;
     }
@@ -479,6 +487,11 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
                 ],
               if (preview.deviceCount == 0)
                 const Text('No named devices in this backup.'),
+              const SizedBox(height: 10),
+              Text('Integrations included: ${preview.integrationNames.isEmpty ? "none" : preview.integrationNames.join(", ")}'),
+              if (preview.missingIntegrationNames.isNotEmpty)
+                Text('Not in this backup: ${preview.missingIntegrationNames.join(", ")}. Older backups cannot restore credentials they never stored.',
+                    style: Theme.of(dialog).textTheme.bodySmall),
               if (preview.otherRecordCount > 0)
                 Text('${preview.otherRecordCount} additional identity, '
                     'SSH, network or preference records'),

@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'automatic_device_backup.dart';
+
 /// Official Govee Developer Platform v1. No passwords or account cookies.
 class GoveeApiException implements Exception {
   const GoveeApiException(this.message);
@@ -203,6 +205,7 @@ class GoveeConnection {
     // Validate before overwriting a working key.
     await _call('/router/api/v1/user/devices', key: key);
     await _storage.write(key: _keySlot, value: key);
+    AutomaticDeviceBackup.instance.requestSoon();
     _key = key;
     cachedDevices = const [];
   }
@@ -211,6 +214,7 @@ class GoveeConnection {
     _key = null;
     cachedDevices = const [];
     await _storage.delete(key: _keySlot);
+    AutomaticDeviceBackup.instance.requestSoon();
   }
 
   Future<Map<String, dynamic>> _call(
