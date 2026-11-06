@@ -14,23 +14,29 @@ class LumaNvrException implements Exception {
   String toString() => message;
 }
 
+enum LumaConnectionMode { httpsIsapi, sdkServer }
+
 class LumaNvrSettings {
   const LumaNvrSettings({
     required this.host,
     required this.username,
     required this.password,
     this.port = 443,
+    this.mode = LumaConnectionMode.httpsIsapi,
   });
 
   final String host;
   final int port;
+  final LumaConnectionMode mode;
   final String username;
   final String password;
 
-  String get address => port == 443 ? host : '$host:$port';
+  String get address => port == 443 && mode == LumaConnectionMode.httpsIsapi
+      ? host : '$host:$port';
 
   static LumaNvrSettings fromInput(
-      String address, String username, String password) {
+      String address, String username, String password,
+      {LumaConnectionMode mode = LumaConnectionMode.httpsIsapi}) {
     final value = address.trim();
     if (value.isEmpty || value.contains('/') || value.contains('@') ||
         value.contains('?') || value.contains('#') ||
@@ -44,7 +50,8 @@ class LumaNvrSettings {
         parts.first.length > 253) {
       throw const LumaNvrException('Enter a valid NVR host or IPv4 address.');
     }
-    final port = parts.length == 2 ? int.tryParse(parts[1]) : 443;
+    final port = parts.length == 2 ? int.tryParse(parts[1])
+        : mode == LumaConnectionMode.sdkServer ? 8000 : 443;
     if (port == null || port < 1 || port > 65535) {
       throw const LumaNvrException('Enter a valid port (1–65535).');
     }
@@ -54,6 +61,7 @@ class LumaNvrSettings {
     return LumaNvrSettings(
       host: parts.first.toLowerCase(),
       port: port,
+      mode: mode,
       username: username.trim(),
       password: password,
     );
@@ -62,14 +70,19 @@ class LumaNvrSettings {
   Map<String, dynamic> toJson() => {
     'host': host,
     'port': port,
+    'mode': mode.name,
     'username': username,
     'password': password,
   };
 
-  factory LumaNvrSettings.fromJson(Map<String, dynamic> data) =>
-      fromInput('${data['host']}:${data['port'] ?? 443}',
-          (data['username'] ?? '').toString(),
-          (data['password'] ?? '').toString());
+  factory LumaNvrSettings.fromJson(Map<String, dynamic> data) {
+    final mode = data['mode'] == LumaConnectionMode.sdkServer.name
+        ? LumaConnectionMode.sdkServer : LumaConnectionMode.httpsIsapi;
+    final defaultPort = mode == LumaConnectionMode.sdkServer ? 8000 : 443;
+    return fromInput('${data['host']}:${data['port'] ?? defaultPort}',
+        (data['username'] ?? '').toString(),
+        (data['password'] ?? '').toString(), mode: mode);
+  }
 }
 
 class LumaSecureStore {
@@ -220,10 +233,9 @@ void validateLumaPut(String xml) {
 String lumaPortDiagnosis({required bool tcpReachable, required int port}) {
   if (tcpReachable) {
     return 'TCP port $port is reachable, but it did not answer as '
-        'HTTPS/ISAPI. The Luma mobile app uses a separate SDK Server port '
-        '(usually 8000, sometimes forwarded to a different number). '
-        'TapTether needs the NVR HTTPS/Web port (usually 443). '
-        'For access away from the recorder, use a VPN.';
+        'HTTPS/ISAPI. If this external port forwards to the NVR SDK/Server '
+        'port 8000, select Server / SDK. SDK access requires a native '
+        'protocol library; port reachability does not verify a login.';
   }
   return 'Cannot reach TCP port $port at this NVR address. '
       'Check the NVR HTTPS/Web port (usually 443), then use the '
@@ -253,6 +265,21 @@ class LumaNvrClient {
     client.badCertificateCallback = (cert, host, port) =>
         host.toLowerCase() == settings.host && port == settings.port;
     return client;
+  }
+
+  /// SDK reachability is not a native SDK login or camera authentication.
+  /// No user credentials are transmitted by this check.
+  Future<bool> sdkPortReachable() async {
+    try {
+      final socket = await Socket.connect(settings.host, settings.port,
+          timeout: const Duration(seconds: 4));
+      socket.destroy();
+      return true;
+    } on SocketException {
+      return false;
+    } on TimeoutException {
+      return false;
+    }
   }
 
   /// Read-only network check. No username or password is transmitted.

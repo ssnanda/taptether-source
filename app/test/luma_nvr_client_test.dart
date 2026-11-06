@@ -34,7 +34,32 @@ void main() {
     expect(custom.host, 'luma.local');
     expect(custom.port, 45679);
     expect(custom.address, 'luma.local:45679');
+    expect(custom.mode, LumaConnectionMode.httpsIsapi);
     expect(LumaNvrSettings.fromJson(custom.toJson()).password, 'test-secret');
+  });
+
+  test('SDK forwarded port and credentials survive secure JSON restore', () {
+    final config = LumaNvrSettings.fromInput(
+        '76.244.19.112:58000', 'luma-user', 'some-password',
+        mode: LumaConnectionMode.sdkServer);
+    expect(config.port, 58000);
+    expect(config.mode, LumaConnectionMode.sdkServer);
+    final restored = LumaNvrSettings.fromJson(config.toJson());
+    expect(restored.mode, LumaConnectionMode.sdkServer);
+    expect(restored.address, '76.244.19.112:58000');
+    expect(restored.username, 'luma-user');
+    expect(restored.password, 'some-password');
+    expect(LumaNvrSettings.fromInput('nvr.local', 'user', 'pass',
+        mode: LumaConnectionMode.sdkServer).port, 8000);
+  });
+
+  test('legacy saved settings remain HTTPS by default', () {
+    final config = LumaNvrSettings.fromJson({
+      'host': 'nvr.local', 'port': 8443,
+      'username': 'user', 'password': 'pass',
+    });
+    expect(config.mode, LumaConnectionMode.httpsIsapi);
+    expect(config.port, 8443);
   });
 
   test('host rejects URL syntax, invalid ports and empty credentials', () {
@@ -58,7 +83,7 @@ void main() {
   test('port diagnosis distinguishes open SDK port from HTTPS API', () {
     final open = lumaPortDiagnosis(tcpReachable: true, port: 58000);
     expect(open, contains('TCP port 58000 is reachable'));
-    expect(open, contains('separate SDK Server port'));
+    expect(open, contains('select Server / SDK'));
     expect(open, contains('HTTPS/Web port'));
     final closed = lumaPortDiagnosis(tcpReachable: false, port: 443);
     expect(closed, contains('Cannot reach TCP port 443'));

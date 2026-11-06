@@ -7,8 +7,10 @@ import 'luma_nvr_client.dart';
 
 /// Local Luma recorder: configuration, snapshots and direct live viewing.
 class LumaCamerasScreen extends StatefulWidget {
-  const LumaCamerasScreen({super.key, this.settingsOnly = false});
+  const LumaCamerasScreen({super.key, this.settingsOnly = false,
+    this.store});
   final bool settingsOnly;
+  final LumaSecureStore? store;
 
   @override
   State<LumaCamerasScreen> createState() => _LumaCamerasScreenState();
@@ -16,7 +18,7 @@ class LumaCamerasScreen extends StatefulWidget {
 
 class _LumaCamerasScreenState extends State<LumaCamerasScreen>
     with WidgetsBindingObserver {
-  final _store = LumaSecureStore();
+  late final LumaSecureStore _store = widget.store ?? LumaSecureStore();
   final _host = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
@@ -32,6 +34,8 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
   bool _refreshing = false;
   bool _editing = false;
   bool _showPassword = false;
+  LumaConnectionMode _mode = LumaConnectionMode.httpsIsapi;
+  bool _statusSuccess = false;
   bool _foreground = true;
   bool _viewerOpen = false;
   String? _error;
@@ -47,7 +51,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
-    if (_foreground && !_viewerOpen && _saved != null) {
+    if (_foreground && !_viewerOpen && _client != null) {
       unawaited(_refresh());
     }
   }
@@ -70,17 +74,13 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
       if (config != null) {
         _host.text = config.address;
         _username.text = config.username;
-        _client = LumaNvrClient(config);
+        _mode = config.mode;
       }
       setState(() {
         _saved = config;
         _editing = config == null;
         _loading = false;
       });
-      if (config != null && !widget.settingsOnly) {
-        unawaited(_refresh());
-        _startRefreshing();
-      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -104,46 +104,88 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
     final previous = _saved;
     final address = _host.text.trim();
     final username = _username.text.trim();
-    final unchanged = previous != null &&
-        previous.address.toLowerCase() == address.toLowerCase() &&
-        previous.username == username;
     return LumaNvrSettings.fromInput(
       address, username,
       _password.text.isNotEmpty ? _password.text
-          : unchanged ? previous.password : '',
+          : previous?.password ?? '',
+      mode: _mode,
     );
   }
 
-  Future<void> _connect({required bool save}) async {
+  /// Secure save is entirely offline: no login or port probe is required.
+  Future<void> _saveSettings() async {
     if (_working) return;
+    setState(() { _working = true; _error = null; });
+    try {
+      final config = _entered();
+      await _store.save(config);
+      if (!mounted) return;
+      _refreshTimer?.cancel();
+      _client?.close();
+      _client = null;
+      _host.text = config.address;
+      _username.text = config.username;
+      _password.clear();
+      setState(() {
+        _saved = config;
+        _device = null;
+        _cameras = [];
+        _snapshots = {};
+        _network = {};
+        _lastChecked = null;
+        _editing = false;
+        _statusSuccess = true;
+        _error = 'Saved securely. Connect whenever you are ready.';
+      });
+    } on LumaNvrException catch (error) {
+      if (mounted) setState(() { _error = error.message; _statusSuccess = false; });
+    } catch (_) {
+      if (mounted) setState(() {
+        _error = 'Unable to save Luma settings to secure storage.';
+        _statusSuccess = false;
+      });
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  /// Explicit connection using previously saved settings, never modifying them.
+  Future<void> _connect() async {
+    if (_working || _saved == null) return;
     setState(() { _working = true; _error = null; });
     LumaNvrClient? candidate;
     try {
-      final config = _entered();
+      final config = _saved!;
       candidate = LumaNvrClient(config);
-      final info = await candidate.deviceInfo();
-      if (save) await _store.save(config);
-      if (!mounted) {
-        candidate.close();
+      if (config.mode == LumaConnectionMode.sdkServer) {
+        final reachable = await candidate.sdkPortReachable();
+        if (!mounted) return;
+        setState(() {
+          _statusSuccess = false;
+          _error = reachable
+              ? 'SDK/Server port is reachable. This does not verify NVR '
+                  'login or enable cameras; native SDK support is required.'
+              : 'SDK/Server port is not reachable. Verify the forwarded port '
+                  'and NVR network connection.';
+        });
         return;
       }
-      if (save) {
-        _client?.close();
-        _client = candidate;
-        candidate = null;
-        _password.clear();
-        setState(() {
-          _saved = config;
-          _device = info;
-          _editing = false;
-          _cameras = [];
-          _snapshots = {};
-        });
-        _startRefreshing();
-        await _refresh();
-      } else {
-        setState(() => _error = 'Connection successful: ${info.name}');
-      }
+      final info = await candidate.deviceInfo();
+      if (!mounted) return;
+      _client?.close();
+      _client = candidate;
+      candidate = null;
+      _password.clear();
+      setState(() {
+        _device = info;
+        _editing = false;
+        _statusSuccess = true;
+        _error = 'Connected to ${info.name}.';
+        _cameras = [];
+        _snapshots = {};
+      });
+      _startRefreshing();
+      await _refresh();
     } on LumaNvrException catch (error) {
       var message = error.message;
       if (candidate != null &&
@@ -152,11 +194,12 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
            message.contains('Cannot reach the NVR'))) {
         message = await candidate.diagnoseFailedConnection();
       }
-      if (mounted) setState(() => _error = message);
+      if (mounted) setState(() { _error = message; _statusSuccess = false; });
     } catch (_) {
-      if (mounted) {
-        setState(() => _error = 'Could not connect to the Luma NVR.');
-      }
+      if (mounted) setState(() {
+        _error = 'Could not connect to the Luma NVR.';
+        _statusSuccess = false;
+      });
     } finally {
       candidate?.close();
       if (mounted) setState(() => _working = false);
@@ -182,6 +225,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
         _snapshots = {};
         _network = {};
         _editing = true;
+        _mode = LumaConnectionMode.httpsIsapi;
       });
     } catch (_) {
       if (mounted) {
@@ -197,7 +241,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
     if (client == null || _refreshing || !_foreground || _viewerOpen) {
       return;
     }
-    setState(() { _refreshing = true; _error = null; });
+    setState(() { _refreshing = true; });
     try {
       final device = await client.deviceInfo();
       final cameras = await client.cameras();
@@ -288,8 +332,8 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
             keyboardType: TextInputType.url,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              labelText: 'NVR HTTPS / ISAPI address',
-              hintText: '192.168.1.79 or hostname:HTTPS-port',
+              labelText: 'NVR address and port',
+              hintText: '192.168.1.79:443 or host:58000',
             ),
           ),
           const SizedBox(height: 10),
@@ -323,20 +367,28 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
             ),
           ),
           const SizedBox(height: 12),
+          Text('Connection type',
+              style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 6),
+          SegmentedButton<LumaConnectionMode>(
+            segments: const [
+              ButtonSegment(value: LumaConnectionMode.httpsIsapi,
+                  label: Text('HTTPS / ISAPI')),
+              ButtonSegment(value: LumaConnectionMode.sdkServer,
+                  label: Text('Server / SDK')),
+            ],
+            selected: {_mode},
+            onSelectionChanged: _working ? null
+                : (selection) => setState(() => _mode = selection.first),
+          ),
+          const SizedBox(height: 12),
           Wrap(spacing: 10, runSpacing: 8, children: [
             OutlinedButton.icon(
-              key: const ValueKey('luma-test-connection'),
-              onPressed: _working ? null : () =>
-                  unawaited(_connect(save: false)),
-              icon: const Icon(Icons.wifi_find_outlined),
-              label: const Text('Test connection'),
-            ),
-            FilledButton.icon(
               key: const ValueKey('luma-save-connection'),
               onPressed: _working ? null : () =>
-                  unawaited(_connect(save: true)),
-              icon: const Icon(Icons.lock_outline),
-              label: const Text('Connect and save'),
+                  unawaited(_saveSettings()),
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Save'),
             ),
             if (_saved != null)
               TextButton(
@@ -356,20 +408,56 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
             ),
           const SizedBox(height: 10),
           Text(
-            'Use the recorder HTTPS/Web port (normally 443), '
-            'not the Server port entered in the Luma mobile app. '
-            'That app uses a different SDK protocol. '
-            'On cellular, use a VPN to reach the recorder; '
-            'its private LAN address works only on the local network.',
+            _mode == LumaConnectionMode.sdkServer
+                ? 'Server / SDK: enter the external forwarded port (for '
+                    'example 58000 → recorder 8000). The port check does '
+                    'not authenticate or enable cameras without a native SDK.'
+                : 'HTTPS / ISAPI: enter the recorder web HTTPS port, '
+                    'usually 443. This is different from its SDK/Server port.',
             key: const ValueKey('luma-isapi-port-help'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 6),
-          Text(
-            'The phone securely stores credentials. Test connection '
-            'checks HTTPS/ISAPI; it does not test the Luma SDK port.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          Text('Save stores settings securely even while offline. '
+              'Connect is a separate action.',
+              style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    ));
+  }
+
+  Widget _savedConnection() {
+    final config = _saved!;
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Saved NVR', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(config.address, key: const ValueKey('luma-saved-address')),
+          Text(config.mode == LumaConnectionMode.sdkServer
+              ? 'Server / SDK' : 'HTTPS / ISAPI',
+              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 10),
+          if (_device == null)
+            FilledButton.icon(
+              key: const ValueKey('luma-connect'),
+              onPressed: _working ? null : () => unawaited(_connect()),
+              icon: const Icon(Icons.link_outlined),
+              label: const Text('Connect'),
+            )
+          else
+            Row(children: [
+              const Icon(Icons.check_circle_outline, color: Colors.green),
+              const SizedBox(width: 6),
+              const Text('Connected'),
+              const Spacer(),
+              TextButton(
+                key: const ValueKey('luma-reconnect'),
+                onPressed: _working ? null : () => unawaited(_connect()),
+                child: const Text('Reconnect'),
+              ),
+            ]),
         ],
       ),
     ));
@@ -496,16 +584,16 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
               padding: const EdgeInsets.all(14),
               children: [
                 if (_editing || _saved == null) _configuration(),
+                if (_saved != null && !_editing) _savedConnection(),
                 if (_error != null)
                   Padding(padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text(_error!,
                       key: const ValueKey('luma-status'),
-                      style: TextStyle(color: _error!.startsWith(
-                          'Connection successful')
+                      style: TextStyle(color: _statusSuccess
                               ? scheme.primary : scheme.error))),
                 if (_working || _refreshing)
                   const LinearProgressIndicator(),
-                if (_saved != null && !widget.settingsOnly) ...[
+                if (_device != null && _client != null && !widget.settingsOnly) ...[
                   _recorder(),
                   const SizedBox(height: 10),
                   Row(children: [
