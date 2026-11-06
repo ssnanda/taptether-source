@@ -89,6 +89,7 @@ on:
       - 'app/lib/lg_webos_screen.dart'
       - 'app/lib/lg_webos_client.dart'
       - 'app/test/lg_compact_remote_test.dart'
+      - 'app/test/lg_tv_power_on_discovery_test.dart'
       - 'app/test/phone_sound_meter_test.dart'
       - 'bin/ios/AppDelegate.swift'
       - 'bin/2i-tt-ios-controls.sh'
