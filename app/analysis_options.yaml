@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+# The vendored MIT Google TV protocol implementation is preserved close to
+# upstream. The app glue, Keychain storage and widget tests are still analyzed.
+analyzer:
+  exclude:
+    - lib/tcl_google_tv_protocol/**

@@ -21,6 +21,8 @@ import 'fridge_alerts.dart';
 import 'package:workmanager/workmanager.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
+import 'tcl_google_tv_screen.dart';
+import 'tcl_google_tv_store.dart';
 import 'xbox_smartglass.dart';
 import 'xbox_manual_targets.dart';
 import 'xbox_remote_screen.dart';
@@ -557,6 +559,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final _lgTimingStore = LgConnectionTimingStore();
   final Map<String, LgConnectionTiming> _lgTiming = {};
   List<SamsungTvDevice> savedSamsungTvs = [];
+  List<TclGoogleTv> savedTclGoogleTvs = [];
   List<XboxConsole> savedXboxConsoles = [];
   List<XboxManualTarget> savedXboxManual = [];
   List<LgThinQDevice> _enabledThinQ = const [];
@@ -753,6 +756,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     unawaited(Future.wait([
       loadLgTvs(),
       loadSamsungTvs(),
+      loadTclGoogleTvs(),
       _refreshNetworkLocation(),
     ]).then((_) => _recoverTvAddresses()));
     unawaited(_listenForAgentAnnouncements());
@@ -776,7 +780,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     // address recovery (with cooldown) instead of requiring a manual scan.
     _tvRecoveryTimer = Timer.periodic(const Duration(minutes: 3), (_) {
       if (_appForeground && _wifiRange != null &&
-          (savedLgTvs.isNotEmpty || savedSamsungTvs.isNotEmpty)) {
+          (savedLgTvs.isNotEmpty || savedSamsungTvs.isNotEmpty ||
+              savedTclGoogleTvs.isNotEmpty)) {
         unawaited(_refreshTvStatuses());
       }
     });
@@ -1823,6 +1828,29 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  Future<void> loadTclGoogleTvs() async {
+    try {
+      final saved = await TclGoogleTvStore().read();
+      if (!mounted) return;
+      setState(() => savedTclGoogleTvs = saved);
+      unawaited(_refreshTvStatuses());
+    } catch (_) {
+      // Pairing credentials remain in Keychain on read errors.
+    }
+  }
+
+  Future<void> openTclGoogleTv({String? host}) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => TclGoogleTvScreen(
+        initialHost: host,
+        onSaved: loadTclGoogleTvs,
+      ),
+    ));
+    if (mounted) {
+      await loadTclGoogleTvs();
+    }
+  }
+
   Future<void> loadXboxConsoles() async {
     try {
       final consoles = await XboxConsoleStore().read();
@@ -1857,6 +1885,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       final lan = await detectLanRange();
       final lg = savedLgTvs.toList();
       final samsung = savedSamsungTvs.toList();
+      final google = savedTclGoogleTvs.toList();
       await Future.wait(<Future<void>>[
         for (final tv in lg) () async {
           final key = 'lg:${tv.host}';
@@ -1873,6 +1902,17 @@ class _RemoteScreenState extends State<RemoteScreen>
           final reachable = lan != null &&
               lanRangeContains(lan, tv.host) &&
               await samsungTvResponds(tv);
+          if (!mounted) return;
+          setState(() {
+            _tvOnline[key] = reachable;
+            if (reachable) _tvLastSeen[key] = DateTime.now();
+          });
+        }(),
+        for (final tv in google) () async {
+          final key = 'google:${tv.host}';
+          final reachable = lan != null &&
+              lanRangeContains(lan, tv.host) &&
+              await tclGoogleTvPortResponds(tv.host);
           if (!mounted) return;
           setState(() {
             _tvOnline[key] = reachable;
@@ -2730,6 +2770,15 @@ class _RemoteScreenState extends State<RemoteScreen>
           },
         ),
         ListTile(
+          key: const ValueKey('drawer-tcl-google-tv'),
+          leading: const Icon(Icons.tv_rounded),
+          title: const Text('TCL Google TV'),
+          onTap: () {
+            Navigator.pop(context);
+            unawaited(openTclGoogleTv());
+          },
+        ),
+        ListTile(
           key: const ValueKey('drawer-luma-cameras'),
           leading: const Icon(Icons.video_camera_back_outlined),
           title: const Text('Luma Cameras'),
@@ -2994,6 +3043,16 @@ class _RemoteScreenState extends State<RemoteScreen>
             },
           ),
           ListTile(
+            key: const ValueKey('choose-tcl-google-tv'),
+            leading: const Icon(Icons.tv_rounded),
+            title: const Text('TCL Google TV'),
+            subtitle: const Text('Google TV on-screen code pairing'),
+            onTap: () {
+              Navigator.pop(sheet);
+              unawaited(openTclGoogleTv());
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.videogame_asset_outlined),
             title: const Text('Xbox One / Series'),
             subtitle: const Text('Discover and wake Xbox on Wi-Fi'),
@@ -3071,6 +3130,12 @@ class _RemoteScreenState extends State<RemoteScreen>
             onPressed: _chooseTvType,
           ),
           ActionChip(
+            key: const ValueKey('add-tcl-google-tv-action'),
+            avatar: const Icon(Icons.tv_rounded, size: 18),
+            label: const Text('TCL Google TV'),
+            onPressed: () => unawaited(openTclGoogleTv()),
+          ),
+          ActionChip(
             key: const ValueKey('add-xbox-action'),
             avatar: const Icon(Icons.videogame_asset_outlined, size: 18),
             label: const Text('Xbox'),
@@ -3125,6 +3190,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     final localTvs = savedLgTvs.where((tv) =>
         savedDeviceOnNetwork(_wifiRange, tv.host)).length +
         savedSamsungTvs.where((tv) =>
+        savedDeviceOnNetwork(_wifiRange, tv.host)).length +
+        savedTclGoogleTvs.where((tv) =>
         savedDeviceOnNetwork(_wifiRange, tv.host)).length;
     final manualXbox = savedXboxManual.where((x) =>
         !savedXboxConsoles.any((verified) => verified.host == x.host)).toList();
@@ -3135,7 +3202,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     final localEmpty = visibleDevices.isEmpty &&
         localTvs == 0 && localXbox == 0;
     final noSaved = savedComputers.isEmpty && savedLgTvs.isEmpty &&
-        savedSamsungTvs.isEmpty && savedXboxConsoles.isEmpty &&
+        savedSamsungTvs.isEmpty && savedTclGoogleTvs.isEmpty &&
+        savedXboxConsoles.isEmpty &&
         savedXboxManual.isEmpty;
     // Status is verified locally or reported by a successful ThinQ API read.
     // Xboxes have no reachability probe here, so cannot be marked Online.
@@ -3149,11 +3217,17 @@ class _RemoteScreenState extends State<RemoteScreen>
         savedSamsungTvs.where((tv) =>
         _tvVisible('samsung:${tv.host}') &&
         savedDeviceOnNetwork(_wifiRange, tv.host) &&
-        _tvOnline['samsung:${tv.host}'] == true).length;
+        _tvOnline['samsung:${tv.host}'] == true).length +
+        savedTclGoogleTvs.where((tv) =>
+        _tvVisible('google:${tv.host}') &&
+        savedDeviceOnNetwork(_wifiRange, tv.host) &&
+        _tvOnline['google:${tv.host}'] == true).length;
     final visibleTvCount = savedLgTvs.where((tv) =>
         _tvVisible('lg:${tv.host}')).length +
         savedSamsungTvs.where((tv) =>
-        _tvVisible('samsung:${tv.host}')).length;
+        _tvVisible('samsung:${tv.host}')).length +
+        savedTclGoogleTvs.where((tv) =>
+        _tvVisible('google:${tv.host}')).length;
     final visibleXboxCount = savedXboxConsoles.where((xbox) =>
         _showAllDevices ||
         savedDeviceOnNetwork(_wifiRange, xbox.host)).length +
@@ -3421,6 +3495,33 @@ class _RemoteScreenState extends State<RemoteScreen>
               ]),
               onTap: savedDeviceOnNetwork(_wifiRange, tv.host)
                   ? () => openSamsungTv(host: tv.host) : null,
+            ),
+          ),
+      for (final tv in savedTclGoogleTvs)
+        if (_tvVisible('google:${tv.host}') &&
+            ((savedDeviceOnNetwork(_wifiRange, tv.host) &&
+              _tvOnline['google:${tv.host}'] == true) == onlineGroup))
+          Card(
+            key: ValueKey('tcl-google-tv-${tv.host}'),
+            margin: const EdgeInsets.only(bottom: 5),
+            child: ListTile(
+              dense: true,
+              minVerticalPadding: 3,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+              leading: TapTetherDashboardVisuals.iconTile(
+                  Icons.tv_rounded, const Color(0xFF10AFA2),
+                  const Color(0xFF46B57D), size: 36),
+              title: Text(tv.name, maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700,
+                      fontSize: 14)),
+              subtitle: Text(savedDeviceOnNetwork(_wifiRange, tv.host)
+                  ? 'TCL Google TV · ${tv.paired ? "Paired" : "Needs pairing"}'
+                  : 'TCL Google TV · Other network',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5)),
+              trailing: _tvStatus('google', tv.host),
+              onTap: () => unawaited(openTclGoogleTv(host: tv.host)),
             ),
           ),
       for (final xbox in manualXbox)
