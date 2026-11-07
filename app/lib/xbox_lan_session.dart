@@ -225,7 +225,7 @@ class XboxLanSession {
     discovered = identity;
     final certificate = xboxLanCertificate(discovery, host)!;
     final point = xboxLanP256Point(certificate);
-    final ecdh = Ecdh.p256();
+    final ecdh = Ecdh.p256(length: 32);
     final pair = await ecdh.newKeyPair();
     final public = await pair.extractPublicKey();
     final remote = EcPublicKey(
@@ -257,7 +257,7 @@ class XboxLanSession {
     final signed = <int>[...header, ...clear, ...ciphertext];
     final hmac = hashes.Hmac(hashes.sha256, _hmacKey!).convert(signed).bytes;
     _send(Uint8List.fromList([...signed, ...hmac]));
-    Uint8List? response;
+    late final Uint8List response;
     try {
       response = await _await((p) => p.length >= 2 &&
           _word(p, 0) == 0xcc01, const Duration(seconds: 4));
