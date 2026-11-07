@@ -10,9 +10,7 @@ import 'xbox_network_diagnostics.dart';
 import 'xbox_manual_targets.dart';
 import 'xbox_remote_session_screen.dart';
 
-/// TapTether 0.8.78: compact Xbox remote controls and direct connect.
-/// Connect to Microsoft's actual Xbox Remote Play touch controller.
-/// Legacy LAN discovery and SmartGlass wake are optional independent tools.
+/// Local Xbox controls using the console's encrypted Wi-Fi input channel.
 class XboxRemoteScreen extends StatefulWidget {
   const XboxRemoteScreen({
     super.key,
@@ -86,8 +84,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     }
   }
 
-  /// Save the address BEFORE opening Microsoft Remote Play. The browser
-  /// sign-in remains owned by Microsoft and is never mistaken for LAN pairing.
+  /// Save the selected address, then establish the real Xbox LAN session.
   Future<void> _openRemotePlay() async {
     final host = _ip.text.trim();
     if (_busy || !isPrivateIPv4(host)) return;
@@ -107,7 +104,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       if (!mounted) return;
       setState(() {
         _manual = updated;
-        _message = 'Xbox address saved · Microsoft sign-in is separate';
+        _message = 'Xbox address saved';
       });
       await widget.onSaved?.call();
       if (!mounted) return;
@@ -117,11 +114,18 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           builder: (_) => XboxRemoteSessionScreen(
             host: host,
             name: name,
+            known: _selected?.host == host ? _selected : null,
             onManage: () => Navigator.of(context).pop(),
+            onConnected: (device) async {
+              await _store.save(device.copyWith(
+                  location: widget.initialLocation));
+              await _load();
+              await widget.onSaved?.call();
+            },
           ),
         ));
         if (!mounted) return;
-        setState(() => _message = 'Xbox saved · Remote Play closed');
+        setState(() => _message = 'Xbox Wi-Fi remote closed');
         return;
       }
       final launched = await widget.connect!.call();
@@ -130,13 +134,13 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         if (launched) {
           _message = 'Opened';
         } else {
-          _error = 'Unable to open Microsoft Remote Play.';
+          _error = 'Unable to connect to Xbox over Wi-Fi.';
         }
       });
     } catch (_) {
       if (mounted) {
         setState(() => _error =
-            'Could not save Xbox address or open Remote Play.');
+            'Could not save Xbox address or connect locally.');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -639,8 +643,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
               'were scanned (up to 1,024 addresses).'),
         const SizedBox(height: 8),
         const Text('TCP timeouts cannot determine whether the Xbox is '
-            'online or Remote Features are enabled. Tap Connect Xbox '
-            'for the supported authenticated controller.'),
+            'online or Remote Features are enabled. Tap Connect to try the encrypted Wi-Fi controller.'),
       ]),
     ));
   }

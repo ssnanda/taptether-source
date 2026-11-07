@@ -109,11 +109,15 @@ assert "label: const Text('Connect')" in xbox_ui
 assert "label: const Text('Save')" in xbox_ui
 assert "xbox-diagnostics-toggle" in xbox_ui
 assert "2 · Remote Features enabled" not in xbox_ui
-assert "Xbox Remote Play" in xbox_ui
+assert "Xbox Remote Play" not in xbox_ui
 controller = (ROOT / "app" / "lib" / "xbox_remote_session_screen.dart").read_text()
-assert "XboxVirtualGamepad.buttonScript" in controller
-assert "WebViewWidget(controller: _browser)" in controller
+assert "XboxLanSession.connect" in controller
+assert "xbox_lan_session.dart" in controller
+assert "WebViewWidget" not in controller
+assert "XboxVirtualGamepad" not in controller
+assert "xbox.com" not in controller
 assert "XboxRemoteSessionScreen(" in xbox_ui
+assert "onConnected: (device)" in xbox_ui
 assert "await _manualStore.save(XboxManualTarget(" in xbox_ui
 assert "await _store.saveLastTargetIp(host)" in xbox_ui
 assert "openSavedXboxRemote(" in mobile_dashboard
