@@ -2917,15 +2917,6 @@ class _RemoteScreenState extends State<RemoteScreen>
           },
         ),
         ListTile(
-          key: const ValueKey('drawer-samsung-family-hub'),
-          leading: const Icon(Icons.kitchen_outlined),
-          title: const Text('Samsung Family Hub'),
-          onTap: () {
-            Navigator.pop(context);
-            unawaited(openFamilyHub());
-          },
-        ),
-        ListTile(
           key: const ValueKey('drawer-luma-cameras'),
           leading: const Icon(Icons.video_camera_back_outlined),
           title: const Text('Luma Cameras'),

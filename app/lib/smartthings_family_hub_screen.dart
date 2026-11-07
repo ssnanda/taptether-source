@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'display_time.dart';
 import 'smartthings_family_hub.dart';
+import 'discovery.dart';
 
 /// Samsung Family Hub: known LAN IP + read-only SmartThings sensor status.
 /// Save remains offline and never tests credentials or replaces saved tokens.
@@ -79,8 +80,9 @@ class _SmartThingsFamilyHubScreenState
 
   FamilyHubSettings _entered() {
     final ip = _ip.text.trim();
-    if (ip.isEmpty) {
-      throw const FormatException('Enter the Samsung Family Hub local IP.');
+    if (ip.isEmpty || !isPrivateIPv4(ip)) {
+      throw const FormatException(
+          'Enter a private Wi-Fi IPv4 address for Family Hub.');
     }
     final previous = _settings;
     return previous.copyWith(
