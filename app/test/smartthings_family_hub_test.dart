@@ -160,12 +160,12 @@ void main() {
     expect(url.path, '/v1/oauth/authorize');
     expect(url.queryParameters['scope'], 'r:devices:*');
     expect(FamilyHubClient.codeFromCallback(
-        registered + '?code=abc&state=' + state, registered, state), 'abc');
+        '$registered?code=abc&state=$state', registered, state), 'abc');
     expect(() => FamilyHubClient.codeFromCallback(
-        registered + '?code=abc&state=wrong', registered, state),
+        '$registered?code=abc&state=wrong', registered, state),
         throwsFormatException);
     expect(() => FamilyHubClient.codeFromCallback(
-        'https://attacker.test/oauth?code=abc&state=' + state,
+        'https://attacker.test/oauth?code=abc&state=$state',
         registered, state), throwsFormatException);
   });
 }

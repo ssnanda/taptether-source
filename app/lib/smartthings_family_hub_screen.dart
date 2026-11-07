@@ -193,7 +193,7 @@ class _SmartThingsFamilyHubScreenState
         _checked = DateTime.now();
         _show(selected == null
             ? 'Connected to SmartThings, but no refrigerator was reported.'
-            : 'Connected to SmartThings · ' + selected.name,
+            : 'Connected to SmartThings · ${selected.name}',
           good: true);
       });
     } on FamilyHubApiException catch (e) {
@@ -227,7 +227,7 @@ class _SmartThingsFamilyHubScreenState
         _settings = config;
         _status = status;
         _checked = DateTime.now();
-        _show('Connected to ' + selected.name, good: true);
+        _show('Connected to ${selected.name}', good: true);
       });
       await widget.onSaved?.call();
     } catch (_) {
@@ -462,7 +462,7 @@ class _SmartThingsFamilyHubScreenState
         if (selected != null) Card(child: Column(children: [
           ListTile(title: Text(selected.name),
             subtitle: Text(_checked == null ? 'Not refreshed'
-              : 'Updated ' + displayTimeAmPm(_checked!)),
+              : 'Updated ${displayTimeAmPm(_checked!)}'),
             trailing: IconButton(
               tooltip: 'Refresh status',
               onPressed: _busy ? null : () => unawaited(_connect()),

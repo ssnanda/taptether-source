@@ -3766,7 +3766,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
             subtitle: Text(familyHubOnline
                 ? 'Local TCP 17654 reachable · SmartThings status separate'
-                : 'Saved · ' + _familyHub.localIp + ' · Local control unverified',
+                : 'Saved · ${_familyHub.localIp} · Local control unverified',
                 maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 11.5)),
             trailing: const Icon(Icons.chevron_right_rounded),

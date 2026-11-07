@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'lan_scan.dart';
-import 'network_probes.dart';
+import 'discovery.dart';
 
 /// Family Hub TCP 17654 is a device hint, not an authenticated control API.
 class FamilyHubSettings {
@@ -101,7 +101,9 @@ class FamilyHubDevice {
     final hint = [data['name'], data['label'], data['deviceTypeName'],
       data['modelName']].join(' ').toLowerCase();
     if (hint.contains('family hub') || hint.contains('refrigerator') ||
-        hint.contains('fridge')) return true;
+        hint.contains('fridge')) {
+      return true;
+    }
     final components = data['components'];
     return components is List && components.whereType<Map>().any(
         (row) => ['cooler', 'freezer', 'fridge'].contains(row['id']));
@@ -148,10 +150,9 @@ class FamilyHubStatus {
         }
         final unit = (attr['unit'] ?? '').toString();
         final title = part.key == 'main' ? spec.$3
-            : part.key.toString() + ' · ' + spec.$3;
+            : '${part.key} · ${spec.$3}';
         output.add((label: title,
-          value: attr['value'].toString() +
-              (unit.isEmpty ? '' : ' ' + unit)));
+          value: '${attr['value']}${unit.isEmpty ? '' : ' $unit'}'));
       }
     }
     return output;
@@ -254,7 +255,7 @@ class FamilyHubClient {
           throw const FamilyHubApiException('SmartThings rate limited.');
         }
         throw FamilyHubApiException(
-            'SmartThings HTTP ' + resp.statusCode.toString());
+            'SmartThings HTTP ${resp.statusCode}.');
       }
       if (content.isEmpty) {
         return {};
@@ -278,10 +279,10 @@ class FamilyHubClient {
   Future<FamilyHubSettings> _exchange(FamilyHubSettings config,
       Map<String, String> params) async {
     final basic = base64Encode(
-        utf8.encode(config.clientId + ':' + config.clientSecret));
+        utf8.encode('${config.clientId}:${config.clientSecret}'));
     final response = await _send('POST',
         Uri.https('api.smartthings.com', '/v1/oauth/token'), {
-      'Authorization': 'Basic ' + basic,
+      'Authorization': 'Basic $basic',
       'Content-Type': 'application/x-www-form-urlencoded',
       'Accept': 'application/json',
     }, params);
@@ -350,7 +351,7 @@ class FamilyHubClient {
     String token = await _token();
     Future<Map<String, dynamic>> call(String key) => _send('GET',
         Uri.https('api.smartthings.com', path), {
-      'Authorization': 'Bearer ' + key, 'Accept': 'application/json',
+      'Authorization': 'Bearer $key', 'Accept': 'application/json',
     }, null);
     try {
       return await call(token);
@@ -384,6 +385,6 @@ class FamilyHubClient {
       throw const FormatException('Invalid device ID.');
     }
     return FamilyHubStatus.fromJson(
-        await _get('/v1/devices/' + id + '/status'));
+        await _get('/v1/devices/$id/status'));
   }
 }
