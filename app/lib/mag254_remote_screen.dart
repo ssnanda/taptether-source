@@ -56,10 +56,12 @@ class _Mag254RemoteScreenState extends State<Mag254RemoteScreen> {
         _loading = false;
       });
     } catch (_) {
-      if (mounted) setState(() {
-        _loading = false;
-        _note('Could not load saved MAG254 devices.');
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _note('Could not load saved MAG254 devices.');
+        });
+      }
     }
   }
 
@@ -71,10 +73,12 @@ class _Mag254RemoteScreenState extends State<Mag254RemoteScreen> {
   void _disconnect() {
     _client?.close();
     _client = null;
-    if (mounted) setState(() {
-      _connected = false;
-      _settings = false;
-    });
+    if (mounted) {
+      setState(() {
+        _connected = false;
+        _settings = false;
+      });
+    }
   }
 
   Future<void> _save() async {
@@ -170,8 +174,10 @@ class _Mag254RemoteScreenState extends State<Mag254RemoteScreen> {
       });
       await widget.onSaved?.call();
     } catch (_) {
-      if (mounted) setState(() => _note('Could not pair MAG254. '
-          'Confirm its remote setting, Wi-Fi and pairing code.'));
+      if (mounted) {
+        setState(() => _note('Could not pair MAG254. '
+            'Confirm its remote setting, Wi-Fi and pairing code.'));
+      }
     } finally {
       _pairing?.close();
       _pairing = null;
@@ -209,8 +215,10 @@ class _Mag254RemoteScreenState extends State<Mag254RemoteScreen> {
     } catch (_) {
       _client?.close();
       _client = null;
-      if (mounted) setState(() => _note(
-          'MAG254 connection failed. Verify IP and pairing.'));
+      if (mounted) {
+        setState(() => _note(
+            'MAG254 connection failed. Verify IP and pairing.'));
+      }
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -221,11 +229,13 @@ class _Mag254RemoteScreenState extends State<Mag254RemoteScreen> {
     try {
       await _client?.sendKey(code);
     } catch (_) {
-      if (mounted) setState(() {
-        _connected = false;
-        _settings = true;
-        _note('MAG254 disconnected. Reconnect from settings.');
-      });
+      if (mounted) {
+        setState(() {
+          _connected = false;
+          _settings = true;
+          _note('MAG254 disconnected. Reconnect from settings.');
+        });
+      }
     }
   }
 
@@ -268,8 +278,10 @@ class _Mag254RemoteScreenState extends State<Mag254RemoteScreen> {
               success: found.isNotEmpty);
       });
     } catch (_) {
-      if (mounted) setState(() => _note(
-          'Discovery failed. Enter the local MAG254 IP.'));
+      if (mounted) {
+        setState(() => _note(
+            'Discovery failed. Enter the local MAG254 IP.'));
+      }
     } finally {
       if (mounted) setState(() => _working = false);
     }
