@@ -22,6 +22,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
   final _host = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _isapiAddress = TextEditingController();
   LumaNvrSettings? _saved;
   LumaNvrClient? _client;
   LumaDeviceInfo? _device;
@@ -64,6 +65,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
     _host.dispose();
     _username.dispose();
     _password.dispose();
+    _isapiAddress.dispose();
     super.dispose();
   }
 
@@ -74,6 +76,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
       if (config != null) {
         _host.text = config.address;
         _username.text = config.username;
+        _isapiAddress.text = config.isapiAddress;
         _mode = config.mode;
       }
       setState(() {
@@ -109,6 +112,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
       _password.text.isNotEmpty ? _password.text
           : previous?.password ?? '',
       mode: _mode,
+      isapiAddress: _isapiAddress.text,
     );
   }
 
@@ -125,6 +129,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
       _client = null;
       _host.text = config.address;
       _username.text = config.username;
+      _isapiAddress.text = config.isapiAddress;
       _password.clear();
       setState(() {
         _saved = config;
@@ -160,17 +165,19 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
     LumaNvrClient? candidate;
     try {
       final config = _saved!;
-      candidate = LumaNvrClient(config);
-      if (config.mode == LumaConnectionMode.sdkServer) {
+      final cameraConfig = config.cameraConnection;
+      candidate = LumaNvrClient(cameraConfig ?? config);
+      if (cameraConfig == null) {
         final reachable = await candidate.sdkPortReachable();
         if (!mounted) return;
         setState(() {
           _statusSuccess = false;
           _error = reachable
-              ? 'SDK/Server port is reachable. This does not verify NVR '
-                  'login or enable cameras; native SDK support is required.'
-              : 'SDK/Server port is not reachable. Verify the forwarded port '
-                  'and NVR network connection.';
+              ? 'SDK port reachable, but it is not a camera HTTPS API. '
+                  'Add the recorder HTTPS/Web address under Settings '
+                  '(AJOPS connection) to load cameras.'
+              : 'SDK port unavailable. The saved credentials remain safe. '
+                  'Add a reachable HTTPS/Web endpoint for cameras.';
         });
         return;
       }
@@ -226,6 +233,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
       _host.clear();
       _username.clear();
       _password.clear();
+      _isapiAddress.clear();
       setState(() {
         _saved = null;
         _device = null;
@@ -306,7 +314,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
   }
 
   Future<void> _openCamera(LumaCamera camera) async {
-    final config = _saved;
+    final config = _client?.settings;
     if (config == null || camera.online == false) return;
     setState(() => _viewerOpen = true);
     try {
@@ -390,6 +398,22 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
                 : (selection) => setState(() => _mode = selection.first),
           ),
           const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('luma-isapi-address'),
+            controller: _isapiAddress,
+            enabled: !_working,
+            autocorrect: false,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Camera HTTPS/Web address (AJOPS)',
+              hintText: '192.168.1.79:443 or trusted-relay:port',
+              helperText: 'Optional. Reachable HTTPS/ISAPI via LAN, '
+                  'VPN or a trusted relay.',
+              helperMaxLines: 2,
+            ),
+          ),
+          const SizedBox(height: 12),
           Wrap(spacing: 10, runSpacing: 8, children: [
             OutlinedButton.icon(
               key: const ValueKey('luma-save-connection'),
@@ -417,11 +441,10 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
           const SizedBox(height: 10),
           Text(
             _mode == LumaConnectionMode.sdkServer
-                ? 'Server / SDK: enter the external forwarded port (for '
-                    'example 58000 → recorder 8000). The port check does '
-                    'not authenticate or enable cameras without a native SDK.'
-                : 'HTTPS / ISAPI: enter the recorder web HTTPS port, '
-                    'usually 443. This is different from its SDK/Server port.',
+                ? 'SDK port 58000 → 8000 is not an HTTPS camera service. '
+                    'AJOPS used a separate HTTPS address for live cameras.'
+                : 'HTTPS/ISAPI uses the web port (normally 443). '
+                    'An optional AJOPS-compatible relay is available above.',
             key: const ValueKey('luma-isapi-port-help'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -446,6 +469,10 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
           Text(config.mode == LumaConnectionMode.sdkServer
               ? 'Server / SDK' : 'HTTPS / ISAPI',
               style: Theme.of(context).textTheme.bodySmall),
+          if (config.isapiAddress.isNotEmpty)
+            Text('Camera API: ${config.isapiAddress}',
+                key: const ValueKey('luma-saved-isapi-address'),
+                style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 10),
           if (_device == null)
             FilledButton.icon(
@@ -477,7 +504,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
     final detail = [
       if (info.model.isNotEmpty) info.model,
       if (info.firmware.isNotEmpty) 'Firmware ${info.firmware}',
-      if (_saved != null) _saved!.address,
+      if (_client != null) _client!.settings.address,
     ].join(' · ');
     return Card(
       child: Padding(padding: const EdgeInsets.all(12),
@@ -577,7 +604,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
               onPressed: () => setState(() => _editing = true),
               icon: const Icon(Icons.tune_outlined),
             ),
-          if (_saved != null && !widget.settingsOnly)
+          if (_client != null && !widget.settingsOnly)
             IconButton(
               key: const ValueKey('luma-refresh'),
               tooltip: 'Refresh cameras',

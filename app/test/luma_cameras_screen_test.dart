@@ -35,6 +35,8 @@ void main() {
         'camera-password');
     await tester.tap(find.text('Server / SDK'));
     await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('luma-isapi-address')),
+        '192.168.1.79:443');
     await tester.ensureVisible(find.byKey(const ValueKey('luma-save-connection')));
     await tester.tap(find.byKey(const ValueKey('luma-save-connection')));
     await tester.pumpAndSettle();
@@ -43,6 +45,8 @@ void main() {
     expect(store.settings?.host, 'example.test');
     expect(store.settings?.port, 58000);
     expect(store.settings?.mode, LumaConnectionMode.sdkServer);
+    expect(store.settings?.isapiAddress, '192.168.1.79');
+    expect(store.settings?.cameraConnection?.port, 443);
     expect(store.settings?.password, 'camera-password');
     expect(find.byKey(const ValueKey('luma-connect')), findsOneWidget);
     expect(find.textContaining('Saved securely'), findsOneWidget);

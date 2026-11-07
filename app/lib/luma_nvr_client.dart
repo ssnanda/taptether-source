@@ -23,20 +23,33 @@ class LumaNvrSettings {
     required this.password,
     this.port = 443,
     this.mode = LumaConnectionMode.httpsIsapi,
+    this.isapiAddress = '',
   });
 
   final String host;
   final int port;
   final LumaConnectionMode mode;
+  /// Optional AJOPS-compatible HTTPS camera endpoint, never the SDK port.
+  final String isapiAddress;
   final String username;
   final String password;
 
   String get address => port == 443 && mode == LumaConnectionMode.httpsIsapi
       ? host : '$host:$port';
 
+  /// The AJOPS client used HTTPS/ISAPI via a direct or relay endpoint.
+  /// Keep that camera endpoint separate from the mobile SDK/Server port.
+  LumaNvrSettings? get cameraConnection {
+    if (isapiAddress.isNotEmpty) {
+      return fromInput(isapiAddress, username, password);
+    }
+    return mode == LumaConnectionMode.httpsIsapi ? this : null;
+  }
+
   static LumaNvrSettings fromInput(
       String address, String username, String password,
-      {LumaConnectionMode mode = LumaConnectionMode.httpsIsapi}) {
+      {LumaConnectionMode mode = LumaConnectionMode.httpsIsapi,
+       String isapiAddress = ''}) {
     final value = address.trim();
     if (value.isEmpty || value.contains('/') || value.contains('@') ||
         value.contains('?') || value.contains('#') ||
@@ -58,10 +71,18 @@ class LumaNvrSettings {
     if (username.trim().isEmpty || password.isEmpty) {
       throw const LumaNvrException('NVR username and password are required.');
     }
+    // An optional AJOPS relay or HTTPS/Web endpoint can be saved offline.
+    final endpointInput = isapiAddress.trim();
+    String normalizedEndpoint = '';
+    if (endpointInput.isNotEmpty) {
+      final endpoint = fromInput(endpointInput, username, password);
+      normalizedEndpoint = endpoint.address;
+    }
     return LumaNvrSettings(
       host: parts.first.toLowerCase(),
       port: port,
       mode: mode,
+      isapiAddress: normalizedEndpoint,
       username: username.trim(),
       password: password,
     );
@@ -71,6 +92,7 @@ class LumaNvrSettings {
     'host': host,
     'port': port,
     'mode': mode.name,
+    'isapiAddress': isapiAddress,
     'username': username,
     'password': password,
   };
@@ -81,7 +103,8 @@ class LumaNvrSettings {
     final defaultPort = mode == LumaConnectionMode.sdkServer ? 8000 : 443;
     return fromInput('${data['host']}:${data['port'] ?? defaultPort}',
         (data['username'] ?? '').toString(),
-        (data['password'] ?? '').toString(), mode: mode);
+        (data['password'] ?? '').toString(), mode: mode,
+        isapiAddress: (data['isapiAddress'] ?? '').toString());
   }
 }
 
@@ -334,8 +357,9 @@ class LumaNvrClient {
       rethrow;
     } on HandshakeException {
       throw const LumaNvrException(
-          'NVR TLS handshake failed. Older Luma firmware may require a '
-          'legacy cipher not supported by iOS.');
+          'NVR TLS handshake failed. The old AJOPS server supported legacy '
+          'OpenSSL ciphers that iOS may reject. Use a trusted modern-TLS '
+          'relay or a compatible HTTPS connection to the recorder.');
     } on SocketException {
       throw const LumaNvrException(
           'Cannot reach the NVR. Check its LAN address and Wi-Fi.');

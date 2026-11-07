@@ -53,6 +53,44 @@ void main() {
         mode: LumaConnectionMode.sdkServer).port, 8000);
   });
 
+  test('AJOPS camera HTTPS endpoint works independently from SDK address', () {
+    final saved = LumaNvrSettings.fromInput(
+        '76.244.19.112:58000', 'user', 'secret',
+        mode: LumaConnectionMode.sdkServer,
+        isapiAddress: '192.168.1.79:443');
+    expect(saved.address, '76.244.19.112:58000');
+    expect(saved.isapiAddress, '192.168.1.79');
+    expect(saved.cameraConnection?.host, '192.168.1.79');
+    expect(saved.cameraConnection?.port, 443);
+    expect(saved.cameraConnection?.password, 'secret');
+    expect(saved.cameraConnection?.mode, LumaConnectionMode.httpsIsapi);
+    final restored = LumaNvrSettings.fromJson(saved.toJson());
+    expect(restored.isapiAddress, '192.168.1.79');
+    expect(restored.cameraConnection?.username, 'user');
+  });
+
+  test('SDK-only address never masquerades as HTTPS camera API', () {
+    final sdk = LumaNvrSettings.fromInput(
+        'nvr.example:58000', 'user', 'pw',
+        mode: LumaConnectionMode.sdkServer);
+    expect(sdk.cameraConnection, isNull);
+    final https = LumaNvrSettings.fromInput(
+        'nvr.local:8443', 'user', 'pw');
+    expect(https.cameraConnection?.port, 8443);
+  });
+
+  test('AJOPS relay rejects URLs, redirects and invalid ports', () {
+    for (final address in [
+      'https://192.168.1.79', 'host/path', 'admin@host',
+      'host:0', 'host:65536', 'host?x=y',
+    ]) {
+      expect(() => LumaNvrSettings.fromInput(
+          'nvr.local:58000', 'user', 'pw',
+          mode: LumaConnectionMode.sdkServer,
+          isapiAddress: address), throwsA(isA<LumaNvrException>()));
+    }
+  });
+
   test('legacy saved settings remain HTTPS by default', () {
     final config = LumaNvrSettings.fromJson({
       'host': 'nvr.local', 'port': 8443,
