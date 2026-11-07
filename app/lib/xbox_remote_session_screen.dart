@@ -95,10 +95,12 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
     try {
       session.buttons(_held);
     } catch (_) {
-      if (mounted) setState(() {
-        _status = 'Disconnected';
-        _error = 'The local controller stopped responding.';
-      });
+      if (mounted) {
+        setState(() {
+          _status = 'Disconnected';
+          _error = 'The local controller stopped responding.';
+        });
+      }
     }
   }
 
