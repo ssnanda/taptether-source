@@ -60,7 +60,13 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
     });
     try {
       final connected = await XboxLanSession.connect(
-          widget.host, known: widget.known);
+          widget.host,
+          known: widget.known,
+          onProgress: (stage) {
+            if (mounted) {
+              setState(() => _status = stage);
+            }
+          });
       if (!mounted) {
         await connected.close();
         return;

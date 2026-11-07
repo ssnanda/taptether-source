@@ -64,6 +64,24 @@ void main() {
     expect(await XboxConsoleStore().lastTargetIp(), '192.168.68.82');
   });
 
+  testWidgets('Scan checks the typed Xbox IP directly instead of sweeping Wi-Fi',
+      (tester) async {
+    final targets = <String?>[];
+    await tester.pumpWidget(MaterialApp(home: XboxRemoteScreen(
+      initialHost: '192.168.68.85',
+      discovery: ({String? targetIp}) async {
+        targets.add(targetIp);
+        return [];
+      },
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('xbox-scan')));
+    await tester.pumpAndSettle();
+    expect(targets, ['192.168.68.85']);
+    expect(find.textContaining('No compatible Xbox LAN reply from '
+        '192.168.68.85'), findsOneWidget);
+  });
+
   testWidgets('Save Xbox IP works without an Xbox discovery response',
       (tester) async {
     var saved = 0;

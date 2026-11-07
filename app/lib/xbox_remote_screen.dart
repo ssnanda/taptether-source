@@ -104,7 +104,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       if (!mounted) return;
       setState(() {
         _manual = updated;
-        _message = 'Xbox address saved';
+        _message = 'Xbox address saved (not connected)';
       });
       await widget.onSaved?.call();
       if (!mounted) return;
@@ -276,7 +276,12 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
         }
         _message = results.isNotEmpty
             ? 'Found ${results.length} Xbox ${results.length == 1 ? 'device' : 'devices'}'
-            : 'No Xbox found';
+            : ip != null
+                ? 'No compatible Xbox LAN reply from $ip on UDP 5050'
+                : 'No compatible Xbox LAN reply on this Wi-Fi';
+        if (results.isEmpty && report != null) {
+          _showDiagnostics = true;
+        }
         if (results.isNotEmpty) {
           _selected = results.first;
           _ip.text = results.first.host;
@@ -314,9 +319,19 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
       return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
-    await _scan(
-        fullNetwork: true, deepTcp: deepTcp,
+    // The visible Scan button checks a supplied IP first. Do not silently
+    // scan 1,024 unrelated addresses when the user already knows the host.
+    if (ip.isNotEmpty && !deepTcp) {
+      await _scan(ip: ip);
+      return;
+    }
+    await _scan(fullNetwork: true, deepTcp: deepTcp,
         ip: ip.isEmpty ? null : ip);
+  }
+
+  Future<void> _scanAllAddresses() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _scan(fullNetwork: true);
   }
 
 
@@ -477,6 +492,12 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
                 label: const Text('Deep scan'),
               ),
             ]),
+            TextButton.icon(
+              key: const ValueKey('xbox-scan-all'),
+              onPressed: _busy ? null : _scanAllAddresses,
+              icon: const Icon(Icons.wifi_find_rounded, size: 18),
+              label: const Text('Scan entire Wi-Fi'),
+            ),
             if (_diagnostics != null) _networkDiagnostics(_diagnostics!),
           ],
           if (selected != null) Card(
@@ -508,7 +529,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
             if (_manual.isNotEmpty || _saved.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 16, bottom: 5),
-                child: Text('Saved',
+                child: Text('Saved addresses · not necessarily connected',
                     style: Theme.of(context).textTheme.titleSmall),
               ),
             for (final target in _manual)
@@ -642,8 +663,7 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
           const Text('Large network: only the first four /24 blocks '
               'were scanned (up to 1,024 addresses).'),
         const SizedBox(height: 8),
-        const Text('TCP timeouts cannot determine whether the Xbox is '
-            'online or Remote Features are enabled. Tap Connect to try the encrypted Wi-Fi controller.'),
+        const Text('A saved IP is not proof of pairing. No UDP 5050 reply means the older Xbox LAN protocol did not answer; it does not mean the IP is incorrect.'),
       ]),
     ));
   }

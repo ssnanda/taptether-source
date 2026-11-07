@@ -138,9 +138,12 @@ bool _equal(List<int> a, List<int> b) {
 }
 
 class XboxLanSession {
-  XboxLanSession._(this.host, this._known);
+  XboxLanSession._(this.host, this._known, this._onProgress);
   final String host;
   final XboxConsole? _known;
+  final void Function(String)? _onProgress;
+  String? _lastDiscoveryRejection;
+  int _discoveryReplies = 0;
   XboxConsole? discovered;
   RawDatagramSocket? _socket;
   StreamSubscription<RawSocketEvent>? _subscription;
@@ -161,7 +164,7 @@ class XboxLanSession {
   bool get connected => _connected && !_closed;
 
   static Future<XboxLanSession> connect(String host,
-      {XboxConsole? known}) async {
+      {XboxConsole? known, void Function(String)? onProgress}) async {
     if (!isPrivateIPv4(host)) {
       throw const XboxLanException('Enter a private Xbox Wi-Fi address.');
     }
@@ -170,7 +173,7 @@ class XboxLanSession {
       throw const XboxLanException(
           'Connect the iPhone to the same Wi-Fi network as the Xbox.');
     }
-    final session = XboxLanSession._(host, known);
+    final session = XboxLanSession._(host, known, onProgress);
     try {
       await session._open();
       return session;
@@ -183,6 +186,7 @@ class XboxLanSession {
   Future<void> _open() async {
     final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
     _socket = socket;
+    _onProgress?.call('Checking $host · local UDP 5050');
     _subscription = socket.listen((event) {
       if (event != RawSocketEvent.read || _closed) return;
       Datagram? datagram;
@@ -190,6 +194,13 @@ class XboxLanSession {
         final packet = datagram!;
         if (packet.address.address != host || packet.port != 5050) continue;
         final bytes = Uint8List.fromList(packet.data);
+        if (bytes.length >= 2 && _word(bytes, 0) == 0xdd01) {
+          _discoveryReplies++;
+          final diagnosis = inspectXboxDiscovery(bytes, host);
+          if (!diagnosis.compatible) {
+            _lastDiscoveryRejection = diagnosis.reason;
+          }
+        }
         final pending = _pending;
         if (pending != null && !pending.isCompleted &&
             (_pendingMatch?.call(bytes) ?? false)) {
@@ -212,8 +223,14 @@ class XboxLanSession {
       }
     }
     if (discovery == null) {
-      throw const XboxLanException(
-        'Xbox did not answer the local control handshake (UDP 5050).');
+      if (_discoveryReplies > 0) {
+        throw XboxLanException(
+          'Xbox replied to UDP 5050, but its discovery packet was rejected: '
+          '${_lastDiscoveryRejection ?? "invalid legacy response"}.');
+      }
+      throw XboxLanException(
+        '$host did not respond to legacy Xbox discovery on UDP 5050. '
+        'The correct IP alone cannot enable this protocol.');
     }
     final identity = inspectXboxDiscovery(discovery, host).console!;
     if (_known != null &&
@@ -223,6 +240,7 @@ class XboxLanSession {
           'Xbox identity changed. Verify the device before connecting.');
     }
     discovered = identity;
+    _onProgress?.call('Xbox identified · starting encrypted LAN connection');
     final certificate = xboxLanCertificate(discovery, host)!;
     final point = xboxLanP256Point(certificate);
     final ecdh = Ecdh.p256(length: 32);
@@ -257,6 +275,7 @@ class XboxLanSession {
     final signed = <int>[...header, ...clear, ...ciphertext];
     final hmac = hashes.Hmac(hashes.sha256, _hmacKey!).convert(signed).bytes;
     _send(Uint8List.fromList([...signed, ...hmac]));
+    _onProgress?.call('Xbox discovered · checking encrypted handshake');
     late final Uint8List response;
     try {
       response = await _await((p) => p.length >= 2 &&
@@ -287,6 +306,7 @@ class XboxLanSession {
           'Xbox denied the local controller connection (status $result).');
     }
     _participant = _dword(answer, 4);
+    _onProgress?.call('Encrypted session · confirming Xbox pairing');
     _sendMessage(0x03, <int>[
       ..._u16(6), ..._u16(1170), ..._u16(2532),
       ..._u16(160), ..._u16(160), ..._u64(0),
@@ -318,6 +338,7 @@ class XboxLanSession {
       throw const XboxLanException('Xbox refused controller input.');
     }
     _inputChannel = _qword(channel.payload, 4);
+    _onProgress?.call('Xbox input channel opened');
     _connected = true;
     _heartbeat = Timer.periodic(const Duration(seconds: 4), (_) {
       if (connected) {
