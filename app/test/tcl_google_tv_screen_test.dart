@@ -46,6 +46,63 @@ void main() {
     expect(pair.onPressed, isNotNull);
   });
 
+  testWidgets('Connect opens full remote, settings stay separate',
+      (tester) async {
+    final store = _TestStore();
+    store.devices.add(const TclGoogleTv(
+      host: '192.168.1.113',
+      name: 'Living Room TCL',
+      certificatePem: 'paired-certificate',
+      privateKeyPem: 'paired-key',
+      serverFingerprint: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ));
+    var handshakes = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: TclGoogleTvScreen(
+        initialHost: '192.168.1.113',
+        store: store,
+        connectOverride: (tv) async {
+          expect(tv.host, '192.168.1.113');
+          handshakes++;
+        },
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tcl-google-tv-connection-view')),
+        findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tcl-google-tv-connect')));
+    await tester.pumpAndSettle();
+    expect(handshakes, 1);
+    expect(find.byKey(const ValueKey('tcl-google-tv-remote-view')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('tcl-google-tv-host')), findsNothing);
+    expect(find.byKey(const ValueKey('tcl-google-tv-save')), findsNothing);
+    expect(find.byKey(const ValueKey('tcl-google-tv-ok')), findsOneWidget);
+
+    await tester.tap(
+        find.byKey(const ValueKey('tcl-google-tv-settings-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tcl-google-tv-connection-view')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('tcl-google-tv-remote-view')),
+        findsNothing);
+    await tester.tap(
+        find.byKey(const ValueKey('tcl-google-tv-return-remote')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tcl-google-tv-remote-view')),
+        findsOneWidget);
+    expect(handshakes, 1);
+
+    await tester.tap(
+        find.byKey(const ValueKey('tcl-google-tv-disconnect')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tcl-google-tv-remote-view')),
+        findsNothing);
+    expect(find.byKey(const ValueKey('tcl-google-tv-connection-view')),
+        findsOneWidget);
+  });
+
   testWidgets('TCL TV UI rejects public IPs without saving',
       (tester) async {
     final store = _TestStore();

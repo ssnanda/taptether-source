@@ -19,11 +19,14 @@ class TclGoogleTvScreen extends StatefulWidget {
     this.initialHost,
     this.onSaved,
     this.store,
+    this.connectOverride,
   });
 
   final String? initialHost;
   final Future<void> Function()? onSaved;
   final TclGoogleTvStore? store;
+  /// Allows connection-view widget tests without contacting a physical TV.
+  final Future<void> Function(TclGoogleTv tv)? connectOverride;
 
   @override
   State<TclGoogleTvScreen> createState() => _TclGoogleTvScreenState();
@@ -41,6 +44,7 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
   StreamSubscription<RemoteConnectionState>? _remoteStatus;
   bool _working = false;
   bool _connected = false;
+  bool _showSettings = false;
   bool _loading = true;
   String? _message;
   bool _ok = false;
@@ -92,7 +96,10 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
     _remote?.dispose();
     _remote = null;
     if (mounted) {
-      setState(() => _connected = false);
+      setState(() {
+        _connected = false;
+        _showSettings = false;
+      });
     }
   }
 
@@ -274,6 +281,18 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
     });
     try {
       _disconnect();
+      // The real app uses the pinned Google TV TLS session. Tests supply
+      // a fake handshake to verify the remote-only navigation transition.
+      if (widget.connectOverride != null) {
+        await widget.connectOverride!(selected);
+        if (!mounted) return;
+        setState(() {
+          _connected = true;
+          _showSettings = false;
+          _setResult('Connected to ${selected.name}.', success: true);
+        });
+        return;
+      }
       final ctx = SecurityContext(withTrustedRoots: false);
       ctx.useCertificateChainBytes(utf8.encode(selected.certificatePem));
       ctx.usePrivateKeyBytes(utf8.encode(selected.privateKeyPem));
@@ -292,12 +311,14 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
         if (status == RemoteConnectionState.disconnected && mounted) {
           setState(() {
             _connected = false;
+            _showSettings = false;
             _setResult('TV disconnected. Tap Connect again.');
           });
         }
       });
       setState(() {
         _connected = true;
+        _showSettings = false;
         _setResult('Connected to ${selected.name}.', success: true);
       });
     } on RemoteNotPairedException {
@@ -443,14 +464,63 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
     ]),
   ));
 
+  /// Keep connection management out of the remote once a TV is connected.
+  Widget _connectedRemote(TclGoogleTv? selected) => SafeArea(
+    child: Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        child: Row(children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 16),
+          const SizedBox(width: 7),
+          Expanded(child: Text(
+            'Connected · ${selected?.name ?? 'Google TV'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
+          )),
+        ]),
+      ),
+      Expanded(child: ListView(
+        key: const ValueKey('tcl-google-tv-remote-view'),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 16),
+        children: [_remotePad()],
+      )),
+    ]),
+  );
+
   @override
   Widget build(BuildContext context) {
     final selected = _selected;
     return Scaffold(
-      appBar: AppBar(title: const Text('TCL Google TV')),
+      appBar: AppBar(
+        title: Text(_connected
+            ? (selected?.name ?? 'TCL Google TV') : 'TCL Google TV'),
+        actions: [
+          if (_connected)
+            IconButton(
+              key: const ValueKey('tcl-google-tv-settings-toggle'),
+              tooltip: _showSettings ? 'Show remote' : 'TV connection settings',
+              icon: Icon(_showSettings ? Icons.settings_remote : Icons.tune),
+              onPressed: () =>
+                  setState(() => _showSettings = !_showSettings),
+            ),
+          if (_connected)
+            IconButton(
+              key: const ValueKey('tcl-google-tv-disconnect'),
+              tooltip: 'Disconnect TV',
+              icon: const Icon(Icons.link_off),
+              onPressed: _disconnect,
+            ),
+        ],
+      ),
       body: _loading
         ? const Center(child: CircularProgressIndicator())
-        : ListView(padding: const EdgeInsets.all(14), children: [
+        : _connected && !_showSettings
+            ? _connectedRemote(selected)
+            : ListView(
+                key: const ValueKey('tcl-google-tv-connection-view'),
+                padding: const EdgeInsets.all(14),
+                children: [
             Card(child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -509,9 +579,11 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
                     ),
                     if (_connected)
                       TextButton.icon(
-                        onPressed: _disconnect,
-                        icon: const Icon(Icons.link_off),
-                        label: const Text('Disconnect'),
+                        key: const ValueKey('tcl-google-tv-return-remote'),
+                        onPressed: () =>
+                            setState(() => _showSettings = false),
+                        icon: const Icon(Icons.settings_remote),
+                        label: const Text('Remote'),
                       ),
                   ]),
                   if (_message != null)
@@ -576,7 +648,6 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
                       : null,
                 ),
             ])),
-            if (_connected) _remotePad(),
           ]),
     );
   }
