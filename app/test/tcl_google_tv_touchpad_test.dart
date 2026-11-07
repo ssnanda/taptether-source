@@ -1,4 +1,3 @@
-import 'dart:ui' show Offset;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/tcl_google_tv_protocol/key_codes.dart';
 import 'package:taptether/tcl_google_tv_touchpad.dart';
