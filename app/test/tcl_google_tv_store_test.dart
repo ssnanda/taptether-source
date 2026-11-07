@@ -25,6 +25,10 @@ void main() {
     expect(recovered.name, 'Living Room TCL');
     expect(recovered.privateKeyPem, 'KEY');
     expect(recovered.serverFingerprint.length, 64);
+    expect(recovered.preferTouchpad, isFalse);
+    final touchpad = recovered.copyWith(preferTouchpad: true);
+    expect(TclGoogleTv.fromJson(touchpad.toJson()).preferTouchpad, isTrue);
+    expect(TclGoogleTv.fromJson(touchpad.toJson()).privateKeyPem, 'KEY');
   });
 
   test('saved unpaired TV stays saved without a connection', () {

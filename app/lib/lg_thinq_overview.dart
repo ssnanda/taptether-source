@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'lg_thinq_features.dart';
 import 'lg_thinq_cycle_history.dart';
+import 'display_time.dart';
 
 /// Simple, task-focused appliance home. Raw LG resources stay on Details.
 class LgThinQOverview extends StatelessWidget {
@@ -145,9 +146,7 @@ class LgThinQOverview extends StatelessWidget {
                       style: Theme.of(context).textTheme.bodySmall),
                   ],
                   const SizedBox(height: 7),
-                  Text('Estimated finish: ${TimeOfDay.fromDateTime(
-                      DateTime.now().add(Duration(minutes: remaining)))
-                      .format(context)}',
+                  Text('Estimated finish: ${displayTimeAmPm(DateTime.now().add(Duration(minutes: remaining)))}',
                     style: Theme.of(context).textTheme.bodyMedium),
                 ] else
                   Text(activeStatus
@@ -161,7 +160,7 @@ class LgThinQOverview extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(checked == null
                     ? 'No live reading yet'
-                    : 'Last synced ${TimeOfDay.fromDateTime(checked!).format(context)} '
+                    : 'Last synced ${displayTimeAmPm(checked!)} '
                       '· Refreshes while this screen is open',
                     style: Theme.of(context).textTheme.bodySmall),
                 if (refreshing)

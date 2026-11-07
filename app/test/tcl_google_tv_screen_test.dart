@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/tcl_google_tv_screen.dart';
 import 'package:taptether/tcl_google_tv_store.dart';
+import 'package:taptether/tcl_google_tv_protocol/key_codes.dart';
 
 class _TestStore extends TclGoogleTvStore {
   List<TclGoogleTv> devices = [];
@@ -101,6 +102,48 @@ void main() {
         findsNothing);
     expect(find.byKey(const ValueKey('tcl-google-tv-connection-view')),
         findsOneWidget);
+  });
+
+  testWidgets('Touchpad sends D-pad, tap selects and preference is persisted',
+      (tester) async {
+    final store = _TestStore();
+    store.devices.add(const TclGoogleTv(
+      host: '192.168.1.113',
+      name: 'TCL Touchpad',
+      certificatePem: 'CERT',
+      privateKeyPem: 'KEY',
+      serverFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    ));
+    final pressed = <int>[];
+    await tester.pumpWidget(MaterialApp(home: TclGoogleTvScreen(
+      initialHost: '192.168.1.113',
+      store: store,
+      connectOverride: (_) async {},
+      onKeyOverride: pressed.add,
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tcl-google-tv-connect')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Touchpad'));
+    await tester.pumpAndSettle();
+    expect(store.devices.single.preferTouchpad, isTrue);
+    expect(find.byKey(const ValueKey('tcl-google-tv-touchpad')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tcl-google-tv-ok')), findsNothing);
+
+    await tester.drag(find.byKey(const ValueKey('tcl-google-tv-touchpad')),
+        const Offset(155, 0));
+    await tester.pumpAndSettle();
+    expect(pressed, contains(KeyCode.dpadRight));
+    await tester.tap(find.byKey(const ValueKey('tcl-google-tv-touchpad')));
+    await tester.pumpAndSettle();
+    expect(pressed.last, KeyCode.dpadCenter);
+
+    await tester.tap(find.text('Arrows'));
+    await tester.pumpAndSettle();
+    expect(store.devices.single.preferTouchpad, isFalse);
+    expect(find.byKey(const ValueKey('tcl-google-tv-touchpad')), findsNothing);
+    expect(find.byKey(const ValueKey('tcl-google-tv-ok')), findsOneWidget);
   });
 
   testWidgets('TCL TV UI rejects public IPs without saving',

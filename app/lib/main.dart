@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'computer_store.dart';
 import 'lg_webos_client.dart';
 import 'lg_connection_timing.dart';
+import 'display_time.dart';
 import 'lg_wake_recovery.dart';
 import 'lg_webos_screen.dart';
 import 'tv_quick_controls.dart';
@@ -2632,7 +2633,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                 style: Theme.of(sheet).textTheme.titleMedium),
             subtitle: Text(checked == null
                 ? 'No confirmed LG temperature reading yet.'
-                : 'Last LG reading: ${checked.toLocal()}'),
+                : 'Last LG reading: ${displayDateTimeAmPm(checked)}'),
           ),
           ListTile(
             leading: const Icon(Icons.sync_outlined),

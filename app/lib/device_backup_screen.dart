@@ -10,6 +10,7 @@ import 'automatic_device_backup.dart';
 import 'backup_preview.dart';
 import 'backup_location_label.dart';
 import 'device_backup.dart';
+import 'display_time.dart';
 
 class DeviceBackupScreen extends StatefulWidget {
   const DeviceBackupScreen({super.key, this.onRestored});
@@ -818,10 +819,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
                   final time = DateTime.tryParse(item['date']?.toString() ?? '')
                       ?.toLocal();
                   if (time == null) return 'Saved backup';
-                  return '${time.year}-${time.month.toString().padLeft(2, '0')}-'
-                      '${time.day.toString().padLeft(2, '0')}  '
-                      '${time.hour.toString().padLeft(2, '0')}:'
-                      '${time.minute.toString().padLeft(2, '0')}';
+                  return displayDateTimeAmPm(time);
                 }()),
                 subtitle: Text((item['filename']?.toString() ?? '')
                     .contains('-PreRestore-') ? 'Pre-Restore safety backup'
@@ -870,7 +868,7 @@ class _DeviceBackupScreenState extends State<DeviceBackupScreen> {
               if (_auto.enabled && _auto.lastBackup != null)
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Last backup: ${_auto.lastBackup!.toLocal()}',
+                  child: Text('Last backup: ${displayDateTimeAmPm(_auto.lastBackup!)}',
                       style: Theme.of(context).textTheme.bodySmall),
                 ),
               if (_auto.lastError != null && _auto.enabled)

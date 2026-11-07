@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'lg_thinq_cycle_history.dart';
+import 'display_time.dart';
 
 /// History is built from TapTether's own successful ThinQ observations,
 /// not from LG's historical timeline. Never invent skipped cycles.
@@ -19,7 +20,7 @@ class LgThinQHistoryPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     String time(DateTime date) =>
         '${MaterialLocalizations.of(context).formatMediumDate(date)} · '
-        '${TimeOfDay.fromDateTime(date).format(context)}';
+        '${displayTimeAmPm(date)}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

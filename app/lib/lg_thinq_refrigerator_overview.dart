@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'lg_thinq_features.dart';
+import 'display_time.dart';
 
 /// Compact refrigerator home. LG reports target setpoints, not measured temps.
 /// One-step changes are allowed only by this model's declared numeric range.
@@ -299,7 +300,7 @@ class LgThinQRefrigeratorOverview extends StatelessWidget {
         const SizedBox(height: 9),
         Text(checked == null
             ? 'Waiting for LG ThinQ status'
-            : 'LG ThinQ cloud · Updated ${TimeOfDay.fromDateTime(checked!).format(context)}',
+            : 'LG ThinQ cloud · Updated ${displayTimeAmPm(checked!)}',
             style: theme.textTheme.bodySmall),
         if (refreshing) const Padding(
           padding: EdgeInsets.only(top: 5),

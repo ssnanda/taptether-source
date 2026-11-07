@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'display_time.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import 'resideo_api.dart';
@@ -1026,7 +1027,7 @@ class _ResideoScreenState extends State<ResideoScreen> {
     final onlineCount = visible.where((d) => d.online).length;
     final allOnline = visible.isNotEmpty && onlineCount == visible.length;
     final lastCheck = _lastChecked == null ? 'Checking…'
-        : 'Checked ${TimeOfDay.fromDateTime(_lastChecked!).format(context)}';
+        : 'Checked ${displayTimeAmPm(_lastChecked!)}';
     final allCooling = visible.isNotEmpty &&
         visible.every((d) => d.isCoolMode);
     final allHeating = visible.isNotEmpty &&

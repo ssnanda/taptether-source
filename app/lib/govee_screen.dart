@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'display_time.dart';
 
 import 'govee_api.dart';
 import 'govee_placement.dart';
@@ -611,7 +612,7 @@ class _GoveeScreenState extends State<GoveeScreen> {
             if (_checked != null)
               Padding(
                 padding: const EdgeInsets.all(8),
-                child: Text('Latest refresh: ${TimeOfDay.fromDateTime(_checked!).format(context)}. '
+                child: Text('Latest refresh: ${displayTimeAmPm(_checked!)}. '
                   'Some sensor values are not exposed by the Govee API.',
                   style: theme.textTheme.bodySmall),
               ),

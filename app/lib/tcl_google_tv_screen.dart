@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'lan_scan.dart';
 import 'tcl_google_tv_store.dart';
+import 'tcl_google_tv_touchpad.dart';
 import 'tcl_google_tv_protocol/certificate.dart';
 import 'tcl_google_tv_protocol/key_codes.dart';
 import 'tcl_google_tv_protocol/pairing_client.dart';
@@ -20,6 +22,7 @@ class TclGoogleTvScreen extends StatefulWidget {
     this.onSaved,
     this.store,
     this.connectOverride,
+    this.onKeyOverride,
   });
 
   final String? initialHost;
@@ -27,6 +30,8 @@ class TclGoogleTvScreen extends StatefulWidget {
   final TclGoogleTvStore? store;
   /// Allows connection-view widget tests without contacting a physical TV.
   final Future<void> Function(TclGoogleTv tv)? connectOverride;
+  /// Test-only input observer; production always uses the TLS remote client.
+  final void Function(int code)? onKeyOverride;
 
   @override
   State<TclGoogleTvScreen> createState() => _TclGoogleTvScreenState();
@@ -45,6 +50,9 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
   bool _working = false;
   bool _connected = false;
   bool _showSettings = false;
+  bool _preferTouchpad = false;
+  final TclGoogleTvTouchpadInterpreter _touchpad =
+      TclGoogleTvTouchpadInterpreter();
   bool _loading = true;
   String? _message;
   bool _ok = false;
@@ -72,7 +80,10 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
       final selected = entries.where((tv) => tv.host == wanted).firstOrNull;
       setState(() {
         _saved = entries;
-        if (selected != null) _name.text = selected.name;
+        if (selected != null) {
+          _name.text = selected.name;
+          _preferTouchpad = selected.preferTouchpad;
+        }
         _loading = false;
       });
     } catch (_) {
@@ -338,9 +349,15 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
   }
 
   void _send(int key) {
-    if (!_connected || _remote == null) return;
+    if (!_connected || (_remote == null && widget.onKeyOverride == null)) {
+      return;
+    }
     try {
-      _remote!.sendKey(key);
+      if (widget.onKeyOverride != null) {
+        widget.onKeyOverride!(key);
+      } else {
+        _remote!.sendKey(key);
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _setResult('TV command could not be sent.'));
@@ -405,6 +422,134 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
     }
   }
 
+
+  Future<void> _setTouchpad(bool enabled) async {
+    if (_preferTouchpad == enabled) {
+      return;
+    }
+    _touchpad.reset();
+    setState(() => _preferTouchpad = enabled);
+    final saved = _selected;
+    if (saved == null) {
+      return;
+    }
+    try {
+      await _store.save(saved.copyWith(preferTouchpad: enabled));
+      final entries = await _store.read();
+      if (mounted) {
+        setState(() => _saved = entries);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _setResult('Could not save the navigation preference.'));
+      }
+    }
+  }
+
+  void _touchpadMove(Offset movement) {
+    if (!_connected) {
+      return;
+    }
+    final keys = _touchpad.feed(movement);
+    for (final code in keys) {
+      _send(code);
+    }
+    if (keys.isNotEmpty) {
+      unawaited(HapticFeedback.selectionClick());
+    }
+  }
+
+  Widget _touchpadControl() => Semantics(
+    label: 'TV touchpad. Swipe to move focus, tap to select.',
+    child: GestureDetector(
+      key: const ValueKey('tcl-google-tv-touchpad'),
+      behavior: HitTestBehavior.opaque,
+      onPanStart: (_) => _touchpad.reset(),
+      onPanUpdate: (details) => _touchpadMove(details.delta),
+      onPanEnd: (_) => _touchpad.reset(),
+      onPanCancel: _touchpad.reset,
+      onTap: () {
+        _send(KeyCode.dpadCenter);
+        unawaited(HapticFeedback.selectionClick());
+      },
+      child: Container(
+        height: 235,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          color: Theme.of(context).colorScheme.primaryContainer
+              .withValues(alpha: 0.58),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.touch_app_outlined, size: 37,
+                color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 12),
+            const Text('Swipe to navigate'),
+            const SizedBox(height: 4),
+            Text('Tap to select',
+                style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Future<void> _typeOnTv() async {
+    var entered = '';
+    final message = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Type on Google TV'),
+        content: TextField(
+          key: const ValueKey('tcl-google-tv-type-input'),
+          onChanged: (value) => entered = value,
+          maxLength: 200,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Text for the focused TV field',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, entered),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    if (message == null || message.isEmpty || !_connected) {
+      return;
+    }
+    // Google TV Remote v2 sends key events, not a clipboard or a mouse cursor.
+    // Some TV apps may refuse typed characters or uppercase key codes.
+    try {
+      if (_remote != null) {
+        _remote!.sendText(message);
+      } else if (widget.onKeyOverride != null) {
+        for (final ch in message.split('')) {
+          final code = keyCodeForChar(ch);
+          if (code != null) {
+            widget.onKeyOverride!(code);
+          }
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _setResult('Unable to type in the selected TV field.'));
+      }
+    }
+  }
+
   Widget _keyButton(String label, IconData icon, int key,
       {Key? keyId}) => OutlinedButton.icon(
     key: keyId,
@@ -430,23 +575,41 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
           _keyButton('Settings', Icons.settings_outlined, KeyCode.settings),
         ]),
       const SizedBox(height: 12),
-      _directionButton(Icons.keyboard_arrow_up_rounded,
-          KeyCode.dpadUp, 'Up'),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        _directionButton(Icons.keyboard_arrow_left_rounded,
-            KeyCode.dpadLeft, 'Left'),
-        const SizedBox(width: 12),
-        FilledButton(
-          key: const ValueKey('tcl-google-tv-ok'),
-          onPressed: _connected ? () => _send(KeyCode.dpadCenter) : null,
-          child: const Text('OK'),
-        ),
-        const SizedBox(width: 12),
-        _directionButton(Icons.keyboard_arrow_right_rounded,
-            KeyCode.dpadRight, 'Right'),
-      ]),
-      _directionButton(Icons.keyboard_arrow_down_rounded,
-          KeyCode.dpadDown, 'Down'),
+      SegmentedButton<bool>(
+        key: const ValueKey('tcl-google-tv-navigation-mode'),
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment<bool>(value: false, label: Text('Arrows'),
+              icon: Icon(Icons.gamepad_outlined)),
+          ButtonSegment<bool>(value: true, label: Text('Touchpad'),
+              icon: Icon(Icons.touch_app_outlined)),
+        ],
+        selected: {_preferTouchpad},
+        onSelectionChanged: (values) =>
+            unawaited(_setTouchpad(values.single)),
+      ),
+      const SizedBox(height: 12),
+      if (_preferTouchpad)
+        _touchpadControl()
+      else ...[
+        _directionButton(Icons.keyboard_arrow_up_rounded,
+            KeyCode.dpadUp, 'Up'),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          _directionButton(Icons.keyboard_arrow_left_rounded,
+              KeyCode.dpadLeft, 'Left'),
+          const SizedBox(width: 12),
+          FilledButton(
+            key: const ValueKey('tcl-google-tv-ok'),
+            onPressed: _connected ? () => _send(KeyCode.dpadCenter) : null,
+            child: const Text('OK'),
+          ),
+          const SizedBox(width: 12),
+          _directionButton(Icons.keyboard_arrow_right_rounded,
+              KeyCode.dpadRight, 'Right'),
+        ]),
+        _directionButton(Icons.keyboard_arrow_down_rounded,
+            KeyCode.dpadDown, 'Down'),
+      ],
       const SizedBox(height: 10),
       Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
         children: [
@@ -461,6 +624,38 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
               KeyCode.mediaPrevious),
           _keyButton('Next', Icons.skip_next_rounded, KeyCode.mediaNext),
         ]),
+        const SizedBox(height: 8),
+        ExpansionTile(
+          key: const ValueKey('tcl-google-tv-extra-controls'),
+          title: const Text('More controls'),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+          children: [
+            Wrap(alignment: WrapAlignment.center,
+              spacing: 8, runSpacing: 8, children: [
+                _keyButton('CC', Icons.closed_caption_outlined,
+                    KeyCode.captions),
+                _keyButton('Guide', Icons.live_tv_outlined,
+                    KeyCode.guide),
+                _keyButton('Info', Icons.info_outline, KeyCode.info),
+                _keyButton('CH +', Icons.keyboard_arrow_up,
+                    KeyCode.channelUp),
+                _keyButton('CH −', Icons.keyboard_arrow_down,
+                    KeyCode.channelDown),
+                _keyButton('Rewind', Icons.fast_rewind,
+                    KeyCode.mediaRewind),
+                _keyButton('Fast forward', Icons.fast_forward,
+                    KeyCode.mediaFastForward),
+                OutlinedButton.icon(
+                  key: const ValueKey('tcl-google-tv-type-button'),
+                  onPressed: _connected ? () => unawaited(_typeOnTv()) : null,
+                  icon: const Icon(Icons.keyboard_outlined),
+                  label: const Text('Type text'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
     ]),
   ));
 
@@ -635,8 +830,10 @@ class _TclGoogleTvScreenState extends State<TclGoogleTvScreen> {
                     _disconnect();
                     _host.text = tv.host;
                     _name.text = tv.name;
-                    setState(() => _setResult('Selected ${tv.name}.',
-                        success: true));
+                    setState(() {
+                      _preferTouchpad = tv.preferTouchpad;
+                      _setResult('Selected ${tv.name}.', success: true);
+                    });
                   },
                   trailing: tv.host == _host.text.trim()
                       ? IconButton(

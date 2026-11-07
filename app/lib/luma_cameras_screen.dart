@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'display_time.dart';
 
 import 'luma_nvr_client.dart';
 
@@ -638,7 +639,7 @@ class _LumaCamerasScreenState extends State<LumaCamerasScreen>
                         style: Theme.of(context).textTheme.labelLarge),
                     const Spacer(),
                     if (_lastChecked != null)
-                      Text('Updated ${TimeOfDay.fromDateTime(_lastChecked!).format(context)}',
+                      Text('Updated ${displayTimeAmPm(_lastChecked!)}',
                           style: Theme.of(context).textTheme.bodySmall),
                   ]),
                   const SizedBox(height: 10),

@@ -11,6 +11,7 @@ class TclGoogleTv {
     this.certificatePem = '',
     this.privateKeyPem = '',
     this.serverFingerprint = '',
+    this.preferTouchpad = false,
   });
 
   final String host;
@@ -18,6 +19,7 @@ class TclGoogleTv {
   final String certificatePem;
   final String privateKeyPem;
   final String serverFingerprint;
+  final bool preferTouchpad;
 
   bool get paired => certificatePem.isNotEmpty &&
       privateKeyPem.isNotEmpty && serverFingerprint.length == 64;
@@ -28,12 +30,14 @@ class TclGoogleTv {
     String? certificatePem,
     String? privateKeyPem,
     String? serverFingerprint,
+    bool? preferTouchpad,
   }) => TclGoogleTv(
     host: host ?? this.host,
     name: name ?? this.name,
     certificatePem: certificatePem ?? this.certificatePem,
     privateKeyPem: privateKeyPem ?? this.privateKeyPem,
     serverFingerprint: serverFingerprint ?? this.serverFingerprint,
+    preferTouchpad: preferTouchpad ?? this.preferTouchpad,
   );
 
   Map<String, dynamic> toJson() => {
@@ -42,6 +46,7 @@ class TclGoogleTv {
     'certificatePem': certificatePem,
     'privateKeyPem': privateKeyPem,
     'serverFingerprint': serverFingerprint,
+    'preferTouchpad': preferTouchpad,
   };
 
   factory TclGoogleTv.fromJson(Map<String, dynamic> json) {
@@ -55,6 +60,7 @@ class TclGoogleTv {
       certificatePem: (json['certificatePem'] ?? '').toString(),
       privateKeyPem: (json['privateKeyPem'] ?? '').toString(),
       serverFingerprint: (json['serverFingerprint'] ?? '').toString(),
+      preferTouchpad: json['preferTouchpad'] == true,
     );
   }
 }

@@ -10,6 +10,7 @@ import 'lan_scan.dart';
 import 'lg_webos_client.dart';
 import 'samsung_tv_client.dart';
 import 'device_location_log.dart';
+import 'display_time.dart';
 
 /// Opt-in LAN diagnostics for each saved device type.
 /// No pairing or TLS credentials are copied into this screen's report.
@@ -312,7 +313,7 @@ class _DeviceDiagnosticsScreenState extends State<DeviceDiagnosticsScreen> {
           'your Wi-Fi name and local IP addresses.'),
       if (_lastRun != null) ...[
         const SizedBox(height: 12),
-        Text('Last run: ${_lastRun!.toLocal()}'),
+        Text('Last run: ${displayDateTimeAmPm(_lastRun!)}'),
         const SizedBox(height: 6),
         Card(child: Padding(padding: const EdgeInsets.all(12),
           child: SelectableText(_report ?? '',
