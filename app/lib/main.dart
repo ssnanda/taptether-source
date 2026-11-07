@@ -22,7 +22,11 @@ import 'package:workmanager/workmanager.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
 import 'tcl_google_tv_screen.dart';
+import 'tcl_google_tv_recovery.dart';
+import 'tcl_google_tv_quick_controls.dart';
 import 'tcl_google_tv_store.dart';
+import 'mag254_remote_screen.dart';
+import 'mag254_store.dart';
 import 'xbox_smartglass.dart';
 import 'xbox_manual_targets.dart';
 import 'xbox_remote_screen.dart';
@@ -560,6 +564,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   final Map<String, LgConnectionTiming> _lgTiming = {};
   List<SamsungTvDevice> savedSamsungTvs = [];
   List<TclGoogleTv> savedTclGoogleTvs = [];
+  List<Mag254Device> savedMag254Boxes = [];
   List<XboxConsole> savedXboxConsoles = [];
   List<XboxManualTarget> savedXboxManual = [];
   List<LgThinQDevice> _enabledThinQ = const [];
@@ -757,6 +762,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       loadLgTvs(),
       loadSamsungTvs(),
       loadTclGoogleTvs(),
+      loadMag254Boxes(),
       _refreshNetworkLocation(),
     ]).then((_) => _recoverTvAddresses()));
     unawaited(_listenForAgentAnnouncements());
@@ -781,7 +787,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     _tvRecoveryTimer = Timer.periodic(const Duration(minutes: 3), (_) {
       if (_appForeground && _wifiRange != null &&
           (savedLgTvs.isNotEmpty || savedSamsungTvs.isNotEmpty ||
-              savedTclGoogleTvs.isNotEmpty)) {
+              savedTclGoogleTvs.isNotEmpty ||
+              savedMag254Boxes.isNotEmpty)) {
         unawaited(_refreshTvStatuses());
       }
     });
@@ -1131,6 +1138,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   String _samsungLocationKey(SamsungTvDevice tv) =>
       'samsung:${tv.deviceId.isNotEmpty ? tv.deviceId :
             (tv.macAddress.isNotEmpty ? tv.macAddress : tv.host)}';
+  String _tclLocationKey(TclGoogleTv tv) =>
+      'google:${tv.paired ? tv.serverFingerprint : tv.host}';
 
   Future<void> _noteLocation(String deviceKey, String event) async {
     try {
@@ -1851,6 +1860,39 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  /// In-app quick controls use the same saved pinned pairing as the full
+  /// TCL remote, without navigating away from the device dashboard.
+  Future<void> openTclQuickControls(TclGoogleTv tv) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => TclGoogleTvQuickControls(tv: tv),
+    );
+  }
+
+  Future<void> loadMag254Boxes() async {
+    try {
+      final boxes = await Mag254Store().read();
+      if (!mounted) return;
+      setState(() => savedMag254Boxes = boxes);
+      unawaited(_refreshTvStatuses());
+    } catch (_) {
+      // Existing MAG254 pairing codes stay in iOS Keychain.
+    }
+  }
+
+  Future<void> openMag254Remote({String? host}) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => Mag254RemoteScreen(
+        initialHost: host, onSaved: loadMag254Boxes,
+      ),
+    ));
+    if (mounted) {
+      await loadMag254Boxes();
+    }
+  }
+
   Future<void> loadXboxConsoles() async {
     try {
       final consoles = await XboxConsoleStore().read();
@@ -1886,6 +1928,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       final lg = savedLgTvs.toList();
       final samsung = savedSamsungTvs.toList();
       final google = savedTclGoogleTvs.toList();
+      final iptv = savedMag254Boxes.toList();
       await Future.wait(<Future<void>>[
         for (final tv in lg) () async {
           final key = 'lg:${tv.host}';
@@ -1912,7 +1955,18 @@ class _RemoteScreenState extends State<RemoteScreen>
           final key = 'google:${tv.host}';
           final reachable = lan != null &&
               lanRangeContains(lan, tv.host) &&
-              await tclGoogleTvPortResponds(tv.host);
+              await tclGoogleTvPairingVerified(tv);
+          if (!mounted) return;
+          setState(() {
+            _tvOnline[key] = reachable;
+            if (reachable) _tvLastSeen[key] = DateTime.now();
+          });
+        }(),
+        for (final box in iptv) () async {
+          final key = 'mag:${box.host}';
+          final reachable = lan != null &&
+              lanRangeContains(lan, box.host) &&
+              await mag254Responds(box.host);
           if (!mounted) return;
           setState(() {
             _tvOnline[key] = reachable;
@@ -1932,7 +1986,9 @@ class _RemoteScreenState extends State<RemoteScreen>
             _appForeground &&
             (savedLgTvs.any((tv) => _tvOnline['lg:${tv.host}'] == false) ||
              savedSamsungTvs.any((tv) =>
-                 _tvOnline['samsung:${tv.host}'] == false))) {
+                 _tvOnline['samsung:${tv.host}'] == false) ||
+             savedTclGoogleTvs.any((tv) => tv.paired &&
+                 _tvOnline['google:${tv.host}'] == false))) {
           unawaited(_recoverTvAddresses());
         }
       }
@@ -1959,7 +2015,13 @@ class _RemoteScreenState extends State<RemoteScreen>
         (tv.deviceId.isNotEmpty || tv.macAddress.isNotEmpty) &&
         (!lanRangeContains(network, tv.host) ||
             _tvOnline['samsung:${tv.host}'] == false)).take(4).toList();
-    if (missingLg.isEmpty && missingSamsung.isEmpty) return;
+    final missingTcl = savedTclGoogleTvs.where((tv) =>
+        tv.paired && _tvOnline['google:${tv.host}'] != true &&
+        (!lanRangeContains(network, tv.host) ||
+            _tvOnline['google:${tv.host}'] == false)).take(4).toList();
+    if (missingLg.isEmpty && missingSamsung.isEmpty && missingTcl.isEmpty) {
+      return;
+    }
     _lastTvRecovery = now;
     _recoveringTvAddresses = true;
     setState(() {});
@@ -1992,6 +2054,20 @@ class _RemoteScreenState extends State<RemoteScreen>
         } else {
           await _noteLocation(_samsungLocationKey(tv),
               'Samsung not found; saved pairing and IP retained');
+        }
+      }
+      for (final tv in missingTcl) {
+        if (!mounted || !_appForeground) break;
+        await _noteLocation(_tclLocationKey(tv),
+            'TCL discovery started; require paired TLS identity');
+        final recovered = await relocateTclGoogleTv(tv, network: network);
+        if (recovered != null) {
+          await _noteLocation(_tclLocationKey(tv),
+              'TCL identity verified; IP ${tv.host} → ${recovered.host}');
+          await loadTclGoogleTvs();
+        } else {
+          await _noteLocation(_tclLocationKey(tv),
+              'TCL not found; saved pairing and IP retained');
         }
       }
     } finally {
@@ -2779,6 +2855,15 @@ class _RemoteScreenState extends State<RemoteScreen>
           },
         ),
         ListTile(
+          key: const ValueKey('drawer-mag254-iptv'),
+          leading: const Icon(Icons.live_tv),
+          title: const Text('MAG254 IPTV Remote'),
+          onTap: () {
+            Navigator.pop(context);
+            unawaited(openMag254Remote());
+          },
+        ),
+        ListTile(
           key: const ValueKey('drawer-luma-cameras'),
           leading: const Icon(Icons.video_camera_back_outlined),
           title: const Text('Luma Cameras'),
@@ -3053,6 +3138,16 @@ class _RemoteScreenState extends State<RemoteScreen>
             },
           ),
           ListTile(
+            key: const ValueKey('choose-mag254-iptv'),
+            leading: const Icon(Icons.live_tv),
+            title: const Text('MAG254 IPTV Box'),
+            subtitle: const Text('Direct Wi-Fi remote · code pairing'),
+            onTap: () {
+              Navigator.pop(sheet);
+              unawaited(openMag254Remote());
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.videogame_asset_outlined),
             title: const Text('Xbox One / Series'),
             subtitle: const Text('Discover and wake Xbox on Wi-Fi'),
@@ -3136,6 +3231,12 @@ class _RemoteScreenState extends State<RemoteScreen>
             onPressed: () => unawaited(openTclGoogleTv()),
           ),
           ActionChip(
+            key: const ValueKey('add-mag254-action'),
+            avatar: const Icon(Icons.live_tv, size: 18),
+            label: const Text('MAG254 IPTV'),
+            onPressed: () => unawaited(openMag254Remote()),
+          ),
+          ActionChip(
             key: const ValueKey('add-xbox-action'),
             avatar: const Icon(Icons.videogame_asset_outlined, size: 18),
             label: const Text('Xbox'),
@@ -3192,6 +3293,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         savedSamsungTvs.where((tv) =>
         savedDeviceOnNetwork(_wifiRange, tv.host)).length +
         savedTclGoogleTvs.where((tv) =>
+        savedDeviceOnNetwork(_wifiRange, tv.host)).length +
+        savedMag254Boxes.where((tv) =>
         savedDeviceOnNetwork(_wifiRange, tv.host)).length;
     final manualXbox = savedXboxManual.where((x) =>
         !savedXboxConsoles.any((verified) => verified.host == x.host)).toList();
@@ -3203,7 +3306,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         localTvs == 0 && localXbox == 0;
     final noSaved = savedComputers.isEmpty && savedLgTvs.isEmpty &&
         savedSamsungTvs.isEmpty && savedTclGoogleTvs.isEmpty &&
-        savedXboxConsoles.isEmpty &&
+        savedMag254Boxes.isEmpty && savedXboxConsoles.isEmpty &&
         savedXboxManual.isEmpty;
     // Status is verified locally or reported by a successful ThinQ API read.
     // Xboxes have no reachability probe here, so cannot be marked Online.
@@ -3221,13 +3324,19 @@ class _RemoteScreenState extends State<RemoteScreen>
         savedTclGoogleTvs.where((tv) =>
         _tvVisible('google:${tv.host}') &&
         savedDeviceOnNetwork(_wifiRange, tv.host) &&
-        _tvOnline['google:${tv.host}'] == true).length;
+        _tvOnline['google:${tv.host}'] == true).length +
+        savedMag254Boxes.where((box) =>
+        _tvVisible('mag:${box.host}') &&
+        savedDeviceOnNetwork(_wifiRange, box.host) &&
+        _tvOnline['mag:${box.host}'] == true).length;
     final visibleTvCount = savedLgTvs.where((tv) =>
         _tvVisible('lg:${tv.host}')).length +
         savedSamsungTvs.where((tv) =>
         _tvVisible('samsung:${tv.host}')).length +
         savedTclGoogleTvs.where((tv) =>
-        _tvVisible('google:${tv.host}')).length;
+        _tvVisible('google:${tv.host}')).length +
+        savedMag254Boxes.where((box) =>
+        _tvVisible('mag:${box.host}')).length;
     final visibleXboxCount = savedXboxConsoles.where((xbox) =>
         _showAllDevices ||
         savedDeviceOnNetwork(_wifiRange, xbox.host)).length +
@@ -3520,8 +3629,49 @@ class _RemoteScreenState extends State<RemoteScreen>
                   : 'TCL Google TV · Other network',
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 11.5)),
-              trailing: _tvStatus('google', tv.host),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    key: ValueKey('tcl-quick-controls-${tv.host}'),
+                    tooltip: 'TCL quick controls',
+                    icon: const Icon(Icons.tune),
+                    onPressed: tv.paired
+                        ? () => unawaited(openTclQuickControls(tv)) : null,
+                  ),
+                  _tvStatus('google', tv.host),
+                ],
+              ),
               onTap: () => unawaited(openTclGoogleTv(host: tv.host)),
+              onLongPress: tv.paired
+                  ? () => unawaited(openTclQuickControls(tv)) : null,
+            ),
+          ),
+      for (final box in savedMag254Boxes)
+        if (_tvVisible('mag:${box.host}') &&
+            ((savedDeviceOnNetwork(_wifiRange, box.host) &&
+              _tvOnline['mag:${box.host}'] == true) == onlineGroup))
+          Card(
+            key: ValueKey('mag254-${box.deviceId}'),
+            margin: const EdgeInsets.only(bottom: 5),
+            child: ListTile(
+              dense: true,
+              minVerticalPadding: 3,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+              leading: TapTetherDashboardVisuals.iconTile(
+                Icons.live_tv, const Color(0xFF3583C9),
+                const Color(0xFF5BB0CB), size: 36),
+              title: Text(box.name, maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700,
+                      fontSize: 14)),
+              subtitle: Text(savedDeviceOnNetwork(_wifiRange, box.host)
+                  ? 'MAG254 IPTV · ${box.paired ? "Paired" : "Needs pairing"}'
+                  : 'MAG254 IPTV · Other network',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5)),
+              trailing: _tvStatus('mag', box.host),
+              onTap: () => unawaited(openMag254Remote(host: box.host)),
             ),
           ),
       for (final xbox in manualXbox)

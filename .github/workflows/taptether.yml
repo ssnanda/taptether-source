@@ -77,6 +77,8 @@ on:
       - 'app/lib/tcl_google_tv_*.dart'
       - 'app/lib/tcl_google_tv_protocol/**'
       - 'app/test/tcl_google_tv_*.dart'
+      - 'app/lib/mag254_*.dart'
+      - 'app/test/mag254_*.dart'
       - 'app/lib/dashboard_visuals.dart'
       - 'app/lib/device_dashboard_header.dart'
       - 'app/lib/device_visibility.dart'

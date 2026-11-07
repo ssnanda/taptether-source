@@ -23,12 +23,13 @@ class TclGoogleTv {
       privateKeyPem.isNotEmpty && serverFingerprint.length == 64;
 
   TclGoogleTv copyWith({
+    String? host,
     String? name,
     String? certificatePem,
     String? privateKeyPem,
     String? serverFingerprint,
   }) => TclGoogleTv(
-    host: host,
+    host: host ?? this.host,
     name: name ?? this.name,
     certificatePem: certificatePem ?? this.certificatePem,
     privateKeyPem: privateKeyPem ?? this.privateKeyPem,
@@ -109,6 +110,32 @@ class TclGoogleTvStore {
     }
     await _storage.write(key: key, value: jsonEncode(
         all.map((tv) => tv.toJson()).toList()));
+  }
+
+  /// Only called after verifying the existing TV's pinned certificate AND
+  /// an authenticated Remote Service v2 handshake at the candidate address.
+  /// Retains the same Keychain pairing and never silently replaces a
+  /// different device already saved under that IP.
+  Future<TclGoogleTv?> relocate(
+      TclGoogleTv expected, String candidateHost) async {
+    if (!expected.paired || !validTclGoogleTvHost(candidateHost) ||
+        candidateHost == expected.host) {
+      return null;
+    }
+    final all = await read();
+    final index = all.indexWhere((tv) =>
+        tv.host == expected.host && tv.serverFingerprint ==
+            expected.serverFingerprint &&
+        tv.certificatePem == expected.certificatePem &&
+        tv.privateKeyPem == expected.privateKeyPem);
+    if (index < 0 || all.any((tv) => tv.host == candidateHost)) {
+      return null;
+    }
+    final updated = all[index].copyWith(host: candidateHost);
+    all[index] = updated;
+    await _storage.write(key: key,
+        value: jsonEncode(all.map((tv) => tv.toJson()).toList()));
+    return updated;
   }
 
   Future<void> remove(String host) async {
