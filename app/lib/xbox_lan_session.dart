@@ -355,14 +355,18 @@ class XboxLanSession {
 
   XboxLanMessage? _decode(Uint8List bytes) {
     if (bytes.length < 26 + 32 || _encryptionKey == null ||
-        _word(bytes, 0) != 0xd00d) return null;
+        _word(bytes, 0) != 0xd00d) {
+      return null;
+    }
     final clearLength = _word(bytes, 2);
     final cipherLength = ((clearLength + 15) ~/ 16) * 16;
     final signedLength = 26 + cipherLength;
     if (clearLength > 4096 || bytes.length != signedLength + 32 ||
         !_equal(bytes.sublist(signedLength),
           hashes.Hmac(hashes.sha256, _hmacKey!)
-              .convert(bytes.sublist(0, signedLength)).bytes)) return null;
+              .convert(bytes.sublist(0, signedLength)).bytes)) {
+      return null;
+    }
     final iv = _cbc(_ivKey!, List<int>.filled(16, 0),
         bytes.sublist(0, 16), encrypt: true);
     final payload = _cbc(_encryptionKey!, iv,

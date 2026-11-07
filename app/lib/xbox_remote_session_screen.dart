@@ -66,8 +66,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       _session = connected;
       setState(() {
         _connecting = false;
-        _status = 'Connected · ' +
-            (connected.discovered?.name ?? widget.host);
+        _status = 'Connected · ${connected.discovered?.name ?? widget.host}';
       });
       if (connected.discovered != null) {
         try {
@@ -106,7 +105,9 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
   void _releaseAll() {
     _held = 0;
     try {
-      if (_session?.connected == true) _session!.buttons(0);
+      if (_session?.connected == true) {
+        _session!.buttons(0);
+      }
     } catch (_) {}
   }
 
@@ -129,7 +130,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
     return Semantics(
       button: true,
       enabled: active,
-      label: 'Xbox ' + label,
+      label: 'Xbox $label',
       child: Listener(
         onPointerDown: active ? (_) => _button(mask, true) : null,
         onPointerUp: active ? (_) => _button(mask, false) : null,
