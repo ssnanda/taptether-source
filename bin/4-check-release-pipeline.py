@@ -121,6 +121,8 @@ assert "onConnected: (device)" in xbox_ui
 assert "await _manualStore.save(XboxManualTarget(" in xbox_ui
 assert "await _store.saveLastTargetIp(host)" in xbox_ui
 assert "openSavedXboxRemote(" in mobile_dashboard
+assert "onConnected: (device) async" in mobile_dashboard
+assert "await XboxConsoleStore().save(device.copyWith(" in mobile_dashboard
 xbox_protocol = (ROOT / "app" / "lib" / "xbox_smartglass.dart").read_text()
 assert "inspectXboxDiscovery" in xbox_protocol
 assert "XboxPacketDiagnosis" in xbox_protocol
