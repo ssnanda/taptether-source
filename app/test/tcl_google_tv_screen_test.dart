@@ -131,8 +131,13 @@ void main() {
     expect(find.byKey(const ValueKey('tcl-google-tv-touchpad')), findsOneWidget);
     expect(find.byKey(const ValueKey('tcl-google-tv-ok')), findsNothing);
 
-    await tester.drag(find.byKey(const ValueKey('tcl-google-tv-touchpad')),
-        const Offset(155, 0));
+    await tester.ensureVisible(
+        find.byKey(const ValueKey('tcl-google-tv-touchpad')));
+    await tester.pumpAndSettle();
+    // Pan recognizers need multiple move events after crossing touch slop.
+    await tester.timedDrag(
+        find.byKey(const ValueKey('tcl-google-tv-touchpad')),
+        const Offset(155, 0), const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
     expect(pressed, contains(KeyCode.dpadRight));
     await tester.tap(find.byKey(const ValueKey('tcl-google-tv-touchpad')));
