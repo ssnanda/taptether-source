@@ -25,6 +25,7 @@ class DeviceBackupCodec {
   static const lumaKey = 'taptether_luma_nvr_v1';
   static const tclGoogleTvKey = 'taptether.tcl.google_tv.pairings.v1';
   static const mag254Key = 'taptether.mag254.pairings.v1';
+  static const familyHubKey = 'taptether.samsung.familyhub.smartthings.v1';
 
   // Passwordless portable files deliberately have NO encryption. Only offer
   // this after an explicit confirmation: anyone with the .ttbackup file can
@@ -144,6 +145,7 @@ class DeviceBackupCodec {
       key == lumaKey ||
       key == tclGoogleTvKey ||
       key == mag254Key ||
+      key == familyHubKey ||
       key == resideoCredentialsKey ||
       key == resideoLayoutKey ||
       key == 'taptether.fridge.alerts.enabled.v1' ||
@@ -337,6 +339,7 @@ class DeviceBackupStore {
     DeviceBackupCodec.lumaKey,
     DeviceBackupCodec.tclGoogleTvKey,
     DeviceBackupCodec.mag254Key,
+    DeviceBackupCodec.familyHubKey,
   ];
 
   static bool _usesBackgroundKeychain(String key) =>

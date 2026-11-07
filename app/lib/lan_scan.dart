@@ -36,6 +36,9 @@ class LanHost {
       }
     }
     if (openPorts.contains(48321)) return 'TapTether computer (unverified)';
+    if (openPorts.contains(17654)) {
+      return 'Possible Samsung Family Hub (unverified)';
+    }
     if (openPorts.contains(3001) || openPorts.contains(3000)) {
       return 'Possible LG webOS TV (unverified)';
     }
@@ -60,6 +63,9 @@ class LanHost {
 
   String get deviceHint {
     if (openPorts.contains(48321)) return 'TapTether agent (likely)';
+    if (openPorts.contains(17654)) {
+      return 'Possible Family Hub TCP service (identity unverified)';
+    }
     if (openPorts.contains(3001) || openPorts.contains(3000)) {
       return 'LG webOS remote port open (TV identity unverified)';
     }
@@ -73,7 +79,9 @@ class LanHost {
   }
 }
 
-const lanScanPorts = <int>[48321, 3001, 3000, 22, 80, 443, 445, 3389];
+const lanScanPorts = <int>[
+  48321, 3001, 3000, 17654, 22, 80, 443, 445, 3389,
+];
 
 /// An open TCP port does not establish that a device is an LG TV.
 enum TcpProbeStatus { open, refused, timedOut, unreachable, error }

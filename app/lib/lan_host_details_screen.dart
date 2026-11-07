@@ -8,6 +8,7 @@ import 'lan_scan.dart';
 import 'lg_appliance_discovery.dart';
 import 'lg_webos_client.dart';
 import 'samsung_tv_client.dart';
+import 'smartthings_family_hub_screen.dart';
 import 'scan_report.dart';
 
 /// Level two of the local network scanner.
@@ -308,6 +309,21 @@ class _LanHostDetailsScreenState extends State<LanHostDetailsScreen> {
             label: const Text('Copy device diagnostics'),
           ),
           ScanReportPanel(title: 'Device scan output', report: _report),
+          if (widget.device.openPorts.contains(17654) ||
+              _portStatus[17654] == TcpProbeStatus.open ||
+              _deepOpen.contains(17654)) ...[
+            OutlinedButton.icon(
+              key: const ValueKey('host-add-family-hub'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) =>
+                  SmartThingsFamilyHubScreen(initialIp: widget.device.ip))),
+              icon: const Icon(Icons.kitchen_outlined),
+              label: const Text('Add as Samsung Family Hub'),
+            ),
+            const Text('TCP 17654 is an unverified Family Hub hint. '
+                'Refrigerator readings use SmartThings authorization.'),
+            const SizedBox(height: 8),
+          ],
           const SizedBox(height: 14),
           OutlinedButton.icon(
             key: const ValueKey('use-host-ip'),

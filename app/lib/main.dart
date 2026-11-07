@@ -22,6 +22,8 @@ import 'fridge_alerts.dart';
 import 'package:workmanager/workmanager.dart';
 import 'samsung_tv_client.dart';
 import 'samsung_tv_screen.dart';
+import 'smartthings_family_hub.dart';
+import 'smartthings_family_hub_screen.dart';
 import 'tcl_google_tv_screen.dart';
 import 'tcl_google_tv_recovery.dart';
 import 'tcl_google_tv_quick_controls.dart';
@@ -566,6 +568,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   List<SamsungTvDevice> savedSamsungTvs = [];
   List<TclGoogleTv> savedTclGoogleTvs = [];
   List<Mag254Device> savedMag254Boxes = [];
+  FamilyHubSettings _familyHub = const FamilyHubSettings();
+  bool _familyHubPortOpen = false;
+  bool _checkingFamilyHub = false;
   List<XboxConsole> savedXboxConsoles = [];
   List<XboxManualTarget> savedXboxManual = [];
   List<LgThinQDevice> _enabledThinQ = const [];
@@ -764,8 +769,12 @@ class _RemoteScreenState extends State<RemoteScreen>
       loadSamsungTvs(),
       loadTclGoogleTvs(),
       loadMag254Boxes(),
+      loadFamilyHub(),
       _refreshNetworkLocation(),
-    ]).then((_) => _recoverTvAddresses()));
+    ]).then((_) {
+      unawaited(_recoverTvAddresses());
+      unawaited(_refreshFamilyHubPort());
+    }));
     unawaited(_listenForAgentAnnouncements());
     WidgetsBinding.instance.addObserver(this);
     // Check interface availability without probing/scanning devices.
@@ -779,6 +788,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         unawaited(_refreshNetworkLocation());
         unawaited(_refreshHeartbeats());
         unawaited(_refreshTvStatuses());
+        unawaited(_refreshFamilyHubPort());
         unawaited(_refreshThinQStatuses());
       }
     });
@@ -1894,6 +1904,48 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  Future<void> loadFamilyHub() async {
+    try {
+      final config = await FamilyHubStore().read();
+      if (!mounted) return;
+      setState(() => _familyHub = config);
+      unawaited(_refreshFamilyHubPort());
+    } catch (_) {
+      // Existing credentials remain untouched if Keychain is unavailable.
+    }
+  }
+
+  Future<void> _refreshFamilyHubPort() async {
+    if (_checkingFamilyHub || !_appForeground) return;
+    final ip = _familyHub.localIp;
+    if (ip.isEmpty || !savedDeviceOnNetwork(_wifiRange, ip)) {
+      if (mounted) setState(() => _familyHubPortOpen = false);
+      return;
+    }
+    _checkingFamilyHub = true;
+    try {
+      final reachable = await familyHubPortReachable(ip);
+      if (mounted) setState(() => _familyHubPortOpen = reachable);
+    } catch (_) {
+      if (mounted) setState(() => _familyHubPortOpen = false);
+    } finally {
+      _checkingFamilyHub = false;
+    }
+  }
+
+  Future<void> openFamilyHub({String? ip}) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SmartThingsFamilyHubScreen(
+        initialIp: ip,
+        onSaved: () async {
+          await loadFamilyHub();
+          AutomaticDeviceBackup.instance.requestSoon();
+        },
+      ),
+    ));
+    if (mounted) await loadFamilyHub();
+  }
+
   Future<void> loadXboxConsoles() async {
     try {
       final consoles = await XboxConsoleStore().read();
@@ -2865,6 +2917,15 @@ class _RemoteScreenState extends State<RemoteScreen>
           },
         ),
         ListTile(
+          key: const ValueKey('drawer-samsung-family-hub'),
+          leading: const Icon(Icons.kitchen_outlined),
+          title: const Text('Samsung Family Hub'),
+          onTap: () {
+            Navigator.pop(context);
+            unawaited(openFamilyHub());
+          },
+        ),
+        ListTile(
           key: const ValueKey('drawer-luma-cameras'),
           leading: const Icon(Icons.video_camera_back_outlined),
           title: const Text('Luma Cameras'),
@@ -3232,6 +3293,12 @@ class _RemoteScreenState extends State<RemoteScreen>
             onPressed: () => unawaited(openTclGoogleTv()),
           ),
           ActionChip(
+            key: const ValueKey('add-samsung-family-hub'),
+            avatar: const Icon(Icons.kitchen_outlined, size: 18),
+            label: const Text('Samsung Family Hub'),
+            onPressed: () => unawaited(openFamilyHub()),
+          ),
+          ActionChip(
             key: const ValueKey('add-mag254-action'),
             avatar: const Icon(Icons.live_tv, size: 18),
             label: const Text('MAG254 IPTV'),
@@ -3303,12 +3370,16 @@ class _RemoteScreenState extends State<RemoteScreen>
         savedDeviceOnNetwork(_wifiRange, xbox.host)).length +
         manualXbox.where((x) =>
         savedDeviceOnNetwork(_wifiRange, x.host)).length;
+    final hasFamilyHub = _familyHub.localIp.isNotEmpty;
+    final familyHubLocal = hasFamilyHub &&
+        savedDeviceOnNetwork(_wifiRange, _familyHub.localIp);
+    final familyHubOnline = familyHubLocal && _familyHubPortOpen;
     final localEmpty = visibleDevices.isEmpty &&
-        localTvs == 0 && localXbox == 0;
+        localTvs == 0 && localXbox == 0 && !familyHubLocal;
     final noSaved = savedComputers.isEmpty && savedLgTvs.isEmpty &&
         savedSamsungTvs.isEmpty && savedTclGoogleTvs.isEmpty &&
         savedMag254Boxes.isEmpty && savedXboxConsoles.isEmpty &&
-        savedXboxManual.isEmpty;
+        savedXboxManual.isEmpty && !hasFamilyHub;
     // Status is verified locally or reported by a successful ThinQ API read.
     // Xboxes have no reachability probe here, so cannot be marked Online.
     final onlineComputers = visibleDevices.where((device) =>
@@ -3345,9 +3416,11 @@ class _RemoteScreenState extends State<RemoteScreen>
         savedDeviceOnNetwork(_wifiRange, xbox.host)).length;
     final onlineAppliances = _enabledThinQ.where((device) =>
         _thinQStatuses.containsKey(device.id)).length;
-    final onlineTotal = onlineComputers + onlineTvs + onlineAppliances;
+    final onlineTotal = onlineComputers + onlineTvs + onlineAppliances +
+        (familyHubOnline ? 1 : 0);
     final offlineTotal = visibleDevices.length + visibleTvCount +
-        visibleXboxCount + _enabledThinQ.length - onlineTotal;
+        visibleXboxCount + _enabledThinQ.length +
+        (hasFamilyHub ? 1 : 0) - onlineTotal;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3675,6 +3748,31 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () => unawaited(openMag254Remote(host: box.host)),
             ),
           ),
+      if (hasFamilyHub && familyHubOnline == onlineGroup)
+        Card(
+          key: const ValueKey('samsung-family-hub-device'),
+          margin: const EdgeInsets.only(bottom: 5),
+          child: ListTile(
+            dense: true,
+            minVerticalPadding: 3,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+            leading: TapTetherDashboardVisuals.iconTile(
+              Icons.kitchen_outlined,
+              const Color(0xFF2999CE), const Color(0xFF54BCB4),
+              size: 36,
+            ),
+            title: const Text('Samsung Family Hub',
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            subtitle: Text(familyHubOnline
+                ? 'Local TCP 17654 reachable · SmartThings status separate'
+                : 'Saved · ' + _familyHub.localIp + ' · Local control unverified',
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11.5)),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => unawaited(openFamilyHub()),
+          ),
+        ),
       for (final xbox in manualXbox)
         if (!onlineGroup && (_showAllDevices ||
             savedDeviceOnNetwork(_wifiRange, xbox.host)))
