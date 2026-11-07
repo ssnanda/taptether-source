@@ -113,7 +113,10 @@ assert "Xbox Remote Play" in xbox_ui
 controller = (ROOT / "app" / "lib" / "xbox_remote_session_screen.dart").read_text()
 assert "XboxVirtualGamepad.buttonScript" in controller
 assert "WebViewWidget(controller: _browser)" in controller
-assert "XboxRemoteSessionScreen(host: host)" in xbox_ui
+assert "XboxRemoteSessionScreen(" in xbox_ui
+assert "await _manualStore.save(XboxManualTarget(" in xbox_ui
+assert "await _store.saveLastTargetIp(host)" in xbox_ui
+assert "openSavedXboxRemote(" in mobile_dashboard
 xbox_protocol = (ROOT / "app" / "lib" / "xbox_smartglass.dart").read_text()
 assert "inspectXboxDiscovery" in xbox_protocol
 assert "XboxPacketDiagnosis" in xbox_protocol

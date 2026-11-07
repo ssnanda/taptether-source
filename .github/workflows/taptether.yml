@@ -70,6 +70,7 @@ on:
       - 'versions/macos-agent.txt'
       - 'app/lib/xbox_*.dart'
       - 'app/test/xbox_*.dart'
+      - 'bin/4-check-release-pipeline.py'
       - 'app/lib/govee_*.dart'
       - 'app/test/govee_*.dart'
       - 'app/lib/luma_*.dart'
