@@ -36,6 +36,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
   XboxLanSession? _session;
   String _status = 'Connecting over local Wi-Fi…';
   String? _error;
+  String? _saveWarning;
   bool _connecting = true;
   int _held = 0;
 
@@ -53,6 +54,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
     setState(() {
       _status = 'Connecting over local Wi-Fi…';
       _error = null;
+      _saveWarning = null;
       _connecting = true;
       _held = 0;
     });
@@ -72,7 +74,10 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
         try {
           await widget.onConnected?.call(connected.discovered!);
         } catch (_) {
-          // A failed optional save does not revoke a working LAN session.
+          if (mounted) {
+            setState(() => _saveWarning =
+                'Xbox connected, but the saved device could not be updated.');
+          }
         }
       }
     } catch (error) {
@@ -163,6 +168,13 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Xbox · Wi-Fi remote'), actions: [
+        if (widget.onManage != null)
+          IconButton(
+            key: const ValueKey('xbox-remote-settings'),
+            tooltip: 'Xbox settings',
+            onPressed: widget.onManage,
+            icon: const Icon(Icons.tune_rounded),
+          ),
         IconButton(
           tooltip: 'Reconnect Xbox',
           onPressed: _connecting ? null : _connect,
@@ -187,6 +199,12 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
             child: Text(_error!,
               style: TextStyle(color: scheme.error)),
           ),
+          if (_saveWarning != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(_saveWarning!,
+                style: TextStyle(color: scheme.error)),
+            ),
           const SizedBox(height: 20),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
             _key('LB', XboxLanButton.lb, scheme.primary, width: 85),

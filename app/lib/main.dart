@@ -1973,19 +1973,30 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (mounted) await loadXboxConsoles();
   }
 
-  /// Saved Xbox shortcuts bypass setup and immediately open Remote Play.
-  /// The IP is remembered; Microsoft handles account/console authorization.
+  /// Saved Xbox shortcuts open the real local remote, not the pairing form.
+  /// Store confirmed console identity only after encrypted input-channel setup.
   Future<void> openSavedXboxRemote({
     required String host, required String name,
   }) async {
+    final matches = savedXboxConsoles.where((device) => device.host == host);
+    final known = matches.isNotEmpty ? matches.first : null;
     await Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => XboxRemoteSessionScreen(
         host: host,
         name: name,
+        known: known,
         onManage: () => unawaited(openXboxRemote(host: host)),
+        onConnected: (device) async {
+          await XboxConsoleStore().save(device.copyWith(
+            name: name, location: _detectedLocation ?? 'other',
+          ));
+          await loadXboxConsoles();
+        },
       ),
     ));
-    if (mounted) await loadXboxConsoles();
+    if (mounted) {
+      await loadXboxConsoles();
+    }
   }
 
   Future<void> _refreshTvStatuses() async {
