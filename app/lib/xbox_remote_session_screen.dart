@@ -11,8 +11,14 @@ import 'xbox_virtual_gamepad.dart';
 /// independently authenticated Xbox control socket. Web policy may reject
 /// virtual controllers, so the UI never claims console pairing.
 class XboxRemoteSessionScreen extends StatefulWidget {
-  const XboxRemoteSessionScreen({super.key, required this.host});
+  const XboxRemoteSessionScreen({
+    super.key, required this.host, this.name = 'Xbox',
+    this.openOfficialAtStart = true, this.onManage,
+  });
   final String host;
+  final String name;
+  final bool openOfficialAtStart;
+  final VoidCallback? onManage;
 
   @override
   State<XboxRemoteSessionScreen> createState() =>
@@ -24,7 +30,8 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
   late final WebViewController _browser;
   bool _loading = true;
   bool _bridgeReady = false;
-  String _status = 'Sign in';
+  bool _showExperimentalWeb = false;
+  String _status = 'Open Microsoft Remote Play';
   String _currentUrl = '';
   Future<void> _inputQueue = Future<void>.value();
 
@@ -40,7 +47,7 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
           setState(() {
             _loading = true;
             _bridgeReady = false;
-            _status = 'Loading';
+            _status = XboxRemoteWebStatus.label(url);
             _currentUrl = url;
           });
         },
@@ -49,8 +56,13 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
           setState(() {
             _loading = false;
             _currentUrl = url;
+            _status = XboxRemoteWebStatus.label(url);
+            _bridgeReady = false;
           });
-          unawaited(_prepareGamepad(url));
+          if (XboxRemoteWebStatus.phase(url) ==
+              XboxRemoteWebPhase.remotePlay) {
+            unawaited(_prepareGamepad(url));
+          }
         },
         onWebResourceError: (error) {
           if (error.isForMainFrame != true || !mounted) return;
@@ -70,14 +82,20 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
         },
       ))
       ..loadRequest(XboxRemotePlayLauncher.uri);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.openOfficialAtStart) {
+        unawaited(_openSupportedBrowser());
+      }
+    });
   }
 
   Future<void> _prepareGamepad(String url) async {
-    if (!XboxVirtualGamepad.isMicrosoftXboxPage(url)) {
+    if (!XboxVirtualGamepad.isMicrosoftXboxPage(url) ||
+        XboxRemoteWebStatus.phase(url) != XboxRemoteWebPhase.remotePlay) {
       if (mounted) {
         setState(() {
           _bridgeReady = false;
-          _status = 'Sign in';
+          _status = XboxRemoteWebStatus.label(url);
         });
       }
       return;
@@ -89,13 +107,15 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       final ready = r.toString().contains('installed');
       setState(() {
         _bridgeReady = ready;
-        _status = ready ? 'Controls ready' : 'Controls unavailable';
+        _status = ready
+            ? 'Experimental buttons injected · console not verified'
+            : 'Web controls unavailable · use Microsoft Remote Play';
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _bridgeReady = false;
-        _status = 'Controls unavailable';
+        _status = 'Web controls unavailable · use Microsoft Remote Play';
       });
     }
   }
@@ -158,6 +178,16 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
     super.dispose();
   }
 
+  Future<void> _openSupportedBrowser() async {
+    final success = await const XboxRemotePlayLauncher().connect();
+    if (!mounted) {
+      return;
+    }
+    if (!success) {
+      setState(() => _status = 'Could not open Microsoft Remote Play');
+    }
+  }
+
   Future<void> _openSafari() async {
     await launchUrl(XboxRemotePlayLauncher.uri,
         mode: LaunchMode.externalApplication);
@@ -196,14 +226,22 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
     final accent = Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Xbox · Connect'),
+        title: Text(widget.name.isEmpty
+            ? 'Xbox · Remote Play' : '${widget.name} · Remote Play'),
         actions: [
+          if (widget.onManage != null)
+            IconButton(
+              key: const ValueKey('xbox-session-manage'),
+              tooltip: 'Xbox connection settings',
+              icon: const Icon(Icons.tune_rounded),
+              onPressed: widget.onManage,
+            ),
           IconButton(
             tooltip: 'Open Remote Play in Safari',
             icon: const Icon(Icons.open_in_browser),
             onPressed: _openSafari,
           ),
-          IconButton(
+          if (_showExperimentalWeb) IconButton(
             tooltip: 'Retry virtual controller',
             icon: const Icon(Icons.refresh),
             onPressed: _loading ? null
@@ -214,17 +252,61 @@ class _XboxRemoteSessionScreenState extends State<XboxRemoteSessionScreen>
       body: SafeArea(child: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 4, 14, 7),
-          child: Row(children: [
-            Icon(_bridgeReady ? Icons.check_circle_rounded
-                : Icons.circle_outlined, size: 15,
-                color: _bridgeReady ? Colors.green : Colors.grey),
-            const SizedBox(width: 6),
-            Text(_status, style: Theme.of(context).textTheme.bodySmall),
-          ]),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Saved Xbox · ${widget.host}',
+                style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 5),
+              Text(_status, key: const ValueKey('xbox-web-status'),
+                style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 7),
+              FilledButton.icon(
+                key: const ValueKey('xbox-open-official-remote-play'),
+                onPressed: _openSupportedBrowser,
+                icon: const Icon(Icons.open_in_browser),
+                label: const Text('Open Microsoft Remote Play'),
+              ),
+              const SizedBox(height: 4),
+              Text('Microsoft handles sign-in and console selection. '
+                  'A saved IP is not an authenticated controller connection. '
+                  'If the Xbox homepage appears, select Remote Play.',
+                style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
         ),
-        if (_loading) const LinearProgressIndicator(),
-        Expanded(child: WebViewWidget(controller: _browser)),
-        Container(
+        if (_loading && _showExperimentalWeb)
+          const LinearProgressIndicator(),
+        Expanded(child: _showExperimentalWeb
+            ? WebViewWidget(controller: _browser)
+            : Center(child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.sports_esports_rounded, size: 64,
+                      color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 12),
+                    Text('Xbox address saved',
+                      style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 8),
+                    const Text('Remote Play opens through Microsoft. '
+                        'Your saved Xbox remains on the TapTether dashboard. '
+                        'Microsoft sign-in and console selection happen '
+                        'in the browser.', textAlign: TextAlign.center),
+                    const SizedBox(height: 18),
+                    OutlinedButton.icon(
+                      key: const ValueKey('xbox-show-experimental-web'),
+                      onPressed: () => setState(
+                          () => _showExperimentalWeb = true),
+                      icon: const Icon(Icons.science_outlined),
+                      label: const Text('Try experimental web controls'),
+                    ),
+                  ],
+                ),
+              )),
+        ),
+        if (_bridgeReady && _showExperimentalWeb) Container(
           padding: const EdgeInsets.fromLTRB(4, 5, 4, 8),
           color: Theme.of(context).colorScheme.surfaceContainerLow,
           child: Column(mainAxisSize: MainAxisSize.min, children: [

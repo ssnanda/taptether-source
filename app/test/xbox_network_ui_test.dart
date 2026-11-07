@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taptether/xbox_remote_screen.dart';
+import 'package:taptether/xbox_manual_targets.dart';
+import 'package:taptether/xbox_smartglass.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -56,6 +58,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(opened, 1);
     expect(find.text('Opened'), findsOneWidget);
+    final saved = await XboxManualTargetStore().read();
+    expect(saved, hasLength(1));
+    expect(saved.single.host, '192.168.68.82');
+    expect(await XboxConsoleStore().lastTargetIp(), '192.168.68.82');
   });
 
   testWidgets('Save Xbox IP works without an Xbox discovery response',

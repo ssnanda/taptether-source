@@ -14,6 +14,18 @@ void main() {
     'taptether.network.locations.v1': '{"home":"ssid"}',
   };
 
+  test('Xbox saved IPs and Remote Features selections survive backup', () async {
+    final xbox = {
+      DeviceBackupCodec.xboxManualKey:
+          '[{"host":"192.168.68.82","name":"Xbox","location":"home"}]',
+      DeviceBackupCodec.xboxLastIpKey: '192.168.68.82',
+      '${DeviceBackupCodec.xboxFeaturesPrefix}192.168.68.82': 'true',
+    };
+    final bytes = await DeviceBackupCodec.encrypt(xbox, password);
+    final restored = await DeviceBackupCodec.decrypt(bytes, password);
+    expect(restored, xbox);
+  });
+
   test('encrypted backup restores all supported pairings and phone identity',
       () async {
     final encrypted = await DeviceBackupCodec.encrypt(records, password);

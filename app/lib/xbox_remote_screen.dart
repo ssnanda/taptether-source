@@ -86,32 +86,60 @@ class _XboxRemoteScreenState extends State<XboxRemoteScreen> {
     }
   }
 
-  /// Microsoft's browser handles sign-in and console selection; native
-  /// virtual-button delivery remains an experimental page-scoped PoC.
+  /// Save the address BEFORE opening Microsoft Remote Play. The browser
+  /// sign-in remains owned by Microsoft and is never mistaken for LAN pairing.
   Future<void> _openRemotePlay() async {
     final host = _ip.text.trim();
     if (_busy || !isPrivateIPv4(host)) return;
-    setState(() => _error = null);
-    if (widget.connect == null) {
-      await Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => XboxRemoteSessionScreen(host: host),
-      ));
-      if (!mounted) return;
-      setState(() => _message = 'Disconnected');
-      return;
-    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
+      final existing = _manual.where((item) => item.host == host);
+      final name = existing.isNotEmpty ? existing.first.name
+          : _selected?.name ?? 'Xbox';
+      await _manualStore.save(XboxManualTarget(
+        host: host, name: name, location: widget.initialLocation,
+      ));
+      await _store.saveLastTargetIp(host);
+      final updated = await _manualStore.read();
+      if (!mounted) return;
+      setState(() {
+        _manual = updated;
+        _message = 'Xbox address saved · Microsoft sign-in is separate';
+      });
+      await widget.onSaved?.call();
+      if (!mounted) return;
+      setState(() => _busy = false);
+      if (widget.connect == null) {
+        await Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => XboxRemoteSessionScreen(
+            host: host,
+            name: name,
+            onManage: () => Navigator.of(context).pop(),
+          ),
+        ));
+        if (!mounted) return;
+        setState(() => _message = 'Xbox saved · Remote Play closed');
+        return;
+      }
       final launched = await widget.connect!.call();
       if (!mounted) return;
-      if (launched) {
-        setState(() => _message = 'Opened');
-      } else {
-        setState(() => _error = 'Unable to open Microsoft Remote Play.');
-      }
+      setState(() {
+        if (launched) {
+          _message = 'Opened';
+        } else {
+          _error = 'Unable to open Microsoft Remote Play.';
+        }
+      });
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Unable to open Microsoft Remote Play.');
+        setState(() => _error =
+            'Could not save Xbox address or open Remote Play.');
       }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 

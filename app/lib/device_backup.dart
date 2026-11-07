@@ -26,6 +26,9 @@ class DeviceBackupCodec {
   static const tclGoogleTvKey = 'taptether.tcl.google_tv.pairings.v1';
   static const mag254Key = 'taptether.mag254.pairings.v1';
   static const familyHubKey = 'taptether.samsung.familyhub.smartthings.v1';
+  static const xboxManualKey = 'taptether.xbox.manual-targets.v1';
+  static const xboxLastIpKey = 'taptether.xbox.target-ip.v1';
+  static const xboxFeaturesPrefix = 'taptether.xbox.remote-features.v1.';
 
   // Passwordless portable files deliberately have NO encryption. Only offer
   // this after an explicit confirmation: anyone with the .ttbackup file can
@@ -133,6 +136,9 @@ class DeviceBackupCodec {
       key == 'taptether.lg.webos.pairings.v1' ||
       key == 'taptether.samsung.tv.pairings.v1' ||
       key == 'taptether.xbox.consoles.v1' ||
+      key == xboxManualKey ||
+      key == xboxLastIpKey ||
+      key.startsWith(xboxFeaturesPrefix) ||
       // ThinQ credentials are sensitive: protected automatic backups
       // encrypt them along with the rest of the saved pairing records.
       key == 'taptether.lg.thinq.pat.v1' ||
@@ -340,6 +346,8 @@ class DeviceBackupStore {
     DeviceBackupCodec.tclGoogleTvKey,
     DeviceBackupCodec.mag254Key,
     DeviceBackupCodec.familyHubKey,
+    DeviceBackupCodec.xboxManualKey,
+    DeviceBackupCodec.xboxLastIpKey,
   ];
 
   static bool _usesBackgroundKeychain(String key) =>

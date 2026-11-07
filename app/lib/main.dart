@@ -33,6 +33,7 @@ import 'mag254_store.dart';
 import 'xbox_smartglass.dart';
 import 'xbox_manual_targets.dart';
 import 'xbox_remote_screen.dart';
+import 'xbox_remote_session_screen.dart';
 import 'tv_network_status.dart';
 import 'remote_layout_settings.dart';
 import 'remote_mode_bar.dart';
@@ -1972,6 +1973,21 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (mounted) await loadXboxConsoles();
   }
 
+  /// Saved Xbox shortcuts bypass setup and immediately open Remote Play.
+  /// The IP is remembered; Microsoft handles account/console authorization.
+  Future<void> openSavedXboxRemote({
+    required String host, required String name,
+  }) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => XboxRemoteSessionScreen(
+        host: host,
+        name: name,
+        onManage: () => unawaited(openXboxRemote(host: host)),
+      ),
+    ));
+    if (mounted) await loadXboxConsoles();
+  }
+
   Future<void> _refreshTvStatuses() async {
     if (!mounted || !_appForeground || _checkingTvStatus) return;
     _checkingTvStatus = true;
@@ -3786,8 +3802,15 @@ class _RemoteScreenState extends State<RemoteScreen>
                   ? 'Xbox · Manually saved · Not verified'
                   : 'Xbox · Other network · Not verified',
                   style: const TextStyle(fontSize: 11.5)),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => openXboxRemote(host: xbox.host),
+              trailing: IconButton(
+                key: ValueKey('xbox-manage-${xbox.host}'),
+                tooltip: 'Manage Xbox',
+                icon: const Icon(Icons.tune_rounded),
+                onPressed: () => unawaited(openXboxRemote(host: xbox.host)),
+              ),
+              onTap: () => unawaited(openSavedXboxRemote(
+                host: xbox.host, name: xbox.name)),
+              onLongPress: () => unawaited(openXboxRemote(host: xbox.host)),
             ),
           ),
       for (final xbox in savedXboxConsoles)
@@ -3811,8 +3834,15 @@ class _RemoteScreenState extends State<RemoteScreen>
               subtitle: Text(savedDeviceOnNetwork(_wifiRange, xbox.host)
                   ? 'Xbox · Not checked' : 'Xbox · Other network',
                   style: const TextStyle(fontSize: 11.5)),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => openXboxRemote(host: xbox.host),
+              trailing: IconButton(
+                key: ValueKey('xbox-manage-verified-${xbox.host}'),
+                tooltip: 'Manage Xbox',
+                icon: const Icon(Icons.tune_rounded),
+                onPressed: () => unawaited(openXboxRemote(host: xbox.host)),
+              ),
+              onTap: () => unawaited(openSavedXboxRemote(
+                host: xbox.host, name: xbox.name)),
+              onLongPress: () => unawaited(openXboxRemote(host: xbox.host)),
             ),
           ),
       for (final device in _enabledThinQ)
