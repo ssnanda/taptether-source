@@ -61,6 +61,26 @@ import CoreMotion
     if #available(iOS 18.0, *) {
       TapTetherTVActivityExpiry.register()
     }
+
+    // On a fresh sideload there is no persisted Workmanager task list.
+    // Register each permitted launch handler before didFinishLaunching ends,
+    // even when Dart has not yet requested its first background check.
+    // This registers a handler only; it does not submit a BGTaskRequest.
+    let permittedTasks = Bundle.main.object(
+      forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers"
+    ) as? [String] ?? []
+    for identifier in Set(permittedTasks) {
+      // The TV expiry task has its own native handler on supported iOS.
+      // Never register that same identifier through Workmanager.
+      if #available(iOS 18.0, *),
+         identifier == TapTetherTVActivityExpiry.identifier {
+        continue
+      }
+      WorkmanagerPlugin.registerPeriodicTask(withIdentifier: identifier)
+    }
+
+    // Workmanager deduplicates registrations across the pre-registration
+    // above and tasks persisted from earlier app launches.
     WorkmanagerPlugin.registerLaunchHandlers()
     WorkmanagerPlugin.setPluginRegistrantCallback { registry in
       GeneratedPluginRegistrant.register(with: registry)

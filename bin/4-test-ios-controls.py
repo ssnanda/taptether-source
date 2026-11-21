@@ -85,6 +85,26 @@ assert "expiresAt: Date?" in shared
 assert "staleDate: deadline" in runner
 assert 'tv-controls-expire' in staging
 assert "TapTetherTVActivityExpiry.register()" in (root / "bin/ios/AppDelegate.swift").read_text()
+# A fresh AltServer/SideLoader install has no persisted Workmanager tasks.
+# Each Info.plist permitted identifier must have a launch handler registered
+# before the application delegate finishes launching.
+app_delegate = (root / "bin/ios/AppDelegate.swift").read_text()
+registration = app_delegate.split("override func application(", 1)[1].split(
+    "return super.application(", 1)[0]
+assert 'forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers"' in registration
+assert 'for identifier in Set(permittedTasks)' in registration
+assert "identifier == TapTetherTVActivityExpiry.identifier" in registration
+assert "WorkmanagerPlugin.registerPeriodicTask(withIdentifier: identifier)" in registration
+assert registration.index("TapTetherTVActivityExpiry.register()") < registration.index(
+    "WorkmanagerPlugin.registerPeriodicTask(withIdentifier: identifier)"
+)
+assert registration.index("WorkmanagerPlugin.registerPeriodicTask(withIdentifier: identifier)") < registration.index(
+    "WorkmanagerPlugin.registerLaunchHandlers()"
+)
+assert "com.taptether.taptether.fridge-watch" in (
+    root / "bin/2h-tt-fridge-background.sh").read_text()
+assert "com.taptether.taptether.lg-tv-wake" in (
+    root / "bin/2h-tt-fridge-background.sh").read_text()
 assert "getPowerState" in quick
 assert "confirmedPowerOn" in quick
 assert "tvPowerOn" in quick and "tvPowerOn" in runner
