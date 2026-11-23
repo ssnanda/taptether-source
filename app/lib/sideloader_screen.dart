@@ -73,10 +73,12 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       setState(() => _connected = true);
       await _load();
     } catch (e) {
-      if (mounted) setState(() {
-        _connected = false;
-        _error = 'Cannot connect: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _connected = false;
+          _error = 'Cannot connect: $e';
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -109,10 +111,12 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       final catalog = await _api.sources();
       if (mounted) setState(() => _sources = catalog);
     } catch (e) {
-      if (mounted) setState(() {
-        _sources = [];
-        _sourcesError = 'Sources unavailable: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _sources = [];
+          _sourcesError = 'Sources unavailable: $e';
+        });
+      }
     }
     final job = await _api.currentJob();
     if (!mounted) return;
@@ -229,7 +233,9 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
     final job = _job;
     if (_sendingCode || job == null || !job.running ||
         !job.needsInput || !job.acceptsInput ||
-        !RegExp(r'^[0-9]{6}$').hasMatch(_code.text.trim())) return;
+        !RegExp(r'^[0-9]{6}$').hasMatch(_code.text.trim())) {
+      return;
+    }
     setState(() { _sendingCode = true; _error = ''; });
     try {
       final current = await _api.currentJob();
@@ -396,9 +402,8 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       if (_state?.blocked == true)
         Card(child: Padding(
           padding: const EdgeInsets.all(14),
-          child: Text('Apple signing paused. ' +
-              (_state?.blockedReason ?? '') +
-              ' Resolve it on the SideLoader dashboard.',
+          child: Text("Apple signing paused. ${_state?.blockedReason ?? ''}. "
+              'Resolve it on the SideLoader dashboard.',
               style: const TextStyle(color: Colors.red)),
         )),
       if (_pending != null) _confirmation(_pending!),
@@ -447,12 +452,12 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
               style: const TextStyle(fontSize: 12)),
         ]),
         const SizedBox(height: 4),
-        Text(app.version + ' · ' + app.bundleId,
+        Text('${app.version} · ${app.bundleId}',
             style: Theme.of(context).textTheme.bodySmall),
         Text(_inventory == null ? 'Device installation unverified' :
             _installed(app) ? 'Installed on iPhone' : 'Not installed',
             style: TextStyle(color: _installed(app) ? Colors.green : Colors.orange)),
-        if (newer) Text('New version available: ' + source.version,
+        if (newer) Text('New version available: ${source.version}',
             style: const TextStyle(color: Colors.green)),
         const SizedBox(height: 7),
         Wrap(spacing: 8, runSpacing: 6, children: [
@@ -477,8 +482,8 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       const SizedBox(height: 8),
       Text(action.source == null
           ? 'Sign the saved IPA and reinstall it on this iPhone.'
-          : 'Download the latest IPA from ' + action.source!.sourceName +
-              ' (same version is allowed), preserve the previous saved IPA, '
+          : 'Download the latest IPA from ${action.source!.sourceName} '
+              '(same version is allowed), preserve the previous saved IPA, '
               'then sign and install it.'),
       const SizedBox(height: 6),
       const Text('Apple may request a six-digit verification code. '
@@ -510,9 +515,10 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
         if (job.delivery == 'reported_sent')
           const Text('Apple reports sending a verification code.'),
         if (job.needsInput && job.acceptsInput) ...[
-          Text('Enter the six-digit Apple verification code' +
-              (job.secondsLeft == null ? '' :
-                  ' (' + job.secondsLeft.toString() + 's remaining)')),
+          Text(job.secondsLeft == null
+              ? 'Enter the six-digit Apple verification code'
+              : 'Enter the six-digit Apple verification code '
+                  '(${job.secondsLeft}s remaining)'),
           TextField(
             controller: _code,
             onChanged: (_) => setState(() {}),
@@ -572,7 +578,9 @@ SideLoaderSourceApp? sideLoaderLatestSource(
   for (final source in sources) {
     if (source.bundleId != bundleId) continue;
     if (latest == null || sideLoaderNewerVersion(
-        source.version, latest.version)) latest = source;
+        source.version, latest.version)) {
+      latest = source;
+    }
   }
   return latest;
 }
