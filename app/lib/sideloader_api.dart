@@ -161,6 +161,7 @@ class SideLoaderApi {
     try {
       final request = await _client.openUrl(method, server.resolve(path))
           .timeout(timeout);
+      request.followRedirects = false; // Never forward an authenticated request off-server.
       request.headers.set('X-Requested-With', 'sideloop');
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       if (_cookie.isNotEmpty) {
