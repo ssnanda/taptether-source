@@ -53,6 +53,7 @@ import 'app_security.dart';
 import 'automatic_device_backup.dart';
 import 'device_backup_screen.dart';
 import 'security_settings_screen.dart';
+import 'sideloader_screen.dart';
 import 'about_taptether_screen.dart';
 import 'device_manager_screen.dart';
 import 'device_diagnostics_screen.dart';
@@ -2994,6 +2995,17 @@ class _RemoteScreenState extends State<RemoteScreen>
               onTap: () {
                 Navigator.pop(context);
                 openSecuritySettings();
+              },
+            ),
+            ListTile(
+              key: const ValueKey('drawer-sideloader'),
+              leading: const Icon(Icons.install_mobile_outlined),
+              title: const Text('SideLoader'),
+              subtitle: const Text('Manage sideloaded iPhone apps'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const SideLoaderScreen()));
               },
             ),
             ListTile(
