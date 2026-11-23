@@ -168,3 +168,47 @@ assert "_recordPowerOn" in screen and "_recordFinding" in screen
 assert "_recordFound" in screen and "_recordConnected" in screen
 assert "lg-connection-timing" in screen
 assert "Timer.periodic(const Duration(seconds: 1)" in screen
+
+
+# Verify the generated iOS Info.plist really permits HTTP to a literal
+# NetBird IP (100.64/10). iOS 10+ ignores NSAllowsArbitraryLoads when
+# NSAllowsLocalNetworking is also present for the same app. Keep the widget
+# extension separate and limited to local networking.
+import plistlib
+import subprocess
+import sys
+import tempfile
+
+marker = "python3 - \"$IOS\" <<'PY'\n"
+assert staging.count(marker) == 1, "Could not find iOS plist staging script"
+python_block = staging.split(marker, 1)[1].split("\nPY\n", 1)[0]
+with tempfile.TemporaryDirectory() as scratch:
+    fake_root = Path(scratch)
+    (fake_root / "VERSION").write_text("0.8.101+262\n")
+    ios_root = fake_root / "app" / "ios"
+    (ios_root / "Runner").mkdir(parents=True)
+    (ios_root / "TapTetherControls").mkdir()
+    info_path = ios_root / "Runner" / "Info.plist"
+    with info_path.open("wb") as handle:
+        plistlib.dump({
+            "NSAppTransportSecurity": {
+                "NSAllowsArbitraryLoads": False,
+                "NSAllowsLocalNetworking": True,
+            },
+        }, handle)
+    for attempt in range(2):
+        subprocess.run([sys.executable, "-", str(ios_root)],
+                       input=python_block, text=True, check=True,
+                       capture_output=True)
+        with info_path.open("rb") as handle:
+            info = plistlib.load(handle)
+        ats = info["NSAppTransportSecurity"]
+        assert ats["NSAllowsArbitraryLoads"] is True
+        assert "NSAllowsLocalNetworking" not in ats
+        assert "private SideLoader server" in info["NSLocalNetworkUsageDescription"]
+        widget_path = ios_root / "TapTetherControls" / "Info.plist"
+        with widget_path.open("rb") as handle:
+            widget = plistlib.load(handle)
+        assert widget["NSAppTransportSecurity"]["NSAllowsLocalNetworking"] is True
+        assert "NSAllowsArbitraryLoads" not in widget["NSAppTransportSecurity"]
+print("PASS SideLoader NetBird IP ATS policy and iOS permission staging")
