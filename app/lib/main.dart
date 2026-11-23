@@ -54,6 +54,7 @@ import 'automatic_device_backup.dart';
 import 'device_backup_screen.dart';
 import 'security_settings_screen.dart';
 import 'sideloader_screen.dart';
+// Embedded SideLoader UI: a separate iOS companion/App ID is not required.
 import 'about_taptether_screen.dart';
 import 'device_manager_screen.dart';
 import 'device_diagnostics_screen.dart';
