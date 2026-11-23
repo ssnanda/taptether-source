@@ -33,7 +33,9 @@ class SideLoaderApi {
     final username = await _storage.read(key: _userKey);
     final password = await _storage.read(key: _passwordKey);
     if (url == null || username == null || password == null ||
-        url.isEmpty || username.isEmpty || password.isEmpty) return null;
+        url.isEmpty || username.isEmpty || password.isEmpty) {
+      return null;
+    }
     return SideLoaderCredentials(url, username, password);
   }
 
@@ -174,7 +176,7 @@ class SideLoaderApi {
       final response = await request.close().timeout(timeout);
       if (response.cookies.isNotEmpty) {
         _cookie = response.cookies.map(
-            (value) => value.name + '=' + value.value).join('; ');
+            (value) => "${value.name}=${value.value}").join('; ');
       }
       final text = await utf8.decoder.bind(response).join().timeout(timeout);
       Map<String, dynamic> data;
@@ -187,7 +189,7 @@ class SideLoaderApi {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final message = _text(data['error']);
         throw SideLoaderException(message.isNotEmpty
-            ? message : 'SideLoader HTTP ' + response.statusCode.toString());
+            ? message : "SideLoader HTTP ${response.statusCode}");
       }
       return data;
     } on SideLoaderException {
