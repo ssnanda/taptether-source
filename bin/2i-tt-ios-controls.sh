@@ -43,7 +43,18 @@ permitted[:] = [item for item in permitted if item != 'com.itspector.taptether.t
 if identifier not in permitted:
     permitted.append(identifier)
 ats = info.setdefault('NSAppTransportSecurity', {})
-ats['NSAllowsLocalNetworking'] = True
+# SideLoader's existing HTTP server is often accessed by a NetBird 100.64/10
+# address. Apple documents that NSAllowsLocalNetworking does not cover a
+# literal IP address, and iOS 10+ IGNORES NSAllowsArbitraryLoads if
+# NSAllowsLocalNetworking is also present in the same app's Info.plist.
+# Leave the WidgetKit extension scoped to local networking (below), but let
+# the main Runner connect directly to private SideLoader/VPN IP endpoints.
+ats.pop('NSAllowsLocalNetworking', None)
+ats['NSAllowsArbitraryLoads'] = True
+info['NSLocalNetworkUsageDescription'] = (
+    'TapTether connects to your trusted devices and private SideLoader server '
+    'using your local network or VPN.')
+assert ats['NSAllowsArbitraryLoads'] and 'NSAllowsLocalNetworking' not in ats
 with runner_info.open('wb') as handle:
     plistlib.dump(info, handle, sort_keys=False)
 widget = ios / 'TapTetherControls'
