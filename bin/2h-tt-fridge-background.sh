@@ -14,6 +14,7 @@ ios = root / 'app/ios/Runner/Info.plist'
 android = root / 'app/android/app/src/main/AndroidManifest.xml'
 task_id = 'com.taptether.taptether.fridge-watch'
 lg_task_id = 'com.taptether.taptether.lg-tv-wake'
+sideloader_task_id = 'com.taptether.taptether.sideloader-refresh'
 if ios.is_file():
     with ios.open('rb') as handle:
         info = plistlib.load(handle)
@@ -24,7 +25,7 @@ if ios.is_file():
     info['UIBackgroundModes'] = modes
     identifiers = [item for item in (info.get('BGTaskSchedulerPermittedIdentifiers') or [])
                    if not item.startswith(('com.taptether.taptether.', 'com.itspector.taptether.'))]
-    for identifier in (task_id, lg_task_id):
+    for identifier in (task_id, lg_task_id, sideloader_task_id):
         if identifier not in identifiers:
             identifiers.append(identifier)
     info['BGTaskSchedulerPermittedIdentifiers'] = identifiers

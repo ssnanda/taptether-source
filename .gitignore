@@ -44,3 +44,10 @@ app/ios/Runner/Assets.xcassets/AppIcon.appiconset/*.png
 app/android/app/src/main/res/mipmap-*/ic_launcher.png
 tv/lg-webos/icon.png
 tv/lg-webos/largeIcon.png
+
+# `flutter create` scaffolding regenerated locally and in CI (not repository-owned)
+app/ios/
+app/.metadata
+app/.gitignore
+app/README.md
+app/pubspec.lock

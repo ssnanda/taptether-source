@@ -7,11 +7,21 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// pairing records, and any VPN credentials remain on the SideLoader server.
 class SideLoaderApi {
   SideLoaderApi({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+      : _storage = storage ?? _backgroundReadable,
+        _legacy = storage == null ? const FlutterSecureStorage() : null;
   static const _serverKey = 'taptether.sideloader.server.v1';
   static const _userKey = 'taptether.sideloader.username.v1';
   static const _passwordKey = 'taptether.sideloader.password.v1';
+  static const _deviceKey = 'taptether.sideloader.device.v1';
+  // Background refresh runs while the phone may be locked; items written
+  // with the default (unlocked-only) accessibility are migrated once.
+  static const _backgroundReadable = FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+  );
   final FlutterSecureStorage _storage;
+  final FlutterSecureStorage? _legacy;
   final HttpClient _client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 12);
   Uri? _server;
@@ -25,10 +35,18 @@ class SideLoaderApi {
         (uri.path.isNotEmpty && uri.path != '/')) {
       throw const FormatException('Enter a valid SideLoader server address.');
     }
+    // On the iPhone, loopback is the phone itself, never the SideLoader host.
+    final host = uri.host.toLowerCase();
+    if (host == 'localhost' || host.startsWith('127.') ||
+        host == '::1' || host == '[::1]' || host == '0.0.0.0') {
+      throw const FormatException(
+          "Use the SideLoader computer's LAN or VPN IP address, not localhost.");
+    }
     return uri.replace(path: '/');
   }
 
   Future<SideLoaderCredentials?> savedCredentials() async {
+    await _migrateLegacy();
     final url = await _storage.read(key: _serverKey);
     final username = await _storage.read(key: _userKey);
     final password = await _storage.read(key: _passwordKey);
@@ -43,16 +61,18 @@ class SideLoaderApi {
       {bool remember = true}) async {
     _server = validateServer(server);
     _cookie = '';
+    // SideLoader compares usernames exactly; iOS suggestions append a space.
+    final username = user.trim();
     try {
       await _request('POST', '/api/auth/login',
-          body: {'username': user, 'password': password});
+          body: {'username': username, 'password': password});
       final auth = await _request('GET', '/api/auth');
       if (auth['logged_in'] != true) {
         throw const SideLoaderException('SideLoader did not accept the login.');
       }
       if (remember) {
         await _storage.write(key: _serverKey, value: _server.toString());
-        await _storage.write(key: _userKey, value: user);
+        await _storage.write(key: _userKey, value: username);
         await _storage.write(key: _passwordKey, value: password);
       } else {
         await clearCredentials();
@@ -63,11 +83,44 @@ class SideLoaderApi {
     }
   }
 
+  Future<void> _migrateLegacy() async {
+    final legacy = _legacy;
+    if (legacy == null) return;
+    try {
+      for (final key in [_serverKey, _userKey, _passwordKey]) {
+        final value = await legacy.read(key: key);
+        if (value == null) continue;
+        if (await _storage.read(key: key) == null) {
+          await _storage.write(key: key, value: value);
+        }
+        await legacy.delete(key: key);
+      }
+    } catch (_) {
+      // Locked keychain in the background: retry on the next foreground run.
+    }
+  }
+
   Future<void> clearCredentials() async {
     await _storage.delete(key: _serverKey);
     await _storage.delete(key: _userKey);
     await _storage.delete(key: _passwordKey);
+    await _storage.delete(key: _deviceKey);
   }
+
+  /// The iPhone chosen on the SideLoader screen; background checks use it.
+  Future<String?> savedDevice() => _storage.read(key: _deviceKey);
+  Future<void> saveDevice(String udid) async {
+    if (udid.isNotEmpty) await _storage.write(key: _deviceKey, value: udid);
+  }
+
+  /// Tell SideLoader this phone is on its network: renew what is due and
+  /// check saved sources for newer versions now. Returns watcher status.
+  Future<SideLoaderAutoStatus> autoRun(String device) async =>
+      SideLoaderAutoStatus.fromJson(await _request('POST', '/api/auto/run',
+          body: {'device': device}));
+
+  Future<SideLoaderAutoStatus> autoStatus() async =>
+      SideLoaderAutoStatus.fromJson(await _request('GET', '/api/auto'));
 
   Future<void> disconnect() async {
     _server = null;
@@ -170,8 +223,13 @@ class SideLoaderApi {
         request.headers.set(HttpHeaders.cookieHeader, _cookie);
       }
       if (body != null) {
+        // Send a fixed Content-Length. Without it dart:io uses chunked
+        // transfer encoding, which SideLoader's server read as an empty body
+        // (empty username/password -> "wrong password").
+        final bytes = utf8.encode(jsonEncode(body));
         request.headers.contentType = ContentType.json;
-        request.write(jsonEncode(body));
+        request.contentLength = bytes.length;
+        request.add(bytes);
       }
       final response = await request.close().timeout(timeout);
       if (response.cookies.isNotEmpty) {
@@ -353,4 +411,31 @@ class SideLoaderJob {
     _text(json['verification_delivery']),
     _number(json['verification_seconds_remaining']), _text(json['last']),
   );
+}
+
+/// Server-side automatic renewal/update status (GET/POST /api/auto).
+class SideLoaderAutoStatus {
+  SideLoaderAutoStatus(this.paused, this.running, this.lastRun, this.lastRc,
+      this.lastMessage, this.lastUpdates);
+  final String paused;
+  final bool running;
+  final int? lastRun;
+  final int? lastRc;
+  final String lastMessage;
+  final List<String> lastUpdates;
+
+  factory SideLoaderAutoStatus.fromJson(Map<String, dynamic> json) =>
+      SideLoaderAutoStatus(
+        _text(json['paused']), json['running'] == true,
+        _number(json['last_run']), _number(json['last_rc']),
+        _text(json['last_message']),
+        (json['last_updates'] as List? ?? const []).map(_text).toList(),
+      );
+
+  /// Update results that did not install ("bundle version: reason").
+  List<String> get failedUpdates =>
+      lastUpdates.where((line) => !line.endsWith(': installed')).toList();
+
+  bool get lastRunFailed =>
+      lastRun != null && ((lastRc ?? 0) != 0 || failedUpdates.isNotEmpty);
 }

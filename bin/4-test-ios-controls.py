@@ -105,6 +105,10 @@ assert "com.taptether.taptether.fridge-watch" in (
     root / "bin/2h-tt-fridge-background.sh").read_text()
 assert "com.taptether.taptether.lg-tv-wake" in (
     root / "bin/2h-tt-fridge-background.sh").read_text()
+assert "com.taptether.taptether.sideloader-refresh" in (
+    root / "bin/2h-tt-fridge-background.sh").read_text()
+assert "com.taptether.taptether.sideloader-refresh" in (
+    root / "app/lib/sideloader_background.dart").read_text()
 assert "getPowerState" in quick
 assert "confirmedPowerOn" in quick
 assert "tvPowerOn" in quick and "tvPowerOn" in runner

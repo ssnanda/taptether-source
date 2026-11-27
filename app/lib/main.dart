@@ -54,6 +54,7 @@ import 'automatic_device_backup.dart';
 import 'device_backup_screen.dart';
 import 'security_settings_screen.dart';
 import 'sideloader_screen.dart';
+import 'sideloader_background.dart';
 // Embedded SideLoader UI: a separate iOS companion/App ID is not required.
 // iOS-only release request: TapTether 0.8.100+261 with SideLoader Settings.
 import 'about_taptether_screen.dart';
@@ -88,6 +89,7 @@ Future<void> main() async {
       await Workmanager().initialize(taptetherBackgroundDispatcher);
       await FridgeAlerts.instance.syncBackgroundTask();
       await LgWakeRecovery.instance.schedule();
+      await SideLoaderBackground.instance.schedule();
     } catch (_) {
       // A failed registration must be visible in background diagnostics.
       try {

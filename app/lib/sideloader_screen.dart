@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'sideloader_api.dart';
+import 'sideloader_background.dart';
 
 /// Native Settings & More integration; the SideLoader server stays independent.
 class SideLoaderScreen extends StatefulWidget {
@@ -51,6 +52,7 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
     try {
       final saved = await _api.savedCredentials();
       if (saved != null) {
+        _deviceId = await _api.savedDevice() ?? '';
         _server.text = saved.url;
         _user.text = saved.user;
         _password.text = saved.password;
@@ -72,6 +74,9 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       if (!mounted) return;
       setState(() => _connected = true);
       await _load();
+      unawaited(SideLoaderBackground.instance.schedule());
+      unawaited(SideLoaderBackground.instance.requestPermission()
+          .catchError((_) {}));
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -90,6 +95,12 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
     final choice = state.devices.any((d) => d.udid == _deviceId)
         ? _deviceId
         : (state.devices.isEmpty ? '' : state.devices.first.udid);
+    if (choice.isNotEmpty) {
+      unawaited(_api.saveDevice(choice));
+      // TapTether initiates the server's renewal/update check while the
+      // phone is on the Mac's network; failures surface via alerts.
+      unawaited(_api.autoRun(choice).then<void>((_) {}, onError: (_) {}));
+    }
     setState(() {
       _state = state;
       _deviceId = choice;
@@ -258,6 +269,7 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
     _timer?.cancel();
     try {
       await _api.disconnect();
+      await SideLoaderBackground.instance.cancel();
       if (!mounted) return;
       setState(() {
         _connected = false;
@@ -309,7 +321,10 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       child: Text(_message, style: const TextStyle(color: Colors.green))),
   ]);
 
-  Widget _login() => ListView(padding: const EdgeInsets.all(18), children: [
+  // AutofillGroup + hints let iOS offer the saved SideLoader login from
+  // Passwords instead of hand-typing the generated 24-character password.
+  Widget _login() => AutofillGroup(child: ListView(
+      padding: const EdgeInsets.all(18), children: [
     const Text('Connect your self-hosted SideLoader server.'),
     const SizedBox(height: 18),
     TextField(
@@ -319,14 +334,18 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       autocorrect: false,
       textCapitalization: TextCapitalization.none,
       decoration: const InputDecoration(
-        labelText: 'Server URL', hintText: 'http://100.x.x.x:38080',
+        labelText: 'Server URL', hintText: 'http://Your-Mac-Name.local:38080',
         border: OutlineInputBorder())),
     const SizedBox(height: 12),
     TextField(
       controller: _user,
       onChanged: (_) => setState(() {}),
       autocorrect: false,
+      enableSuggestions: false,
+      smartDashesType: SmartDashesType.disabled,
+      smartQuotesType: SmartQuotesType.disabled,
       textCapitalization: TextCapitalization.none,
+      autofillHints: const [AutofillHints.username],
       decoration: const InputDecoration(
         labelText: 'SideLoader username', border: OutlineInputBorder())),
     const SizedBox(height: 12),
@@ -334,6 +353,9 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       controller: _password,
       onChanged: (_) => setState(() {}),
       obscureText: true,
+      autocorrect: false,
+      enableSuggestions: false,
+      autofillHints: const [AutofillHints.password],
       decoration: const InputDecoration(
         labelText: 'SideLoader password', border: OutlineInputBorder())),
     SwitchListTile(
@@ -351,7 +373,7 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
     const Text('Use a trusted LAN, private VPN, or HTTPS address. '
         'This is an API connection; it does not create an iPhone tunnel.',
         style: TextStyle(fontSize: 12)),
-  ]);
+  ]));
 
   Widget _dashboard() => RefreshIndicator(
     onRefresh: _refresh,
@@ -380,6 +402,7 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
               onChanged: _busy ? null : (id) {
                 if (id != null && id != _deviceId) {
                   setState(() { _deviceId = id; _inventory = null; _pending = null; });
+                  unawaited(_api.saveDevice(id));
                   unawaited(_refresh());
                 }
               }),
