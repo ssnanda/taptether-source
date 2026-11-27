@@ -51,3 +51,5 @@ app/.metadata
 app/.gitignore
 app/README.md
 app/pubspec.lock
+__pycache__/
+*.pyc
