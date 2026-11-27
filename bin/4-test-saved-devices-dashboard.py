@@ -74,7 +74,7 @@ security = (root / 'app/lib/security_settings_screen.dart').read_text()
 drawer = main.split('  Widget appDrawer()', 1)[1].split(
     '  Widget _offlineHome()', 1)[0]
 assert "key: const ValueKey('drawer-device-backups')" in drawer
-assert "openDeviceBackups();" in drawer
+assert "openDeviceBackups" in drawer
 assert "Text('Device backup')" not in security
 assert "DeviceBackupScreen(" in main
 

@@ -2885,218 +2885,93 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  Widget appDrawer() => Drawer(
-    child: SafeArea(child: ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-          child: Row(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.asset('assets/branding/taptether.png',
-                  width: 54, height: 54),
-            ),
-            const SizedBox(width: 14),
-            Expanded(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('TapTether',
-                    style: Theme.of(context).textTheme.titleLarge),
-                Text('Local control. No accounts.',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ],
-            )),
-          ]),
-        ),
-        const Divider(),
+  /// Flat, grouped navigation: everyday tools first, then settings and
+  /// integrations. Nothing is collapsed. Device-specific remotes (TCL,
+  /// MAG254, Luma cameras) open from saved devices and Add Devices, so they
+  /// are not repeated here.
+  Widget appDrawer() {
+    Widget section(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+      child: Text(label.toUpperCase(),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              letterSpacing: 0.8,
+              color: Theme.of(context).colorScheme.onSurfaceVariant)),
+    );
+    Widget item(String title, IconData icon, VoidCallback open, {Key? key}) =>
         ListTile(
-          leading: const Icon(Icons.devices_outlined),
-          title: const Text('Devices'),
+          key: key,
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          leading: Icon(icon),
+          title: Text(title),
           onTap: () {
             Navigator.pop(context);
+            open();
+          },
+        );
+    void push(Widget screen) => Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => screen));
+    return Drawer(
+      child: SafeArea(child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Row(children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.asset('assets/branding/taptether.png',
+                    width: 40, height: 40),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text('TapTether',
+                  style: Theme.of(context).textTheme.titleMedium)),
+            ]),
+          ),
+          const Divider(height: 1),
+          item('Devices', Icons.devices_outlined, () {
             if (agent.configured) {
               agent.disconnect();
               setState(() => status = 'Select a device to connect.');
             }
-          },
-        ),
-        ListTile(
-          key: const ValueKey('drawer-add-devices'),
-          leading: const Icon(Icons.add_circle_outline),
-          title: const Text('Add Devices'),
-          onTap: () {
-            Navigator.pop(context);
-            openAddDevices();
-          },
-        ),
-        ListTile(
-          key: const ValueKey('drawer-tcl-google-tv'),
-          leading: const Icon(Icons.tv_rounded),
-          title: const Text('TCL Google TV'),
-          onTap: () {
-            Navigator.pop(context);
-            unawaited(openTclGoogleTv());
-          },
-        ),
-        ListTile(
-          key: const ValueKey('drawer-mag254-iptv'),
-          leading: const Icon(Icons.live_tv),
-          title: const Text('MAG254 IPTV Remote'),
-          onTap: () {
-            Navigator.pop(context);
-            unawaited(openMag254Remote());
-          },
-        ),
-        ListTile(
-          key: const ValueKey('drawer-luma-cameras'),
-          leading: const Icon(Icons.video_camera_back_outlined),
-          title: const Text('Luma Cameras'),
-          onTap: () {
-            Navigator.pop(context);
-            Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const LumaCamerasScreen()));
-          },
-        ),
-        ListTile(
-          key: const ValueKey('drawer-device-backups'),
-          leading: const Icon(Icons.backup_outlined),
-          title: const Text('Device Backup'),
-          subtitle: const Text('Automatic backup & restore'),
-          onTap: () {
-            Navigator.pop(context);
-            openDeviceBackups();
-          },
-        ),
-        const Divider(),
-        ExpansionTile(
-          key: const ValueKey('drawer-settings-more'),
-          leading: const Icon(Icons.settings_outlined),
-          title: const Text('Settings & More'),
-          childrenPadding: const EdgeInsets.only(left: 16),
-          children: [
-            ListTile(
-              key: const ValueKey('drawer-ssh-terminal'),
-              leading: const Icon(Icons.terminal),
-              title: const Text('SSH'),
-              onTap: () {
-                Navigator.pop(context);
-                openSshTerminal();
-              },
-            ),
-            ListTile(
-              key: const ValueKey('drawer-ssh-keys'),
-              leading: const Icon(Icons.key_outlined),
-              title: const Text('SSH Keys'),
-              onTap: () {
-                Navigator.pop(context);
-                openSshKeys();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.shield_outlined),
-              title: const Text('Security & Appearance'),
-              onTap: () {
-                Navigator.pop(context);
-                openSecuritySettings();
-              },
-            ),
-            ListTile(
-              key: const ValueKey('drawer-sideloader'),
-              leading: const Icon(Icons.install_mobile_outlined),
-              title: const Text('SideLoader'),
-              subtitle: const Text('Manage sideloaded iPhone apps'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const SideLoaderScreen()));
-              },
-            ),
-            ListTile(
-              key: const ValueKey('drawer-tv-quick-controls'),
-              leading: const Icon(Icons.settings_remote_outlined),
-              title: const Text('TV Quick Controls'),
-              subtitle: const Text('Lock Screen layout & Control Center'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const TvControlsSettingsScreen()));
-              },
-            ),
-            ExpansionTile(
-              key: const ValueKey('drawer-api-integrations'),
-              leading: const Icon(Icons.extension_outlined),
-              title: const Text('API Integrations'),
-              childrenPadding: const EdgeInsets.only(left: 12),
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.kitchen_outlined),
-                  title: const Text('LG ThinQ'),
-                  subtitle: const Text('Optional cloud appliance connection'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _openThinQ();
-                  },
-                ),
-                ListTile(
-                  key: const ValueKey('drawer-govee-api-settings'),
-                  leading: const Icon(Icons.lightbulb_outline_rounded),
-                  title: const Text('Govee API'),
-                  subtitle: const Text('Govee Home developer API key'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => const GoveeScreen(settingsOnly: true)));
-                  },
-                ),
-                ListTile(
-                  key: const ValueKey('drawer-resideo-api-settings'),
-                  leading: const Icon(Icons.thermostat_outlined),
-                  title: const Text('Resideo API'),
-                  subtitle: const Text('Honeywell Home developer API credentials'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => const ResideoScreen(settingsOnly: true)));
-                  },
-                ),
-                ListTile(
-                  key: const ValueKey('drawer-luma-api-settings'),
-                  leading: const Icon(Icons.video_camera_back_outlined),
-                  title: const Text('Luma NVR'),
-                  subtitle: const Text('Local recorder IP and login'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) =>
-                          const LumaCamerasScreen(settingsOnly: true)));
-                  },
-                ),
-              ],
-            ),
-            ListTile(
-              leading: const Icon(Icons.download_outlined),
-              title: const Text('Download agents'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const AgentDownloadsScreen()));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('About TapTether'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => AboutTapTetherScreen(version: installedVersion)));
-              },
-            ),
-          ],
-        ),
-      ],
-    )),
-  );
+          }),
+          item('Add Devices', Icons.add_circle_outline, openAddDevices,
+              key: const ValueKey('drawer-add-devices')),
+          item('SideLoader', Icons.install_mobile_outlined,
+              () => push(const SideLoaderScreen()),
+              key: const ValueKey('drawer-sideloader')),
+          item('SSH', Icons.terminal, openSshTerminal,
+              key: const ValueKey('drawer-ssh-terminal')),
+          item('Device Backup', Icons.backup_outlined, openDeviceBackups,
+              key: const ValueKey('drawer-device-backups')),
+          section('Settings'),
+          item('TV Quick Controls', Icons.settings_remote_outlined,
+              () => push(const TvControlsSettingsScreen()),
+              key: const ValueKey('drawer-tv-quick-controls')),
+          item('Security & Appearance', Icons.shield_outlined,
+              openSecuritySettings),
+          item('SSH Keys', Icons.key_outlined, openSshKeys,
+              key: const ValueKey('drawer-ssh-keys')),
+          section('Integrations'),
+          item('LG ThinQ', Icons.kitchen_outlined, _openThinQ),
+          item('Govee API', Icons.lightbulb_outline_rounded,
+              () => push(const GoveeScreen(settingsOnly: true)),
+              key: const ValueKey('drawer-govee-api-settings')),
+          item('Resideo API', Icons.thermostat_outlined,
+              () => push(const ResideoScreen(settingsOnly: true)),
+              key: const ValueKey('drawer-resideo-api-settings')),
+          item('Luma NVR', Icons.video_camera_back_outlined,
+              () => push(const LumaCamerasScreen(settingsOnly: true)),
+              key: const ValueKey('drawer-luma-api-settings')),
+          const Divider(height: 24),
+          item('Download agents', Icons.download_outlined,
+              () => push(const AgentDownloadsScreen())),
+          item('About TapTether', Icons.info_outline,
+              () => push(AboutTapTetherScreen(version: installedVersion))),
+        ],
+      )),
+    );
+  }
 
   /// Cellular/offline mode keeps key management and saved-device editing
   /// available, but offers no network-dependent controls or fake online state.

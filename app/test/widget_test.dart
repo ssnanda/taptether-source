@@ -38,18 +38,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Devices'), findsOneWidget);
     expect(find.text('Device Backup'), findsOneWidget);
-    expect(find.text('Settings & More'), findsOneWidget);
-    await tester.tap(find.text('Settings & More'));
-    await tester.pumpAndSettle();
+    // Flat menu: nothing is hidden behind a collapsed Settings group.
+    expect(find.text('Settings & More'), findsNothing);
+    expect(find.text('SideLoader'), findsOneWidget);
     expect(find.text('SSH'), findsOneWidget);
     expect(find.text('Connect to a computer over Wi-Fi'), findsNothing);
     expect(find.text('SSH Keys'), findsOneWidget);
     expect(find.text('Security & Appearance'), findsOneWidget);
-    expect(find.text('API Integrations'), findsOneWidget);
-    await tester.ensureVisible(find.text('API Integrations'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('API Integrations'));
-    await tester.pumpAndSettle();
+    expect(find.text('TCL Google TV'), findsNothing);
     await tester.ensureVisible(find.text('LG ThinQ'));
     await tester.pumpAndSettle();
     expect(find.text('LG ThinQ'), findsOneWidget);
