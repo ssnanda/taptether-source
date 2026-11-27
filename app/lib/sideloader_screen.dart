@@ -92,9 +92,7 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
   Future<void> _load() async {
     final state = await _api.state();
     if (!mounted) return;
-    final choice = state.devices.any((d) => d.udid == _deviceId)
-        ? _deviceId
-        : (state.devices.isEmpty ? '' : state.devices.first.udid);
+    final choice = sideLoaderPreferredDevice(state.devices, _deviceId);
     if (choice.isNotEmpty) {
       unawaited(_api.saveDevice(choice));
       // TapTether initiates the server's renewal/update check while the

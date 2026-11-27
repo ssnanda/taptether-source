@@ -8,11 +8,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class SideLoaderApi {
   SideLoaderApi({FlutterSecureStorage? storage})
       : _storage = storage ?? _backgroundReadable,
-        _legacy = storage == null ? const FlutterSecureStorage() : null;
+        _migrate = storage == null;
   static const _serverKey = 'taptether.sideloader.server.v1';
   static const _userKey = 'taptether.sideloader.username.v1';
   static const _passwordKey = 'taptether.sideloader.password.v1';
   static const _deviceKey = 'taptether.sideloader.device.v1';
+  static const _migratedKey = 'taptether.sideloader.keychain.migrated.v2';
   // Background refresh runs while the phone may be locked; items written
   // with the default (unlocked-only) accessibility are migrated once.
   static const _backgroundReadable = FlutterSecureStorage(
@@ -21,7 +22,7 @@ class SideLoaderApi {
     ),
   );
   final FlutterSecureStorage _storage;
-  final FlutterSecureStorage? _legacy;
+  final bool _migrate;
   final HttpClient _client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 12);
   Uri? _server;
@@ -84,17 +85,18 @@ class SideLoaderApi {
   }
 
   Future<void> _migrateLegacy() async {
-    final legacy = _legacy;
-    if (legacy == null) return;
+    if (!_migrate) return;
     try {
-      for (final key in [_serverKey, _userKey, _passwordKey]) {
-        final value = await legacy.read(key: key);
-        if (value == null) continue;
-        if (await _storage.read(key: key) == null) {
-          await _storage.write(key: key, value: value);
-        }
-        await legacy.delete(key: key);
+      if (await _storage.read(key: _migratedKey) == 'done') return;
+      // flutter_secure_storage reads ignore accessibility, so this finds
+      // items saved by older builds; write() re-adds them with first-unlock
+      // accessibility. Never delete separately: a delete can match the same
+      // (only) item, which wiped saved logins in 0.8.102.
+      for (final key in [_serverKey, _userKey, _passwordKey, _deviceKey]) {
+        final value = await _storage.read(key: key);
+        if (value != null) await _storage.write(key: key, value: value);
       }
+      await _storage.write(key: _migratedKey, value: 'done');
     } catch (_) {
       // Locked keychain in the background: retry on the next foreground run.
     }
@@ -305,6 +307,16 @@ class SideLoaderState {
       guard['blocked'] == true, _text(guard['message']),
     );
   }
+}
+
+/// The saved iPhone if still registered; otherwise the first iPhone the
+/// server can reach (normally the phone running TapTether), else the first.
+String sideLoaderPreferredDevice(List<SideLoaderDevice> devices, String? saved) {
+  if (saved != null && devices.any((d) => d.udid == saved)) return saved;
+  for (final device in devices) {
+    if (device.reachable) return device.udid;
+  }
+  return devices.isEmpty ? '' : devices.first.udid;
 }
 
 class SideLoaderDevice {

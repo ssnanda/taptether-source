@@ -73,10 +73,8 @@ class SideLoaderBackground {
       if (saved == null) return true;
       await api.login(saved.url, saved.user, saved.password);
       final state = await api.state();
-      var device = await api.savedDevice() ?? '';
-      if (!state.devices.any((d) => d.udid == device)) {
-        device = state.devices.isEmpty ? '' : state.devices.first.udid;
-      }
+      final device =
+          sideLoaderPreferredDevice(state.devices, await api.savedDevice());
       final status = await api.autoRun(device);
       await reportFailures(status, state);
       await _store.write(key: _lastCheckKey,
