@@ -310,6 +310,29 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
       : _connected ? _dashboard() : _login(),
   );
 
+  Widget _problemCard(SideLoaderProblem problem) {
+    final color = problem.isError ? Colors.red : Colors.orange;
+    return Container(
+      key: const ValueKey('sideloader-device-problem'),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: color),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${problem.isError ? 'ERROR' : 'WARNING'}: ${problem.title}',
+            style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        for (var i = 0; i < problem.steps.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: SelectableText('${i + 1}. ${problem.steps[i]}'),
+          ),
+      ]),
+    );
+  }
+
   Widget _alerts() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     if (_error.isNotEmpty) Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -414,7 +437,8 @@ class _SideLoaderScreenState extends State<SideLoaderScreen>
                 _device!.reachable ? 'iPhone reachable from server' :
                 'iPhone offline or connection unverified')),
           ]),
-          if (_scanError.isNotEmpty)
+          if (_device?.problem != null) _problemCard(_device!.problem!),
+          if (_scanError.isNotEmpty && _device?.problem == null)
             Text(_scanError, style: const TextStyle(color: Colors.orange)),
           if (_sourcesError.isNotEmpty)
             Text(_sourcesError, style: const TextStyle(color: Colors.orange)),

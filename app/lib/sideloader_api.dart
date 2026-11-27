@@ -320,16 +320,31 @@ String sideLoaderPreferredDevice(List<SideLoaderDevice> devices, String? saved) 
 }
 
 class SideLoaderDevice {
-  SideLoaderDevice(this.udid, this.name, this.reachable);
+  SideLoaderDevice(this.udid, this.name, this.reachable, [this.problem]);
   final String udid;
   final String name;
   final bool reachable;
+  /// Server-written explanation when SideLoader cannot reach this iPhone.
+  final SideLoaderProblem? problem;
   factory SideLoaderDevice.fromJson(Map<String, dynamic> json) {
     final live = _child(json['live']);
     final udid = _text(json['udid']);
+    final problem = json['problem'];
     return SideLoaderDevice(udid, _text(json['name']).isEmpty
-        ? udid : _text(json['name']), live['reachable'] == true);
+        ? udid : _text(json['name']), live['reachable'] == true,
+        problem is Map ? SideLoaderProblem.fromJson(_asMap(problem)) : null);
   }
+}
+
+/// ERROR/WARNING with the cause and numbered fix steps (from the server).
+class SideLoaderProblem {
+  const SideLoaderProblem(this.isError, this.title, this.steps);
+  final bool isError;
+  final String title;
+  final List<String> steps;
+  factory SideLoaderProblem.fromJson(Map<String, dynamic> json) =>
+      SideLoaderProblem(_text(json['level']) == 'error', _text(json['title']),
+          (json['steps'] as List? ?? const []).map(_text).toList());
 }
 
 class SideLoaderApp {
